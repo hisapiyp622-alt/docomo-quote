@@ -333,7 +333,7 @@
     var firstExtra = device.firstExtra + accFirstExtra;
 
     // 初期費用
-    var atama = st.payMethod !== "none" && p > 0 ? num(st.atamakin) : 0;
+    var atama = num(st.atamakin); // 頭金は入力があれば常に店頭お支払いへ合算
     // where: "store"=店頭お支払い / "bill"=翌月の携帯料金と合算
     var initialRows = [];
     if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee), where: "bill" });
