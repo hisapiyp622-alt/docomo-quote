@@ -221,11 +221,12 @@ const DEFAULT_DATA = {
   ],
 
   /* 初期費用の定番項目（手数料・コーティング施工など契約時一括のもの。⑤にチェックボックスで表示） */
+  /* pay: "store"=店頭でお支払い / "bill"=翌月の携帯料金と合算請求 */
   feeItems: [
-    { id: "fee_sim", name: "SIM／eSIM再発行（店頭）", price: 4950 },
-    { id: "ag_coating", name: "ハルトコーティング両面", price: 6600 },
-    { id: "ag_coating_s", name: "ハルトコーティング片面", price: 4400 },
-    { id: "ag_setup", name: "初期設定・データ移行サポート", price: 3300 },
+    { id: "fee_sim", name: "SIM／eSIM再発行（店頭）", price: 4950, pay: "bill" },
+    { id: "ag_coating", name: "ハルトコーティング両面", price: 6600, pay: "store" },
+    { id: "ag_coating_s", name: "ハルトコーティング片面", price: 4400, pay: "store" },
+    { id: "ag_setup", name: "初期設定・データ移行サポート", price: 3300, pay: "store" },
   ],
 
   kaedoki: {

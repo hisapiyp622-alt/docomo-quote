@@ -38,6 +38,11 @@
     if (!MASTER.feeItems) MASTER.feeItems = JSON.parse(JSON.stringify(DEFAULT_DATA.feeItems || []));
     if (!MASTER.campaigns) MASTER.campaigns = JSON.parse(JSON.stringify(DEFAULT_DATA.campaigns || []));
     if (!MASTER.accessories) MASTER.accessories = JSON.parse(JSON.stringify(DEFAULT_DATA.accessories || []));
+    MASTER.feeItems.forEach(function (f) {
+      if (f.pay !== "store" && f.pay !== "bill") {
+        f.pay = (f.id === "fee_sim" || /手数料|再発行/.test(f.name || "")) ? "bill" : "store";
+      }
+    });
     // 旧「代理店独自サービス」リストをオプションに統合
     if (MASTER.agencyOptions && MASTER.agencyOptions.length) {
       MASTER.agencyOptions.forEach(function (o) {
@@ -328,20 +333,25 @@
 
     // 初期費用
     var atama = st.payMethod !== "none" && p > 0 ? num(st.atamakin) : 0;
+    // where: "store"=店頭お支払い / "bill"=翌月の携帯料金と合算
     var initialRows = [];
-    if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee) });
-    if (initialDevice > 0) initialRows.push({ name: "機種代金（一括）", amount: initialDevice });
-    if (atama > 0) initialRows.push({ name: "店頭頭金", amount: atama });
+    if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee), where: "bill" });
+    if (initialDevice > 0) initialRows.push({ name: "機種代金（一括）", amount: initialDevice, where: "store" });
+    if (atama > 0) initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
     (MASTER.feeItems || []).forEach(function (f) {
-      if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price });
+      if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: f.pay === "bill" ? "bill" : "store" });
     });
     accOnceRows.forEach(function (a) {
-      initialRows.push({ name: a.name + "（アクセサリ・一括）", amount: a.amount });
+      initialRows.push({ name: a.name + "（アクセサリ・一括）", amount: a.amount, where: "store" });
     });
     st.adhocInitial.forEach(function (a) {
-      if (a.name || a.amount) initialRows.push({ name: a.name || "その他", amount: num(a.amount) });
+      if (a.name || a.amount) initialRows.push({ name: a.name || "その他", amount: num(a.amount), where: "store" });
     });
     var initialTotal = initialRows.reduce(function (s, r) { return s + r.amount; }, 0);
+    var storeRows = initialRows.filter(function (r) { return r.where === "store"; });
+    var billRows = initialRows.filter(function (r) { return r.where === "bill"; });
+    var storeTotal = storeRows.reduce(function (s, r) { return s + r.amount; }, 0);
+    var billTotal = billRows.reduce(function (s, r) { return s + r.amount; }, 0);
 
     return {
       plan: plan, tier: tier, tierIdx: tierIdx,
@@ -354,6 +364,7 @@
       device: device, baseMonthly: baseMonthly,
       segs: segs, firstExtra: firstExtra,
       initialRows: initialRows, initialTotal: initialTotal,
+      storeRows: storeRows, billRows: billRows, storeTotal: storeTotal, billTotal: billTotal,
     };
   }
   function calc() { return calcFor(state); }
@@ -473,7 +484,7 @@
   function renderFeeItemList() {
     var list = MASTER.feeItems || [];
     $("feeItemList").innerHTML = '<div class="tile-grid">' + list.map(function (f) {
-      return tileHtml("data-fee", f.id, f.name, !!state.feeItems[f.id],
+      return tileHtml("data-fee", f.id, f.name + (f.pay === "bill" ? "（翌月合算）" : ""), !!state.feeItems[f.id],
         '<span class="t-price">' + yen(f.price) + "</span>");
     }).join("") + "</div>";
   }
@@ -659,8 +670,10 @@
       h += '<div class="bm-box"><div class="bm-label">' + segLabel(segLast) + "</div>"
         + '<div class="bm-value">' + yen(segLast.monthly) + "</div></div>";
     }
-    h += '<div class="bm-box"><div class="bm-label">初期費用（契約時）</div>'
-      + '<div class="bm-value">' + yen(r.initialTotal) + "</div></div>";
+    h += '<div class="bm-box"><div class="bm-label">店頭お支払い金額</div>'
+      + '<div class="bm-value">' + yen(r.storeTotal) + "</div>"
+      + (r.billTotal > 0 ? '<div class="bm-sub">ほかに翌月合算払い ' + yen(r.billTotal) + "</div>" : "")
+      + "</div>";
     h += "</div>";
 
     // 月額の推移（期間が2つ以上あるとき）
@@ -724,13 +737,21 @@
       h += "</tbody></table>";
     }
 
-    // 初期費用
-    if (r.initialRows.length) {
-      h += "<h3>初期費用（契約時のお支払い）</h3><table><tbody>";
-      r.initialRows.forEach(function (x) {
+    // 初期費用（店頭お支払い／翌月合算払い）
+    if (r.storeRows.length) {
+      h += "<h3>店頭お支払い金額</h3><table><tbody>";
+      r.storeRows.forEach(function (x) {
         h += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
       });
-      h += '<tr class="total"><td>初期費用合計</td><td class="amt">' + yen(r.initialTotal) + "</td></tr>";
+      h += '<tr class="total"><td>店頭お支払い合計</td><td class="amt">' + yen(r.storeTotal) + "</td></tr>";
+      h += "</tbody></table>";
+    }
+    if (r.billRows.length) {
+      h += "<h3>翌月合算払い（携帯料金と合算請求）</h3><table><tbody>";
+      r.billRows.forEach(function (x) {
+        h += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
+      });
+      h += '<tr class="total"><td>翌月合算払い合計</td><td class="amt">' + yen(r.billTotal) + "</td></tr>";
       h += "</tbody></table>";
     }
 
@@ -830,7 +851,12 @@
     // 初期費用の定番項目（手数料・コーティング等の一括もの）
     h += '<div class="master-plan"><h3>初期費用の定番項目（手数料・コーティングなど）</h3>';
     h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。</p>';
-    h += listEditor(MASTER.feeItems, "fi", function () { return ""; });
+    h += listEditor(MASTER.feeItems, "fi", function (o) {
+      return '<select data-fi-pay="' + o.__i + '">'
+        + '<option value="store"' + (o.pay !== "bill" ? " selected" : "") + ">店頭払い</option>"
+        + '<option value="bill"' + (o.pay === "bill" ? " selected" : "") + ">翌月合算</option>"
+        + "</select>";
+    });
     h += '<div class="actions"><button class="btn-sub" data-add="feeItems" type="button">＋ 項目を追加</button></div></div>';
 
     // アクセサリの定番商品
@@ -941,6 +967,8 @@
         list[+attr("price")].price = num(t.value);
       } else if (evType === "change" && prefix === "op" && attr("cat") != null) {
         list[+attr("cat")].category = t.value;
+      } else if (evType === "change" && prefix === "fi" && attr("pay") != null) {
+        list[+attr("pay")].pay = t.value;
       } else if (evType === "click" && attr("del") != null) {
         var o = list[+attr("del")];
         store.patterns.forEach(function (pt) { delete pt[def.stateKey][o.id]; });
