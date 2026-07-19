@@ -87,6 +87,11 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
 .tpl:active{transform:scale(.97)}
 .tpl.empty{color:var(--muted);border-color:var(--line);font-weight:400;background:#FBFBF9}
 .tpl-saving .tpl{border-color:var(--red);color:var(--red);animation:none}
+.tpl-namebox{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tpl-namebox input{
+  padding:7px 10px;border:1.5px solid var(--red);border-radius:8px;font:inherit;font-size:13.5px;width:12em;
+}
+#tplMsg{color:var(--red)}
 .mv{
   border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:5px;
   width:26px;height:26px;font-size:12px;cursor:pointer;padding:0;

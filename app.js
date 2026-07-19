@@ -403,22 +403,41 @@
   }
   function tplApply(i) {
     var t = MASTER.templates[i];
-    if (!t) { alert("テンプレート" + (i + 1) + "は未設定です。\n「現在の内容をテンプレに保存」から登録してください。"); return; }
+    if (!t) { tplMsg("テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください"); return; }
     var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName };
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     state = store.patterns[store.active];
     syncFormFromState();
     recalc();
   }
+  var tplPendingSlot = null;
+  function tplMsg(text) {
+    $("tplMsg").textContent = text;
+    if (text) setTimeout(function () { if ($("tplMsg").textContent === text) $("tplMsg").textContent = ""; }, 4000);
+  }
   function tplSave(i) {
+    // iPadのホーム画面起動(PWA)ではprompt()が使えないため、画面内の入力欄で名前を付ける
     var plan = currentPlan();
     var procLabel = { shinki: "新規", mnp: "MNP", kishu: "機種変更", plan_only: "プラン変更" }[state.procType] || "";
     var cur = MASTER.templates[i];
-    var name = prompt("テンプレート名", cur ? cur.name : plan.name + " " + procLabel);
-    if (name === null) { tplSaveMode = false; renderTplBar(); return; }
-    MASTER.templates[i] = { name: (name || plan.name).slice(0, 20), state: tplSnapshot() };
-    saveMaster();
+    tplPendingSlot = i;
+    $("tplNameInput").value = cur ? cur.name : (plan.name + " " + procLabel).slice(0, 20);
+    $("tplNameBox").hidden = false;
+    $("saveTplBtn").hidden = true;
+    tplMsg("");
+    $("tplNameInput").focus();
+  }
+  function tplSaveDone(ok) {
+    if (ok && tplPendingSlot != null) {
+      var name = $("tplNameInput").value.trim() || ("テンプレ" + (tplPendingSlot + 1));
+      MASTER.templates[tplPendingSlot] = { name: name.slice(0, 20), state: tplSnapshot() };
+      saveMaster();
+      tplMsg("「" + name.slice(0, 20) + "」を保存しました");
+    }
+    tplPendingSlot = null;
     tplSaveMode = false;
+    $("tplNameBox").hidden = true;
+    $("saveTplBtn").hidden = false;
     renderTplBar();
   }
   function renderPatternTabs() {
@@ -1064,6 +1083,11 @@
       tplSaveMode = !tplSaveMode;
       renderTplBar();
     });
+    $("tplNameOk").addEventListener("click", function () { tplSaveDone(true); });
+    $("tplNameCancel").addEventListener("click", function () { tplSaveDone(false); });
+    $("tplNameInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") tplSaveDone(true);
+    });
     $("copyPattern").addEventListener("click", function () {
       var next = (store.active + 1) % 3;
       store.patterns[next] = JSON.parse(JSON.stringify(state));
@@ -1319,8 +1343,20 @@
       renderMasterTab();
       renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
     });
+    var resetArm = null;
     $("resetMaster").addEventListener("click", function () {
-      if (confirm("マスタを初期値に戻します。よろしいですか？")) resetMaster();
+      var b = $("resetMaster");
+      if (resetArm) {
+        clearTimeout(resetArm); resetArm = null;
+        b.textContent = "マスタを初期値に戻す";
+        resetMaster();
+      } else {
+        b.textContent = "もう一度タップすると初期値に戻します";
+        resetArm = setTimeout(function () {
+          resetArm = null;
+          b.textContent = "マスタを初期値に戻す";
+        }, 5000);
+      }
     });
   }
 
