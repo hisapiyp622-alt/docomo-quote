@@ -380,39 +380,43 @@
     }).join("");
     $("voice").value = state.voice;
   }
+  function tileHtml(attr, id, name, on, priceHtml) {
+    return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
+      + '" tabindex="0" ' + attr + '="' + esc(id) + '">'
+      + '<span class="t-name">' + esc(name) + "</span>"
+      + priceHtml
+      + "</div>";
+  }
   function renderOptionList() {
-    function itemRow(o) {
-      var checked = state.options[o.id] ? " checked" : "";
-      var right;
-      if (o.priceChoices && o.priceChoices.length) {
-        var cur = optPrice(o, state);
-        right = '<select data-optprice="' + esc(o.id) + '">'
-          + o.priceChoices.map(function (c) {
-              return '<option value="' + c + '"' + (c === cur ? " selected" : "") + ">" + yen(c) + "/月</option>";
-            }).join("") + "</select>";
-      } else {
-        right = '<span class="price">' + yen(o.price) + "/月</span>";
-      }
-      return '<div class="opt-row"><label class="check"><input type="checkbox" data-opt="' + esc(o.id) + '"' + checked + "> "
-        + esc(o.name) + "</label>" + right + "</div>";
-    }
-    // カテゴリ（フォルダ）ごとにグループ表示
+    // カテゴリ（フォルダ）ごとに横5列のタイルで表示
     var h = "";
     OPT_CATEGORIES.forEach(function (cat) {
       var items = MASTER.options.filter(function (o) { return (o.category || "その他") === cat; });
       if (!items.length) return;
       h += '<div class="opt-cat">' + esc(cat) + "</div>";
-      h += items.map(itemRow).join("");
+      h += '<div class="tile-grid">' + items.map(function (o) {
+        var on = !!state.options[o.id];
+        var priceHtml;
+        if (o.priceChoices && o.priceChoices.length) {
+          var cur = optPrice(o, state);
+          priceHtml = '<select data-optprice="' + esc(o.id) + '">'
+            + o.priceChoices.map(function (c) {
+                return '<option value="' + c + '"' + (c === cur ? " selected" : "") + ">" + yen(c) + "/月</option>";
+              }).join("") + "</select>";
+        } else {
+          priceHtml = '<span class="t-price">' + yen(o.price) + "/月</span>";
+        }
+        return tileHtml("data-opt", o.id, o.name, on, priceHtml);
+      }).join("") + "</div>";
     });
     $("optionList").innerHTML = h;
   }
   function renderFeeItemList() {
     var list = MASTER.feeItems || [];
-    $("feeItemList").innerHTML = list.map(function (f) {
-      var checked = state.feeItems[f.id] ? " checked" : "";
-      return '<div class="opt-row"><label class="check"><input type="checkbox" data-fee="' + esc(f.id) + '"' + checked + "> "
-        + esc(f.name) + "</label><span class=\"price\">" + yen(f.price) + "</span></div>";
-    }).join("");
+    $("feeItemList").innerHTML = '<div class="tile-grid">' + list.map(function (f) {
+      return tileHtml("data-fee", f.id, f.name, !!state.feeItems[f.id],
+        '<span class="t-price">' + yen(f.price) + "</span>");
+    }).join("") + "</div>";
   }
   function renderAccessories() {
     $("accessoryList").innerHTML = state.accessories.map(function (a, i) {
@@ -857,15 +861,32 @@
     $("choki").addEventListener("change", function () { state.choki = this.value; recalc(); });
     $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
 
+    // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
+    function toggleTile(e) {
+      if (e.target.closest("select")) return;
+      var tile = e.target.closest(".tile");
+      if (!tile) return;
+      var optId = tile.getAttribute("data-opt");
+      var feeId = tile.getAttribute("data-fee");
+      if (optId) { state.options[optId] = !state.options[optId]; renderOptionList(); }
+      if (feeId) { state.feeItems[feeId] = !state.feeItems[feeId]; renderFeeItemList(); }
+      recalc();
+    }
+    function tileKey(e) {
+      if (e.key === " " || e.key === "Enter") {
+        if (e.target.classList && e.target.classList.contains("tile")) {
+          e.preventDefault();
+          toggleTile(e);
+        }
+      }
+    }
+    $("optionList").addEventListener("click", toggleTile);
+    $("optionList").addEventListener("keydown", tileKey);
+    $("feeItemList").addEventListener("click", toggleTile);
+    $("feeItemList").addEventListener("keydown", tileKey);
     $("optionList").addEventListener("change", function (e) {
-      var id = e.target.getAttribute("data-opt");
-      if (id) { state.options[id] = e.target.checked; recalc(); return; }
       var pid = e.target.getAttribute("data-optprice");
       if (pid) { state.optionPrices[pid] = num(e.target.value); recalc(); }
-    });
-    $("feeItemList").addEventListener("change", function (e) {
-      var id = e.target.getAttribute("data-fee");
-      if (id) { state.feeItems[id] = e.target.checked; recalc(); }
     });
 
     // アクセサリ

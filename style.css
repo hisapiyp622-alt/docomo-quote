@@ -31,7 +31,16 @@ body{
 .tab:focus-visible{outline:2px solid #fff;outline-offset:-2px}
 
 /* ---------- layout ---------- */
-main{max-width:720px;margin:0 auto;padding:14px 12px 24px}
+main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
+
+/* iPad横向きなどの広い画面ではカードを2列に */
+@media (min-width:900px){
+  #tab-quote.active{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  #tab-quote .pattern-bar,#tab-quote .actions,#tab-quote .card.full{grid-column:1 / -1}
+  #tab-quote .card{margin-bottom:0}
+  /* 半分幅カード内のタイルは3列（全幅カードは5列のまま） */
+  #tab-quote .card:not(.full) .tile-grid{grid-template-columns:repeat(3,1fr)}
+}
 .tab-page{display:none}
 .tab-page.active{display:block}
 .card{
@@ -73,9 +82,42 @@ main{max-width:720px;margin:0 auto;padding:14px 12px 24px}
 .mv:hover{color:var(--red);border-color:var(--red)}
 .opt-cat{
   font-size:12px;font-weight:700;color:var(--red);letter-spacing:.06em;
-  margin:12px 0 2px;padding:3px 8px;background:#FBF1F3;border-radius:5px;
+  margin:12px 0 6px;padding:3px 8px;background:#FBF1F3;border-radius:5px;
 }
 .opt-cat:first-child{margin-top:4px}
+
+/* ---------- タイル式グリッド（横5列） ---------- */
+.tile-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px;
+}
+.tile{
+  border:1.5px solid var(--line);border-radius:8px;background:#FBFBFB;
+  padding:8px 5px 7px;text-align:center;cursor:pointer;user-select:none;
+  display:flex;flex-direction:column;justify-content:space-between;gap:4px;
+  min-height:64px;position:relative;
+}
+.tile:hover{border-color:#C9A0AB}
+.tile:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.tile.on{border-color:var(--red);background:#FBF1F3}
+.tile.on::after{
+  content:"✓";position:absolute;top:2px;right:5px;
+  color:var(--red);font-size:11px;font-weight:700;
+}
+.tile .t-name{
+  font-size:11.5px;line-height:1.35;font-weight:600;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  word-break:break-word;
+}
+.tile.on .t-name{color:var(--red)}
+.tile .t-price{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile.on .t-price{color:var(--red)}
+.tile select{
+  font-size:10.5px;padding:2px 1px;border:1px solid var(--line);border-radius:5px;
+  width:100%;background:#fff;font-family:inherit;
+}
+@media (max-width:600px){
+  .tile-grid{grid-template-columns:repeat(3,1fr)}
+}
 .subhead{
   font-size:13px;font-weight:700;color:var(--ink);
   margin:14px 0 4px;padding-top:10px;border-top:1px solid var(--line);
