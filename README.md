@@ -2,6 +2,8 @@
 
 ドコモショップ店頭（COヘルパー業務）用の料金シミュレーター＋見積書作成PWA。
 
+**公開URL: https://hisapiyp622-alt.github.io/docomo-quote/**（スマホで開いて「ホーム画面に追加」でアプリとして使えます）
+
 ## 構成
 - `index.html` / `style.css` / `app.js` — アプリ本体（素のHTML/CSS/JS）
 - `data.js` — 料金マスタ初期値（**2026-07-10にドコモ公式を調査・相互検証した税込確定値**）
