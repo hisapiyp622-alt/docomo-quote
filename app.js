@@ -92,6 +92,7 @@
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
       voice: "none", options: {}, optionPrices: {}, feeItems: {},
       campaigns: {}, campaignAmounts: {},
+      pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       deviceName: "", devicePrice: 0, payMethod: "none", zanka: 0, kaedokiFee: 0,
@@ -278,8 +279,15 @@
       }
     });
 
+    // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
+    var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
+    var ptDcard = Math.max(0, num(st.pointDcard));
+    var pointRows = [];
+    if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
+    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカードGOLD・PLATINUM利用分）", amount: ptDcard });
+
     // 月額（恒久部分）
-    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm;
+    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptDcard;
 
     // --- 期間セグメント（端末・アクセサリ分割・期間限定項目の切れ目で分割） ---
     var boundarySet = {};
@@ -296,8 +304,8 @@
       if (device.months >= from) m += device.monthly;
       accMonthlyRows.forEach(function (a) { if (a.months >= from) m += a.monthly; });
       adhocLimited.forEach(function (a) { if (a.months >= from) m += a.amount; });
-      var seg = { from: from, to: to, monthly: m };
-      if (device.kaedoki && from > device.months) seg.monthlyKeep = m + device.after; // 返却しない場合
+      var seg = { from: from, to: to, monthly: Math.max(0, m) };
+      if (device.kaedoki && from > device.months) seg.monthlyKeep = Math.max(0, m + device.after); // 返却しない場合
       segs.push(seg);
       from = to + 1;
     });
@@ -327,7 +335,7 @@
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal,
-      adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows,
+      adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
       device: device, baseMonthly: baseMonthly,
       segs: segs, firstExtra: firstExtra,
@@ -337,7 +345,7 @@
   function calc() { return calcFor(state); }
   function isPatternUsed(st) {
     var d = defaultState();
-    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName"];
+    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointDcard"];
     if (keys.some(function (k) { return st[k] !== d[k]; })) return true;
     function anyOn(map) { return Object.keys(map || {}).some(function (k) { return map[k]; }); }
     if (anyOn(st.options) || anyOn(st.feeItems)) return true;
@@ -541,6 +549,8 @@
     $("shopName").value = state.shopName;
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
+    $("ptPoikatsu").value = state.pointPoikatsu || "";
+    $("ptDcard").value = state.pointDcard || "";
     $("zankaField").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
     renderCampaigns();
@@ -623,6 +633,9 @@
     r.campaignRows.forEach(function (c) {
       h += row(esc(c.name) + "（" + c.months + "か月間）", "−" + yen(c.amount), true);
     });
+    r.pointRows.forEach(function (p) {
+      h += row(esc(p.name) + "※", "−" + yen(p.amount), true);
+    });
     if (r.voice.id !== "none") h += row(esc(r.voice.name) + esc(r.voiceNote), yen(r.voicePrice), true);
     r.optRows.forEach(function (o) { h += row(esc(o.name), yen(o.price), true); });
     state.adhocMonthly.forEach(function (a) {
@@ -641,6 +654,9 @@
     h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
       + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
     h += "</tbody></table>";
+    if (r.pointRows.length) {
+      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ ポイント充当はdポイント（期間・用途限定含む）を利用した場合の実質負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
+    }
 
     // カエドキ説明
     if (r.device.kaedoki) {
@@ -940,6 +956,8 @@
       var aid = e.target.getAttribute("data-cpamt");
       if (aid) { state.campaignAmounts[aid] = num(e.target.value); recalc(); }
     });
+    $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
+    $("ptDcard").addEventListener("input", function () { state.pointDcard = num(this.value); recalc(); });
     $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
 
     // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
