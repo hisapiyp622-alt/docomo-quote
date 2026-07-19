@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#CC0033">
+<title>ドコモ料金見積もり</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header no-print">
+  <h1>ドコモ料金見積もり</h1>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="quote" type="button">見積もり</button>
+    <button class="tab" data-tab="sheet" type="button">見積書</button>
+    <button class="tab" data-tab="master" type="button">マスタ設定</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ 見積もりタブ ============ -->
+  <section id="tab-quote" class="tab-page active no-print">
+
+    <div class="pattern-bar">
+      <span class="lbl">見積もりパターン：</span>
+      <button class="pat" data-pat="0" type="button">A</button>
+      <button class="pat" data-pat="1" type="button">B</button>
+      <button class="pat" data-pat="2" type="button">C</button>
+      <button class="btn-sub" id="copyPattern" type="button">現在の内容を次のパターンへコピー</button>
+    </div>
+
+    <div class="card">
+      <h2>① 契約内容</h2>
+      <div class="field">
+        <label for="procType">手続き種別</label>
+        <select id="procType">
+          <option value="shinki">新規契約</option>
+          <option value="mnp">のりかえ（MNP）</option>
+          <option value="kishu">機種変更</option>
+          <option value="plan_only">プラン変更のみ</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="planGroup">プラン世代</label>
+        <select id="planGroup">
+          <option value="current">現行プラン</option>
+          <option value="legacy">旧プラン（受付終了）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="planId">料金プラン</label>
+        <select id="planId"></select>
+      </div>
+      <div class="field" id="tierField" hidden>
+        <label for="tierIdx">想定データ利用量</label>
+        <select id="tierIdx"></select>
+      </div>
+      <p class="plan-note" id="planNote"></p>
+    </div>
+
+    <div class="card">
+      <h2>② 割引</h2>
+      <div class="field">
+        <label for="minna">みんなドコモ割</label>
+        <select id="minna">
+          <option value="0">適用なし（1回線）</option>
+          <option value="2">2回線</option>
+          <option value="3">3回線以上</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="dSet"> ドコモ光／home 5G セット割</label>
+      <div class="field">
+        <label for="dCardSel">dカードお支払割</label>
+        <select id="dCardSel">
+          <option value="none">適用なし</option>
+          <option value="normal">dカード</option>
+          <option value="gold">dカード GOLD U／GOLD／PLATINUM</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
+      <div class="field">
+        <label for="choki">長期利用割（MAX・ポイ活MAXのみ）</label>
+        <select id="choki">
+          <option value="none">適用なし</option>
+          <option value="y10">ドコモ歴10年以上</option>
+          <option value="y20">ドコモ歴20年以上</option>
+        </select>
+      </div>
+      <p class="hint" id="discountHint"></p>
+    </div>
+
+    <div class="card">
+      <h2>③ 通話・オプション</h2>
+      <div class="field">
+        <label for="voice">通話オプション</label>
+        <select id="voice"></select>
+      </div>
+      <div id="optionList"></div>
+      <p class="hint">内容・単価・並び順はマスタ設定タブで自由に変更できます。</p>
+      <div class="adhoc-list" id="adhocMonthlyList"></div>
+      <button class="btn-sub" id="addAdhocMonthly" type="button">＋ 月額の追加項目（キャンペーン割引・店舗施策など）</button>
+    </div>
+
+    <div class="card">
+      <h2>④ 端末代金</h2>
+      <div class="field">
+        <label for="deviceName">機種名（任意）</label>
+        <input type="text" id="deviceName" placeholder="例）iPhone 17 128GB">
+      </div>
+      <div class="field">
+        <label for="devicePrice">機種代金（税込・総額）</label>
+        <input type="number" id="devicePrice" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="payMethod">支払い方法</label>
+        <select id="payMethod">
+          <option value="none">端末購入なし</option>
+          <option value="ikkatsu">一括払い</option>
+          <option value="b12">分割12回</option>
+          <option value="b24">分割24回</option>
+          <option value="b36">分割36回</option>
+          <option value="b48">分割48回</option>
+          <option value="kaedoki">いつでもカエドキプログラム（24回・残価設定）</option>
+        </select>
+      </div>
+      <div class="field" id="zankaField" hidden>
+        <label for="zanka">残価（24回目支払分・税込）</label>
+        <input type="number" id="zanka" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field" id="kaedokiFeeField" hidden>
+        <label for="kaedokiFee">プログラム利用料（返却時・機種による）</label>
+        <input type="number" id="kaedokiFee" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="atamakin">店頭頭金</label>
+        <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
+      </div>
+      <p class="hint" id="kaedokiHint" hidden></p>
+      <div class="subhead">アクセサリ（docomo select など）</div>
+      <div class="adhoc-list" id="accessoryList"></div>
+      <button class="btn-sub" id="addAccessory" type="button">＋ アクセサリを追加（一括／分割を選べます）</button>
+    </div>
+
+    <div class="card">
+      <h2>⑤ 初期費用・その他</h2>
+      <div class="field">
+        <label for="jimuFee">契約事務手数料</label>
+        <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
+      </div>
+      <div id="feeItemList"></div>
+      <div class="adhoc-list" id="adhocInitialList"></div>
+      <button class="btn-sub" id="addAdhocInitial" type="button">＋ 初期費用の追加項目（アクセサリ・下取り値引きなど）</button>
+    </div>
+
+    <div class="card">
+      <h2>⑥ お客様情報（見積書用・任意）</h2>
+      <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
+      <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
+      <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>
+      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-main" id="toSheet" type="button">見積書を表示する</button>
+      <button class="btn-sub" id="clearQuote" type="button">入力をクリア</button>
+    </div>
+  </section>
+
+  <!-- ============ 見積書タブ ============ -->
+  <section id="tab-sheet" class="tab-page">
+    <div class="sheet" id="sheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <!-- ============ マスタ設定タブ ============ -->
+  <section id="tab-master" class="tab-page no-print">
+    <div class="card">
+      <h2>料金マスタ</h2>
+      <p class="hint">料金改定があったらここで直せます。変更は自動保存されます（この端末のみ）。<br>データ基準日: <strong id="masterUpdated"></strong></p>
+      <div class="actions">
+        <button class="btn-sub" id="resetMaster" type="button">マスタを初期値に戻す</button>
+      </div>
+    </div>
+    <div id="masterBody"><!-- JSで生成 --></div>
+  </section>
+
+  <!-- 下部固定サマリー -->
+  <div class="summary-bar no-print" id="summaryBar">
+    <div class="sum-item"><span class="sum-label" id="sumMonthlyLabel">月額</span><span class="sum-value" id="sumMonthly">0円</span></div>
+    <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
+  </div>
+</main>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
+</script>
+</body>
+</html>
