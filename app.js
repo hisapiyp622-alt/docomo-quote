@@ -38,6 +38,7 @@
     if (!MASTER.feeItems) MASTER.feeItems = JSON.parse(JSON.stringify(DEFAULT_DATA.feeItems || []));
     if (!MASTER.campaigns) MASTER.campaigns = JSON.parse(JSON.stringify(DEFAULT_DATA.campaigns || []));
     if (!MASTER.accessories) MASTER.accessories = JSON.parse(JSON.stringify(DEFAULT_DATA.accessories || []));
+    if (!MASTER.templates || MASTER.templates.length !== 3) MASTER.templates = [null, null, null];
     MASTER.feeItems.forEach(function (f) {
       if (f.pay !== "store" && f.pay !== "bill") {
         f.pay = (f.id === "fee_sim" || /手数料|再発行/.test(f.name || "")) ? "bill" : "store";
@@ -383,6 +384,43 @@
   }
 
   /* ---------- 見積もりフォーム描画 ---------- */
+  var tplSaveMode = false;
+  function renderTplBar() {
+    document.querySelectorAll(".tpl").forEach(function (b) {
+      var t = MASTER.templates[+b.dataset.tpl];
+      b.textContent = t ? t.name : "未設定";
+      b.classList.toggle("filled", !!t);
+      b.classList.toggle("empty", !t);
+    });
+    var bar = document.querySelector(".tpl").closest(".pattern-bar");
+    bar.classList.toggle("tpl-saving", tplSaveMode);
+    $("saveTplBtn").textContent = tplSaveMode ? "保存先のテンプレボタンをタップ（ここを押すとキャンセル）" : "現在の内容をテンプレに保存";
+  }
+  function tplSnapshot() {
+    var snap = JSON.parse(JSON.stringify(state));
+    delete snap.custName; delete snap.shopName; delete snap.staffName;
+    return snap;
+  }
+  function tplApply(i) {
+    var t = MASTER.templates[i];
+    if (!t) { alert("テンプレート" + (i + 1) + "は未設定です。\n「現在の内容をテンプレに保存」から登録してください。"); return; }
+    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName };
+    store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
+    state = store.patterns[store.active];
+    syncFormFromState();
+    recalc();
+  }
+  function tplSave(i) {
+    var plan = currentPlan();
+    var procLabel = { shinki: "新規", mnp: "MNP", kishu: "機種変更", plan_only: "プラン変更" }[state.procType] || "";
+    var cur = MASTER.templates[i];
+    var name = prompt("テンプレート名", cur ? cur.name : plan.name + " " + procLabel);
+    if (name === null) { tplSaveMode = false; renderTplBar(); return; }
+    MASTER.templates[i] = { name: (name || plan.name).slice(0, 20), state: tplSnapshot() };
+    saveMaster();
+    tplSaveMode = false;
+    renderTplBar();
+  }
   function renderPatternTabs() {
     document.querySelectorAll(".pat").forEach(function (b) {
       var i = +b.dataset.pat;
@@ -865,6 +903,20 @@
     h += listEditor(MASTER.accessories, "ac", function () { return ""; });
     h += '<div class="actions"><button class="btn-sub" data-add="accessories" type="button">＋ 商品を追加</button></div></div>';
 
+    // テンプレート管理
+    h += '<div class="master-plan"><h3>テンプレート</h3>';
+    h += '<p class="hint">保存は見積もり画面の「現在の内容をテンプレに保存」から。ここでは名前変更と削除ができます。</p>';
+    MASTER.templates.forEach(function (t, i) {
+      h += '<div class="adhoc-row">'
+        + '<span class="price" style="min-width:2em">' + (i + 1) + '</span>'
+        + (t
+          ? '<input type="text" value="' + esc(t.name) + '" data-tp-name="' + i + '">'
+            + '<button class="del" data-tp-del="' + i + '" type="button" aria-label="削除">×</button>'
+          : '<span class="price">未設定</span>')
+        + "</div>";
+    });
+    h += "</div>";
+
     // キャンペーン割引（名称・期間・割引額を編集可）
     h += '<div class="master-plan"><h3>キャンペーン割引</h3>';
     h += '<p class="hint">対象プラン選択時に「②割引」へ表示されます。終了したキャンペーンは×で削除してください。</p>';
@@ -1000,6 +1052,17 @@
     });
     document.querySelectorAll(".pat").forEach(function (b) {
       b.addEventListener("click", function () { switchPattern(+b.dataset.pat); });
+    });
+    document.querySelectorAll(".tpl").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = +b.dataset.tpl;
+        if (tplSaveMode) tplSave(i);
+        else tplApply(i);
+      });
+    });
+    $("saveTplBtn").addEventListener("click", function () {
+      tplSaveMode = !tplSaveMode;
+      renderTplBar();
     });
     $("copyPattern").addEventListener("click", function () {
       var next = (store.active + 1) % 3;
@@ -1209,6 +1272,11 @@
         recalc();
         return;
       }
+      if (t.hasAttribute("data-tp-name")) {
+        var tpi = +t.getAttribute("data-tp-name");
+        if (MASTER.templates[tpi]) { MASTER.templates[tpi].name = t.value.slice(0, 20); markEdited(); renderTplBar(); }
+        return;
+      }
       if (t.hasAttribute("data-cp-name")) {
         MASTER.campaigns[+t.getAttribute("data-cp-name")].name = t.value;
         markEdited(); renderCampaigns(); recalc(); return;
@@ -1229,6 +1297,11 @@
     });
     $("masterBody").addEventListener("click", function (e) {
       var t = e.target;
+      if (t.hasAttribute("data-tp-del")) {
+        MASTER.templates[+t.getAttribute("data-tp-del")] = null;
+        markEdited(); renderMasterTab(); renderTplBar();
+        return;
+      }
       if (t.hasAttribute("data-cp-del")) {
         var ci = +t.getAttribute("data-cp-del");
         var co = MASTER.campaigns[ci];
@@ -1260,5 +1333,6 @@
   }
   bindEvents();
   syncFormFromState();
+  renderTplBar();
   recalc();
 })();
