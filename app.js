@@ -36,6 +36,7 @@
     }
     // 旧バージョンの保存マスタへの後方互換
     if (!MASTER.feeItems) MASTER.feeItems = JSON.parse(JSON.stringify(DEFAULT_DATA.feeItems || []));
+    if (!MASTER.campaigns) MASTER.campaigns = JSON.parse(JSON.stringify(DEFAULT_DATA.campaigns || []));
     // 旧「代理店独自サービス」リストをオプションに統合
     if (MASTER.agencyOptions && MASTER.agencyOptions.length) {
       MASTER.agencyOptions.forEach(function (o) {
@@ -90,6 +91,7 @@
       procType: "shinki", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
       voice: "none", options: {}, optionPrices: {}, feeItems: {},
+      campaigns: {}, campaignAmounts: {},
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       deviceName: "", devicePrice: 0, payMethod: "none", zanka: 0, kaedokiFee: 0,
@@ -217,6 +219,23 @@
       else adhocPerm += num(a.amount);
     });
 
+    // キャンペーン割引（期間限定・対象プランのみ。セグメント計算に合流）
+    var campaignRows = [];
+    (MASTER.campaigns || []).forEach(function (c) {
+      if (!st.campaigns[c.id]) return;
+      if (c.plans && c.plans.length && c.plans.indexOf(plan.id) < 0) return;
+      var choices = c.amountChoices || [];
+      if (!choices.length) return;
+      var amt = choices[0].a;
+      if (choices.length > 1 && st.campaignAmounts[c.id] != null
+          && choices.some(function (ch) { return ch.a === st.campaignAmounts[c.id]; })) {
+        amt = st.campaignAmounts[c.id];
+      }
+      var months = Math.max(1, Math.round(num(c.months)));
+      campaignRows.push({ name: c.name, amount: amt, months: months });
+      adhocLimited.push({ name: c.name, amount: -amt, months: months });
+    });
+
     // 端末
     var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, kaedokiFee: 0, jisshitsu: 0 };
     var initialDevice = 0;
@@ -308,7 +327,7 @@
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal,
-      adhocPerm: adhocPerm, adhocLimited: adhocLimited,
+      adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
       device: device, baseMonthly: baseMonthly,
       segs: segs, firstExtra: firstExtra,
@@ -455,6 +474,36 @@
         + "</div>";
     }).join("");
   }
+  function renderCampaigns() {
+    var plan = currentPlan();
+    var list = (MASTER.campaigns || []).filter(function (c) {
+      return !(c.plans && c.plans.length) || c.plans.indexOf(plan.id) >= 0;
+    });
+    if (!list.length) { $("campaignList").innerHTML = ""; return; }
+    var h = '<div class="subhead">キャンペーン割引（このプランで使えるもの）</div>';
+    list.forEach(function (c) {
+      var checked = state.campaigns[c.id] ? " checked" : "";
+      var choices = c.amountChoices || [];
+      var right;
+      if (choices.length > 1) {
+        var cur = choices[0].a;
+        if (state.campaignAmounts[c.id] != null
+            && choices.some(function (ch) { return ch.a === state.campaignAmounts[c.id]; })) {
+          cur = state.campaignAmounts[c.id];
+        }
+        right = '<select data-cpamt="' + esc(c.id) + '">'
+          + choices.map(function (ch) {
+              return '<option value="' + ch.a + '"' + (ch.a === cur ? " selected" : "") + ">"
+                + esc(ch.label) + " −" + yen(ch.a) + "</option>";
+            }).join("") + "</select>";
+      } else {
+        right = '<span class="price">−' + yen(choices.length ? choices[0].a : 0) + "/月</span>";
+      }
+      h += '<div class="opt-row"><label class="check"><input type="checkbox" data-cp="' + esc(c.id) + '"' + checked + "> "
+        + esc(c.name) + "（" + c.months + "か月間）</label>" + right + "</div>";
+    });
+    $("campaignList").innerHTML = h;
+  }
   function renderDiscountHint() {
     var plan = currentPlan();
     var msgs = [];
@@ -494,6 +543,7 @@
     $("quoteMemo").value = state.quoteMemo;
     $("zankaField").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
+    renderCampaigns();
     renderDiscountHint();
   }
 
@@ -570,6 +620,9 @@
     if (r.dCard) h += row("dカードお支払割" + (state.dCard === "gold" ? "（GOLD系）" : ""), "−" + yen(r.dCard), true);
     if (r.dDenki) h += row("ドコモでんきセット割", "−" + yen(r.dDenki), true);
     if (r.dChoki) h += row("長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", "−" + yen(r.dChoki), true);
+    r.campaignRows.forEach(function (c) {
+      h += row(esc(c.name) + "（" + c.months + "か月間）", "−" + yen(c.amount), true);
+    });
     if (r.voice.id !== "none") h += row(esc(r.voice.name) + esc(r.voiceNote), yen(r.voicePrice), true);
     r.optRows.forEach(function (o) { h += row(esc(o.name), yen(o.price), true); });
     state.adhocMonthly.forEach(function (a) {
@@ -709,6 +762,26 @@
     h += listEditor(MASTER.feeItems, "fi", function () { return ""; });
     h += '<div class="actions"><button class="btn-sub" data-add="feeItems" type="button">＋ 項目を追加</button></div></div>';
 
+    // キャンペーン割引（名称・期間・割引額を編集可）
+    h += '<div class="master-plan"><h3>キャンペーン割引</h3>';
+    h += '<p class="hint">対象プラン選択時に「②割引」へ表示されます。終了したキャンペーンは×で削除してください。</p>';
+    (MASTER.campaigns || []).forEach(function (c, i) {
+      h += '<div class="adhoc-row">'
+        + '<input type="text" value="' + esc(c.name) + '" placeholder="キャンペーン名" data-cp-name="' + i + '">'
+        + '<input type="number" value="' + c.months + '" title="割引期間（か月）" data-cp-months="' + i + '" style="max-width:5em">'
+        + '<span class="price">か月</span>'
+        + '<button class="del" data-cp-del="' + i + '" type="button" aria-label="削除">×</button>'
+        + "</div>";
+      (c.amountChoices || []).forEach(function (ch, j) {
+        h += '<div class="adhoc-row" style="margin-left:24px">'
+          + '<span class="price" style="min-width:9em">' + esc(ch.label || "割引額") + "</span>"
+          + '<input type="number" value="' + ch.a + '" data-cp-amt="' + i + '-' + j + '">'
+          + '<span class="price">円/月引き</span>'
+          + "</div>";
+      });
+    });
+    h += "</div>";
+
     $("masterBody").innerHTML = h;
 
     function listEditor(list, prefix, extra) {
@@ -842,6 +915,7 @@
       state.planGroup = this.value;
       renderPlanSelect();
       renderVoiceSelect();
+      renderCampaigns();
       renderDiscountHint();
       recalc();
     });
@@ -850,6 +924,7 @@
       state.tierIdx = 0;
       renderTierSelect();
       renderVoiceSelect();
+      renderCampaigns();
       renderDiscountHint();
       recalc();
     });
@@ -859,6 +934,12 @@
     $("dCardSel").addEventListener("change", function () { state.dCard = this.value; recalc(); });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
     $("choki").addEventListener("change", function () { state.choki = this.value; recalc(); });
+    $("campaignList").addEventListener("change", function (e) {
+      var cid = e.target.getAttribute("data-cp");
+      if (cid) { state.campaigns[cid] = e.target.checked; recalc(); return; }
+      var aid = e.target.getAttribute("data-cpamt");
+      if (aid) { state.campaignAmounts[aid] = num(e.target.value); recalc(); }
+    });
     $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
 
     // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
@@ -1001,6 +1082,19 @@
         recalc();
         return;
       }
+      if (t.hasAttribute("data-cp-name")) {
+        MASTER.campaigns[+t.getAttribute("data-cp-name")].name = t.value;
+        markEdited(); renderCampaigns(); recalc(); return;
+      }
+      if (t.hasAttribute("data-cp-months")) {
+        MASTER.campaigns[+t.getAttribute("data-cp-months")].months = Math.max(1, Math.round(num(t.value)));
+        markEdited(); renderCampaigns(); recalc(); return;
+      }
+      if (t.hasAttribute("data-cp-amt")) {
+        var ij = t.getAttribute("data-cp-amt").split("-");
+        MASTER.campaigns[+ij[0]].amountChoices[+ij[1]].a = num(t.value);
+        markEdited(); renderCampaigns(); recalc(); return;
+      }
       handleListEvent(t, "input");
     });
     $("masterBody").addEventListener("change", function (e) {
@@ -1008,6 +1102,14 @@
     });
     $("masterBody").addEventListener("click", function (e) {
       var t = e.target;
+      if (t.hasAttribute("data-cp-del")) {
+        var ci = +t.getAttribute("data-cp-del");
+        var co = MASTER.campaigns[ci];
+        store.patterns.forEach(function (pt) { delete pt.campaigns[co.id]; delete pt.campaignAmounts[co.id]; });
+        MASTER.campaigns.splice(ci, 1);
+        markEdited(); renderMasterTab(); renderCampaigns(); recalc();
+        return;
+      }
       var addKey = t.getAttribute("data-add");
       if (addKey === "options") { MASTER.options.push(LIST_DEFS.op.newItem()); }
       else if (addKey === "feeItems") { MASTER.feeItems.push(LIST_DEFS.fi.newItem()); }

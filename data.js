@@ -141,6 +141,31 @@ const DEFAULT_DATA = {
     },
   ],
 
+  /* --- キャンペーン割引（期間限定・対象プラン選択時のみ②に表示） ---
+   * amountChoices: 割引額の選択肢（複数ある場合は見積もり画面で選択）
+   * months: 割引期間 / plans: 対象プランid（空=全プラン）
+   * 2026-07-19 公式提供条件書ベース。終了時期・条件は変わるためマスタで編集可。
+   */
+  campaigns: [
+    { id: "u22", name: "ドコモU22割", months: 7, plans: ["max"],
+      amountChoices: [
+        { label: "〜28GB", a: 2728 },
+        { label: "28GB超〜30GB", a: 3828 },
+        { label: "30GB超〜無制限", a: 550 },
+      ],
+      note: "22歳以下・最大7か月。ボーナスパケット27GB/月付き" },
+    { id: "u29", name: "ドコモU29割", months: 3, plans: ["max"],
+      amountChoices: [
+        { label: "〜28GB", a: 2728 },
+        { label: "28GB超〜30GB", a: 3828 },
+        { label: "30GB超〜無制限", a: 550 },
+      ],
+      note: "23〜29歳・最大3か月。ボーナスパケット27GB/月付き" },
+    { id: "ahamo_max", name: "ahamo→MAXのりかえ割", months: 12, plans: ["max", "poikatsu_max"],
+      amountChoices: [{ label: "一律", a: 2750 }],
+      note: "ahamoを1年以上契約からのプラン変更・12か月間" },
+  ],
+
   voiceOptions: [
     { id: "none", name: "通話オプションなし", price: 0 },
     { id: "v5", name: "5分通話無料オプション", price: 880 },
