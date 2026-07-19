@@ -35,9 +35,12 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
 
 /* iPad横向きなどの広い画面ではカードを2列に */
 @media (min-width:900px){
-  #tab-quote.active{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  #tab-quote.active{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;grid-auto-flow:row dense}
   #tab-quote .pattern-bar,#tab-quote .actions,#tab-quote .card.full{grid-column:1 / -1}
   #tab-quote .card{margin-bottom:0}
+  /* ①契約内容と②通話・メールを左列に縦積みし、背の高い③割引を右列に（①下の空白を埋める） */
+  #tab-quote .card.c1,#tab-quote .card.c2{grid-column:1}
+  #tab-quote .card.c3{grid-column:2;grid-row:span 2}
   /* 半分幅カード内のタイルは3列（全幅カードは5列のまま） */
   #tab-quote .card:not(.full) .tile-grid{grid-template-columns:repeat(3,1fr)}
 }

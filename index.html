@@ -31,7 +31,7 @@
       <button class="btn-sub" id="copyPattern" type="button">現在の内容を次のパターンへコピー</button>
     </div>
 
-    <div class="card">
+    <div class="card c1">
       <h2>① 契約内容</h2>
       <div class="field">
         <label for="procType">手続き種別</label>
@@ -60,8 +60,24 @@
       <p class="plan-note" id="planNote"></p>
     </div>
 
-    <div class="card">
-      <h2>② 割引</h2>
+    <div class="card c2">
+      <h2>② 通話・メール</h2>
+      <div class="field">
+        <label for="voice">通話オプション</label>
+        <select id="voice"></select>
+      </div>
+      <div class="field">
+        <label for="mailOpt">ドコモメール</label>
+        <select id="mailOpt">
+          <option value="no">無し</option>
+          <option value="yes">有り</option>
+        </select>
+      </div>
+      <p class="hint" id="mailHint"></p>
+    </div>
+
+    <div class="card c3">
+      <h2>③ 割引</h2>
       <div class="field">
         <label for="minna">みんなドコモ割</label>
         <select id="minna">
@@ -102,11 +118,7 @@
     </div>
 
     <div class="card full">
-      <h2>③ 通話・オプション</h2>
-      <div class="field">
-        <label for="voice">通話オプション</label>
-        <select id="voice"></select>
-      </div>
+      <h2>④ オプション・サービス</h2>
       <div id="optionList"></div>
       <p class="hint">内容・単価・並び順はマスタ設定タブで自由に変更できます。</p>
       <div class="adhoc-list" id="adhocMonthlyList"></div>
@@ -114,7 +126,7 @@
     </div>
 
     <div class="card">
-      <h2>④ 端末代金</h2>
+      <h2>⑤ 端末代金</h2>
       <div class="field">
         <label for="deviceName">機種名（任意）</label>
         <input type="text" id="deviceName" placeholder="例）iPhone 17 128GB">
@@ -154,7 +166,7 @@
     </div>
 
     <div class="card">
-      <h2>⑤ 初期費用・その他</h2>
+      <h2>⑥ 初期費用・その他</h2>
       <div class="field">
         <label for="jimuFee">契約事務手数料</label>
         <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
@@ -165,7 +177,7 @@
     </div>
 
     <div class="card">
-      <h2>⑥ お客様情報（見積書用・任意）</h2>
+      <h2>⑦ お客様情報（見積書用・任意）</h2>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
       <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>

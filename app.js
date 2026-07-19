@@ -407,6 +407,20 @@
     }).join("");
     $("voice").value = state.voice;
   }
+  function mailOptDef() {
+    return MASTER.options.filter(function (o) {
+      return o.id === "docomomail" || (o.name || "").indexOf("ドコモメール") >= 0;
+    })[0];
+  }
+  function renderMailOpt() {
+    var mo = mailOptDef();
+    var sel = $("mailOpt");
+    if (!mo) { sel.disabled = true; $("mailHint").textContent = "マスタに「ドコモメールオプション」がありません。"; return; }
+    sel.disabled = false;
+    sel.value = state.options[mo.id] ? "yes" : "no";
+    sel.options[1].textContent = "有り（" + yen(mo.price) + "/月）";
+    $("mailHint").textContent = "MAX・mini等のキャリアプランはドコモメール標準込み（無しのままでOK）。ahamo・irumoは有料オプション。";
+  }
   function tileHtml(attr, id, name, on, priceHtml) {
     return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
       + '" tabindex="0" ' + attr + '="' + esc(id) + '">'
@@ -418,7 +432,11 @@
     // カテゴリ（フォルダ）ごとに横5列のタイルで表示
     var h = "";
     OPT_CATEGORIES.forEach(function (cat) {
-      var items = MASTER.options.filter(function (o) { return (o.category || "その他") === cat; });
+      var mailDef = mailOptDef();
+      var items = MASTER.options.filter(function (o) {
+        if (mailDef && o.id === mailDef.id) return false; // ②で選択するため除外
+        return (o.category || "その他") === cat;
+      });
       if (!items.length) return;
       h += '<div class="opt-cat">' + esc(cat) + "</div>";
       h += '<div class="tile-grid">' + items.map(function (o) {
@@ -533,6 +551,7 @@
     $("dDenki").checked = state.dDenki;
     $("choki").value = state.choki;
     renderVoiceSelect();
+    renderMailOpt();
     renderOptionList();
     renderFeeItemList();
     renderAccessories();
@@ -774,7 +793,7 @@
 
     // 初期費用の定番項目（手数料・コーティング等の一括もの）
     h += '<div class="master-plan"><h3>初期費用の定番項目（手数料・コーティングなど）</h3>';
-    h += '<p class="hint">契約時に一括で支払うもの。「⑤初期費用」にチェックボックスとして表示されます。</p>';
+    h += '<p class="hint">契約時に一括で支払うもの。「⑥初期費用」にチェックボックスとして表示されます。</p>';
     h += listEditor(MASTER.feeItems, "fi", function () { return ""; });
     h += '<div class="actions"><button class="btn-sub" data-add="feeItems" type="button">＋ 項目を追加</button></div></div>';
 
@@ -931,6 +950,7 @@
       state.planGroup = this.value;
       renderPlanSelect();
       renderVoiceSelect();
+      renderMailOpt();
       renderCampaigns();
       renderDiscountHint();
       recalc();
@@ -940,6 +960,7 @@
       state.tierIdx = 0;
       renderTierSelect();
       renderVoiceSelect();
+      renderMailOpt();
       renderCampaigns();
       renderDiscountHint();
       recalc();
@@ -959,6 +980,11 @@
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptDcard").addEventListener("input", function () { state.pointDcard = num(this.value); recalc(); });
     $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
+    $("mailOpt").addEventListener("change", function () {
+      var mo = mailOptDef();
+      if (mo) { state.options[mo.id] = this.value === "yes"; }
+      recalc();
+    });
 
     // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
     function toggleTile(e) {
