@@ -793,7 +793,7 @@
 
     // 初期費用の定番項目（手数料・コーティング等の一括もの）
     h += '<div class="master-plan"><h3>初期費用の定番項目（手数料・コーティングなど）</h3>';
-    h += '<p class="hint">契約時に一括で支払うもの。「⑥初期費用」にチェックボックスとして表示されます。</p>';
+    h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。</p>';
     h += listEditor(MASTER.feeItems, "fi", function () { return ""; });
     h += '<div class="actions"><button class="btn-sub" data-add="feeItems" type="button">＋ 項目を追加</button></div></div>';
 
