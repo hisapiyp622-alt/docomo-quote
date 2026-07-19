@@ -212,6 +212,14 @@ const DEFAULT_DATA = {
       priceChoices: [1200, 1980], note: "個人1,200/ファミリー1,980・最大10%還元" },
   ],
 
+  /* アクセサリの定番商品（docomo select等。⑥にタイル表示・タップで追加、一括/分割を選択）
+   * 単価は店舗の取扱商品に合わせてマスタ設定タブで編集を。以下は例。 */
+  accessories: [
+    { id: "acc_case", name: "スマホケース", price: 4950 },
+    { id: "acc_film", name: "保護フィルム", price: 3300 },
+    { id: "acc_charger", name: "ACアダプタ（充電器）", price: 3850 },
+  ],
+
   /* 初期費用の定番項目（手数料・コーティング施工など契約時一括のもの。⑤にチェックボックスで表示） */
   feeItems: [
     { id: "fee_sim", name: "SIM／eSIM再発行（店頭）", price: 4950 },

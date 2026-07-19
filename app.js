@@ -37,6 +37,7 @@
     // 旧バージョンの保存マスタへの後方互換
     if (!MASTER.feeItems) MASTER.feeItems = JSON.parse(JSON.stringify(DEFAULT_DATA.feeItems || []));
     if (!MASTER.campaigns) MASTER.campaigns = JSON.parse(JSON.stringify(DEFAULT_DATA.campaigns || []));
+    if (!MASTER.accessories) MASTER.accessories = JSON.parse(JSON.stringify(DEFAULT_DATA.accessories || []));
     // 旧「代理店独自サービス」リストをオプションに統合
     if (MASTER.agencyOptions && MASTER.agencyOptions.length) {
       MASTER.agencyOptions.forEach(function (o) {
@@ -95,6 +96,7 @@
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
+      accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
       deviceName: "", devicePrice: 0, payMethod: "none", zanka: 0, kaedokiFee: 0,
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
@@ -278,6 +280,18 @@
         accFirstExtra += ap - am * an;
       }
     });
+    (MASTER.accessories || []).forEach(function (a) {
+      var pay = st.accSel[a.id];
+      if (!pay) return;
+      if (/^b\d+$/.test(pay)) {
+        var an2 = parseInt(pay.slice(1), 10);
+        var am2 = Math.floor(a.price / an2);
+        accMonthlyRows.push({ name: a.name, monthly: am2, months: an2 });
+        accFirstExtra += a.price - am2 * an2;
+      } else {
+        accOnceRows.push({ name: a.name, amount: a.price });
+      }
+    });
 
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
@@ -348,7 +362,7 @@
     var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointDcard"];
     if (keys.some(function (k) { return st[k] !== d[k]; })) return true;
     function anyOn(map) { return Object.keys(map || {}).some(function (k) { return map[k]; }); }
-    if (anyOn(st.options) || anyOn(st.feeItems)) return true;
+    if (anyOn(st.options) || anyOn(st.feeItems) || anyOn(st.accSel)) return true;
     return !!(st.adhocMonthly.length || st.adhocInitial.length || st.accessories.length);
   }
   function segLabel(seg) {
@@ -463,6 +477,27 @@
         '<span class="t-price">' + yen(f.price) + "</span>");
     }).join("") + "</div>";
   }
+  function renderAccessoryTiles() {
+    var list = MASTER.accessories || [];
+    if (!list.length) { $("accTileList").innerHTML = ""; return; }
+    $("accTileList").innerHTML = '<div class="tile-grid">' + list.map(function (a) {
+      var pay = state.accSel[a.id];
+      var on = !!pay;
+      var body;
+      if (on) {
+        body = '<select data-acsel="' + esc(a.id) + '">'
+          + [["once", "一括"], ["b12", "分割12回"], ["b24", "分割24回"], ["b36", "分割36回"]].map(function (p) {
+              return '<option value="' + p[0] + '"' + (pay === p[0] ? " selected" : "") + ">" + p[1] + "</option>";
+            }).join("") + "</select>";
+      } else {
+        body = '<span class="t-price">' + yen(a.price) + "</span>";
+      }
+      return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
+        + '" tabindex="0" data-acc="' + esc(a.id) + '">'
+        + '<span class="t-name">' + esc(a.name) + (on ? "<br>" + yen(a.price) : "") + "</span>"
+        + body + "</div>";
+    }).join("") + "</div>";
+  }
   function renderAccessories() {
     $("accessoryList").innerHTML = state.accessories.map(function (a, i) {
       function opt(v, label) {
@@ -554,6 +589,7 @@
     renderMailOpt();
     renderOptionList();
     renderFeeItemList();
+    renderAccessoryTiles();
     renderAccessories();
     renderAdhocMonthly();
     renderAdhocInitial();
@@ -797,6 +833,12 @@
     h += listEditor(MASTER.feeItems, "fi", function () { return ""; });
     h += '<div class="actions"><button class="btn-sub" data-add="feeItems" type="button">＋ 項目を追加</button></div></div>';
 
+    // アクセサリの定番商品
+    h += '<div class="master-plan"><h3>アクセサリの定番商品（docomo select など）</h3>';
+    h += '<p class="hint">「⑥アクセサリ」にタイルとして表示されます。単価は店舗の取扱商品に合わせて編集を。</p>';
+    h += listEditor(MASTER.accessories, "ac", function () { return ""; });
+    h += '<div class="actions"><button class="btn-sub" data-add="accessories" type="button">＋ 商品を追加</button></div></div>';
+
     // キャンペーン割引（名称・期間・割引額を編集可）
     h += '<div class="master-plan"><h3>キャンペーン割引</h3>';
     h += '<p class="hint">対象プラン選択時に「②割引」へ表示されます。終了したキャンペーンは×で削除してください。</p>';
@@ -882,6 +924,7 @@
   var LIST_DEFS = {
     op: { key: "options", newItem: function () { return { id: "op_" + Date.now(), name: "", price: 0, category: "その他", note: "" }; }, stateKey: "options", render: renderOptionList },
     fi: { key: "feeItems", newItem: function () { return { id: "fi_" + Date.now(), name: "", price: 0 }; }, stateKey: "feeItems", render: renderFeeItemList },
+    ac: { key: "accessories", newItem: function () { return { id: "acc_" + Date.now(), name: "", price: 0 }; }, stateKey: "accSel", render: renderAccessoryTiles },
   };
   function markEdited() {
     MASTER.updated = MASTER.updated.replace(/（編集済み.*$/, "") + "（編集済み）";
@@ -993,8 +1036,14 @@
       if (!tile) return;
       var optId = tile.getAttribute("data-opt");
       var feeId = tile.getAttribute("data-fee");
+      var accId = tile.getAttribute("data-acc");
       if (optId) { state.options[optId] = !state.options[optId]; renderOptionList(); }
       if (feeId) { state.feeItems[feeId] = !state.feeItems[feeId]; renderFeeItemList(); }
+      if (accId) {
+        if (state.accSel[accId]) delete state.accSel[accId];
+        else state.accSel[accId] = "once";
+        renderAccessoryTiles();
+      }
       recalc();
     }
     function tileKey(e) {
@@ -1009,6 +1058,12 @@
     $("optionList").addEventListener("keydown", tileKey);
     $("feeItemList").addEventListener("click", toggleTile);
     $("feeItemList").addEventListener("keydown", tileKey);
+    $("accTileList").addEventListener("click", toggleTile);
+    $("accTileList").addEventListener("keydown", tileKey);
+    $("accTileList").addEventListener("change", function (e) {
+      var id = e.target.getAttribute("data-acsel");
+      if (id) { state.accSel[id] = e.target.value; recalc(); }
+    });
     $("optionList").addEventListener("change", function (e) {
       var pid = e.target.getAttribute("data-optprice");
       if (pid) { state.optionPrices[pid] = num(e.target.value); recalc(); }
@@ -1157,10 +1212,11 @@
       var addKey = t.getAttribute("data-add");
       if (addKey === "options") { MASTER.options.push(LIST_DEFS.op.newItem()); }
       else if (addKey === "feeItems") { MASTER.feeItems.push(LIST_DEFS.fi.newItem()); }
+      else if (addKey === "accessories") { MASTER.accessories.push(LIST_DEFS.ac.newItem()); }
       else { handleListEvent(t, "click"); return; }
       markEdited();
       renderMasterTab();
-      renderOptionList(); renderFeeItemList();
+      renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
     });
     $("resetMaster").addEventListener("click", function () {
       if (confirm("マスタを初期値に戻します。よろしいですか？")) resetMaster();
