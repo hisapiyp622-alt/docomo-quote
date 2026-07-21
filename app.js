@@ -5,6 +5,7 @@
 (function () {
   "use strict";
 
+  var APP_VERSION = "2026.07.19-11";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -843,7 +844,7 @@
 
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。<br>"
-      + "料金データ基準日: " + esc(MASTER.updated) + "</div>";
+      + "料金データ基準日: " + esc(MASTER.updated) + "｜アプリ版 " + APP_VERSION + "</div>";
 
     $("sheetBody").innerHTML = h;
 
@@ -854,7 +855,7 @@
 
   /* ---------- マスタ設定タブ ---------- */
   function renderMasterTab() {
-    $("masterUpdated").textContent = MASTER.updated;
+    $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
     var h = "";
 
     h += '<div class="master-plan"><h3>共通費用</h3><div class="master-grid">';
