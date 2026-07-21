@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.19-11";
+  var APP_VERSION = "2026.07.19-12";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -305,7 +305,7 @@
     var ptDcard = Math.max(0, num(st.pointDcard));
     var pointRows = [];
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
-    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（還元特典）", amount: ptDcard });
+    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカード還元特典）", amount: ptDcard });
 
     // 月額（恒久部分）
     var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptDcard;
