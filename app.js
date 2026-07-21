@@ -304,7 +304,7 @@
     var ptDcard = Math.max(0, num(st.pointDcard));
     var pointRows = [];
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
-    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカードGOLD・PLATINUM利用分）", amount: ptDcard });
+    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（還元特典）", amount: ptDcard });
 
     // 月額（恒久部分）
     var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptDcard;
