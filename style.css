@@ -207,6 +207,8 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sheet .bm-box .bm-sub{font-size:11.5px;color:var(--muted)}
 .sheet .disclaimer{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7}
 .sheet .memo{font-size:12.5px;margin-top:8px}
+.sheet .page2-note{text-align:center;font-size:11px;color:var(--muted);border-top:1px dashed #C9CACC;margin-top:20px;padding-top:8px}
+.sheet .page2-head{display:none}
 
 /* ---------- master ---------- */
 .master-plan{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
@@ -216,6 +218,7 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .master-grid input{padding:5px 8px;border:1px solid var(--line);border-radius:5px;font:inherit;text-align:right;max-width:8em;font-variant-numeric:tabular-nums}
 
 /* ---------- print ---------- */
+@page{margin:14mm 12mm}
 @media print{
   body{background:#fff;padding:0;font-size:12px}
   .no-print{display:none !important}
@@ -223,6 +226,18 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   #tab-sheet{display:block}
   .sheet{border:none;border-radius:0;padding:0;max-width:none}
   .summary-bar{display:none}
+  /* 2ページ目（本体分割金・初期費用）はここで必ず改ページ */
+  .sheet .sheet-page2{break-before:page;page-break-before:always}
+  .sheet .page2-head{
+    display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    font-size:13px;font-weight:700;color:var(--ink);
+    border-bottom:2px solid var(--red);padding-bottom:6px;margin-bottom:6px;
+  }
+  .sheet .page2-head span{font-size:11px;font-weight:400;color:var(--muted)}
+  /* 表や見出しが中途半端な位置で分断されないようにする */
+  .sheet table,.sheet .big-monthly,.sheet .bm-box{break-inside:avoid;page-break-inside:avoid}
+  .sheet tr{break-inside:avoid;page-break-inside:avoid}
+  .sheet h3{break-after:avoid;page-break-after:avoid}
 }
 
 @media (max-width:480px){
