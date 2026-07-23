@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.23-14";
+  var APP_VERSION = "2026.07.23-15";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -681,6 +681,21 @@
     renderDiscountHint();
   }
 
+  /* ---------- 端末入力の不整合チェック ---------- */
+  // 機種名・機種代金が入っているのに見積もりへ反映されないケースを検出する
+  function deviceInputWarning() {
+    var p = num(state.devicePrice);
+    if (state.payMethod === "none" && (p > 0 || state.deviceName)) {
+      return "機種" + (state.deviceName ? "「" + state.deviceName + "」" : "")
+        + (p > 0 ? "（" + yen(p) + "）" : "") + "が入力されていますが、支払い方法が「端末購入なし」のため"
+        + "機種代金が見積もりに含まれていません。支払い方法（分割・カエドキ・一括）を選択してください。";
+    }
+    if (state.payMethod !== "none" && p <= 0 && state.deviceName) {
+      return "機種「" + state.deviceName + "」の機種代金が未入力（0円）のため、端末のお支払いが見積もりに含まれていません。";
+    }
+    return "";
+  }
+
   /* ---------- サマリーバー ---------- */
   function renderSummary(r) {
     var seg0 = r.segs[0];
@@ -697,6 +712,11 @@
         + (r.device.kaedokiFee > 0 ? "（プログラム利用料" + yen(r.device.kaedokiFee) + "込・ドコモで買替えなら免除）" : "")
         + "。返却しない場合は24か月目以降 " + yen(r.device.after) + "/月を加算。";
     } else { kh.hidden = true; }
+
+    var pw = $("payWarn");
+    var warn = deviceInputWarning();
+    pw.hidden = !warn;
+    pw.textContent = warn ? "⚠ " + warn : "";
   }
 
   /* ---------- 見積書描画 ---------- */
@@ -712,6 +732,9 @@
     h += '<div class="sheet-meta"><span>作成日: ' + dateStr + "</span><span>"
       + esc(state.shopName || "") + (state.staffName ? "　担当: " + esc(state.staffName) : "") + "</span></div>";
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
+
+    var devWarn = deviceInputWarning();
+    if (devWarn) h += '<div class="warnbox">⚠ ' + esc(devWarn) + "</div>";
 
     // 月額目安ボックス
     var lbl0 = segLabel(seg0);

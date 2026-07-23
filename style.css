@@ -207,6 +207,16 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sheet .bm-box .bm-sub{font-size:11.5px;color:var(--muted)}
 .sheet .disclaimer{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7}
 .sheet .memo{font-size:12.5px;margin-top:8px}
+.pay-warn{
+  font-size:12.5px;font-weight:700;color:#B3261E;
+  background:#FDEDEC;border:1px solid #E8A9A4;border-radius:6px;
+  padding:8px 10px;margin:8px 0 0;line-height:1.6;
+}
+.sheet .warnbox{
+  font-size:12.5px;font-weight:700;color:#B3261E;
+  background:#FDEDEC;border:2px solid #B3261E;border-radius:6px;
+  padding:8px 10px;margin:10px 0 0;line-height:1.6;
+}
 .sheet .page2-note{text-align:center;font-size:11px;color:var(--muted);border-top:1px dashed #C9CACC;margin-top:20px;padding-top:8px}
 .sheet .page2-head{display:none}
 
