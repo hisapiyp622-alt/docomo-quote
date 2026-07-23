@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.23-13";
+  var APP_VERSION = "2026.07.23-14";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -752,8 +752,8 @@
     r.accMonthlyRows.forEach(function (a) { devAccSum += a.monthly; });
     var hasInstallment = devAccSum > 0;
 
-    // 月額内訳（1ページ目: プラン・オプションのみ）
-    h += "<h3>月額内訳（" + (hasInstallment ? "プラン・オプション" + (lbl0 ? "・" + lbl0 : "") : segLabel(seg0) + (lbl0 ? "" : "毎月")) + "）</h3><table><tbody>";
+    // 月額内訳（1ページ目: プラン・オプション。分割支払金は合計行のみ・明細は2ページ目）
+    h += "<h3>月額内訳（" + segLabel(seg0) + (lbl0 ? "" : "毎月") + "）</h3><table><tbody>";
     h += row("手続き種別", procLabel, false);
     h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
     if (r.dMinna) h += row("みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", "−" + yen(r.dMinna), true);
@@ -775,12 +775,15 @@
       h += row(label2, (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))), true);
     });
     if (hasInstallment) {
-      h += '<tr class="total"><td>プラン・オプション月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
-        + '</td><td class="amt">' + yen(Math.max(0, seg0.monthly - devAccSum)) + "</td></tr>";
-    } else {
-      h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
-        + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
+      h += row("プラン・オプション小計", yen(Math.max(0, seg0.monthly - devAccSum)), true);
+      var instLabel;
+      if (r.device.monthly > 0 && r.accMonthlyRows.length) instLabel = "機種代金・アクセサリ 分割支払金";
+      else if (r.device.monthly > 0) instLabel = "機種代金 分割支払金" + (r.device.kaedoki ? "（〜23回）" : "（分割" + r.device.months + "回）");
+      else instLabel = "アクセサリ 分割支払金";
+      h += row(instLabel + "＜明細は2ページ目＞", yen(devAccSum), true);
     }
+    h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
+      + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
     h += "</tbody></table>";
     if (r.pointRows.length) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ ポイント充当はdポイント（期間・用途限定含む）を利用した場合の実質負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
