@@ -1,5 +1,5 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "dq-v5";
+var CACHE = "dq-v6";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "data.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", function (e) {

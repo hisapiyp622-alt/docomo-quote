@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.23-15";
+  var APP_VERSION = "2026.07.23-16";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -779,11 +779,20 @@
     h += "<h3>月額内訳（" + segLabel(seg0) + (lbl0 ? "" : "毎月") + "）</h3><table><tbody>";
     h += row("手続き種別", procLabel, false);
     h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
-    if (r.dMinna) h += row("みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", "−" + yen(r.dMinna), true);
-    if (r.dSet) h += row("ドコモ光／home 5G セット割", "−" + yen(r.dSet), true);
-    if (r.dCard) h += row("dカードお支払割" + (state.dCard === "gold" ? "（GOLD系）" : ""), "−" + yen(r.dCard), true);
-    if (r.dDenki) h += row("ドコモでんきセット割", "−" + yen(r.dDenki), true);
-    if (r.dChoki) h += row("長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", "−" + yen(r.dChoki), true);
+    // プランの割引は「セット割」1行にまとめ、内訳を横並びで小さく表記
+    var setWari = [];
+    if (r.dMinna) setWari.push({ name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
+    if (r.dSet) setWari.push({ name: "ドコモ光／home 5G", amt: r.dSet });
+    if (r.dCard) setWari.push({ name: "dカードお支払割" + (state.dCard === "gold" ? "（GOLD系）" : ""), amt: r.dCard });
+    if (r.dDenki) setWari.push({ name: "ドコモでんき", amt: r.dDenki });
+    if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", amt: r.dChoki });
+    if (setWari.length) {
+      var setTotal = 0, setDetail = [];
+      setWari.forEach(function (w) { setTotal += w.amt; setDetail.push(w.name + " −" + yen(w.amt)); });
+      h += "<tr><td>セット割・各種割引"
+        + '<div class="subrow">' + setDetail.join("／") + "</div>"
+        + '</td><td class="amt">−' + yen(setTotal) + "</td></tr>";
+    }
     r.campaignRows.forEach(function (c) {
       h += row(esc(c.name) + "（" + c.months + "か月間）", "−" + yen(c.amount), true);
     });
