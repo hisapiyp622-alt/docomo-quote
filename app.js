@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.19-12";
+  var APP_VERSION = "2026.07.23-13";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -747,8 +747,13 @@
       h += "</tbody></table>";
     }
 
-    // 月額内訳
-    h += "<h3>月額内訳（" + segLabel(seg0) + (lbl0 ? "" : "毎月") + "）</h3><table><tbody>";
+    // 分割支払金（機種代金・アクセサリ）は2ページ目にまとめる
+    var devAccSum = r.device.monthly;
+    r.accMonthlyRows.forEach(function (a) { devAccSum += a.monthly; });
+    var hasInstallment = devAccSum > 0;
+
+    // 月額内訳（1ページ目: プラン・オプションのみ）
+    h += "<h3>月額内訳（" + (hasInstallment ? "プラン・オプション" + (lbl0 ? "・" + lbl0 : "") : segLabel(seg0) + (lbl0 ? "" : "毎月")) + "）</h3><table><tbody>";
     h += row("手続き種別", procLabel, false);
     h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
     if (r.dMinna) h += row("みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", "−" + yen(r.dMinna), true);
@@ -769,48 +774,76 @@
       var label2 = esc(a.name || "調整") + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : "");
       h += row(label2, (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))), true);
     });
-    if (r.device.monthly > 0) {
-      var dLabel = state.deviceName ? esc(state.deviceName) : "機種代金";
-      dLabel += r.device.kaedoki ? "（いつでもカエドキプログラム・〜23回）" : "（分割" + r.device.months + "回）";
-      h += row(dLabel, yen(r.device.monthly), true);
+    if (hasInstallment) {
+      h += '<tr class="total"><td>プラン・オプション月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
+        + '</td><td class="amt">' + yen(Math.max(0, seg0.monthly - devAccSum)) + "</td></tr>";
+    } else {
+      h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
+        + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
     }
-    r.accMonthlyRows.forEach(function (a) {
-      h += row(esc(a.name) + "（アクセサリ・分割" + a.months + "回）", yen(a.monthly), true);
-    });
-    h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
-      + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
     h += "</tbody></table>";
     if (r.pointRows.length) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ ポイント充当はdポイント（期間・用途限定含む）を利用した場合の実質負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
     }
+    if (hasInstallment) {
+      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
+    }
+
+    // ---- 2ページ目: 本体分割金・初期費用（印刷時はここで改ページ） ----
+    var p2 = "";
+
+    // 本体分割金（機種代金・アクセサリの分割）
+    if (hasInstallment) {
+      p2 += "<h3>端末代金・分割支払金</h3><table><tbody>";
+      if (r.device.monthly > 0) {
+        var dLabel = state.deviceName ? esc(state.deviceName) : "機種代金";
+        dLabel += r.device.kaedoki ? "（いつでもカエドキプログラム・〜23回）" : "（分割" + r.device.months + "回）";
+        p2 += row(dLabel, yen(r.device.monthly), true);
+      }
+      r.accMonthlyRows.forEach(function (a) {
+        p2 += row(esc(a.name) + "（アクセサリ・分割" + a.months + "回）", yen(a.monthly), true);
+      });
+      p2 += '<tr class="total"><td>分割支払金 月額合計</td><td class="amt">' + yen(devAccSum) + "</td></tr>";
+      p2 += '<tr class="total"><td>お支払い月額合計（プラン・オプション＋分割支払金' + (lbl0 ? "・" + lbl0 : "")
+        + '）</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
+      p2 += "</tbody></table>";
+    }
 
     // カエドキ説明
     if (r.device.kaedoki) {
-      h += "<h3>いつでもカエドキプログラム</h3><table><tbody>";
-      h += row("機種代金（総額）", yen(num(state.devicePrice)), true);
-      h += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
-      if (r.device.kaedokiFee > 0) h += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
-      h += row("23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0), true);
-      h += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
-      h += "</tbody></table>";
+      p2 += "<h3>いつでもカエドキプログラム</h3><table><tbody>";
+      p2 += row("機種代金（総額）", yen(num(state.devicePrice)), true);
+      p2 += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
+      if (r.device.kaedokiFee > 0) p2 += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
+      p2 += row("23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0), true);
+      p2 += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
+      p2 += "</tbody></table>";
     }
 
     // 初期費用（店頭お支払い／翌月合算払い）
     if (r.storeRows.length) {
-      h += "<h3>店頭お支払い金額</h3><table><tbody>";
+      p2 += "<h3>店頭お支払い金額</h3><table><tbody>";
       r.storeRows.forEach(function (x) {
-        h += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
+        p2 += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
       });
-      h += '<tr class="total"><td>店頭お支払い合計</td><td class="amt">' + yen(r.storeTotal) + "</td></tr>";
-      h += "</tbody></table>";
+      p2 += '<tr class="total"><td>店頭お支払い合計</td><td class="amt">' + yen(r.storeTotal) + "</td></tr>";
+      p2 += "</tbody></table>";
     }
     if (r.billRows.length) {
-      h += "<h3>翌月合算払い（携帯料金と合算請求）</h3><table><tbody>";
+      p2 += "<h3>翌月合算払い（携帯料金と合算請求）</h3><table><tbody>";
       r.billRows.forEach(function (x) {
-        h += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
+        p2 += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
       });
-      h += '<tr class="total"><td>翌月合算払い合計</td><td class="amt">' + yen(r.billTotal) + "</td></tr>";
-      h += "</tbody></table>";
+      p2 += '<tr class="total"><td>翌月合算払い合計</td><td class="amt">' + yen(r.billTotal) + "</td></tr>";
+      p2 += "</tbody></table>";
+    }
+
+    if (p2) {
+      h += '<div class="sheet-page2">'
+        + '<div class="page2-note no-print">――― 印刷時はここから2ページ目 ―――</div>'
+        + '<div class="page2-head">お見積書（続き）'
+        + (state.custName ? "　" + esc(state.custName) : "") + '<span>作成日: ' + dateStr + "</span></div>"
+        + p2 + "</div>";
     }
 
     // パターン比較（ユーザーが編集したパターンだけを対象に、2つ以上あるとき）
