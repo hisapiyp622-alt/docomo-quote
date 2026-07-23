@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.23-16";
+  var APP_VERSION = "2026.07.23-17";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -1411,6 +1411,27 @@
       markEdited();
       renderMasterTab();
       renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+    });
+    $("exportMaster").addEventListener("click", function () {
+      var b = $("exportMaster");
+      var json = JSON.stringify(MASTER, null, 2);
+      var done = function () {
+        b.textContent = "コピーしました（Claudeに貼り付けてください）";
+        setTimeout(function () { b.textContent = "現在のマスタ構成をコピー"; }, 4000);
+      };
+      var fallback = function () {
+        // クリップボードが使えない環境では全文を表示して手動コピーしてもらう
+        var box = $("exportMasterBox");
+        box.hidden = false;
+        box.value = json;
+        box.focus();
+        box.select();
+        b.textContent = "下の内容を全選択してコピーしてください";
+        setTimeout(function () { b.textContent = "現在のマスタ構成をコピー"; }, 6000);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json).then(done, fallback);
+      } else { fallback(); }
     });
     var resetArm = null;
     $("resetMaster").addEventListener("click", function () {

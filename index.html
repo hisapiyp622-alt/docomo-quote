@@ -226,7 +226,10 @@
       <p class="hint">料金改定があったらここで直せます。変更は自動保存されます（この端末のみ）。<br>データ基準日: <strong id="masterUpdated"></strong></p>
       <div class="actions">
         <button class="btn-sub" id="resetMaster" type="button">マスタを初期値に戻す</button>
+        <button class="btn-sub" id="exportMaster" type="button">現在のマスタ構成をコピー</button>
       </div>
+      <p class="hint">「現在のマスタ構成をコピー」: この端末で編集した初期値一式をコピーします。アプリ本体の標準初期値にしたい場合は、コピーした内容をそのままClaudeに貼り付けてください。</p>
+      <textarea id="exportMasterBox" class="export-box" hidden readonly></textarea>
     </div>
     <div id="masterBody"><!-- JSで生成 --></div>
   </section>
