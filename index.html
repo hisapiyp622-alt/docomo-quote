@@ -124,10 +124,14 @@
         <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
         <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
       </div>
-      <div class="field">
+      <div class="field" id="ptDcardField">
         <label for="ptDcard">dカード還元特典</label>
         <input type="number" id="ptDcard" inputmode="numeric" min="0" placeholder="0"> pt/月
       </div>
+      <label class="check" id="dcardAutoWrap" hidden>
+        <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカードGOLD還元を見積もりに含める</span>
+      </label>
+      <p class="hint" id="dcardAutoHint" hidden>GOLD還元の自動計算: プラン基本料＋通話オプション＋GOLD10%対象のオプション（キャリアオプションのみ・マスタ設定で変更可）の税込合計1,100円ごとに100pt。</p>
       <p class="hint" id="discountHint"></p>
     </div>
 

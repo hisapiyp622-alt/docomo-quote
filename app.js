@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.23-18";
+  var APP_VERSION = "2026.07.23-19";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -73,6 +73,12 @@
         o.category = defCat[o.id] || "その他";
       }
     });
+    // dカードGOLD10%対象フラグを初期データから補完（保存済みマスタに未設定のもののみ）
+    var defCarrier = {};
+    (DEFAULT_DATA.options || []).forEach(function (o) { defCarrier[o.id] = !!o.carrier; });
+    MASTER.options.forEach(function (o) {
+      if (typeof o.carrier === "undefined" && defCarrier[o.id]) o.carrier = true;
+    });
     // 初期データに後から増えた項目を保存済みマスタへ追記（ユーザーが削除済みのものは復活させない）
     if (!MASTER.removedIds) MASTER.removedIds = [];
     (DEFAULT_DATA.options || []).forEach(function (d) {
@@ -101,6 +107,7 @@
       voice: "none", options: {}, optionPrices: {}, feeItems: {},
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
+      dcardGoldAuto: true,               // dカードGOLD還元の自動計算分を見積もりに含めるか
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
@@ -300,9 +307,20 @@
       }
     });
 
+    // dカードGOLD還元の自動計算
+    // 対象＝プラン基本料＋通話オプション＋GOLD10%対象（carrier）のオプションのみ。税込1,100円ごとに100pt
+    var dcardGoldBase = tier.price + voicePrice;
+    MASTER.options.forEach(function (o) {
+      if (st.options[o.id] && o.carrier) dcardGoldBase += optPrice(o, st);
+    });
+    var dcardAutoPt = Math.floor(dcardGoldBase / 1100) * 100;
+
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
-    var ptDcard = Math.max(0, num(st.pointDcard));
+    var dcardGoldOn = st.dCard === "gold";
+    var ptDcard = dcardGoldOn
+      ? (st.dcardGoldAuto !== false ? dcardAutoPt : 0)
+      : Math.max(0, num(st.pointDcard));
     var pointRows = [];
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
     if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカード還元特典）", amount: ptDcard });
@@ -362,6 +380,7 @@
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
+      dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
       device: device, baseMonthly: baseMonthly,
       segs: segs, firstExtra: firstExtra,
@@ -370,6 +389,19 @@
     };
   }
   function calc() { return calcFor(state); }
+
+  // ポイ活プラン選択時の還元ポイント初期値（ポイ活20は上限2,500pt）
+  function poikatsuDefaultPt(planId) {
+    if (planId === "poikatsu_20") return 2500;
+    return /poikatsu/.test(planId || "") ? 5000 : 0;
+  }
+  // プラン切替時に初期値を自動セット（手入力した値は上書きしない）
+  function syncPoikatsuDefault(prevPlanId) {
+    var cur = num(state.pointPoikatsu);
+    if (cur && cur !== poikatsuDefaultPt(prevPlanId)) return;
+    state.pointPoikatsu = poikatsuDefaultPt(state.planId);
+    $("ptPoikatsu").value = state.pointPoikatsu || "";
+  }
   function isPatternUsed(st) {
     var d = defaultState();
     var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointDcard"];
@@ -717,6 +749,17 @@
     var warn = deviceInputWarning();
     pw.hidden = !warn;
     pw.textContent = warn ? "⚠ " + warn : "";
+
+    // dカードGOLD還元: GOLD選択時は自動計算値＋チェックボックス、それ以外は手入力欄
+    var goldOn = state.dCard === "gold";
+    $("ptDcardField").hidden = goldOn;
+    $("dcardAutoWrap").hidden = !goldOn;
+    $("dcardAutoHint").hidden = !goldOn;
+    if (goldOn) {
+      $("dcardAutoInclude").checked = state.dcardGoldAuto !== false;
+      $("dcardAutoLabel").textContent = "dカードGOLD還元 " + (r.dcardAutoPt || 0) + "pt/月（対象額"
+        + yen(r.dcardGoldBase || 0) + "から自動計算）を見積もりに含める";
+    }
   }
 
   /* ---------- 見積書描画 ---------- */
@@ -970,6 +1013,7 @@
             return '<option value="' + c + '"' + ((o.category || "その他") === c ? " selected" : "") + ">" + c + "</option>";
           }).join("")
         + "</select>"
+        + '<label class="gold-flag"><input type="checkbox" data-op-gold="' + o.__i + '"' + (o.carrier ? " checked" : "") + '>GOLD10%</label>'
         + (o.priceChoices ? '<span class="price">選択式</span>' : "");
     });
     h += '<div class="actions"><button class="btn-sub" data-add="options" type="button">＋ オプション・サービスを追加</button></div></div>';
@@ -1107,6 +1151,8 @@
         list[+attr("price")].price = num(t.value);
       } else if (evType === "change" && prefix === "op" && attr("cat") != null) {
         list[+attr("cat")].category = t.value;
+      } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
+        list[+attr("gold")].carrier = t.checked;
       } else if (evType === "change" && prefix === "fi" && attr("pay") != null) {
         list[+attr("pay")].pay = t.value;
       } else if (evType === "click" && attr("del") != null) {
@@ -1174,8 +1220,10 @@
       recalc();
     });
     $("planGroup").addEventListener("change", function () {
+      var prevPlan = state.planId;
       state.planGroup = this.value;
-      renderPlanSelect();
+      renderPlanSelect(); // グループにないプランだった場合はここでplanIdが切り替わる
+      syncPoikatsuDefault(prevPlan);
       renderVoiceSelect();
       renderMailOpt();
       renderCampaigns();
@@ -1183,8 +1231,10 @@
       recalc();
     });
     $("planId").addEventListener("change", function () {
+      var prevPlan = state.planId;
       state.planId = this.value;
       state.tierIdx = 0;
+      syncPoikatsuDefault(prevPlan);
       renderTierSelect();
       renderVoiceSelect();
       renderMailOpt();
@@ -1206,6 +1256,7 @@
     });
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptDcard").addEventListener("input", function () { state.pointDcard = num(this.value); recalc(); });
+    $("dcardAutoInclude").addEventListener("change", function () { state.dcardGoldAuto = this.checked; recalc(); });
     $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
     $("mailOpt").addEventListener("change", function () {
       var mo = mailOptDef();

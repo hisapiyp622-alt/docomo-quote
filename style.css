@@ -53,6 +53,7 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
 .card h2{font-size:15px;margin:0 0 10px;color:var(--red);letter-spacing:.03em}
 
 /* ---------- form ---------- */
+[hidden]{display:none !important}
 .field{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
 .field label{flex:0 0 11em;font-size:13.5px;color:var(--ink)}
 .field select,.field input[type=text],.field input[type=number]{
@@ -233,6 +234,7 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .master-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;font-size:13px}
 .master-grid label{color:var(--muted)}
 .master-grid input{padding:5px 8px;border:1px solid var(--line);border-radius:5px;font:inherit;text-align:right;max-width:8em;font-variant-numeric:tabular-nums}
+.gold-flag{font-size:11px;color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:2px}
 
 /* ---------- print ---------- */
 @page{margin:11mm 10mm}
