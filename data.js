@@ -170,6 +170,26 @@ const DEFAULT_DATA = {
       "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。"
     },
     {
+      "id": "keitai",
+      "group": "current",
+      "name": "ケータイプラン",
+      "tiers": [
+        {
+          "label": "100MB",
+          "price": 1507
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 187,
+        "dcardGold": 187
+      },
+      "includes5min": false,
+      "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。"
+    },
+    {
       "id": "eximo",
       "group": "legacy",
       "name": "eximo",

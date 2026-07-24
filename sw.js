@@ -1,5 +1,5 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "dq-v12";
+var CACHE = "dq-v13";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "data.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", function (e) {
