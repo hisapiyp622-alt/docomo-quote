@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>イエナカ見積もり（ドコモ光・home 5G）</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="ienaka.css">
+</head>
+<body>
+
+<header class="app-header no-print">
+  <h1>イエナカ見積もり <span class="sync-status">ドコモ光・home 5G</span><a class="app-link" href="../">← ケータイ見積もり</a></h1>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="quote" type="button">見積もり</button>
+    <button class="tab" data-tab="sheet" type="button">見積書</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-quote" class="tab-page active no-print">
+    <div class="step">
+      <h2>① 商材</h2>
+      <div class="field">
+        <label for="product">商材</label>
+        <select id="product">
+          <option value="hikari1g">ドコモ光 1ギガ</option>
+          <option value="hikari10g">ドコモ光 10ギガ</option>
+          <option value="home5g">home 5G</option>
+        </select>
+      </div>
+      <div id="hikariFields">
+        <div class="field">
+          <label for="housing">住居タイプ</label>
+          <select id="housing">
+            <option value="ht">戸建</option>
+            <option value="ms">マンション</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ptype">プロバイダ</label>
+          <select id="ptype">
+            <option value="A">タイプA</option>
+            <option value="B">タイプB</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="baseMonthly">月額基本料</label>
+        <input type="number" id="baseMonthly" inputmode="numeric" min="0"> 円
+      </div>
+      <p class="hint">商材・住居タイプ・プロバイダを選ぶと標準料金が入ります。実際の料金に合わせて自由に変更できます。</p>
+    </div>
+
+    <div class="step" id="home5gStep" hidden>
+      <h2>② home 5G 端末</h2>
+      <div class="field">
+        <label for="h5DeviceName">端末名</label>
+        <input type="text" id="h5DeviceName" placeholder="例）home 5G HR02">
+      </div>
+      <div class="field">
+        <label for="h5DevicePrice">端末代金（税込）</label>
+        <input type="number" id="h5DevicePrice" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="h5Pay">お支払い方法</label>
+        <select id="h5Pay">
+          <option value="support36">分割36回＋月々サポート（実質負担0円）</option>
+          <option value="b36">分割36回（サポートなし）</option>
+          <option value="b12">分割12回</option>
+          <option value="ikkatsu">一括払い</option>
+        </select>
+      </div>
+      <p class="hint" id="h5Hint"></p>
+    </div>
+
+    <div class="step">
+      <h2>③ 月額オプション</h2>
+      <div id="ienakaOptList"></div>
+      <div class="adhoc-list" id="extraMonthlyList"></div>
+      <button class="btn-sub" id="addExtraMonthly" type="button">＋ 月額の追加項目（オプション・割引など）</button>
+      <p class="hint">割引を入れる場合は金額をマイナスで入力してください（例: −550）。</p>
+    </div>
+
+    <div class="step">
+      <h2>④ 初期費用</h2>
+      <div class="field">
+        <label for="jimuFee">契約事務手数料</label>
+        <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field" id="kojiField">
+        <label for="kojiFee">工事費</label>
+        <input type="number" id="kojiFee" inputmode="numeric" min="0"> 円
+      </div>
+      <label class="check" id="kojiFreeWrap"><input type="checkbox" id="kojiFree"> 工事費無料特典を適用（新規工事料無料キャンペーン）</label>
+      <div class="adhoc-list" id="extraInitialList"></div>
+      <button class="btn-sub" id="addExtraInitial" type="button">＋ 初期費用の追加項目</button>
+    </div>
+
+    <div class="step">
+      <h2>⑤ 特典・見積書情報</h2>
+      <div class="field">
+        <label for="dpoint">dポイントプレゼント特典</label>
+        <input type="number" id="dpoint" inputmode="numeric" min="0"> pt
+      </div>
+      <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
+      <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>
+      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）スマホとのセット割は携帯側見積もりに記載"></div>
+      <p class="hint">※ ドコモ光／home 5G セット割（スマホ側 −1,210円/月 など）はケータイ見積もり側で適用してください。</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn-main" id="toSheet" type="button">見積書を表示する</button>
+      <button class="btn-sub" id="clearQuote" type="button">入力をクリア</button>
+    </div>
+  </section>
+
+  <section id="tab-sheet" class="tab-page">
+    <div class="sheet" id="sheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <div class="summary-bar no-print" id="summaryBar">
+    <div class="sum-item"><span class="sum-label">月額</span><span class="sum-value" id="sumMonthly">0円</span></div>
+    <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
+  </div>
+</main>
+
+<script src="ienaka.js"></script>
+</body>
+</html>

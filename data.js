@@ -190,6 +190,46 @@ const DEFAULT_DATA = {
       "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。"
     },
     {
+      "id": "kids",
+      "group": "current",
+      "name": "キッズケータイプラン",
+      "tiers": [
+        {
+          "label": "定額",
+          "price": 550
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 0,
+        "dcardGold": 0
+      },
+      "includes5min": false,
+      "note": "キッズケータイ専用（12歳以下）。国内通話・SMSは家族間無料。各種割引対象外・みんなドコモ割の回線数カウント対象外。料金はマスタ設定で調整可。"
+    },
+    {
+      "id": "dataplus",
+      "group": "current",
+      "name": "データプラス",
+      "tiers": [
+        {
+          "label": "ペア回線とシェア",
+          "price": 1100
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 0,
+        "dcardGold": 0
+      },
+      "includes5min": false,
+      "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。"
+    },
+    {
       "id": "eximo",
       "group": "legacy",
       "name": "eximo",
