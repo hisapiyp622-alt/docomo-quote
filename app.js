@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.24-21";
+  var APP_VERSION = "2026.07.24-22";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -163,7 +163,8 @@
   }
 
   /* ---------- 端末間リアルタイム同期（Firestore・レシピアプリと同じプロジェクト） ----------
-   * 見積もり3パターン＋マスタ設定を docomoQuote/sync の1ドキュメントで共有。
+   * 見積もり3パターン＋マスタ設定を settings/docomoQuoteSync の1ドキュメントで共有。
+   * （settingsコレクションはFirestoreルールで既に許可済みのため、ルール変更なしで使える）
    * 後勝ち（最終更新が優先）。オフラインでも動作し、復帰時に新しい方が反映される。 */
   var SYNC_MS_KEY = "dq-sync-local-ms"; // この端末の最終編集時刻
   var SYNC = {
@@ -217,7 +218,7 @@
     }
     var db;
     try { db = firebase.firestore(); } catch (e) { syncStatus("", ""); return; }
-    SYNC.ref = db.collection("docomoQuote").doc("sync");
+    SYNC.ref = db.collection("settings").doc("docomoQuoteSync");
     SYNC.ready = true;
     SYNC.ref.onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
