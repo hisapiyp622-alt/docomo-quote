@@ -1,0 +1,13 @@
+/* イエナカ見積もり専用の追加スタイル（共通スタイルは ../style.css） */
+.app-header{position:relative}
+.app-link{
+  position:absolute;right:14px;top:16px;
+  color:#fff;font-size:12px;text-decoration:underline;opacity:.9;
+}
+.step{
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:12px;
+}
+.step h2{font-size:15px;margin:0 0 10px;color:var(--red)}
+.ienaka-opt{display:block;margin:6px 0}
+.ienaka-opt .opt-price{color:var(--muted);font-size:12.5px}

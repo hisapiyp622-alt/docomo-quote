@@ -1,6 +1,7 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "dq-v13";
-var ASSETS = ["./", "index.html", "style.css", "app.js", "data.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
+var CACHE = "dq-v14";
+var ASSETS = ["./", "index.html", "style.css", "app.js", "data.js", "firebase-config.js", "manifest.webmanifest", "icon.svg",
+  "ienaka/", "ienaka/index.html", "ienaka/ienaka.css", "ienaka/ienaka.js"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));
