@@ -21,6 +21,8 @@ body{
 /* ---------- header/tabs ---------- */
 .app-header{background:var(--red);color:#fff;padding:14px 16px 0}
 .app-header h1{font-size:18px;margin:0 0 10px;font-weight:700;letter-spacing:.04em}
+.sync-status{font-size:11px;font-weight:400;letter-spacing:0;opacity:.9;margin-left:6px;vertical-align:middle}
+.sync-status.err{background:#fff;color:var(--red);border-radius:4px;padding:1px 6px}
 .tabs{display:flex;gap:4px}
 .tab{
   flex:1;border:none;background:rgba(255,255,255,.16);color:#fff;

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.24-20";
+  var APP_VERSION = "2026.07.24-21";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -90,6 +90,7 @@
   }
   function saveMaster() {
     try { localStorage.setItem(MASTER_KEY, JSON.stringify(MASTER)); } catch (e) {}
+    if (typeof markLocalEdit === "function") markLocalEdit();
   }
   function resetMaster() {
     localStorage.removeItem(MASTER_KEY);
@@ -158,6 +159,79 @@
   }
   function saveState() {
     try { localStorage.setItem(STATE_KEY, JSON.stringify(store)); } catch (e) {}
+    markLocalEdit();
+  }
+
+  /* ---------- 端末間リアルタイム同期（Firestore・レシピアプリと同じプロジェクト） ----------
+   * 見積もり3パターン＋マスタ設定を docomoQuote/sync の1ドキュメントで共有。
+   * 後勝ち（最終更新が優先）。オフラインでも動作し、復帰時に新しい方が反映される。 */
+  var SYNC_MS_KEY = "dq-sync-local-ms"; // この端末の最終編集時刻
+  var SYNC = {
+    ref: null, ready: false, suppress: false, timer: null,
+    clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
+  };
+  function syncStatus(msg, cls) {
+    var el = $("syncStatus");
+    if (el) { el.textContent = msg; el.className = "sync-status" + (cls ? " " + cls : ""); }
+  }
+  function markLocalEdit() {
+    if (!SYNC.ready || SYNC.suppress) return;
+    try { localStorage.setItem(SYNC_MS_KEY, String(Date.now())); } catch (e) {}
+    pushSync();
+  }
+  function pushSync() {
+    if (!SYNC.ref || SYNC.suppress) return;
+    if (SYNC.timer) clearTimeout(SYNC.timer);
+    syncStatus("同期中…", "");
+    SYNC.timer = setTimeout(function () {
+      SYNC.timer = null;
+      SYNC.ref.set({
+        store: localStorage.getItem(STATE_KEY) || "",
+        master: localStorage.getItem(MASTER_KEY) || "",
+        clientId: SYNC.clientId,
+        updatedAtMs: num(localStorage.getItem(SYNC_MS_KEY)) || Date.now(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(function () { syncStatus("同期✓", "ok"); }, function (err) {
+        syncStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
+      });
+    }, 800);
+  }
+  function applyRemote(d) {
+    SYNC.suppress = true;
+    try {
+      if (d.master) { try { localStorage.setItem(MASTER_KEY, d.master); } catch (e) {} }
+      if (d.store) { try { localStorage.setItem(STATE_KEY, d.store); } catch (e) {} }
+      try { localStorage.setItem(SYNC_MS_KEY, String(d.updatedAtMs || Date.now())); } catch (e) {}
+      loadMaster();
+      loadState();
+      syncFormFromState();
+      renderTplBar();
+      renderMasterTab();
+      recalc();
+      syncStatus("同期✓", "ok");
+    } finally { SYNC.suppress = false; }
+  }
+  function initSync() {
+    if (typeof firebase === "undefined" || !firebase.apps || !firebase.apps.length) {
+      syncStatus("", ""); return; // SDK未読み込み（オフライン初回など）→同期なしで動作
+    }
+    var db;
+    try { db = firebase.firestore(); } catch (e) { syncStatus("", ""); return; }
+    SYNC.ref = db.collection("docomoQuote").doc("sync");
+    SYNC.ready = true;
+    SYNC.ref.onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d) { pushSync(); return; } // まだ何もない → この端末の内容を初回送信
+      if (d.clientId === SYNC.clientId) { syncStatus("同期✓", "ok"); return; }
+      var localMs = num(localStorage.getItem(SYNC_MS_KEY));
+      if ((d.updatedAtMs || 0) <= localMs) {
+        if ((d.updatedAtMs || 0) < localMs) pushSync(); // こちらが新しい → 送信
+        else syncStatus("同期✓", "ok");
+        return;
+      }
+      if (SYNC.timer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
+      applyRemote(d);
+    }, function () { syncStatus("同期:接続エラー", "err"); });
   }
 
   /* ---------- ヘルパー ---------- */
@@ -1539,4 +1613,5 @@
   syncFormFromState();
   renderTplBar();
   recalc();
+  initSync(); // 端末間同期はUI初期化が終わってから開始
 })();

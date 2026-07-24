@@ -11,7 +11,7 @@
 <body>
 
 <header class="app-header no-print">
-  <h1>ドコモ料金見積もり</h1>
+  <h1>ドコモ料金見積もり <span class="sync-status" id="syncStatus"></span></h1>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
@@ -246,6 +246,9 @@
   </div>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script>
