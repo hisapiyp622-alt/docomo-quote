@@ -1,35 +1,35 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.24-24";
-  var KEY = "ienaka-v1";
+  var APP_VERSION = "2026.07.24-25";
+  var KEY = "ienaka-v2"; // v1=旧料金（2026-07-24調査値へ更新時に破棄）
 
-  /* 標準料金（選択時の初期値。入力欄でいつでも変更可） */
+  /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
   var PRODUCTS = {
     hikari1g: {
       name: "ドコモ光 1ギガ",
       monthly: { ht: { A: 5720, B: 5940 }, ms: { A: 4400, B: 4620 } },
-      jimu: 3300, koji: { ht: 22000, ms: 16500 },
-      note: "2年定期契約・税込。タイプBはタイプA＋220円。"
+      jimu: 4950, koji: { ht: 28600, ms: 28600 },
+      note: "2年定期契約・税込。タイプBはタイプA＋220円。新規工事料28,600円（実質0円特典あり・進呈条件は要確認）。"
     },
     hikari10g: {
       name: "ドコモ光 10ギガ",
       monthly: { ht: { A: 6380, B: 6600 }, ms: { A: 6380, B: 6600 } },
-      jimu: 3300, koji: { ht: 22000, ms: 16500 },
-      note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。"
+      jimu: 4950, koji: { ht: 28600, ms: 28600 },
+      note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。新規工事料28,600円（実質0円特典あり）。"
     },
     home5g: {
       name: "home 5G",
-      monthly: 4950,
+      monthly: 5280,
       jimu: 4950, koji: 0,
-      note: "工事不要・コンセントに挿すだけ。プラン月額4,950円（税込）。"
+      note: "工事不要・コンセントに挿すだけ。プラン月額5,280円（税込）・事務手数料4,950円（店頭）。"
     }
   };
   /* 月額オプション（チェック式・金額は見積もりごとに編集可） */
   var IENAKA_OPTS = [
     { id: "denwa", name: "ドコモ光電話", price: 550, for: ["hikari1g", "hikari10g"] },
     { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, for: ["hikari1g", "hikari10g"] },
-    { id: "tv", name: "ドコモ光テレビオプション", price: 825, for: ["hikari1g"] },
+    { id: "tv", name: "ドコモ光テレビオプション", price: 990, for: ["hikari1g"] },
     { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g"] },
     { id: "network", name: "ネットワークセキュリティ", price: 385, for: ["hikari1g", "hikari10g", "home5g"] }
   ];
@@ -38,10 +38,10 @@
     return {
       product: "hikari1g", housing: "ht", ptype: "A",
       baseMonthly: 5720,
-      h5DeviceName: "home 5G HR02", h5DevicePrice: 71280, h5Pay: "support36",
+      h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "support",
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
-      jimuFee: 3300, kojiFee: 22000, kojiFree: true,
+      jimuFee: 4950, kojiFee: 28600, kojiFree: true,
       dpoint: 0, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -90,16 +90,16 @@
       var dp = num(state.h5DevicePrice);
       var dName = state.h5DeviceName || "home 5G 端末";
       if (dp > 0) {
-        if (state.h5Pay === "ikkatsu") {
+        var pay = state.h5Pay === "support36" ? "support" : state.h5Pay; // 旧保存データ互換
+        if (pay === "ikkatsu") {
           deviceNote = "端末代金は一括払い（初期費用に計上）";
+        } else if (pay === "support") {
+          deviceRows.push({ name: dName + "（" + yen(dp) + " → 月々サポート適用で実質負担0円）", amount: 0 });
+          deviceNote = "月々サポート適用で端末実質負担0円（48か月継続利用の場合）";
         } else {
-          var months = state.h5Pay === "b12" ? 12 : 36;
+          var months = pay === "b12" ? 12 : 36;
           var m = Math.floor(dp / months);
           deviceRows.push({ name: dName + "（分割" + months + "回）", amount: m });
-          if (state.h5Pay === "support36") {
-            deviceRows.push({ name: "月々サポート（36か月間）", amount: -m });
-            deviceNote = "月々サポート適用で端末実質負担0円（36か月継続利用の場合）";
-          }
         }
       }
     }
@@ -111,7 +111,7 @@
     var initRows = [];
     if (num(state.jimuFee) > 0) initRows.push({ name: "契約事務手数料", amount: num(state.jimuFee) });
     if (state.product !== "home5g") {
-      if (state.kojiFree) initRows.push({ name: "新規工事料（無料特典適用）", amount: 0, strike: num(state.kojiFee) });
+      if (state.kojiFree) initRows.push({ name: "新規工事料（実質0円特典適用）", amount: 0, strike: num(state.kojiFee) });
       else if (num(state.kojiFee) > 0) initRows.push({ name: "新規工事料", amount: num(state.kojiFee) });
     }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
