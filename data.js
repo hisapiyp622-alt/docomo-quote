@@ -357,21 +357,24 @@ const DEFAULT_DATA = {
         1720
       ],
       "note": "機種により330〜1,720円（2022/9/15以降発売機種）",
-      "category": "補償"
+      "category": "補償",
+      "carrier": true
     },
     {
       "id": "anshin_pack",
       "name": "あんしんパック",
       "price": 462,
       "note": "",
-      "category": "補償"
+      "category": "補償",
+      "carrier": true
     },
     {
       "id": "dvaluepass",
       "name": "dバリューパス パック",
       "price": 682,
       "note": "旧いちおしパック（2026年3月改定・初回31日無料）",
-      "category": "バックアップ"
+      "category": "バックアップ",
+      "carrier": true
     },
     {
       "id": "ag_support",
@@ -383,7 +386,8 @@ const DEFAULT_DATA = {
       "id": "ag_secpack",
       "name": "あんしんセキュリティパック",
       "price": 1650,
-      "category": "セキュリティ"
+      "category": "セキュリティ",
+      "carrier": true
     },
     {
       "id": "ag_hozon",
@@ -510,14 +514,16 @@ const DEFAULT_DATA = {
       "name": "あんしんセキュリティ詐欺電話対策",
       "price": 999,
       "category": "セキュリティ",
-      "note": ""
+      "note": "",
+      "carrier": true
     },
     {
       "id": "op_1784460542023",
       "name": "あんしんセキュリティ スタンダード",
       "price": 550,
       "category": "セキュリティ",
-      "note": ""
+      "note": "",
+      "carrier": true
     }
   ],
   "feeItems": [
