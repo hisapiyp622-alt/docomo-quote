@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.23-19";
+  var APP_VERSION = "2026.07.24-20";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -107,7 +107,8 @@
       voice: "none", options: {}, optionPrices: {}, feeItems: {},
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
-      dcardGoldAuto: true,               // dカードGOLD還元の自動計算分を見積もりに含めるか
+      pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
+      dcardGoldAuto: true,               // dカード還元特典を見積もりに含めるか（GOLD系選択時）
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
@@ -316,10 +317,10 @@
     var dcardAutoPt = Math.floor(dcardGoldBase / 1100) * 100;
 
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
+    // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
     var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
-    var dcardGoldOn = st.dCard === "gold";
-    var ptDcard = dcardGoldOn
-      ? (st.dcardGoldAuto !== false ? dcardAutoPt : 0)
+    var ptDcard = (st.dCard === "gold" && st.dcardGoldAuto === false)
+      ? 0
       : Math.max(0, num(st.pointDcard));
     var pointRows = [];
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
@@ -750,15 +751,15 @@
     pw.hidden = !warn;
     pw.textContent = warn ? "⚠ " + warn : "";
 
-    // dカードGOLD還元: GOLD選択時は自動計算値＋チェックボックス、それ以外は手入力欄
+    // dカード還元特典: GOLD系選択時は自動計算値を初期セット（数値は編集可）＋含める/含めないチェック
     var goldOn = state.dCard === "gold";
-    $("ptDcardField").hidden = goldOn;
     $("dcardAutoWrap").hidden = !goldOn;
     $("dcardAutoHint").hidden = !goldOn;
+    $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
     if (goldOn) {
       $("dcardAutoInclude").checked = state.dcardGoldAuto !== false;
-      $("dcardAutoLabel").textContent = "dカードGOLD還元 " + (r.dcardAutoPt || 0) + "pt/月（対象額"
-        + yen(r.dcardGoldBase || 0) + "から自動計算）を見積もりに含める";
+      $("dcardAutoLabel").textContent = "dカード還元特典を見積もりに含める"
+        + "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・対象額" + yen(r.dcardGoldBase || 0) + "）";
     }
   }
 
@@ -1099,7 +1100,28 @@
   }
 
   /* ---------- 再計算 ---------- */
+  // dカード還元の自動計算値を入力欄へ初期セット（手で変更した値は上書きしない）
+  function syncDcardAuto() {
+    var stillAuto = num(state.pointDcard) === num(state.pointDcardAuto || 0);
+    if (state.dCard !== "gold") {
+      // GOLD系以外に切り替えたら、自動セットのままだった値はクリア（手入力値は残す）
+      if (stillAuto && num(state.pointDcard) > 0) {
+        state.pointDcard = 0;
+        $("ptDcard").value = "";
+      }
+      state.pointDcardAuto = 0;
+      return;
+    }
+    var auto = calcFor(state).dcardAutoPt;
+    if (stillAuto) {
+      state.pointDcard = auto;
+      $("ptDcard").value = auto || "";
+    }
+    state.pointDcardAuto = auto;
+  }
+
   function recalc() {
+    syncDcardAuto();
     var r = calc();
     renderSummary(r);
     renderPatternTabs();
@@ -1257,6 +1279,11 @@
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptDcard").addEventListener("input", function () { state.pointDcard = num(this.value); recalc(); });
     $("dcardAutoInclude").addEventListener("change", function () { state.dcardGoldAuto = this.checked; recalc(); });
+    $("dcardAutoReset").addEventListener("click", function () {
+      state.pointDcard = state.pointDcardAuto || 0;
+      $("ptDcard").value = state.pointDcard || "";
+      recalc();
+    });
     $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
     $("mailOpt").addEventListener("change", function () {
       var mo = mailOptDef();

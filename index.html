@@ -127,11 +127,12 @@
       <div class="field" id="ptDcardField">
         <label for="ptDcard">dカード還元特典</label>
         <input type="number" id="ptDcard" inputmode="numeric" min="0" placeholder="0"> pt/月
+        <button class="btn-sub" id="dcardAutoReset" type="button" hidden>自動計算値に戻す</button>
       </div>
       <label class="check" id="dcardAutoWrap" hidden>
-        <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカードGOLD還元を見積もりに含める</span>
+        <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
       </label>
-      <p class="hint" id="dcardAutoHint" hidden>GOLD還元の自動計算: プラン基本料＋通話オプション＋GOLD10%対象のオプション（キャリアオプションのみ・マスタ設定で変更可）の税込合計1,100円ごとに100pt。</p>
+      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋GOLD10%対象オプションの税込合計1,100円ごとに100pt）が初期セットされます。PLATINUMの還元やポイ活ファミリー特典を絡めて話す場合は、数値を直接編集してください。</p>
       <p class="hint" id="discountHint"></p>
     </div>
 
