@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.24-21";
+  var APP_VERSION = "2026.07.24-22";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -163,7 +163,8 @@
   }
 
   /* ---------- 端末間リアルタイム同期（Firestore・レシピアプリと同じプロジェクト） ----------
-   * 見積もり3パターン＋マスタ設定を docomoQuote/sync の1ドキュメントで共有。
+   * 見積もり3パターン＋マスタ設定を settings/docomoQuoteSync の1ドキュメントで共有。
+   * （settingsコレクションはFirestoreルールで既に許可済みのため、ルール変更なしで使える）
    * 後勝ち（最終更新が優先）。オフラインでも動作し、復帰時に新しい方が反映される。 */
   var SYNC_MS_KEY = "dq-sync-local-ms"; // この端末の最終編集時刻
   var SYNC = {
@@ -179,6 +180,15 @@
     try { localStorage.setItem(SYNC_MS_KEY, String(Date.now())); } catch (e) {}
     pushSync();
   }
+  // 送信用の見積もりデータ。お客様名（個人情報）は同期に含めない
+  function syncPayloadStore() {
+    try {
+      var s = JSON.parse(localStorage.getItem(STATE_KEY) || "null");
+      if (!s) return "";
+      (s.patterns || []).forEach(function (p) { if (p) p.custName = ""; });
+      return JSON.stringify(s);
+    } catch (e) { return ""; }
+  }
   function pushSync() {
     if (!SYNC.ref || SYNC.suppress) return;
     if (SYNC.timer) clearTimeout(SYNC.timer);
@@ -186,7 +196,7 @@
     SYNC.timer = setTimeout(function () {
       SYNC.timer = null;
       SYNC.ref.set({
-        store: localStorage.getItem(STATE_KEY) || "",
+        store: syncPayloadStore(),
         master: localStorage.getItem(MASTER_KEY) || "",
         clientId: SYNC.clientId,
         updatedAtMs: num(localStorage.getItem(SYNC_MS_KEY)) || Date.now(),
@@ -200,7 +210,21 @@
     SYNC.suppress = true;
     try {
       if (d.master) { try { localStorage.setItem(MASTER_KEY, d.master); } catch (e) {} }
-      if (d.store) { try { localStorage.setItem(STATE_KEY, d.store); } catch (e) {} }
+      if (d.store) {
+        try {
+          // お客様名は同期されないため、この端末で入力済みの名前を保持する
+          var incoming = JSON.parse(d.store);
+          var local = JSON.parse(localStorage.getItem(STATE_KEY) || "null");
+          if (incoming && incoming.patterns && local && local.patterns) {
+            incoming.patterns.forEach(function (p, i) {
+              if (p && !p.custName && local.patterns[i] && local.patterns[i].custName) {
+                p.custName = local.patterns[i].custName;
+              }
+            });
+          }
+          localStorage.setItem(STATE_KEY, JSON.stringify(incoming));
+        } catch (e) {}
+      }
       try { localStorage.setItem(SYNC_MS_KEY, String(d.updatedAtMs || Date.now())); } catch (e) {}
       loadMaster();
       loadState();
@@ -217,7 +241,7 @@
     }
     var db;
     try { db = firebase.firestore(); } catch (e) { syncStatus("", ""); return; }
-    SYNC.ref = db.collection("docomoQuote").doc("sync");
+    SYNC.ref = db.collection("settings").doc("docomoQuoteSync");
     SYNC.ready = true;
     SYNC.ref.onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
