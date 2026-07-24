@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.24-22";
+  var APP_VERSION = "2026.07.24-23";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -85,6 +85,14 @@
       if (MASTER.options.some(function (o) { return o.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
       MASTER.options.push(JSON.parse(JSON.stringify(d)));
+    });
+    // 初期データに後から増えたプランも同様に追記（同じグループの末尾に挿入）
+    (DEFAULT_DATA.plans || []).forEach(function (d) {
+      if (MASTER.plans.some(function (p) { return p.id === d.id; })) return;
+      if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      var at = -1;
+      MASTER.plans.forEach(function (p, i) { if (p.group === d.group) at = i; });
+      MASTER.plans.splice(at + 1, 0, JSON.parse(JSON.stringify(d)));
     });
     saveMaster();
   }
