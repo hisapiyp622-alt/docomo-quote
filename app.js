@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-37";
+  var APP_VERSION = "2026.07.25-38";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -138,6 +138,7 @@
       voice: "none", options: {}, optionPrices: {}, feeItems: {},
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
+      pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
       dcardGoldAuto: true,               // dカード還元特典を見積もりに含めるか（GOLD系選択時）
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
@@ -401,6 +402,8 @@
     if (proc === "mnp") return MASTER.fees.jimu_mnp;
     return MASTER.fees.jimu_kishu;
   }
+  // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ
+  function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
   function optPrice(o, st) {
     if (o.priceChoices && st.optionPrices[o.id] != null
         && o.priceChoices.indexOf(st.optionPrices[o.id]) >= 0) return st.optionPrices[o.id];
@@ -538,15 +541,17 @@
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
     var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
+    var ptFamily = Math.max(0, num(st.pointPoikatsuFamily));
     var ptDcard = (st.dCard === "gold" && st.dcardGoldAuto === false)
       ? 0
       : Math.max(0, num(st.pointDcard));
     var pointRows = [];
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
+    if (ptFamily > 0) pointRows.push({ name: "ポイント充当（ポイ活ファミリー特典）", amount: ptFamily });
     if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカード還元特典）", amount: ptDcard });
 
     // 月額（恒久部分）
-    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptDcard;
+    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptFamily - ptDcard;
 
     // --- 期間セグメント（端末・アクセサリ分割・期間限定項目の切れ目で分割） ---
     var boundarySet = {};
@@ -628,7 +633,7 @@
   }
   function isPatternUsed(st) {
     var d = defaultState();
-    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointDcard"];
+    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointPoikatsuFamily", "pointDcard"];
     if (keys.some(function (k) { return st[k] !== d[k]; })) return true;
     function anyOn(map) { return Object.keys(map || {}).some(function (k) { return map[k]; }); }
     if (anyOn(st.options) || anyOn(st.feeItems) || anyOn(st.accSel)) return true;
@@ -931,6 +936,7 @@
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
     $("ptPoikatsu").value = state.pointPoikatsu || "";
+    $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptDcard").value = state.pointDcard || "";
     $("zankaField").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
@@ -1370,7 +1376,7 @@
   function switchPattern(i) {
     store.active = i;
     state = store.patterns[i];
-    if (!state.jimuFee && state.procType !== "plan_only" && !state.planId) {
+    if (!state.jimuFee && autoFeeProc(state.procType) && !state.planId) {
       state.jimuFee = jimuFeeFor(state.procType);
       state.atamakin = MASTER.fees.atamakin_default;
     }
@@ -1463,8 +1469,11 @@
 
     $("procType").addEventListener("change", function () {
       state.procType = this.value;
-      state.jimuFee = jimuFeeFor(state.procType);
-      $("jimuFee").value = state.jimuFee;
+      // 新規契約・機種変更のときだけ頭金・事務手数料を自動セット（それ以外は0・手入力は可能）
+      state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
+      state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
+      $("jimuFee").value = state.jimuFee || "";
+      $("atamakin").value = state.atamakin || "";
       recalc();
     });
     $("planGroup").addEventListener("change", function () {
@@ -1503,6 +1512,7 @@
       if (aid) { state.campaignAmounts[aid] = num(e.target.value); recalc(); }
     });
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
+    $("ptPoikatsuFamily").addEventListener("input", function () { state.pointPoikatsuFamily = num(this.value); recalc(); });
     $("ptDcard").addEventListener("input", function () { state.pointDcard = num(this.value); recalc(); });
     $("dcardAutoInclude").addEventListener("change", function () { state.dcardGoldAuto = this.checked; recalc(); });
     $("dcardAutoReset").addEventListener("click", function () {
@@ -1653,8 +1663,8 @@
       state = store.patterns[store.active];
       state.shopName = keep.shopName;
       state.staffName = keep.staffName;
-      state.jimuFee = jimuFeeFor(state.procType);
-      state.atamakin = MASTER.fees.atamakin_default;
+      state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
+      state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
       syncFormFromState();
       recalc();
     });
@@ -1757,7 +1767,7 @@
   /* ---------- 起動 ---------- */
   loadMaster();
   loadState();
-  if (!state.jimuFee && state.procType !== "plan_only" && !localStorage.getItem(stateKey())) {
+  if (!state.jimuFee && autoFeeProc(state.procType) && !localStorage.getItem(stateKey())) {
     state.jimuFee = jimuFeeFor(state.procType);
     state.atamakin = MASTER.fees.atamakin_default;
   }
