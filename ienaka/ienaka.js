@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-30";
+  var APP_VERSION = "2026.07.25-31";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -190,6 +190,7 @@
     return {
       rows: rows, timed: timed, segs: segs, deviceNote: deviceNote,
       monthly: segs[0].monthly, koji: koji, kojiPt: kojiPt,
+      kojiTotal: kojiTotal, optKojiRows: optKojiRows, tvRegRows: tvRegRows,
       initRows: initRows, initial: Math.max(0, initial)
     };
   }
@@ -275,6 +276,21 @@
     var r = calc();
     $("sumMonthly").textContent = yen(r.monthly);
     $("sumInitial").textContent = yen(r.initial);
+    // 工事費合計の内訳をリアルタイム表示（光電話・テレビの選択で変動）
+    var ks = $("kojiSummary");
+    if (state.product === "home5g" || r.kojiTotal <= 0) {
+      ks.hidden = true;
+    } else {
+      var parts = [];
+      if (r.koji > 0) parts.push("回線" + yen(r.koji));
+      r.optKojiRows.forEach(function (x) { parts.push(x.name.replace(/（[^）]*）/g, "").replace(" 交換機等工事料", "工事") + yen(x.amount)); });
+      var regTotal = 0;
+      r.tvRegRows.forEach(function (x) { regTotal += x.amount; });
+      ks.hidden = false;
+      ks.textContent = "工事費合計: " + yen(r.kojiTotal) + "（" + parts.join("＋") + "）"
+        + (state.kojiPay === "b24" ? "を24回分割 → " + yen(Math.floor(r.kojiTotal / 24)) + "/月" : "を一括払い")
+        + (regTotal > 0 ? "。ほかにテレビ視聴サービス登録料" + yen(regTotal) + "（一括）" : "");
+    }
     var hint = PRODUCTS[state.product].note + (r.deviceNote ? "　" + r.deviceNote : "");
     $("h5Hint").textContent = state.product === "home5g" ? hint : "";
     save();
