@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-28";
+  var APP_VERSION = "2026.07.25-29";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -36,11 +36,12 @@
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
     { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
   ];
-  /* テレビ工事の選択肢（同時申込時の公式価格） */
+  /* テレビ工事の選択肢（同時申込時の公式価格）
+   * koji=工事料（分割対象）/ reg=視聴サービス登録料（手数料のため分割対象外・常に一括） */
   var TV_KOJI = {
-    sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ工事料（スカパー工事・基本3,300＋視聴登録3,080）", fee: 6380 },
-    ntt1: { label: "NTT工事（テレビ1台・13,530円）", rowName: "テレビ工事料（NTT工事・1台）", fee: 13530 },
-    ntt24: { label: "NTT工事（テレビ2〜4台・31,460円）", rowName: "テレビ工事料（NTT工事・2〜4台）", fee: 31460 }
+    sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ基本工事料（スカパー工事・接続工事無料）", koji: 3300, reg: 3080 },
+    ntt1: { label: "NTT工事（テレビ1台）", rowName: "テレビ工事料（NTT工事・1台）", koji: 10450, reg: 3080 },
+    ntt24: { label: "NTT工事（テレビ2〜4台）", rowName: "テレビ工事料（NTT工事・2〜4台）", koji: 28380, reg: 3080 }
   };
 
   function defaultState() {
@@ -115,11 +116,26 @@
       }
     }
 
-    // 工事費（ドコモ光のみ）: 分割24回/一括 ＋ 実質0円特典（開通6か月後から24回ポイント進呈）
+    // 工事費（ドコモ光のみ）: 回線の新規工事料＋オプション工事料（光電話・テレビ）
+    // 分割24回を選ぶと工事料の合計を24回で分割。テレビ視聴サービス登録料は手数料のため分割対象外（常に一括）
     var koji = state.product === "home5g" ? 0 : num(state.kojiFee);
-    var kojiPt = Math.floor(koji / 24);
-    if (koji > 0 && state.kojiPay === "b24") {
-      timed.push({ name: "新規工事料 分割（24回）", amount: kojiPt, from: 1, to: 24 });
+    var optKoji = 0, optKojiRows = [], tvRegRows = [];
+    if (state.product !== "home5g") {
+      IENAKA_OPTS.forEach(function (o) {
+        if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
+        if (o.koji) { optKoji += o.koji; optKojiRows.push({ name: o.name + " 交換機等工事料", amount: o.koji }); }
+        if (o.tvKoji) {
+          var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
+          optKoji += tk.koji;
+          optKojiRows.push({ name: tk.rowName, amount: tk.koji });
+          tvRegRows.push({ name: "テレビ視聴サービス登録料（手数料・分割対象外）", amount: tk.reg });
+        }
+      });
+    }
+    var kojiTotal = koji + optKoji;
+    var kojiPt = Math.floor(koji / 24); // 実質0円特典のポイントは回線の新規工事料相当分のみ
+    if (kojiTotal > 0 && state.kojiPay === "b24") {
+      timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: Math.floor(kojiTotal / 24), from: 1, to: 24 });
     }
     if (koji > 0 && state.kojiFree) {
       timed.push({ name: "工事費相当ポイント充当（開通6か月後から24回進呈）", amount: -kojiPt, from: 7, to: 30 });
@@ -143,18 +159,12 @@
 
     var initRows = [];
     if (num(state.jimuFee) > 0) initRows.push({ name: "契約事務手数料", amount: num(state.jimuFee) });
-    if (koji > 0 && state.kojiPay !== "b24") {
-      initRows.push({ name: "新規工事料（一括）", amount: koji });
+    if (kojiTotal > 0 && state.kojiPay !== "b24") {
+      if (koji > 0) initRows.push({ name: "新規工事料（一括）", amount: koji });
+      optKojiRows.forEach(function (x) { initRows.push(x); });
     }
-    // オプションに伴う工事料（光電話・テレビ）を自動加算
-    IENAKA_OPTS.forEach(function (o) {
-      if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
-      if (o.koji) initRows.push({ name: o.name + " 交換機等工事料", amount: o.koji });
-      if (o.tvKoji) {
-        var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
-        initRows.push({ name: tk.rowName, amount: tk.fee });
-      }
-    });
+    // 視聴サービス登録料は手数料のため常に一括で初期費用へ
+    tvRegRows.forEach(function (x) { initRows.push(x); });
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
     }
