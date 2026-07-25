@@ -28,7 +28,17 @@
         <select id="product">
           <option value="hikari1g">ドコモ光 1ギガ</option>
           <option value="hikari10g">ドコモ光 10ギガ</option>
+          <option value="ahamo1g">ahamo光 1ギガ</option>
+          <option value="ahamo10g">ahamo光 10ギガ</option>
           <option value="home5g">home 5G</option>
+        </select>
+      </div>
+      <div class="field" id="applyTypeField">
+        <label for="applyType">申込区分</label>
+        <select id="applyType">
+          <option value="shinki">新規</option>
+          <option value="tenyo">転用（フレッツ光から）</option>
+          <option value="jigyosha">事業者変更（他社光コラボから）</option>
         </select>
       </div>
       <div id="hikariFields">
@@ -39,7 +49,7 @@
             <option value="ms">マンション</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" id="ptypeField">
           <label for="ptype">プロバイダ</label>
           <select id="ptype">
             <option value="A">タイプA</option>
@@ -92,18 +102,6 @@
         <label for="jimuFee">契約事務手数料</label>
         <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
       </div>
-      <div class="field" id="kojiTypeField">
-        <label for="kojiType">回線工事</label>
-        <select id="kojiType">
-          <option value="std">新規工事あり（28,600円）</option>
-          <option value="none">工事なし（転用・事業者変更など）</option>
-          <option value="custom">その他（金額を入力）</option>
-        </select>
-      </div>
-      <div class="field" id="kojiField" hidden>
-        <label for="kojiFee">工事費</label>
-        <input type="number" id="kojiFee" inputmode="numeric" min="0"> 円
-      </div>
       <div class="field" id="kojiPayField">
         <label for="kojiPay">工事費の支払い</label>
         <select id="kojiPay">
@@ -113,17 +111,20 @@
       </div>
       <label class="check" id="kojiFreeWrap"><input type="checkbox" id="kojiFree"> 実質0円特典を適用（工事費相当のdポイントを開通6か月後から24回進呈・料金充当想定）</label>
       <p class="hint koji-summary" id="kojiSummary" hidden></p>
-      <p class="hint" id="kojiHint">「分割24回」を選ぶと、回線の新規工事料に光電話・テレビの工事料も合算して24回分割します。テレビ視聴サービス登録料（3,080円）は手数料のため分割対象外で、常に初期費用に一括計上されます。</p>
+      <p class="hint" id="kojiHint">工事費は申込区分から自動判定します（新規=28,600円＋オプション工事料／転用・事業者変更=0円）。「分割24回」は光電話・テレビの工事料も合算して分割。テレビ視聴サービス登録料（3,080円）は手数料のため分割対象外で常に一括です。特殊なケースは「追加項目」で調整してください。</p>
       <div class="adhoc-list" id="extraInitialList"></div>
       <button class="btn-sub" id="addExtraInitial" type="button">＋ 初期費用の追加項目</button>
     </div>
 
     <div class="step">
       <h2 data-t="特典・見積書情報">⑤ 特典・見積書情報</h2>
-      <div class="field">
-        <label for="dpoint">dポイントプレゼント特典</label>
+      <div class="field" id="dpointField">
+        <label for="dpoint">お申込みdポイント進呈</label>
         <input type="number" id="dpoint" inputmode="numeric" min="0"> pt
       </div>
+      <p class="hint" id="dpointHint" hidden>【公式】ドコモショップのドコモ光申込特典: 東日本は1G/10Gとも10,000pt（新規・光回線再利用・事業者変更）。西日本は1G新規20,000pt／10G新規15,000pt／事業者変更10,000pt。転用は対象外。利用開始4か月後の月末にdポイント（期間・用途限定）進呈。</p>
+      <label class="check" id="tvPointWrap" hidden><input type="checkbox" id="tvPoint"> テレビオプション同時申込特典 ＋5,000pt（転用は除く・店頭案内の特典）</label>
+      <p class="hint" id="kojiPointInfo" hidden></p>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）スマホとのセット割は携帯側見積もりに記載"></div>

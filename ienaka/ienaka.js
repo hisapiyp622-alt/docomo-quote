@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-39";
+  var APP_VERSION = "2026.07.25-40";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -18,6 +18,18 @@
       jimu: 4950, koji: { ht: 28600, ms: 28600 },
       note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。新規工事料28,600円（実質0円特典あり）。"
     },
+    ahamo1g: {
+      name: "ahamo光 1ギガ",
+      monthly: { ht: { A: 4950, B: 4950 }, ms: { A: 3630, B: 3630 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
+      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・プロバイダ一体型。ドコモ光セット割の対象外。ルーターはレンタル330円/月または持込。"
+    },
+    ahamo10g: {
+      name: "ahamo光 10ギガ",
+      monthly: { ht: { A: 5610, B: 5610 }, ms: { A: 5610, B: 5610 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
+      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。"
+    },
     home5g: {
       name: "home 5G",
       monthly: 5280,
@@ -25,13 +37,20 @@
       note: "工事不要・コンセントに挿すだけ。プラン月額5,280円（税込）・事務手数料4,950円（店頭）。"
     }
   };
+  function is10g() { return state.product === "hikari10g" || state.product === "ahamo10g"; }
+  function isHikari() { return state.product !== "home5g"; }
   /* 月額オプション（チェック式・金額は見積もりごとに編集可）
    * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
   var IENAKA_OPTS = [
-    { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g"] },
-    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g"] },
-    { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g"] },
-    { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g"] },
+    { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g", "ahamo10g"] },
     { id: "network", name: "ネットワークセキュリティ", price: 385, for: ["hikari1g", "hikari10g", "home5g"] },
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
     { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
@@ -48,14 +67,14 @@
 
   function defaultState() {
     return {
-      product: "hikari1g", housing: "ht", ptype: "A",
-      baseMonthly: 5720,
+      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A",
+      baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
-      jimuFee: 4950, kojiFee: 28600, kojiType: "std", kojiPay: "b24", kojiFree: true, tvKoji: "sky",
+      jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
-      dpoint: 0, custName: "", staffName: "", quoteMemo: ""
+      dpoint: 10000, custName: "", staffName: "", quoteMemo: ""
     };
   }
   var state = defaultState();
@@ -87,8 +106,10 @@
   function calc() {
     var p = PRODUCTS[state.product];
     var rows = [{ name: p.name + productLabel(), amount: num(state.baseMonthly) }];
+    var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
+      if (o.needsPhone && !phoneOn) return; // 光電話の付加サービスは光電話利用時のみ
       if (!state.opts[o.id]) return;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
       rows.push({ name: o.name, amount: pr });
@@ -102,7 +123,7 @@
     var timed = [], deviceNote = "";
 
     // 10ギガ ワンコインキャンペーン: 開通〜最大6か月目まで基本料500円（税込）
-    var onecoinOn = state.product === "hikari10g" && state.onecoin && num(state.baseMonthly) > 500;
+    var onecoinOn = is10g() && state.onecoin && num(state.baseMonthly) > 500;
     if (onecoinOn) {
       timed.push({ name: "10ギガ ワンコインキャンペーン（基本料500円・〜6か月目）", amount: -(num(state.baseMonthly) - 500), from: 1, to: 6 });
     }
@@ -127,15 +148,14 @@
 
     // 工事費（ドコモ光のみ）: 回線の新規工事料＋オプション工事料（光電話・テレビ）
     // 分割24回を選ぶと工事料の合計を24回で分割。テレビ視聴サービス登録料は手数料のため分割対象外（常に一括）
-    // 回線工事費: 選択式（新規=標準28,600円 / 工事なし=0円 / その他=入力値）
+    // 回線工事費: 申込区分から自動判定（新規=標準28,600円／転用・事業者変更=0円）
     var koji = 0;
-    if (state.product !== "home5g") {
-      if (state.kojiType === "none") koji = 0;
-      else if (state.kojiType === "custom") koji = num(state.kojiFee);
-      else koji = PRODUCTS[state.product].koji[state.housing];
+    if (isHikari() && state.applyType === "shinki") {
+      koji = PRODUCTS[state.product].koji[state.housing];
     }
+    // オプション工事料も新規のみ自動加算（転用・事業者変更は設備そのまま移行のため0円）
     var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneChecked = false;
-    if (state.product !== "home5g") {
+    if (isHikari() && state.applyType === "shinki") {
       IENAKA_OPTS.forEach(function (o) {
         if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
         if (o.koji) { optKoji += o.koji; optKojiRows.push({ name: o.name + " 交換機等工事料", amount: o.koji }); phoneChecked = true; }
@@ -158,7 +178,7 @@
         optKojiRows.push({ name: "同番移行工事料（番号ポータビリティ）", amount: 2200 });
       }
       // 10ギガで光電話利用時は対応ルーターの機器設置工事料1,650円が追加（公式PDF＊8）
-      if (phoneChecked && state.product === "hikari10g") {
+      if (phoneChecked && is10g()) {
         optKoji += 1650;
         optKojiRows.push({ name: "機器設置工事料（10ギガ・光電話対応ルーター）", amount: 1650 });
       }
@@ -206,10 +226,17 @@
     var initial = 0;
     initRows.forEach(function (r) { initial += r.amount; });
 
+    // テレビオプションが選択されているか（特典判定用・区分によらず）
+    var tvOn = false;
+    IENAKA_OPTS.forEach(function (o) {
+      if (o.tvKoji && o.for.indexOf(state.product) >= 0 && state.opts[o.id]) tvOn = true;
+    });
+
     return {
       rows: rows, timed: timed, segs: segs, deviceNote: deviceNote,
       monthly: segs[0].monthly, koji: koji, kojiPt: kojiPt,
       kojiTotal: kojiTotal, optKojiRows: optKojiRows, tvRegRows: tvRegRows,
+      tvOn: tvOn,
       initRows: initRows, initial: Math.max(0, initial)
     };
   }
@@ -217,9 +244,13 @@
     if (sg.to == null) return sg.from === 1 ? "毎月" : sg.from + "か月目以降";
     return (sg.from === 1 ? "〜" : sg.from + "〜") + sg.to + "か月目";
   }
+  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更" };
   function productLabel() {
     if (state.product === "home5g") return "";
-    return "（" + (state.housing === "ht" ? "戸建" : "マンション") + "・タイプ" + state.ptype + "）";
+    var parts = [state.housing === "ht" ? "戸建" : "マンション"];
+    if (!PRODUCTS[state.product].noPtype) parts.push("タイプ" + state.ptype);
+    parts.push(APPLY_LABEL[state.applyType] || "新規");
+    return "（" + parts.join("・") + "）";
   }
 
   /* ---------- 画面描画 ---------- */
@@ -227,13 +258,15 @@
     var h = "", banpoShown = false;
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
+      var shinki = state.applyType === "shinki" && state.product !== "home5g";
+      if (o.needsPhone && !(state.opts.denwa || state.opts.denwaBV)) return; // 光電話チェック時のみ表示
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
-      h += '<label class="check ienaka-opt"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
+      h += '<label class="check ienaka-opt' + (o.needsPhone ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
         + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
-        + (o.koji ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
+        + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
-      // 光電話: 番号ポータビリティの選択（チェック時のみ・1回だけ表示）
-      if (o.koji && state.opts[o.id] && !banpoShown) {
+      // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
+      if (shinki && o.koji && state.opts[o.id] && !banpoShown) {
         banpoShown = true;
         h += '<div class="field tv-koji"><label>電話番号</label><select data-banpo="1">'
           + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番（工事料1,100円のみ）</option>'
@@ -241,8 +274,8 @@
           + "</select></div>"
           + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
       }
-      // テレビオプション: 工事方法の選択＋工事費（金額は編集可・チェック時のみ表示）
-      if (o.tvKoji && state.opts[o.id]) {
+      // テレビオプション: 工事方法の選択＋工事費（新規のみ・金額は編集可・チェック時のみ表示）
+      if (shinki && o.tvKoji && state.opts[o.id]) {
         var curTk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
         var curFee = state.tvKojiFee != null ? state.tvKojiFee : curTk.koji;
         h += '<div class="field tv-koji"><label>テレビ工事</label><select data-tvkoji="1">'
@@ -259,6 +292,9 @@
         }
       }
     });
+    if (state.opts.denwaBV) {
+      h += '<p class="hint">※ 光電話バリューには発信者番号表示・転送でんわ・迷惑電話ストップなど6つの付加サービスと528円分の無料通話が含まれます（含まれるサービスの個別追加は不要です）。</p>';
+    }
     $("ienakaOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
   }
   // 表示中のセクションだけで①②③…を振り直す（home 5G端末セクションが隠れても番号が飛ばないように）
@@ -288,23 +324,25 @@
     $("ptype").value = state.ptype;
     $("baseMonthly").value = state.baseMonthly || "";
     $("hikariFields").hidden = state.product === "home5g";
-    $("onecoinWrap").hidden = state.product !== "hikari10g";
+    $("applyTypeField").hidden = state.product === "home5g";
+    $("applyType").value = state.applyType || "shinki";
+    $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
+    $("onecoinWrap").hidden = !is10g();
     $("onecoin").checked = !!state.onecoin;
     $("home5gStep").hidden = state.product !== "home5g";
-    $("kojiTypeField").hidden = state.product === "home5g";
-    $("kojiType").value = state.kojiType || "std";
-    $("kojiField").hidden = state.product === "home5g" || state.kojiType !== "custom";
-    $("kojiPayField").hidden = state.product === "home5g";
-    $("kojiFreeWrap").hidden = state.product === "home5g" || state.kojiType === "none";
+    var shinkiKoji = isHikari() && state.applyType === "shinki";
+    $("kojiPayField").hidden = !shinkiKoji;
+    $("kojiFreeWrap").hidden = !shinkiKoji;
     $("h5DeviceName").value = state.h5DeviceName;
     $("h5DevicePrice").value = state.h5DevicePrice || "";
     $("h5Pay").value = state.h5Pay;
     $("h5Support").checked = !!state.h5Support;
     $("jimuFee").value = state.jimuFee || "";
-    $("kojiFee").value = state.kojiFee || "";
     $("kojiPay").value = state.kojiPay || "b24";
     $("kojiFree").checked = !!state.kojiFree;
     $("dpoint").value = state.dpoint || "";
+    $("dpointField").hidden = !isHikari();
+    $("dpointHint").hidden = !isHikari();
     $("custName").value = state.custName;
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
@@ -335,6 +373,15 @@
     }
     var hint = PRODUCTS[state.product].note + (r.deviceNote ? "　" + r.deviceNote : "");
     $("h5Hint").textContent = state.product === "home5g" ? hint : "";
+    // 特典（⑤）: テレビ同時申込ポイント・工事費実質0円の進呈内容
+    var tvPtOk = r.tvOn && isHikari() && state.applyType !== "tenyo";
+    $("tvPointWrap").hidden = !tvPtOk;
+    if (tvPtOk) $("tvPoint").checked = state.tvPoint !== false;
+    var kp = $("kojiPointInfo");
+    if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
+      kp.hidden = false;
+      kp.textContent = "工事費 実質0円特典: " + r.koji.toLocaleString("ja-JP") + "pt（期間・用途限定）を開通6か月後から24回に分けて進呈。料金充当した場合の月額推移は見積書に表示されます。";
+    } else { kp.hidden = true; }
     save();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
   }
@@ -358,8 +405,21 @@
       h += '<div class="bm-box"><div class="bm-label">' + segLabel(segLast) + '</div><div class="bm-value">' + yen(segLast.monthly) + "</div></div>";
     }
     h += '<div class="bm-box"><div class="bm-label">初期費用</div><div class="bm-value">' + yen(r.initial) + "</div></div>";
+    // dポイント進呈特典のまとめ
+    var ptRows = [];
     if (num(state.dpoint) > 0) {
-      h += '<div class="bm-box"><div class="bm-label">dポイントプレゼント特典</div><div class="bm-value">' + Math.round(num(state.dpoint)).toLocaleString("ja-JP") + 'pt</div><div class="bm-sub">条件・進呈時期は店頭でご確認ください</div></div>';
+      ptRows.push({ name: "ドコモ光お申込みdポイント進呈（利用開始4か月後の月末・期間用途限定）", pt: Math.round(num(state.dpoint)) });
+    }
+    if (r.tvOn && isHikari() && state.applyType !== "tenyo" && state.tvPoint !== false) {
+      ptRows.push({ name: "テレビオプション同時申込特典（転用は除く）", pt: 5000 });
+    }
+    if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
+      ptRows.push({ name: "新規工事料 実質0円特典（開通6か月後から24回に分けて進呈）", pt: r.koji });
+    }
+    var ptTotal = 0;
+    ptRows.forEach(function (x) { ptTotal += x.pt; });
+    if (ptTotal > 0) {
+      h += '<div class="bm-box"><div class="bm-label">dポイント進呈 合計</div><div class="bm-value">' + ptTotal.toLocaleString("ja-JP") + 'pt</div><div class="bm-sub">進呈条件・時期は店頭でご確認ください</div></div>';
     }
     h += "</div>";
 
@@ -396,7 +456,7 @@
     if (r.tvRegRows && r.tvRegRows.some(function (x) { return x.name.indexOf("現地払い") >= 0; })) {
       h += '<p class="memo">※ テレビ接続工事費は、工事当日にスカパーJSATへ直接お支払いください（ドコモからの請求には含まれません）。</p>';
     }
-    if (state.product === "hikari10g" && state.onecoin) {
+    if (is10g() && state.onecoin) {
       h += '<p class="memo">※ ワンコインキャンペーン: 開通月〜6か月目まで基本料500円（開通当月は日割り）。さらに開通7か月後にルーターレンタル料6か月分相当のdポイント3,300pt（期間・用途限定）を一括進呈。1ギガからのプラン変更は対象外。</p>';
     }
 
@@ -407,6 +467,16 @@
         h += "<tr><td>" + label + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
       });
       h += '<tr class="total"><td>初期費用合計</td><td class="amt">' + yen(r.initial) + "</td></tr>";
+      h += "</tbody></table>";
+    }
+
+    // dポイント進呈特典の一覧
+    if (ptRows.length) {
+      h += "<h3>dポイント進呈特典</h3><table><tbody>";
+      ptRows.forEach(function (x) {
+        h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + x.pt.toLocaleString("ja-JP") + "pt</td></tr>";
+      });
+      h += '<tr class="total"><td>進呈ポイント合計</td><td class="amt">' + ptTotal.toLocaleString("ja-JP") + "pt</td></tr>";
       h += "</tbody></table>";
     }
 
@@ -431,7 +501,15 @@
   $("printBtn").addEventListener("click", function () { window.print(); });
   window.addEventListener("beforeprint", renderSheet);
 
-  $("product").addEventListener("change", function () { state.product = this.value; applyDefaults(); syncForm(); recalc(); });
+  $("product").addEventListener("change", function () {
+    var prevDef = dpointDefaultFor(state.product, state.applyType);
+    state.product = this.value;
+    applyDefaults();
+    if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
+      state.dpoint = dpointDefaultFor(state.product, state.applyType);
+    }
+    syncForm(); recalc();
+  });
   $("housing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
   $("ptype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
@@ -441,8 +519,20 @@
   $("h5Support").addEventListener("change", function () { state.h5Support = this.checked; recalc(); });
   $("kojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });
   $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
-  $("kojiFee").addEventListener("input", function () { state.kojiFee = num(this.value); recalc(); });
-  $("kojiType").addEventListener("change", function () { state.kojiType = this.value; syncForm(); recalc(); });
+  // 申込区分: 工事費・キャンペーン・ポイントの自動判定に反映（区分の標準ポイントは手入力を上書きしない）
+  function dpointDefaultFor(product, applyType) {
+    if (product === "home5g" || applyType === "tenyo") return 0;
+    return (product === "hikari1g" || product === "hikari10g") ? 10000 : 0;
+  }
+  $("applyType").addEventListener("change", function () {
+    var prevDef = dpointDefaultFor(state.product, state.applyType);
+    state.applyType = this.value;
+    if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
+      state.dpoint = dpointDefaultFor(state.product, state.applyType);
+    }
+    syncForm(); recalc();
+  });
+  $("tvPoint").addEventListener("change", function () { state.tvPoint = this.checked; recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });

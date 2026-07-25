@@ -16,6 +16,7 @@
 }
 .step h2{font-size:15px;margin:0 0 10px;color:var(--red)}
 .ienaka-opt{display:block;margin:6px 0}
+.ienaka-opt.sub{margin-left:24px;font-size:13px}
 .ienaka-opt .opt-price{color:var(--muted);font-size:12.5px}
 .koji-summary{
   background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;
