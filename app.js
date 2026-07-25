@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-39";
+  var APP_VERSION = "2026.07.25-40";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1025,9 +1025,10 @@
       + (r.firstExtra > 0 ? '<div class="bm-sub">初回のみ＋' + yen(r.firstExtra) + "（端数調整）</div>" : "")
       + "</div>";
     if (r.device.kaedoki) {
-      h += '<div class="bm-box"><div class="bm-label">' + segLabel(segLast) + "（端末返却の場合）</div>"
-        + '<div class="bm-value">' + yen(segLast.monthly) + "</div>"
-        + '<div class="bm-sub">返却しない場合: ' + yen(segLast.monthlyKeep != null ? segLast.monthlyKeep : segLast.monthly) + "/月</div></div>";
+      // 24か月目以降は「返却しない場合」をメインに表記（返却時は補足）
+      h += '<div class="bm-box"><div class="bm-label">' + segLabel(segLast) + "（返却しない場合）</div>"
+        + '<div class="bm-value">' + yen(segLast.monthlyKeep != null ? segLast.monthlyKeep : segLast.monthly) + "</div>"
+        + '<div class="bm-sub">23か月目までに端末返却の場合: ' + yen(segLast.monthly) + "/月</div></div>";
     } else if (r.segs.length > 1) {
       h += '<div class="bm-box"><div class="bm-label">' + segLabel(segLast) + "</div>"
         + '<div class="bm-value">' + yen(segLast.monthly) + "</div></div>";
@@ -1042,11 +1043,12 @@
     if (r.segs.length > 1) {
       h += '<h3>月額の推移</h3><table class="trans-table"><tbody>';
       h += "<tr><th>期間</th>" + r.segs.map(function (sg) { return "<th>" + segLabel(sg) + "</th>"; }).join("") + "</tr>";
-      h += "<tr><td>月額" + (r.device.kaedoki ? "（端末返却の場合）" : "") + "</td>"
-        + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthly) + "</td>"; }).join("") + "</tr>";
+      // カエドキは「返却しない場合」をメインの月額として表記し、返却時を補足行にする
+      h += "<tr><td>月額" + (r.device.kaedoki ? "（返却しない場合）" : "") + "</td>"
+        + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthlyKeep != null ? sg.monthlyKeep : sg.monthly) + "</td>"; }).join("") + "</tr>";
       if (r.device.kaedoki) {
-        h += "<tr><td>返却しない場合</td>"
-          + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthlyKeep != null ? sg.monthlyKeep : sg.monthly) + "</td>"; }).join("") + "</tr>";
+        h += "<tr><td>23か月目までに端末返却の場合</td>"
+          + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthly) + "</td>"; }).join("") + "</tr>";
       }
       h += "</tbody></table>";
     }
@@ -1130,9 +1132,9 @@
       p2 += "<h3>いつでもカエドキプログラム</h3><table><tbody>";
       p2 += row("機種代金（総額）", yen(num(state.devicePrice)), true);
       p2 += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
+      p2 += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
       if (r.device.kaedokiFee > 0) p2 += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
       p2 += row("23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0), true);
-      p2 += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
       p2 += "</tbody></table>";
     }
 
