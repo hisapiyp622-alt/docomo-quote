@@ -11,7 +11,14 @@
 <body>
 
 <header class="app-header no-print">
-  <h1>ドコモ料金見積もり <span class="sync-status" id="syncStatus"></span><a class="app-link" href="ienaka/">イエナカ見積もり →</a></h1>
+  <h1>ドコモ料金見積もり
+    <select id="syncGroup" class="sync-group" title="同期グループ（同じ担当を選んだ端末同士だけが同期されます）">
+      <option value="A">担当A</option>
+      <option value="B">担当B</option>
+      <option value="C">担当C</option>
+      <option value="off">同期OFF</option>
+    </select>
+    <span class="sync-status" id="syncStatus"></span><a class="app-link" href="ienaka/">イエナカ見積もり →</a></h1>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
