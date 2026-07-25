@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-33";
+  var APP_VERSION = "2026.07.25-34";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -341,15 +341,23 @@
       h += "</tbody></table>";
     }
 
-    h += "<h3>月額内訳" + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + "</h3><table><tbody>";
+    // 月額内訳は7か月目を含む期間（例: 7〜24か月目＝工事費分割とポイント充当が揃う代表期間）を基準に表示
+    var repSeg = seg0;
+    for (var si = 0; si < r.segs.length; si++) {
+      var sgi = r.segs[si];
+      if (sgi.from <= 7 && (sgi.to == null || 7 <= sgi.to)) { repSeg = sgi; break; }
+    }
+    var repLabeled = repSeg.to != null || repSeg.from > 1;
+    h += "<h3>月額内訳" + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + "</h3><table><tbody>";
     r.rows.forEach(function (x) {
       h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
     });
     r.timed.forEach(function (t) {
-      if (t.from > 1) return; // 途中から始まる項目（ポイント充当）は推移表・注記で案内
+      // この期間に有効な項目のみ表示（期間外の項目は推移表・注記で案内）
+      if (!(t.from <= repSeg.from && repSeg.from <= t.to)) return;
       h += "<tr><td>" + esc(t.name) + '</td><td class="amt">' + yen(t.amount) + "</td></tr>";
     });
-    h += '<tr class="total"><td>月額合計' + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
+    h += '<tr class="total"><td>月額合計' + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + '</td><td class="amt">' + yen(repSeg.monthly) + "</td></tr>";
     h += "</tbody></table>";
     if (state.kojiFree && r.koji > 0) {
       h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP") + 'pt・期間用途限定）が開通6か月後から24回に分けて進呈されます。上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。進呈条件・時期は店頭でご確認ください。</p>';
