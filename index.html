@@ -113,7 +113,9 @@
         <select id="dCardSel">
           <option value="none">適用なし</option>
           <option value="normal">dカード</option>
-          <option value="gold">dカード GOLD U／GOLD／PLATINUM</option>
+          <option value="goldu">dカード GOLD U（還元5%）</option>
+          <option value="gold">dカード GOLD（還元10%）</option>
+          <option value="platinum">dカード PLATINUM（還元20%）</option>
         </select>
       </div>
       <label class="check"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
@@ -143,7 +145,7 @@
       <label class="check" id="dcardAutoWrap" hidden>
         <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
       </label>
-      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋GOLD10%対象オプションの税込合計1,100円ごとに100pt）が初期セットされます。PLATINUMの還元やポイ活ファミリー特典を絡めて話す場合は、数値を直接編集してください。</p>
+      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
       <p class="hint" id="discountHint"></p>
     </div>
 

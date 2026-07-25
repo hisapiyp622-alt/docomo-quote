@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-38";
+  var APP_VERSION = "2026.07.25-39";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -404,6 +404,10 @@
   }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
+  // GOLD系カード（お支払割はGOLD区分・還元特典の自動計算対象）
+  function isGoldCard(c) { return c === "goldu" || c === "gold" || c === "platinum"; }
+  // 還元特典の自動計算: 対象額 税込1,100円ごとのpt（GOLD U 5%／GOLD 10%／PLATINUM 20%）
+  function dcardRatePt(c) { return c === "platinum" ? 200 : c === "gold" ? 100 : c === "goldu" ? 50 : 0; }
   function optPrice(o, st) {
     if (o.priceChoices && st.optionPrices[o.id] != null
         && o.priceChoices.indexOf(st.optionPrices[o.id]) >= 0) return st.optionPrices[o.id];
@@ -428,7 +432,7 @@
                : st.minna === "3" ? (d.minna3 || 0) : 0;
     var dSet = st.dSet ? (d.set || 0) : 0;
     var dCard = st.dCard === "normal" ? (d.dcard || 0)
-              : st.dCard === "gold" ? (d.dcardGold || 0) : 0;
+              : isGoldCard(st.dCard) ? (d.dcardGold || 0) : 0;
     var dDenki = st.dDenki ? (d.denki || 0) : 0;
     var dChoki = st.choki === "y10" ? (d.choki10 || 0)
                : st.choki === "y20" ? (d.choki20 || 0) : 0;
@@ -529,20 +533,21 @@
       }
     });
 
-    // dカードGOLD還元の自動計算
-    // 対象＝プラン基本料＋通話オプション＋GOLD10%対象（carrier）のオプションのみ。税込1,100円ごとに100pt
+    // dカード還元特典の自動計算
+    // 対象＝プラン基本料＋通話オプション＋対象（carrier）オプションのみ。
+    // 税込1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt
     var dcardGoldBase = tier.price + voicePrice;
     MASTER.options.forEach(function (o) {
       if (st.options[o.id] && o.carrier) dcardGoldBase += optPrice(o, st);
     });
-    // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は10%還元なし
-    var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * 100;
+    // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は還元なし
+    var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard);
 
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
     var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
     var ptFamily = Math.max(0, num(st.pointPoikatsuFamily));
-    var ptDcard = (st.dCard === "gold" && st.dcardGoldAuto === false)
+    var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false)
       ? 0
       : Math.max(0, num(st.pointDcard));
     var pointRows = [];
@@ -982,7 +987,7 @@
     pw.textContent = warn ? "⚠ " + warn : "";
 
     // dカード還元特典: GOLD系選択時は自動計算値を初期セット（数値は編集可）＋含める/含めないチェック
-    var goldOn = state.dCard === "gold";
+    var goldOn = isGoldCard(state.dCard);
     $("dcardAutoWrap").hidden = !goldOn;
     $("dcardAutoHint").hidden = !goldOn;
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
@@ -990,8 +995,8 @@
       $("dcardAutoInclude").checked = state.dcardGoldAuto !== false;
       $("dcardAutoLabel").textContent = "dカード還元特典を見積もりに含める"
         + (r.plan && r.plan.dcard10 === false
-          ? "（" + r.plan.name + "は利用料金10%還元の対象外プランのため自動計算0pt）"
-          : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・対象額" + yen(r.dcardGoldBase || 0) + "）");
+          ? "（" + r.plan.name + "は利用料金還元の対象外プランのため自動計算0pt）"
+          : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）");
     }
   }
 
@@ -1059,7 +1064,7 @@
     var setWari = [];
     if (r.dMinna) setWari.push({ name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
     if (r.dSet) setWari.push({ name: "ドコモ光／home 5G", amt: r.dSet });
-    if (r.dCard) setWari.push({ name: "dカードお支払割" + (state.dCard === "gold" ? "（GOLD系）" : ""), amt: r.dCard });
+    if (r.dCard) setWari.push({ name: "dカードお支払割" + (isGoldCard(state.dCard) ? "（GOLD系）" : ""), amt: r.dCard });
     if (r.dDenki) setWari.push({ name: "ドコモでんき", amt: r.dDenki });
     if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", amt: r.dChoki });
     if (setWari.length) {
@@ -1335,7 +1340,7 @@
   // dカード還元の自動計算値を入力欄へ初期セット（手で変更した値は上書きしない）
   function syncDcardAuto() {
     var stillAuto = num(state.pointDcard) === num(state.pointDcardAuto || 0);
-    if (state.dCard !== "gold") {
+    if (!isGoldCard(state.dCard)) {
       // GOLD系以外に切り替えたら、自動セットのままだった値はクリア（手入力値は残す）
       if (stillAuto && num(state.pointDcard) > 0) {
         state.pointDcard = 0;
