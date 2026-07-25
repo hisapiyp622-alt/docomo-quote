@@ -78,7 +78,7 @@
       <div id="ienakaOptList"></div>
       <div class="adhoc-list" id="extraMonthlyList"></div>
       <button class="btn-sub" id="addExtraMonthly" type="button">＋ 月額の追加項目（オプション・割引など）</button>
-      <p class="hint">割引を入れる場合は金額をマイナスで入力してください（例: −550）。</p>
+      <p class="hint">割引を入れる場合は金額をマイナスで入力してください（例: −550）。光電話・テレビオプションにチェックを入れると、対応する工事料が「④初期費用」へ自動で加算されます。</p>
     </div>
 
     <div class="step">
@@ -136,5 +136,16 @@
 </main>
 
 <script src="ienaka.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('../sw.js');
+  var swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (swReloaded) return;
+    swReloaded = true;
+    location.reload();
+  });
+}
+</script>
 </body>
 </html>

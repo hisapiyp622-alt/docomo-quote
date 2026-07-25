@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-26";
+  var APP_VERSION = "2026.07.25-27";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -25,14 +25,21 @@
       note: "工事不要・コンセントに挿すだけ。プラン月額5,280円（税込）・事務手数料4,950円（店頭）。"
     }
   };
-  /* 月額オプション（チェック式・金額は見積もりごとに編集可） */
+  /* 月額オプション（チェック式・金額は見積もりごとに編集可）
+   * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
   var IENAKA_OPTS = [
-    { id: "denwa", name: "ドコモ光電話", price: 550, for: ["hikari1g", "hikari10g"] },
-    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, for: ["hikari1g", "hikari10g"] },
-    { id: "tv", name: "ドコモ光テレビオプション", price: 990, for: ["hikari1g"] },
+    { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g"] },
+    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g"] },
+    { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g"] },
     { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g"] },
     { id: "network", name: "ネットワークセキュリティ", price: 385, for: ["hikari1g", "hikari10g", "home5g"] }
   ];
+  /* テレビ工事の選択肢（同時申込時の公式価格） */
+  var TV_KOJI = {
+    sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ工事料（スカパー工事・基本3,300＋視聴登録3,080）", fee: 6380 },
+    ntt1: { label: "NTT工事（テレビ1台・13,530円）", rowName: "テレビ工事料（NTT工事・1台）", fee: 13530 },
+    ntt24: { label: "NTT工事（テレビ2〜4台・31,460円）", rowName: "テレビ工事料（NTT工事・2〜4台）", fee: 31460 }
+  };
 
   function defaultState() {
     return {
@@ -41,7 +48,7 @@
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
-      jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true,
+      jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       dpoint: 0, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -137,6 +144,15 @@
     if (koji > 0 && state.kojiPay !== "b24") {
       initRows.push({ name: "新規工事料（一括）", amount: koji });
     }
+    // オプションに伴う工事料（光電話・テレビ）を自動加算
+    IENAKA_OPTS.forEach(function (o) {
+      if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
+      if (o.koji) initRows.push({ name: o.name + " 交換機等工事料", amount: o.koji });
+      if (o.tvKoji) {
+        var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
+        initRows.push({ name: tk.rowName, amount: tk.fee });
+      }
+    });
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
     }
@@ -169,7 +185,17 @@
       if (o.for.indexOf(state.product) < 0) return;
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
       h += '<label class="check ienaka-opt"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
-        + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span></label>';
+        + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
+        + (o.koji ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
+        + "</label>";
+      // テレビオプション: 工事方法の選択（チェック時のみ表示）
+      if (o.tvKoji && state.opts[o.id]) {
+        h += '<div class="field tv-koji"><label>テレビ工事</label><select data-tvkoji="1">'
+          + Object.keys(TV_KOJI).map(function (k) {
+              return '<option value="' + k + '"' + (state.tvKoji === k ? " selected" : "") + ">" + esc(TV_KOJI[k].label) + "</option>";
+            }).join("")
+          + "</select></div>";
+      }
     });
     $("ienakaOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
   }
@@ -318,7 +344,8 @@
 
   $("ienakaOptList").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-opt");
-    if (id) { state.opts[id] = e.target.checked; recalc(); }
+    if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
+    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; recalc(); }
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");
