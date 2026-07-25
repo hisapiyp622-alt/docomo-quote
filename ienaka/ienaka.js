@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-42";
+  var APP_VERSION = "2026.07.25-43";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -75,13 +75,19 @@
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780,
-      dpoint: 10000, custName: "", staffName: "", quoteMemo: ""
+      dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
     };
   }
   var state = defaultState();
   try {
     var saved = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (saved) state = Object.assign(defaultState(), saved);
+    if (saved) {
+      state = Object.assign(defaultState(), saved);
+      // エリア対応前の保存データ: 旧既定値(10,000pt)のままなら新しいエリア別既定値へ更新
+      if (saved.region == null && (num(state.dpoint) === 10000 || !num(state.dpoint))) {
+        state.dpoint = dpointDefaultFor(state.product, state.applyType);
+      }
+    }
   } catch (e) {}
 
   function $(id) { return document.getElementById(id); }
@@ -557,9 +563,7 @@
     var prevDef = dpointDefaultFor(state.product, state.applyType);
     state.product = this.value;
     applyDefaults();
-    if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
-      state.dpoint = dpointDefaultFor(state.product, state.applyType);
-    }
+    syncDpointDefault(prevDef);
     syncForm(); recalc();
   });
   $("housing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
@@ -571,17 +575,23 @@
   $("h5Support").addEventListener("change", function () { state.h5Support = this.checked; recalc(); });
   $("kojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });
   $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
-  // 申込区分: 工事費・キャンペーン・ポイントの自動判定に反映（区分の標準ポイントは手入力を上書きしない）
+  // 申込区分からドコモショップ特典の進呈ポイントを自動判定（西日本固定・公式2026-07時点・手入力は上書きしない）
+  // 西日本: 1G新規20,000pt・10G新規15,000pt・事業者変更10,000pt ／ 転用は対象外
   function dpointDefaultFor(product, applyType) {
     if (product === "home5g" || applyType === "tenyo") return 0;
-    return (product === "hikari1g" || product === "hikari10g") ? 10000 : 0;
+    if (product !== "hikari1g" && product !== "hikari10g") return 0; // ahamo光は公式特典の対象記載なし
+    if (applyType === "jigyosha") return 10000;
+    return product === "hikari1g" ? 20000 : 15000;
+  }
+  function syncDpointDefault(prevDef) {
+    if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
+      state.dpoint = dpointDefaultFor(state.product, state.applyType);
+    }
   }
   $("applyType").addEventListener("change", function () {
     var prevDef = dpointDefaultFor(state.product, state.applyType);
     state.applyType = this.value;
-    if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
-      state.dpoint = dpointDefaultFor(state.product, state.applyType);
-    }
+    syncDpointDefault(prevDef);
     syncForm(); recalc();
   });
   $("tvPoint").addEventListener("change", function () { state.tvPoint = this.checked; recalc(); });
