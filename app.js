@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-33";
+  var APP_VERSION = "2026.07.25-34";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -171,10 +171,27 @@
   }
 
   /* ---------- 端末間リアルタイム同期（Firestore・レシピアプリと同じプロジェクト） ----------
-   * 見積もり3パターン＋マスタ設定を settings/docomoQuoteSync の1ドキュメントで共有。
+   * 担当者（同期グループ）ごとに settings/docomoQuoteSync〔A|B|C〕 の1ドキュメントを共有。
+   * 同じ担当を選んだ端末同士だけが同期し、別の担当の端末には影響しない。
+   * グループ選択は端末ローカル（localStorage）で、同期対象には含めない。
    * （settingsコレクションはFirestoreルールで既に許可済みのため、ルール変更なしで使える）
    * 後勝ち（最終更新が優先）。オフラインでも動作し、復帰時に新しい方が反映される。 */
-  var SYNC_MS_KEY = "dq-sync-local-ms"; // この端末の最終編集時刻
+  var SYNC_GROUP_KEY = "dq-sync-group"; // この端末の担当グループ（A/B/C/off）
+  function syncGroup() {
+    try {
+      var g = localStorage.getItem(SYNC_GROUP_KEY);
+      return g === "B" || g === "C" || g === "off" ? g : "A";
+    } catch (e) { return "A"; }
+  }
+  // 担当Aは従来のキー・ドキュメントを引き継ぐ（既存端末のデータ互換のため）
+  function syncMsKey() {
+    var g = syncGroup();
+    return g === "A" ? "dq-sync-local-ms" : "dq-sync-local-ms-" + g;
+  }
+  function syncDocId() {
+    var g = syncGroup();
+    return g === "A" ? "docomoQuoteSync" : "docomoQuoteSync" + g;
+  }
   var SYNC = {
     ref: null, ready: false, suppress: false, timer: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -185,7 +202,7 @@
   }
   function markLocalEdit() {
     if (!SYNC.ready || SYNC.suppress) return;
-    try { localStorage.setItem(SYNC_MS_KEY, String(Date.now())); } catch (e) {}
+    try { localStorage.setItem(syncMsKey(), String(Date.now())); } catch (e) {}
     pushSync();
   }
   // 送信用の見積もりデータ。お客様名（個人情報）は同期に含めない
@@ -207,7 +224,7 @@
         store: syncPayloadStore(),
         master: localStorage.getItem(MASTER_KEY) || "",
         clientId: SYNC.clientId,
-        updatedAtMs: num(localStorage.getItem(SYNC_MS_KEY)) || Date.now(),
+        updatedAtMs: num(localStorage.getItem(syncMsKey())) || Date.now(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }).then(function () { syncStatus("同期✓", "ok"); }, function (err) {
         syncStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
@@ -233,7 +250,7 @@
           localStorage.setItem(STATE_KEY, JSON.stringify(incoming));
         } catch (e) {}
       }
-      try { localStorage.setItem(SYNC_MS_KEY, String(d.updatedAtMs || Date.now())); } catch (e) {}
+      try { localStorage.setItem(syncMsKey(), String(d.updatedAtMs || Date.now())); } catch (e) {}
       loadMaster();
       loadState();
       syncFormFromState();
@@ -244,18 +261,28 @@
     } finally { SYNC.suppress = false; }
   }
   function initSync() {
+    var sel = $("syncGroup");
+    if (sel) {
+      sel.value = syncGroup();
+      sel.addEventListener("change", function () {
+        try { localStorage.setItem(SYNC_GROUP_KEY, sel.value); } catch (e) {}
+        // 選び直したグループのドキュメントで再接続（リロードが一番確実）
+        location.reload();
+      });
+    }
+    if (syncGroup() === "off") { syncStatus("同期OFF", ""); return; }
     if (typeof firebase === "undefined" || !firebase.apps || !firebase.apps.length) {
       syncStatus("", ""); return; // SDK未読み込み（オフライン初回など）→同期なしで動作
     }
     var db;
     try { db = firebase.firestore(); } catch (e) { syncStatus("", ""); return; }
-    SYNC.ref = db.collection("settings").doc("docomoQuoteSync");
+    SYNC.ref = db.collection("settings").doc(syncDocId());
     SYNC.ready = true;
     SYNC.ref.onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
       if (!d) { pushSync(); return; } // まだ何もない → この端末の内容を初回送信
       if (d.clientId === SYNC.clientId) { syncStatus("同期✓", "ok"); return; }
-      var localMs = num(localStorage.getItem(SYNC_MS_KEY));
+      var localMs = num(localStorage.getItem(syncMsKey()));
       if ((d.updatedAtMs || 0) <= localMs) {
         if ((d.updatedAtMs || 0) < localMs) pushSync(); // こちらが新しい → 送信
         else syncStatus("同期✓", "ok");
