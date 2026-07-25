@@ -5,9 +5,14 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-34";
-  var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
+  var APP_VERSION = "2026.07.25-35";
+  var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
+  // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
+  function stateKey() {
+    var g = syncGroup();
+    return g === "A" ? STATE_KEY : STATE_KEY + "-" + g;
+  }
   var PAT_NAMES = ["A", "B", "C"];
   var OPT_CATEGORIES = ["補償", "バックアップ", "セキュリティ", "エンタメ", "その他"];
 
@@ -98,7 +103,7 @@
   }
   function saveMaster() {
     try { localStorage.setItem(MASTER_KEY, JSON.stringify(MASTER)); } catch (e) {}
-    if (typeof markLocalEdit === "function") markLocalEdit();
+    if (typeof markMasterEdit === "function") markMasterEdit();
   }
   function resetMaster() {
     localStorage.removeItem(MASTER_KEY);
@@ -132,14 +137,14 @@
 
   function loadState() {
     try {
-      var s = JSON.parse(localStorage.getItem(STATE_KEY) || "null");
+      var s = JSON.parse(localStorage.getItem(stateKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
         store.active = Math.min(Math.max(s.active | 0, 0), 2);
         for (var i = 0; i < 3; i++) {
           store.patterns[i] = Object.assign(defaultState(), s.patterns[i] || {});
         }
-      } else {
-        // 旧v1（単一パターン）からの移行
+      } else if (syncGroup() === "A") {
+        // 旧v1（単一パターン）からの移行（従来データを引き継ぐ担当Aのみ）
         var old = JSON.parse(localStorage.getItem("dq-state-v1") || "null");
         if (old && typeof old === "object") {
           if (typeof old.dCard === "boolean") old.dCard = old.dCard ? "normal" : "none";
@@ -166,7 +171,7 @@
     state = store.patterns[store.active];
   }
   function saveState() {
-    try { localStorage.setItem(STATE_KEY, JSON.stringify(store)); } catch (e) {}
+    try { localStorage.setItem(stateKey(), JSON.stringify(store)); } catch (e) {}
     markLocalEdit();
   }
 
@@ -190,7 +195,8 @@
   }
   function syncDocId() {
     var g = syncGroup();
-    return g === "A" ? "docomoQuoteSync" : "docomoQuoteSync" + g;
+    // B/Cは「2」付きの新ドキュメント（旧版がAの内容を書き込んでしまったドキュメントを引きずらないため）
+    return g === "A" ? "docomoQuoteSync" : "docomoQuoteSync" + g + "2";
   }
   var SYNC = {
     ref: null, ready: false, suppress: false, timer: null,
@@ -208,7 +214,7 @@
   // 送信用の見積もりデータ。お客様名（個人情報）は同期に含めない
   function syncPayloadStore() {
     try {
-      var s = JSON.parse(localStorage.getItem(STATE_KEY) || "null");
+      var s = JSON.parse(localStorage.getItem(stateKey()) || "null");
       if (!s) return "";
       (s.patterns || []).forEach(function (p) { if (p) p.custName = ""; });
       return JSON.stringify(s);
@@ -222,7 +228,6 @@
       SYNC.timer = null;
       SYNC.ref.set({
         store: syncPayloadStore(),
-        master: localStorage.getItem(MASTER_KEY) || "",
         clientId: SYNC.clientId,
         updatedAtMs: num(localStorage.getItem(syncMsKey())) || Date.now(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -234,12 +239,11 @@
   function applyRemote(d) {
     SYNC.suppress = true;
     try {
-      if (d.master) { try { localStorage.setItem(MASTER_KEY, d.master); } catch (e) {} }
       if (d.store) {
         try {
           // お客様名は同期されないため、この端末で入力済みの名前を保持する
           var incoming = JSON.parse(d.store);
-          var local = JSON.parse(localStorage.getItem(STATE_KEY) || "null");
+          var local = JSON.parse(localStorage.getItem(stateKey()) || "null");
           if (incoming && incoming.patterns && local && local.patterns) {
             incoming.patterns.forEach(function (p, i) {
               if (p && !p.custName && local.patterns[i] && local.patterns[i].custName) {
@@ -247,7 +251,7 @@
               }
             });
           }
-          localStorage.setItem(STATE_KEY, JSON.stringify(incoming));
+          localStorage.setItem(stateKey(), JSON.stringify(incoming));
         } catch (e) {}
       }
       try { localStorage.setItem(syncMsKey(), String(d.updatedAtMs || Date.now())); } catch (e) {}
@@ -260,6 +264,59 @@
       syncStatus("同期✓", "ok");
     } finally { SYNC.suppress = false; }
   }
+  /* マスタ設定（頭金・料金データ等）は担当に関係なく全端末で共通:
+   * settings/docomoQuoteMaster の1ドキュメントを全端末で共有（後勝ち） */
+  var MASTER_MS_KEY = "dq-master-sync-ms";
+  var MSYNC = { ref: null, ready: false, suppress: false, timer: null };
+  function markMasterEdit() {
+    if (!MSYNC.ready || MSYNC.suppress || SYNC.suppress) return;
+    try { localStorage.setItem(MASTER_MS_KEY, String(Date.now())); } catch (e) {}
+    pushMasterSync();
+  }
+  function pushMasterSync() {
+    if (!MSYNC.ref || MSYNC.suppress) return;
+    if (MSYNC.timer) clearTimeout(MSYNC.timer);
+    MSYNC.timer = setTimeout(function () {
+      MSYNC.timer = null;
+      MSYNC.ref.set({
+        master: localStorage.getItem(MASTER_KEY) || "",
+        clientId: SYNC.clientId,
+        updatedAtMs: num(localStorage.getItem(MASTER_MS_KEY)) || Date.now(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(function () {}, function () {});
+    }, 800);
+  }
+  function applyRemoteMaster(d) {
+    MSYNC.suppress = true;
+    SYNC.suppress = true;
+    try {
+      if (d.master) { try { localStorage.setItem(MASTER_KEY, d.master); } catch (e) {} }
+      try { localStorage.setItem(MASTER_MS_KEY, String(d.updatedAtMs || Date.now())); } catch (e) {}
+      loadMaster();
+      loadState(); // マスタ依存の正規化（初期費用項目への統合など）を反映
+      syncFormFromState();
+      renderTplBar();
+      renderMasterTab();
+      recalc();
+    } finally { MSYNC.suppress = false; SYNC.suppress = false; }
+  }
+  function initMasterSync(db) {
+    MSYNC.ref = db.collection("settings").doc("docomoQuoteMaster");
+    MSYNC.ready = true;
+    MSYNC.ref.onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d) { pushMasterSync(); return; } // まだ何もない → この端末のマスタを初回送信
+      if (d.clientId === SYNC.clientId) return;
+      var localMs = num(localStorage.getItem(MASTER_MS_KEY));
+      if ((d.updatedAtMs || 0) <= localMs) {
+        if ((d.updatedAtMs || 0) < localMs) pushMasterSync();
+        return;
+      }
+      if (MSYNC.timer) return;
+      applyRemoteMaster(d);
+    }, function () {});
+  }
+
   function initSync() {
     var sel = $("syncGroup");
     if (sel) {
@@ -276,6 +333,7 @@
     }
     var db;
     try { db = firebase.firestore(); } catch (e) { syncStatus("", ""); return; }
+    initMasterSync(db); // マスタは担当に関係なく全端末で共有
     SYNC.ref = db.collection("settings").doc(syncDocId());
     SYNC.ready = true;
     SYNC.ref.onSnapshot(function (snap) {
@@ -1664,7 +1722,7 @@
   /* ---------- 起動 ---------- */
   loadMaster();
   loadState();
-  if (!state.jimuFee && state.procType !== "plan_only" && !localStorage.getItem(STATE_KEY)) {
+  if (!state.jimuFee && state.procType !== "plan_only" && !localStorage.getItem(stateKey())) {
     state.jimuFee = jimuFeeFor(state.procType);
     state.atamakin = MASTER.fees.atamakin_default;
   }
