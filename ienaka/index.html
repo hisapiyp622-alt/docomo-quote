@@ -88,7 +88,15 @@
         <label for="jimuFee">契約事務手数料</label>
         <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
       </div>
-      <div class="field" id="kojiField">
+      <div class="field" id="kojiTypeField">
+        <label for="kojiType">回線工事</label>
+        <select id="kojiType">
+          <option value="std">新規工事あり（28,600円）</option>
+          <option value="none">工事なし（転用・事業者変更など）</option>
+          <option value="custom">その他（金額を入力）</option>
+        </select>
+      </div>
+      <div class="field" id="kojiField" hidden>
         <label for="kojiFee">工事費</label>
         <input type="number" id="kojiFee" inputmode="numeric" min="0"> 円
       </div>
