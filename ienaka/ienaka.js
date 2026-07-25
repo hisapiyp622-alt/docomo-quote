@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-45";
+  var APP_VERSION = "2026.07.25-46";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -173,11 +173,11 @@
       koji = PRODUCTS[state.product].koji[state.housing];
     }
     // オプション工事料も新規のみ自動加算（転用・事業者変更は設備そのまま移行のため0円）
-    var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneChecked = false;
+    var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneKoji = 0, phoneChecked = false;
     if (isHikari() && state.applyType === "shinki") {
       IENAKA_OPTS.forEach(function (o) {
         if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
-        if (o.koji) { optKoji += o.koji; optKojiRows.push({ name: o.name + " 交換機等工事料", amount: o.koji }); phoneChecked = true; }
+        if (o.koji) { phoneKoji += o.koji; phoneChecked = true; }
         if (o.tvKoji) {
           var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
           var tkFee = state.tvKojiFee != null ? num(state.tvKojiFee) : tk.koji; // 金額は編集可
@@ -192,14 +192,13 @@
         }
       });
       // 番号ポータビリティ（同番移行）: 光電話利用時のみ・2,200円/番号（公式PDF確認値）
-      if (phoneChecked && state.denwaBanpo === "mnp") {
-        optKoji += 2200;
-        optKojiRows.push({ name: "同番移行工事料（番号ポータビリティ）", amount: 2200 });
-      }
+      if (phoneChecked && state.denwaBanpo === "mnp") phoneKoji += 2200;
       // 10ギガで光電話利用時は対応ルーターの機器設置工事料1,650円が追加（公式PDF＊8）
-      if (phoneChecked && is10g()) {
-        optKoji += 1650;
-        optKojiRows.push({ name: "機器設置工事料（10ギガ・光電話対応ルーター）", amount: 1650 });
+      if (phoneChecked && is10g()) phoneKoji += 1650;
+      // 光電話まわりの工事料（交換機等・同番移行・10G機器設置）は1行にまとめて表示
+      if (phoneKoji > 0) {
+        optKoji += phoneKoji;
+        optKojiRows.unshift({ name: "光電話工事費", amount: phoneKoji });
       }
     }
     var kojiTotal = koji + optKoji;
@@ -361,7 +360,6 @@
     $("h5DevicePrice").value = state.h5DevicePrice || "";
     $("h5Pay").value = state.h5Pay;
     $("h5Support").checked = !!state.h5Support;
-    $("jimuFee").value = state.jimuFee || "";
     $("kojiPay").value = state.kojiPay || "b24";
     $("kojiFree").checked = !!state.kojiFree;
     $("dpoint").value = state.dpoint || "";
@@ -604,7 +602,6 @@
   $("h5Pay").addEventListener("change", function () { state.h5Pay = this.value; recalc(); });
   $("h5Support").addEventListener("change", function () { state.h5Support = this.checked; recalc(); });
   $("kojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });
-  $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
   // 申込区分からドコモショップ特典の進呈ポイントを自動判定（西日本固定・公式2026-07時点・手入力は上書きしない）
   // 西日本: 1G新規20,000pt・10G新規15,000pt・事業者変更10,000pt ／ 転用は対象外
   function dpointDefaultFor(product, applyType) {
