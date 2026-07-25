@@ -8,6 +8,12 @@
   background:#fff;border:1px solid var(--line);border-radius:10px;
   padding:14px 16px;margin-bottom:12px;
 }
+/* 広い画面では2列: 左=商材→オプション / 右=初期費用→特典（商材の横に初期費用） */
+@media (min-width:900px){
+  #tab-quote.active{display:block} /* 共通CSS（ケータイ側）のグリッド指定を打ち消し、.qcolsで列を組む */
+  .qcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .qcol{min-width:0}
+}
 .step h2{font-size:15px;margin:0 0 10px;color:var(--red)}
 .ienaka-opt{display:block;margin:6px 0}
 .ienaka-opt .opt-price{color:var(--muted);font-size:12.5px}

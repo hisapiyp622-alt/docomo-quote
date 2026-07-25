@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-37";
+  var APP_VERSION = "2026.07.25-39";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -36,13 +36,14 @@
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
     { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
   ];
-  /* テレビ工事の選択肢（同時申込時の公式価格）
-   * koji=工事料（分割対象）/ reg=視聴サービス登録料（手数料のため分割対象外・常に一括） */
+  /* テレビ工事の選択肢
+   * koji=ドコモ請求の工事料（分割対象）/ reg=視聴サービス登録料（手数料・分割対象外・常に一括）
+   * onsite=スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外） */
   var TV_KOJI = {
-    sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ基本工事料（スカパー工事・接続工事無料）", koji: 3300, reg: 3080 },
-    skyOnly: { label: "スカパー工事のみ（未加入・〜3台想定 21,450円）", rowName: "テレビ工事料（スカパー工事のみ・〜3台想定）", koji: 21450, reg: 3080 },
-    ntt1: { label: "NTT工事（テレビ1台）", rowName: "テレビ工事料（NTT工事・1台）", koji: 10450, reg: 3080 },
-    ntt24: { label: "NTT工事（テレビ2〜4台）", rowName: "テレビ工事料（NTT工事・2〜4台）", koji: 28380, reg: 3080 }
+    sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ基本工事料（スカパー工事・接続工事無料）", koji: 3300, reg: 3080, onsite: 0 },
+    skyOnly: { label: "スカパー工事のみ（未加入・接続工事は当日現地払い）", rowName: "テレビ基本工事料（スカパー工事のみ）", koji: 3300, reg: 3080, onsite: 10000 },
+    ntt1: { label: "NTT工事（テレビ1台）", rowName: "テレビ工事料（NTT工事・1台）", koji: 10450, reg: 3080, onsite: 0 },
+    ntt24: { label: "NTT工事（テレビ2〜4台）", rowName: "テレビ工事料（NTT工事・2〜4台）", koji: 28380, reg: 3080, onsite: 0 }
   };
 
   function defaultState() {
@@ -53,7 +54,7 @@
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiType: "std", kojiPay: "b24", kojiFree: true, tvKoji: "sky",
-      denwaBanpo: "new", onecoin: true, tvKojiFee: null,
+      denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       dpoint: 0, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -144,6 +145,11 @@
           optKoji += tkFee;
           optKojiRows.push({ name: tk.rowName, amount: tkFee });
           tvRegRows.push({ name: "テレビ視聴サービス登録料（手数料・分割対象外）", amount: tk.reg });
+          // スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外）
+          var onsite = state.tvOnsiteFee != null ? num(state.tvOnsiteFee) : (tk.onsite || 0);
+          if (onsite > 0) {
+            tvRegRows.push({ name: "テレビ接続工事費（スカパーへ工事当日お支払い・現地払い）", amount: onsite });
+          }
         }
       });
       // 番号ポータビリティ（同番移行）: 光電話利用時のみ・2,200円/番号（公式PDF確認値）
@@ -244,8 +250,13 @@
               return '<option value="' + k + '"' + (state.tvKoji === k ? " selected" : "") + ">" + esc(TV_KOJI[k].label) + "</option>";
             }).join("")
           + "</select></div>"
-          + '<div class="field tv-koji"><label>テレビ工事費</label><input type="number" data-tvkojifee="1" value="' + curFee + '" inputmode="numeric" min="0"> 円'
+          + '<div class="field tv-koji"><label>テレビ工事費（ドコモ請求）</label><input type="number" data-tvkojifee="1" value="' + curFee + '" inputmode="numeric" min="0"> 円'
           + '<span class="opt-price">（ブースター等の追加工事がある場合はここで調整）</span></div>';
+        if (curTk.onsite > 0 || state.tvOnsiteFee != null) {
+          var curOnsite = state.tvOnsiteFee != null ? state.tvOnsiteFee : curTk.onsite;
+          h += '<div class="field tv-koji"><label>接続工事費（現地払い）</label><input type="number" data-tvonsite="1" value="' + curOnsite + '" inputmode="numeric" min="0"> 円'
+            + '<span class="opt-price">スカパーへ工事当日お支払い。通常19,800円・2026年6〜7月限定キャンペーンで10,000円</span></div>';
+        }
       }
     });
     $("ienakaOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
@@ -314,12 +325,13 @@
       var parts = [];
       if (r.koji > 0) parts.push("回線" + yen(r.koji));
       r.optKojiRows.forEach(function (x) { parts.push(x.name.replace(/（[^）]*）/g, "").replace(" 交換機等工事料", "工事") + yen(x.amount)); });
-      var regTotal = 0;
-      r.tvRegRows.forEach(function (x) { regTotal += x.amount; });
+      var extras = r.tvRegRows.map(function (x) {
+        return (x.name.indexOf("現地払い") >= 0 ? "接続工事費" + yen(x.amount) + "（スカパーへ当日払い）" : "視聴登録料" + yen(x.amount) + "（一括）");
+      });
       ks.hidden = false;
       ks.textContent = "工事費合計: " + yen(r.kojiTotal) + "（" + parts.join("＋") + "）"
         + (state.kojiPay === "b24" ? "を24回分割 → " + yen(Math.floor(r.kojiTotal / 24)) + "/月" : "を一括払い")
-        + (regTotal > 0 ? "。ほかにテレビ視聴サービス登録料" + yen(regTotal) + "（一括）" : "");
+        + (extras.length ? "。ほかに" + extras.join("・") : "");
     }
     var hint = PRODUCTS[state.product].note + (r.deviceNote ? "　" + r.deviceNote : "");
     $("h5Hint").textContent = state.product === "home5g" ? hint : "";
@@ -381,6 +393,9 @@
     if (state.kojiFree && r.koji > 0) {
       h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP") + 'pt・期間用途限定）が開通6か月後から24回に分けて進呈されます。上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。進呈条件・時期は店頭でご確認ください。</p>';
     }
+    if (r.tvRegRows && r.tvRegRows.some(function (x) { return x.name.indexOf("現地払い") >= 0; })) {
+      h += '<p class="memo">※ テレビ接続工事費は、工事当日にスカパーJSATへ直接お支払いください（ドコモからの請求には含まれません）。</p>';
+    }
     if (state.product === "hikari10g" && state.onecoin) {
       h += '<p class="memo">※ ワンコインキャンペーン: 開通月〜6か月目まで基本料500円（開通当月は日割り）。さらに開通7か月後にルーターレンタル料6か月分相当のdポイント3,300pt（期間・用途限定）を一括進呈。1ギガからのプラン変更は対象外。</p>';
     }
@@ -438,11 +453,12 @@
   $("ienakaOptList").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-opt");
     if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
-    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; state.tvKojiFee = null; renderOpts(); recalc(); return; }
+    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; state.tvKojiFee = null; state.tvOnsiteFee = null; renderOpts(); recalc(); return; }
     if (e.target.getAttribute("data-banpo")) { state.denwaBanpo = e.target.value; recalc(); }
   });
   $("ienakaOptList").addEventListener("input", function (e) {
-    if (e.target.getAttribute("data-tvkojifee")) { state.tvKojiFee = num(e.target.value); recalc(); }
+    if (e.target.getAttribute("data-tvkojifee")) { state.tvKojiFee = num(e.target.value); recalc(); return; }
+    if (e.target.getAttribute("data-tvonsite")) { state.tvOnsiteFee = num(e.target.value); recalc(); }
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");
