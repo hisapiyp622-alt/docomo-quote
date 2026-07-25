@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-44";
+  var APP_VERSION = "2026.07.25-45";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -75,7 +75,7 @@
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780,
-      dcard: "none", dcardPt: null, dcardInclude: true,
+      dcard: "none", dcardPt: null,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -133,8 +133,9 @@
     var dcardRate = state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
     var dcardPt = state.dcard === "none" ? 0 : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
-    if (dcardPt > 0 && state.dcardInclude !== false) {
-      rows.push({ name: "ポイント充当（dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元・料金充当想定）", amount: -dcardPt });
+    if (dcardPt > 0) {
+      // ポイント進呈ではなく、毎月の料金へ自動充当される体裁で月額から差引
+      rows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元 充当（利用料金の" + (state.dcard === "gold" ? "10" : "20") + "%）", amount: -dcardPt });
     }
 
     // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
@@ -436,10 +437,8 @@
     // dカードGOLD/PLATINUM還元
     var dcOn = state.dcard !== "none";
     $("dcardPtField").hidden = !dcOn;
-    $("dcardIncWrap").hidden = !dcOn;
     $("dcardHint").hidden = !dcOn;
     if (dcOn) {
-      $("dcardInclude").checked = state.dcardInclude !== false;
       if (state.dcardPt == null && document.activeElement !== $("dcardPt")) {
         $("dcardPt").value = r.dcardAutoPt || "";
       }
@@ -479,13 +478,6 @@
     }
     if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
       ptRows.push({ name: "新規工事料 実質0円特典（開通6か月後から24回に分けて進呈）", pt: r.koji });
-    }
-    if (state.dcard !== "none" && r.dcardPt > 0) {
-      ptRows.push({
-        name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元（利用料金の"
-          + (state.dcard === "gold" ? "10" : "20") + "%" + (state.dcardInclude !== false ? "・月額に充当済み" : "") + "）",
-        pt: r.dcardPt, monthly: true
-      });
     }
     var ptTotal = 0;
     ptRows.forEach(function (x) { if (!x.monthly) ptTotal += x.pt; });
@@ -572,8 +564,8 @@
       }
       h += "</tbody></table>";
     }
-    if (state.dcard !== "none" && r.dcardPt > 0 && state.dcardInclude !== false) {
-      h += '<p class="memo">※ 月額は、dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '還元のdポイントを毎月の料金に充当した場合の実質額の目安です。還元対象・上限はカード規約によります。</p>';
+    if (state.dcard !== "none" && r.dcardPt > 0) {
+      h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + (state.dcard === "gold" ? "10" : "20") + '%）は毎月のお支払いへ自動充当した金額です。還元対象・上限はカード規約によります。</p>';
     }
 
     h += '<p class="memo">※ スマホの「ドコモ光／home 5G セット割」は携帯料金側の見積もりに適用されます。</p>';
@@ -635,7 +627,6 @@
   $("tvPoint").addEventListener("change", function () { state.tvPoint = this.checked; recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
-  $("dcardInclude").addEventListener("change", function () { state.dcardInclude = this.checked; recalc(); });
   $("router10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
   $("router10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
