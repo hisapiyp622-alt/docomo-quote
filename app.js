@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-35";
+  var APP_VERSION = "2026.07.25-37";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -84,6 +84,23 @@
     MASTER.options.forEach(function (o) {
       if (typeof o.carrier === "undefined" && defCarrier[o.id]) o.carrier = true;
     });
+    // プランの10%還元対象外フラグ（dcard10:false）も初期データから補完
+    var defDcard10 = {};
+    (DEFAULT_DATA.plans || []).forEach(function (p) { defDcard10[p.id] = p.dcard10; });
+    MASTER.plans.forEach(function (p) {
+      if (typeof p.dcard10 === "undefined" && typeof defDcard10[p.id] !== "undefined") p.dcard10 = defDcard10[p.id];
+    });
+    // 初期データで料金選択式になったオプションへ選択肢・プラン名を補完
+    (DEFAULT_DATA.options || []).forEach(function (d) {
+      if (!d.priceChoices) return;
+      var o = MASTER.options.filter(function (x) { return x.id === d.id; })[0];
+      if (!o) return;
+      if (!o.priceChoices) o.priceChoices = d.priceChoices.slice();
+      if (d.priceLabels && !o.priceLabels) o.priceLabels = JSON.parse(JSON.stringify(d.priceLabels));
+    });
+    // NETFLIX 旧3項目（広告付ST/ST/PR）→ 料金選択式の1項目「netflix」へ統合
+    var nfOldIds = ["op_1784430991714", "op_1784431033021", "op_1784431044456"];
+    MASTER.options = MASTER.options.filter(function (o) { return nfOldIds.indexOf(o.id) < 0; });
     // 初期データに後から増えた項目を保存済みマスタへ追記（ユーザーが削除済みのものは復活させない）
     if (!MASTER.removedIds) MASTER.removedIds = [];
     (DEFAULT_DATA.options || []).forEach(function (d) {
@@ -166,6 +183,15 @@
           pt.feeItems[k] = true;
           delete pt.options[k];
         }
+      });
+      // NETFLIX 旧3項目のチェックを統合後の1項目＋料金選択へ引き継ぐ
+      var nfMap = { op_1784430991714: 890, op_1784431033021: 1590, op_1784431044456: 2290 };
+      Object.keys(nfMap).forEach(function (k) {
+        if (pt.options[k]) {
+          pt.options.netflix = true;
+          pt.optionPrices.netflix = nfMap[k];
+        }
+        delete pt.options[k];
       });
     });
     state = store.patterns[store.active];
@@ -416,7 +442,8 @@
     MASTER.options.forEach(function (o) {
       if (!st.options[o.id]) return;
       var pr = optPrice(o, st);
-      optRows.push({ name: o.name, price: pr });
+      var lb = o.priceLabels && o.priceLabels[String(pr)];
+      optRows.push({ name: o.name + (lb ? "（" + lb + "）" : ""), price: pr });
       optTotal += pr;
     });
 
@@ -505,7 +532,8 @@
     MASTER.options.forEach(function (o) {
       if (st.options[o.id] && o.carrier) dcardGoldBase += optPrice(o, st);
     });
-    var dcardAutoPt = Math.floor(dcardGoldBase / 1100) * 100;
+    // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は10%還元なし
+    var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * 100;
 
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
@@ -544,12 +572,16 @@
     var firstExtra = device.firstExtra + accFirstExtra;
 
     // 初期費用
-    var atama = num(st.atamakin); // 頭金は入力があれば常に店頭お支払いへ合算
+    var atama = Math.max(0, num(st.atamakin));
     // where: "store"=店頭お支払い / "bill"=翌月の携帯料金と合算
     var initialRows = [];
     if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee), where: "bill" });
-    if (initialDevice > 0) initialRows.push({ name: "機種代金（一括）", amount: initialDevice, where: "store" });
-    if (atama > 0) initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
+    if (initialDevice > 0) {
+      // 一括購入時は頭金を機種代金へ含めて1行で表示（「店頭頭金」の行は出さない）
+      initialRows.push({ name: "機種代金（一括）", amount: initialDevice + atama, where: "store" });
+    } else if (atama > 0) {
+      initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
+    }
     (MASTER.feeItems || []).forEach(function (f) {
       if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: f.pay === "bill" ? "bill" : "store" });
     });
@@ -753,7 +785,8 @@
           var cur = optPrice(o, state);
           priceHtml = '<select data-optprice="' + esc(o.id) + '">'
             + o.priceChoices.map(function (c) {
-                return '<option value="' + c + '"' + (c === cur ? " selected" : "") + ">" + yen(c) + "/月</option>";
+                var lb = o.priceLabels && o.priceLabels[String(c)] ? esc(o.priceLabels[String(c)]) + " " : "";
+                return '<option value="' + c + '"' + (c === cur ? " selected" : "") + ">" + lb + yen(c) + "/月</option>";
               }).join("") + "</select>";
         } else {
           priceHtml = '<span class="t-price">' + yen(o.price) + "/月</span>";
@@ -950,7 +983,9 @@
     if (goldOn) {
       $("dcardAutoInclude").checked = state.dcardGoldAuto !== false;
       $("dcardAutoLabel").textContent = "dカード還元特典を見積もりに含める"
-        + "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・対象額" + yen(r.dcardGoldBase || 0) + "）";
+        + (r.plan && r.plan.dcard10 === false
+          ? "（" + r.plan.name + "は利用料金10%還元の対象外プランのため自動計算0pt）"
+          : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・対象額" + yen(r.dcardGoldBase || 0) + "）");
     }
   }
 

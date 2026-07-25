@@ -116,7 +116,8 @@ const DEFAULT_DATA = {
         "denki": 110
       },
       "includes5min": false,
-      "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。"
+      "dcard10": false,
+      "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。"
     },
     {
       "id": "ahamo",
@@ -143,7 +144,8 @@ const DEFAULT_DATA = {
       "voiceOverrides": {
         "kake": 1100
       },
-      "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。"
+      "dcard10": false,
+      "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。"
     },
     {
       "id": "u15",
@@ -312,7 +314,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。"
+      "dcard10": false,
+      "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。dカードGOLD/PLATINUMの利用料金10%（20%）還元は対象外。"
     },
     {
       "id": "gigaho_premier",
@@ -489,32 +492,22 @@ const DEFAULT_DATA = {
       "note": ""
     },
     {
-      "id": "op_1784430991714",
-      "name": "NETFLIX 広告付ST",
+      "id": "netflix",
+      "name": "NETFLIX",
       "price": 890,
+      "priceChoices": [890, 1590, 2290],
+      "priceLabels": { "890": "広告つきスタンダード", "1590": "スタンダード", "2290": "プレミアム" },
       "category": "エンタメ",
-      "note": ""
-    },
-    {
-      "id": "op_1784431033021",
-      "name": "NETFLIX ST",
-      "price": 1590,
-      "category": "エンタメ",
-      "note": ""
-    },
-    {
-      "id": "op_1784431044456",
-      "name": "NETFLIX PR",
-      "price": 2290,
-      "category": "エンタメ",
-      "note": ""
+      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円"
     },
     {
       "id": "bk_disney",
       "name": "ディズニープラス（爆アゲ）",
       "price": 1250,
+      "priceChoices": [1250, 1670],
+      "priceLabels": { "1250": "スタンダード", "1670": "プレミアム" },
       "category": "エンタメ",
-      "note": "スタンダード1,250円〜・最大20%還元"
+      "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元"
     },
     {
       "id": "bk_lemino",
@@ -555,8 +548,10 @@ const DEFAULT_DATA = {
       "id": "bk_googleone",
       "name": "Google One（爆アゲ）",
       "price": 290,
+      "priceChoices": [290, 440, 1450],
+      "priceLabels": { "290": "ベーシック(100GB)", "440": "スタンダード(200GB)", "1450": "Google AI Plus(2TB)" },
       "category": "エンタメ",
-      "note": "290円〜（容量による）・最大20%還元"
+      "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元"
     },
     {
       "id": "bk_appleone",
