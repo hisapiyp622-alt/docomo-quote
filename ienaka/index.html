@@ -65,12 +65,11 @@
       <div class="field">
         <label for="h5Pay">お支払い方法</label>
         <select id="h5Pay">
-          <option value="support">月々サポート適用（48か月・実質負担0円）</option>
-          <option value="b36">分割36回（サポートなし）</option>
-          <option value="b12">分割12回</option>
+          <option value="b48">分割48回</option>
           <option value="ikkatsu">一括払い</option>
         </select>
       </div>
+      <label class="check"><input type="checkbox" id="h5Support"> 月々サポートを適用（48か月・分割なら端末実質負担0円）</label>
       <p class="hint" id="h5Hint"></p>
     </div>
 
@@ -92,7 +91,14 @@
         <label for="kojiFee">工事費</label>
         <input type="number" id="kojiFee" inputmode="numeric" min="0"> 円
       </div>
-      <label class="check" id="kojiFreeWrap"><input type="checkbox" id="kojiFree"> 新規工事料 実質0円特典を適用（進呈条件は店頭で要確認）</label>
+      <div class="field" id="kojiPayField">
+        <label for="kojiPay">工事費の支払い</label>
+        <select id="kojiPay">
+          <option value="b24">分割24回</option>
+          <option value="ikkatsu">一括払い</option>
+        </select>
+      </div>
+      <label class="check" id="kojiFreeWrap"><input type="checkbox" id="kojiFree"> 実質0円特典を適用（工事費相当のdポイントを開通6か月後から24回進呈・料金充当想定）</label>
       <div class="adhoc-list" id="extraInitialList"></div>
       <button class="btn-sub" id="addExtraInitial" type="button">＋ 初期費用の追加項目</button>
     </div>
