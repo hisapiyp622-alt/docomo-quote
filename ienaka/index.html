@@ -49,6 +49,7 @@
         <label for="baseMonthly">月額基本料</label>
         <input type="number" id="baseMonthly" inputmode="numeric" min="0"> 円
       </div>
+      <label class="check" id="onecoinWrap" hidden><input type="checkbox" id="onecoin"> 10ギガ ワンコインキャンペーン（開通〜6か月目は基本料500円・新規/転用/事業者変更対象）</label>
       <p class="hint">商材・住居タイプ・プロバイダを選ぶと標準料金が入ります。実際の料金に合わせて自由に変更できます。</p>
     </div>
 
@@ -99,6 +100,7 @@
         </select>
       </div>
       <label class="check" id="kojiFreeWrap"><input type="checkbox" id="kojiFree"> 実質0円特典を適用（工事費相当のdポイントを開通6か月後から24回進呈・料金充当想定）</label>
+      <p class="hint koji-summary" id="kojiSummary" hidden></p>
       <p class="hint" id="kojiHint">「分割24回」を選ぶと、回線の新規工事料に光電話・テレビの工事料も合算して24回分割します。テレビ視聴サービス登録料（3,080円）は手数料のため分割対象外で、常に初期費用に一括計上されます。</p>
       <div class="adhoc-list" id="extraInitialList"></div>
       <button class="btn-sub" id="addExtraInitial" type="button">＋ 初期費用の追加項目</button>
