@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-34";
+  var APP_VERSION = "2026.07.25-35";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -242,7 +242,20 @@
           + '<span class="opt-price">（ブースター等の追加工事がある場合はここで調整）</span></div>';
       }
     });
+    if (state.product === "hikari10g") {
+      h += '<p class="hint">※ テレビオプション・スカパー！はドコモ光 1ギガのみの提供のため、10ギガでは表示していません。</p>';
+    }
     $("ienakaOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
+  }
+  // 表示中のセクションだけで①②③…を振り直す（home 5G端末セクションが隠れても番号が飛ばないように）
+  var MARU = ["①", "②", "③", "④", "⑤", "⑥", "⑦"];
+  function renumberSteps() {
+    var i = 0;
+    document.querySelectorAll("#tab-quote .step").forEach(function (s) {
+      if (s.hidden) return;
+      var h2 = s.querySelector("h2[data-t]");
+      if (h2) h2.textContent = MARU[i++] + " " + h2.getAttribute("data-t");
+    });
   }
   function renderExtras(listId, key, addLabel) {
     var el = $(listId), h = "";
@@ -282,6 +295,7 @@
     renderOpts();
     renderExtras("extraMonthlyList", "extraMonthly");
     renderExtras("extraInitialList", "extraInitial");
+    renumberSteps();
   }
   function recalc() {
     var r = calc();
