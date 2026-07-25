@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-35";
+  var APP_VERSION = "2026.07.25-36";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -30,8 +30,8 @@
   var IENAKA_OPTS = [
     { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g"] },
     { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g"] },
-    { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g"] },
-    { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g"] },
+    { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g"] },
+    { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g"] },
     { id: "network", name: "ネットワークセキュリティ", price: 385, for: ["hikari1g", "hikari10g", "home5g"] },
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
     { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
@@ -242,9 +242,6 @@
           + '<span class="opt-price">（ブースター等の追加工事がある場合はここで調整）</span></div>';
       }
     });
-    if (state.product === "hikari10g") {
-      h += '<p class="hint">※ テレビオプション・スカパー！はドコモ光 1ギガのみの提供のため、10ギガでは表示していません。</p>';
-    }
     $("ienakaOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
   }
   // 表示中のセクションだけで①②③…を振り直す（home 5G端末セクションが隠れても番号が飛ばないように）
