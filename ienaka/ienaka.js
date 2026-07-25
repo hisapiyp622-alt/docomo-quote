@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-36";
+  var APP_VERSION = "2026.07.25-37";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -52,7 +52,7 @@
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
-      jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
+      jimuFee: 4950, kojiFee: 28600, kojiType: "std", kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null,
       dpoint: 0, custName: "", staffName: "", quoteMemo: ""
     };
@@ -126,7 +126,13 @@
 
     // 工事費（ドコモ光のみ）: 回線の新規工事料＋オプション工事料（光電話・テレビ）
     // 分割24回を選ぶと工事料の合計を24回で分割。テレビ視聴サービス登録料は手数料のため分割対象外（常に一括）
-    var koji = state.product === "home5g" ? 0 : num(state.kojiFee);
+    // 回線工事費: 選択式（新規=標準28,600円 / 工事なし=0円 / その他=入力値）
+    var koji = 0;
+    if (state.product !== "home5g") {
+      if (state.kojiType === "none") koji = 0;
+      else if (state.kojiType === "custom") koji = num(state.kojiFee);
+      else koji = PRODUCTS[state.product].koji[state.housing];
+    }
     var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneChecked = false;
     if (state.product !== "home5g") {
       IENAKA_OPTS.forEach(function (o) {
@@ -274,9 +280,11 @@
     $("onecoinWrap").hidden = state.product !== "hikari10g";
     $("onecoin").checked = !!state.onecoin;
     $("home5gStep").hidden = state.product !== "home5g";
-    $("kojiField").hidden = state.product === "home5g";
+    $("kojiTypeField").hidden = state.product === "home5g";
+    $("kojiType").value = state.kojiType || "std";
+    $("kojiField").hidden = state.product === "home5g" || state.kojiType !== "custom";
     $("kojiPayField").hidden = state.product === "home5g";
-    $("kojiFreeWrap").hidden = state.product === "home5g";
+    $("kojiFreeWrap").hidden = state.product === "home5g" || state.kojiType === "none";
     $("h5DeviceName").value = state.h5DeviceName;
     $("h5DevicePrice").value = state.h5DevicePrice || "";
     $("h5Pay").value = state.h5Pay;
@@ -419,6 +427,7 @@
   $("kojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });
   $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
   $("kojiFee").addEventListener("input", function () { state.kojiFee = num(this.value); recalc(); });
+  $("kojiType").addEventListener("change", function () { state.kojiType = this.value; syncForm(); recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
