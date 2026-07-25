@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-40";
+  var APP_VERSION = "2026.07.25-41";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -423,12 +423,32 @@
     }
     h += "</div>";
 
-    // 月額の推移（横並び表示: 期間を列にして左から時系列で読めるように）
-    if (r.segs.length > 1) {
-      h += "<h3>月額の推移" + (state.kojiFree && r.koji > 0 ? "（工事費相当ポイントを料金充当した場合）" : "") + "</h3>";
+    // お支払いの推移（横並び・1か月目は初期費用等を合算して表示）
+    var onsiteTotal = 0;
+    r.initRows.forEach(function (x) { if (x.name.indexOf("現地払い") >= 0) onsiteTotal += x.amount; });
+    var billInit = r.initial - onsiteTotal; // ドコモ請求される初期費用（事務手数料・登録料・一括工事費など）
+    if (r.segs.length > 1 || billInit > 0 || onsiteTotal > 0) {
+      var cols = [];
+      var subs1 = [];
+      if (billInit > 0) subs1.push("うち初期費用等 " + yen(billInit));
+      if (onsiteTotal > 0) subs1.push("ほかに現地徴収 " + yen(onsiteTotal));
+      cols.push({ label: "1か月目", amount: seg0.monthly + billInit, subs: subs1 });
+      r.segs.forEach(function (sg) {
+        var from = sg.from === 1 ? 2 : sg.from;
+        if (sg.to != null && sg.to < from) return; // 1か月目だけの区間は左の列で表現済み
+        var label = sg.to == null
+          ? from + "か月目以降"
+          : from + "〜" + sg.to + "か月目";
+        cols.push({ label: label, amount: sg.monthly, subs: [] });
+      });
+      h += "<h3>お支払いの推移" + (state.kojiFree && r.koji > 0 ? "（工事費相当ポイントを料金充当した場合）" : "") + "</h3>";
       h += '<table class="trans-table"><tbody>';
-      h += "<tr>" + r.segs.map(function (sg) { return "<th>" + segLabel(sg) + "</th>"; }).join("") + "</tr>";
-      h += "<tr>" + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthly) + "</td>"; }).join("") + "</tr>";
+      h += "<tr>" + cols.map(function (c) { return "<th>" + c.label + "</th>"; }).join("") + "</tr>";
+      h += "<tr>" + cols.map(function (c) {
+        return '<td class="trans-amt">' + yen(c.amount)
+          + c.subs.map(function (s) { return '<div class="trans-sub">' + s + "</div>"; }).join("")
+          + "</td>";
+      }).join("") + "</tr>";
       h += "</tbody></table>";
     }
 
