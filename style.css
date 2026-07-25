@@ -201,6 +201,9 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sheet td.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sheet .subrow{font-size:10.5px;font-weight:400;color:var(--muted);margin-top:2px;line-height:1.5}
 .sheet tr.total td{font-weight:700;background:#FBF1F3}
+/* 月額の推移（期間を横軸に表示） */
+.sheet .trans-table th{text-align:center;background:#F7F7F8;font-size:12px;white-space:nowrap}
+.sheet .trans-table td.trans-amt{text-align:center;font-weight:700;font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap}
 .sheet .big-monthly{
   display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;
 }

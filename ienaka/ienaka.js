@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-32";
+  var APP_VERSION = "2026.07.25-33";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -40,7 +40,7 @@
    * koji=工事料（分割対象）/ reg=視聴サービス登録料（手数料のため分割対象外・常に一括） */
   var TV_KOJI = {
     sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ基本工事料（スカパー工事・接続工事無料）", koji: 3300, reg: 3080 },
-    skyOnly: { label: "スカパー工事のみ（スカパー未加入・接続1台7,150円）", rowName: "テレビ工事料（スカパー工事のみ・基本3,300＋接続7,150）", koji: 10450, reg: 3080 },
+    skyOnly: { label: "スカパー工事のみ（未加入・〜3台想定 21,450円）", rowName: "テレビ工事料（スカパー工事のみ・〜3台想定）", koji: 21450, reg: 3080 },
     ntt1: { label: "NTT工事（テレビ1台）", rowName: "テレビ工事料（NTT工事・1台）", koji: 10450, reg: 3080 },
     ntt24: { label: "NTT工事（テレビ2〜4台）", rowName: "テレビ工事料（NTT工事・2〜4台）", koji: 28380, reg: 3080 }
   };
@@ -53,7 +53,7 @@
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
-      denwaBanpo: "new", onecoin: true,
+      denwaBanpo: "new", onecoin: true, tvKojiFee: null,
       dpoint: 0, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -134,8 +134,9 @@
         if (o.koji) { optKoji += o.koji; optKojiRows.push({ name: o.name + " 交換機等工事料", amount: o.koji }); phoneChecked = true; }
         if (o.tvKoji) {
           var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
-          optKoji += tk.koji;
-          optKojiRows.push({ name: tk.rowName, amount: tk.koji });
+          var tkFee = state.tvKojiFee != null ? num(state.tvKojiFee) : tk.koji; // 金額は編集可
+          optKoji += tkFee;
+          optKojiRows.push({ name: tk.rowName, amount: tkFee });
           tvRegRows.push({ name: "テレビ視聴サービス登録料（手数料・分割対象外）", amount: tk.reg });
         }
       });
@@ -143,6 +144,11 @@
       if (phoneChecked && state.denwaBanpo === "mnp") {
         optKoji += 2200;
         optKojiRows.push({ name: "同番移行工事料（番号ポータビリティ）", amount: 2200 });
+      }
+      // 10ギガで光電話利用時は対応ルーターの機器設置工事料1,650円が追加（公式PDF＊8）
+      if (phoneChecked && state.product === "hikari10g") {
+        optKoji += 1650;
+        optKojiRows.push({ name: "機器設置工事料（10ギガ・光電話対応ルーター）", amount: 1650 });
       }
     }
     var kojiTotal = koji + optKoji;
@@ -223,13 +229,17 @@
           + "</select></div>"
           + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
       }
-      // テレビオプション: 工事方法の選択（チェック時のみ表示）
+      // テレビオプション: 工事方法の選択＋工事費（金額は編集可・チェック時のみ表示）
       if (o.tvKoji && state.opts[o.id]) {
+        var curTk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
+        var curFee = state.tvKojiFee != null ? state.tvKojiFee : curTk.koji;
         h += '<div class="field tv-koji"><label>テレビ工事</label><select data-tvkoji="1">'
           + Object.keys(TV_KOJI).map(function (k) {
               return '<option value="' + k + '"' + (state.tvKoji === k ? " selected" : "") + ">" + esc(TV_KOJI[k].label) + "</option>";
             }).join("")
-          + "</select></div>";
+          + "</select></div>"
+          + '<div class="field tv-koji"><label>テレビ工事費</label><input type="number" data-tvkojifee="1" value="' + curFee + '" inputmode="numeric" min="0"> 円'
+          + '<span class="opt-price">（ブースター等の追加工事がある場合はここで調整）</span></div>';
       }
     });
     $("ienakaOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
@@ -322,13 +332,12 @@
     }
     h += "</div>";
 
-    // 月額の推移（工事費分割・ポイント充当・端末分割で金額が変わる場合）
+    // 月額の推移（横並び表示: 期間を列にして左から時系列で読めるように）
     if (r.segs.length > 1) {
-      h += "<h3>月額の推移" + (state.kojiFree && r.koji > 0 ? "（工事費相当ポイントを料金充当した場合）" : "") + "</h3><table><tbody>";
-      h += "<tr><th>期間</th><th>月額</th></tr>";
-      r.segs.forEach(function (sg) {
-        h += "<tr><td>" + segLabel(sg) + '</td><td class="amt">' + yen(sg.monthly) + "</td></tr>";
-      });
+      h += "<h3>月額の推移" + (state.kojiFree && r.koji > 0 ? "（工事費相当ポイントを料金充当した場合）" : "") + "</h3>";
+      h += '<table class="trans-table"><tbody>';
+      h += "<tr>" + r.segs.map(function (sg) { return "<th>" + segLabel(sg) + "</th>"; }).join("") + "</tr>";
+      h += "<tr>" + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthly) + "</td>"; }).join("") + "</tr>";
       h += "</tbody></table>";
     }
 
@@ -401,8 +410,11 @@
   $("ienakaOptList").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-opt");
     if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
-    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; recalc(); return; }
+    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; state.tvKojiFee = null; renderOpts(); recalc(); return; }
     if (e.target.getAttribute("data-banpo")) { state.denwaBanpo = e.target.value; recalc(); }
+  });
+  $("ienakaOptList").addEventListener("input", function (e) {
+    if (e.target.getAttribute("data-tvkojifee")) { state.tvKojiFee = num(e.target.value); recalc(); }
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");

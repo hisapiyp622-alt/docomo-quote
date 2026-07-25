@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-27";
+  var APP_VERSION = "2026.07.25-33";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   var PAT_NAMES = ["A", "B", "C"];
@@ -907,16 +907,16 @@
       + "</div>";
     h += "</div>";
 
-    // 月額の推移（期間が2つ以上あるとき）
+    // 月額の推移（期間が2つ以上あるとき・期間を横軸に並べて時系列で読めるように）
     if (r.segs.length > 1) {
-      h += "<h3>月額の推移</h3><table><tbody>";
-      h += "<tr><th>期間</th><th>月額" + (r.device.kaedoki ? "（端末返却の場合）" : "") + "</th>"
-        + (r.device.kaedoki ? "<th>返却しない場合</th>" : "") + "</tr>";
-      r.segs.forEach(function (sg) {
-        h += "<tr><td>" + segLabel(sg) + '</td><td class="amt">' + yen(sg.monthly) + "</td>"
-          + (r.device.kaedoki ? '<td class="amt">' + yen(sg.monthlyKeep != null ? sg.monthlyKeep : sg.monthly) + "</td>" : "")
-          + "</tr>";
-      });
+      h += '<h3>月額の推移</h3><table class="trans-table"><tbody>';
+      h += "<tr><th>期間</th>" + r.segs.map(function (sg) { return "<th>" + segLabel(sg) + "</th>"; }).join("") + "</tr>";
+      h += "<tr><td>月額" + (r.device.kaedoki ? "（端末返却の場合）" : "") + "</td>"
+        + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthly) + "</td>"; }).join("") + "</tr>";
+      if (r.device.kaedoki) {
+        h += "<tr><td>返却しない場合</td>"
+          + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthlyKeep != null ? sg.monthlyKeep : sg.monthly) + "</td>"; }).join("") + "</tr>";
+      }
       h += "</tbody></table>";
     }
 
