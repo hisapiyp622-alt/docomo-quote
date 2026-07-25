@@ -123,6 +123,20 @@
 
     <div class="step">
       <h2 data-t="特典・見積書情報">⑤ 特典・見積書情報</h2>
+      <div class="field" id="dcardField">
+        <label for="dcard">dカード</label>
+        <select id="dcard">
+          <option value="none">なし・その他</option>
+          <option value="gold">GOLD（利用料金の10%還元）</option>
+          <option value="platinum">PLATINUM（利用料金の20%還元）</option>
+        </select>
+      </div>
+      <div class="field" id="dcardPtField" hidden>
+        <label for="dcardPt">毎月の還元ポイント</label>
+        <input type="number" id="dcardPt" inputmode="numeric" min="0"> pt/月
+      </div>
+      <label class="check" id="dcardIncWrap" hidden><input type="checkbox" id="dcardInclude"> 還元ポイントを毎月の料金に充当した実質額で表示（月額から差引）</label>
+      <p class="hint" id="dcardHint" hidden></p>
       <div class="field" id="dpointField">
         <label for="dpoint">お申込みdポイント進呈</label>
         <input type="number" id="dpoint" inputmode="numeric" min="0"> pt
