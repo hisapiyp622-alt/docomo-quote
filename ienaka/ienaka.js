@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-29";
+  var APP_VERSION = "2026.07.25-30";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -52,6 +52,7 @@
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
+      denwaBanpo: "new", onecoin: true,
       dpoint: 0, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -97,6 +98,12 @@
 
     // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
     var timed = [], deviceNote = "";
+
+    // 10ギガ ワンコインキャンペーン: 開通〜最大6か月目まで基本料500円（税込）
+    var onecoinOn = state.product === "hikari10g" && state.onecoin && num(state.baseMonthly) > 500;
+    if (onecoinOn) {
+      timed.push({ name: "10ギガ ワンコインキャンペーン（基本料500円・〜6か月目）", amount: -(num(state.baseMonthly) - 500), from: 1, to: 6 });
+    }
     if (state.product === "home5g") {
       var dp = num(state.h5DevicePrice);
       var dName = state.h5DeviceName || "home 5G 端末";
@@ -119,11 +126,11 @@
     // 工事費（ドコモ光のみ）: 回線の新規工事料＋オプション工事料（光電話・テレビ）
     // 分割24回を選ぶと工事料の合計を24回で分割。テレビ視聴サービス登録料は手数料のため分割対象外（常に一括）
     var koji = state.product === "home5g" ? 0 : num(state.kojiFee);
-    var optKoji = 0, optKojiRows = [], tvRegRows = [];
+    var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneChecked = false;
     if (state.product !== "home5g") {
       IENAKA_OPTS.forEach(function (o) {
         if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
-        if (o.koji) { optKoji += o.koji; optKojiRows.push({ name: o.name + " 交換機等工事料", amount: o.koji }); }
+        if (o.koji) { optKoji += o.koji; optKojiRows.push({ name: o.name + " 交換機等工事料", amount: o.koji }); phoneChecked = true; }
         if (o.tvKoji) {
           var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
           optKoji += tk.koji;
@@ -131,6 +138,11 @@
           tvRegRows.push({ name: "テレビ視聴サービス登録料（手数料・分割対象外）", amount: tk.reg });
         }
       });
+      // 番号ポータビリティ（同番移行）: 光電話利用時のみ・2,200円/番号（公式PDF確認値）
+      if (phoneChecked && state.denwaBanpo === "mnp") {
+        optKoji += 2200;
+        optKojiRows.push({ name: "同番移行工事料（番号ポータビリティ）", amount: 2200 });
+      }
     }
     var kojiTotal = koji + optKoji;
     var kojiPt = Math.floor(koji / 24); // 実質0円特典のポイントは回線の新規工事料相当分のみ
@@ -192,7 +204,7 @@
 
   /* ---------- 画面描画 ---------- */
   function renderOpts() {
-    var h = "";
+    var h = "", banpoShown = false;
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
@@ -200,6 +212,15 @@
         + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
         + (o.koji ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
+      // 光電話: 番号ポータビリティの選択（チェック時のみ・1回だけ表示）
+      if (o.koji && state.opts[o.id] && !banpoShown) {
+        banpoShown = true;
+        h += '<div class="field tv-koji"><label>電話番号</label><select data-banpo="1">'
+          + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番（工事料1,100円のみ）</option>'
+          + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり（＋同番移行2,200円）</option>'
+          + "</select></div>"
+          + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
+      }
       // テレビオプション: 工事方法の選択（チェック時のみ表示）
       if (o.tvKoji && state.opts[o.id]) {
         h += '<div class="field tv-koji"><label>テレビ工事</label><select data-tvkoji="1">'
@@ -228,6 +249,8 @@
     $("ptype").value = state.ptype;
     $("baseMonthly").value = state.baseMonthly || "";
     $("hikariFields").hidden = state.product === "home5g";
+    $("onecoinWrap").hidden = state.product !== "hikari10g";
+    $("onecoin").checked = !!state.onecoin;
     $("home5gStep").hidden = state.product !== "home5g";
     $("kojiField").hidden = state.product === "home5g";
     $("kojiPayField").hidden = state.product === "home5g";
@@ -305,6 +328,9 @@
     if (state.kojiFree && r.koji > 0) {
       h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP") + 'pt・期間用途限定）が開通6か月後から24回に分けて進呈されます。上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。進呈条件・時期は店頭でご確認ください。</p>';
     }
+    if (state.product === "hikari10g" && state.onecoin) {
+      h += '<p class="memo">※ ワンコインキャンペーン: 開通月〜6か月目まで基本料500円（開通当月は日割り）。さらに開通7か月後にルーターレンタル料6か月分相当のdポイント3,300pt（期間・用途限定）を一括進呈。1ギガからのプラン変更は対象外。</p>';
+    }
 
     if (r.initRows.length) {
       h += "<h3>初期費用</h3><table><tbody>";
@@ -350,6 +376,7 @@
   $("kojiFee").addEventListener("input", function () { state.kojiFee = num(this.value); recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
+  $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
   $("custName").addEventListener("input", function () { state.custName = this.value; recalc(); });
   $("staffName").addEventListener("input", function () { state.staffName = this.value; recalc(); });
   $("quoteMemo").addEventListener("input", function () { state.quoteMemo = this.value; recalc(); });
@@ -357,7 +384,8 @@
   $("ienakaOptList").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-opt");
     if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
-    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; recalc(); }
+    if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; recalc(); return; }
+    if (e.target.getAttribute("data-banpo")) { state.denwaBanpo = e.target.value; recalc(); }
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");
