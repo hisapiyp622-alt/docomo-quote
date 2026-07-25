@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-41";
+  var APP_VERSION = "2026.07.25-42";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -74,6 +74,7 @@
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
+      router10g: true, router10gPrice: 6780,
       dpoint: 10000, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -216,6 +217,10 @@
     }
     // 視聴サービス登録料は手数料のため常に一括で初期費用へ
     tvRegRows.forEach(function (x) { initRows.push(x); });
+    // 10Gルーター購入費用（10ギガ選択時・チェック式）
+    if (is10g() && state.router10g && num(state.router10gPrice) > 0) {
+      initRows.push({ name: "10Gルーター購入費用", amount: num(state.router10gPrice) });
+    }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
     }
@@ -343,6 +348,10 @@
     $("dpoint").value = state.dpoint || "";
     $("dpointField").hidden = !isHikari();
     $("dpointHint").hidden = !isHikari();
+    $("router10gWrap").hidden = !is10g();
+    $("router10g").checked = state.router10g !== false;
+    $("router10gPriceField").hidden = !is10g() || state.router10g === false;
+    $("router10gPrice").value = state.router10gPrice || "";
     $("custName").value = state.custName;
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
@@ -355,21 +364,44 @@
     var r = calc();
     $("sumMonthly").textContent = yen(r.monthly);
     $("sumInitial").textContent = yen(r.initial);
-    // 工事費合計の内訳をリアルタイム表示（光電話・テレビの選択で変動）
+    // 初期費用のまとめ表示: 手数料 → 工事費合計・分割時月額 → 工事費内訳 → その他費用
     var ks = $("kojiSummary");
-    if (state.product === "home5g" || r.kojiTotal <= 0) {
+    if (state.product === "home5g") {
       ks.hidden = true;
     } else {
-      var parts = [];
-      if (r.koji > 0) parts.push("回線" + yen(r.koji));
-      r.optKojiRows.forEach(function (x) { parts.push(x.name.replace(/（[^）]*）/g, "").replace(" 交換機等工事料", "工事") + yen(x.amount)); });
-      var extras = r.tvRegRows.map(function (x) {
-        return (x.name.indexOf("現地払い") >= 0 ? "接続工事費" + yen(x.amount) + "（スカパーへ当日払い）" : "視聴登録料" + yen(x.amount) + "（一括）");
+      var regTotal = 0, onsite = [];
+      r.tvRegRows.forEach(function (x) {
+        if (x.name.indexOf("現地払い") >= 0) onsite.push(x); else regTotal += x.amount;
       });
+      var kh = "";
+      // 手数料（事務手数料＋テレビ視聴登録料）
+      var feeTotal = num(state.jimuFee) + regTotal;
+      kh += "<div>手数料: <b>" + yen(feeTotal) + "</b>"
+        + (regTotal > 0 ? "（事務" + yen(num(state.jimuFee)) + "＋テレビ視聴登録" + yen(regTotal) + "）" : "") + "</div>";
+      // 工事費合計と分割時月額
+      kh += "<div>工事費合計: <b>" + yen(r.kojiTotal) + "</b>"
+        + (r.kojiTotal > 0 && state.kojiPay !== "b24" ? "（一括払い）" : "") + "</div>";
+      if (r.kojiTotal > 0 && state.kojiPay === "b24") {
+        kh += "<div>分割時: <b>" + yen(Math.floor(r.kojiTotal / 24)) + "/月</b>（24回）</div>";
+      }
+      // 工事費内訳
+      if (r.kojiTotal > 0) {
+        kh += '<div class="ks-sub">工事費内訳）</div>';
+        if (r.koji > 0) kh += '<div class="ks-item">・回線 新規工事料 ' + yen(r.koji) + "</div>";
+        r.optKojiRows.forEach(function (x) { kh += '<div class="ks-item">・' + esc(x.name) + " " + yen(x.amount) + "</div>"; });
+      }
+      // その他費用（請求外・購入品）
+      var others = [];
+      onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
+      if (is10g() && state.router10g && num(state.router10gPrice) > 0) {
+        others.push("10Gルーター購入費用 " + yen(num(state.router10gPrice)));
+      }
+      if (others.length) {
+        kh += '<div class="ks-sub">その他費用）</div>';
+        others.forEach(function (t) { kh += '<div class="ks-item">・' + t + "</div>"; });
+      }
       ks.hidden = false;
-      ks.textContent = "工事費合計: " + yen(r.kojiTotal) + "（" + parts.join("＋") + "）"
-        + (state.kojiPay === "b24" ? "を24回分割 → " + yen(Math.floor(r.kojiTotal / 24)) + "/月" : "を一括払い")
-        + (extras.length ? "。ほかに" + extras.join("・") : "");
+      ks.innerHTML = kh;
     }
     var hint = PRODUCTS[state.product].note + (r.deviceNote ? "　" + r.deviceNote : "");
     $("h5Hint").textContent = state.product === "home5g" ? hint : "";
@@ -553,6 +585,8 @@
     syncForm(); recalc();
   });
   $("tvPoint").addEventListener("change", function () { state.tvPoint = this.checked; recalc(); });
+  $("router10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
+  $("router10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
