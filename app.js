@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-35";
+  var APP_VERSION = "2026.07.25-36";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -544,12 +544,16 @@
     var firstExtra = device.firstExtra + accFirstExtra;
 
     // 初期費用
-    var atama = num(st.atamakin); // 頭金は入力があれば常に店頭お支払いへ合算
+    var atama = Math.max(0, num(st.atamakin));
     // where: "store"=店頭お支払い / "bill"=翌月の携帯料金と合算
     var initialRows = [];
     if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee), where: "bill" });
-    if (initialDevice > 0) initialRows.push({ name: "機種代金（一括）", amount: initialDevice, where: "store" });
-    if (atama > 0) initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
+    if (initialDevice > 0) {
+      // 一括購入時は頭金を機種代金へ含めて1行で表示（「店頭頭金」の行は出さない）
+      initialRows.push({ name: "機種代金（一括）", amount: initialDevice + atama, where: "store" });
+    } else if (atama > 0) {
+      initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
+    }
     (MASTER.feeItems || []).forEach(function (f) {
       if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: f.pay === "bill" ? "bill" : "store" });
     });
