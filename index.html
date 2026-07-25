@@ -253,7 +253,16 @@
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script>
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+  // 新しいバージョンのSWに切り替わったら一度だけ自動リロードして最新を反映
+  var swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (swReloaded) return;
+    swReloaded = true;
+    location.reload();
+  });
+}
 </script>
 </body>
 </html>

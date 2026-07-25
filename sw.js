@@ -1,5 +1,5 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "dq-v16";
+var CACHE = "dq-v17";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "data.js", "firebase-config.js", "manifest.webmanifest", "icon.svg",
   "ienaka/", "ienaka/index.html", "ienaka/ienaka.css", "ienaka/ienaka.js"];
 
@@ -18,7 +18,8 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    fetch(e.request)
+    // no-cache: ブラウザのHTTPキャッシュ(最大10分)を飛ばしてサーバーへ再検証し、常に最新を取得
+    fetch(e.request, { cache: "no-cache" })
       .then(function (res) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
