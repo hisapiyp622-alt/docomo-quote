@@ -67,7 +67,7 @@
 
   function defaultState() {
     return {
-      product: "hikari1g", applyType: "shinki", region: "west", housing: "ht", ptype: "A",
+      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A",
       baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
@@ -85,7 +85,7 @@
       state = Object.assign(defaultState(), saved);
       // エリア対応前の保存データ: 旧既定値(10,000pt)のままなら新しいエリア別既定値へ更新
       if (saved.region == null && (num(state.dpoint) === 10000 || !num(state.dpoint))) {
-        state.dpoint = dpointDefaultFor(state.product, state.applyType, state.region);
+        state.dpoint = dpointDefaultFor(state.product, state.applyType);
       }
     }
   } catch (e) {}
@@ -337,8 +337,6 @@
     $("hikariFields").hidden = state.product === "home5g";
     $("applyTypeField").hidden = state.product === "home5g";
     $("applyType").value = state.applyType || "shinki";
-    $("regionField").hidden = state.product === "home5g";
-    $("region").value = state.region || "west";
     $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("onecoinWrap").hidden = !is10g();
     $("onecoin").checked = !!state.onecoin;
@@ -562,7 +560,7 @@
   window.addEventListener("beforeprint", renderSheet);
 
   $("product").addEventListener("change", function () {
-    var prevDef = dpointDefaultFor(state.product, state.applyType, state.region);
+    var prevDef = dpointDefaultFor(state.product, state.applyType);
     state.product = this.value;
     applyDefaults();
     syncDpointDefault(prevDef);
@@ -577,31 +575,22 @@
   $("h5Support").addEventListener("change", function () { state.h5Support = this.checked; recalc(); });
   $("kojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });
   $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
-  // 申込区分・エリアからドコモショップ特典の進呈ポイントを自動判定（公式2026-07時点・手入力は上書きしない）
-  // 東日本: 1G/10Gとも 新規・再利用・事業者変更 10,000pt ／ 西日本: 1G新規20,000pt・10G新規15,000pt・事業者変更10,000pt ／ 転用は対象外
-  function dpointDefaultFor(product, applyType, region) {
+  // 申込区分からドコモショップ特典の進呈ポイントを自動判定（西日本固定・公式2026-07時点・手入力は上書きしない）
+  // 西日本: 1G新規20,000pt・10G新規15,000pt・事業者変更10,000pt ／ 転用は対象外
+  function dpointDefaultFor(product, applyType) {
     if (product === "home5g" || applyType === "tenyo") return 0;
     if (product !== "hikari1g" && product !== "hikari10g") return 0; // ahamo光は公式特典の対象記載なし
-    if (region === "west") {
-      if (applyType === "jigyosha") return 10000;
-      return product === "hikari1g" ? 20000 : 15000;
-    }
-    return 10000; // 東日本は1G/10G・区分共通
+    if (applyType === "jigyosha") return 10000;
+    return product === "hikari1g" ? 20000 : 15000;
   }
   function syncDpointDefault(prevDef) {
     if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
-      state.dpoint = dpointDefaultFor(state.product, state.applyType, state.region);
+      state.dpoint = dpointDefaultFor(state.product, state.applyType);
     }
   }
   $("applyType").addEventListener("change", function () {
-    var prevDef = dpointDefaultFor(state.product, state.applyType, state.region);
+    var prevDef = dpointDefaultFor(state.product, state.applyType);
     state.applyType = this.value;
-    syncDpointDefault(prevDef);
-    syncForm(); recalc();
-  });
-  $("region").addEventListener("change", function () {
-    var prevDef = dpointDefaultFor(state.product, state.applyType, state.region);
-    state.region = this.value;
     syncDpointDefault(prevDef);
     syncForm(); recalc();
   });
