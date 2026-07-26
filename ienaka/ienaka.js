@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-48";
+  var APP_VERSION = "2026.07.25-49";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -50,6 +50,7 @@
     { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g", "hikari10g"] },
     { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g", "ahamo10g"] },
     { id: "network", name: "ネットワークセキュリティ", price: 385, for: ["hikari1g", "hikari10g", "home5g"] },
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
@@ -67,7 +68,7 @@
 
   function defaultState() {
     return {
-      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "",
+      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "", routerRental: "ari",
       baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
@@ -352,6 +353,9 @@
     $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("providerField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
     $("provider").value = state.provider || "";
+    // プロバイダ無料無線ルーターレンタルは1ギガのみ（10ギガは対象プロバイダなし・別途購入）
+    $("routerRentalField").hidden = state.product !== "hikari1g";
+    $("routerRental").value = state.routerRental || "ari";
     $("onecoinWrap").hidden = !is10g();
     $("onecoin").checked = !!state.onecoin;
     $("home5gStep").hidden = state.product !== "home5g";
@@ -603,6 +607,9 @@
       if (!p.noPtype) {
         h += row("プロバイダ", (state.provider ? "<b>" + esc(state.provider) + "</b>" : "（未定）") + "（タイプ" + esc(state.ptype) + "）");
       }
+      if (state.product === "hikari1g") {
+        h += row("プロバイダ無料無線ルーターレンタル", state.routerRental === "nashi" ? "なし" : "<b>あり</b>（無料レンタル利用）");
+      }
     }
     if (state.product === "home5g") {
       h += row("端末", esc(state.h5DeviceName || "home 5G 端末") + "　" + yen(num(state.h5DevicePrice))
@@ -706,6 +713,7 @@
   $("housing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
   $("ptype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
   $("provider").addEventListener("change", function () { state.provider = this.value; recalc(); });
+  $("routerRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
   $("h5DeviceName").addEventListener("input", function () { state.h5DeviceName = this.value; recalc(); });
   $("h5DevicePrice").addEventListener("input", function () { state.h5DevicePrice = num(this.value); recalc(); });
