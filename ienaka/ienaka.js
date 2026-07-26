@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-58";
+  var APP_VERSION = "2026.07.25-59";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -549,7 +549,10 @@
     }
     var repLabeled = repSeg.to != null || repSeg.from > 1;
     h += "<h3>月額内訳" + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + "</h3><table><tbody>";
+    // dカード還元充当の行は工事費相当ポイント充当の下（表の最後）に配置する
+    var dcardRow = null;
     r.rows.forEach(function (x) {
+      if (x.name.indexOf("dカード") === 0) { dcardRow = x; return; }
       h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
     });
     r.timed.forEach(function (t) {
@@ -557,6 +560,9 @@
       if (!(t.from <= repSeg.from && repSeg.from <= t.to)) return;
       h += "<tr><td>" + esc(t.name) + '</td><td class="amt">' + yen(t.amount) + "</td></tr>";
     });
+    if (dcardRow) {
+      h += "<tr><td>" + esc(dcardRow.name) + '</td><td class="amt">' + yen(dcardRow.amount) + "</td></tr>";
+    }
     h += '<tr class="total"><td>月額合計' + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + '</td><td class="amt">' + yen(repSeg.monthly) + "</td></tr>";
     h += "</tbody></table>";
     if (state.kojiFree && r.koji > 0) {
