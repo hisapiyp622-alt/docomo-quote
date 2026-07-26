@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-56";
+  var APP_VERSION = "2026.07.25-57";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -477,13 +477,13 @@
     h += '<div class="big-monthly">';
     // 通常時のお支払い目安: 最初の期間と最後の期間を1枠にまとめて表示
     h += '<div class="bm-box"><div class="bm-label">通常時お支払い目安' + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + '</div><div class="bm-value">' + yen(seg0.monthly) + "</div>"
-      + (r.segs.length > 1 ? '<div class="bm-sub">' + segLabel(segLast) + ": " + yen(segLast.monthly) + "/月</div>" : "")
+      + (r.segs.length > 1 ? '<div class="bm-sub">↓</div><div class="bm-sub">' + segLabel(segLast) + ": " + yen(segLast.monthly) + "/月</div>" : "")
       + (r.deviceNote ? '<div class="bm-sub">' + esc(r.deviceNote) + "</div>" : "") + "</div>";
     // 光セット割の合計を加味した実質価格（入力があるときだけ表示）
     var setWari = Math.max(0, num(state.setWariTotal));
     if (setWari > 0) {
       h += '<div class="bm-box"><div class="bm-label">実質お支払い目安' + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + '</div><div class="bm-value">' + yen(Math.max(0, seg0.monthly - setWari)) + "</div>"
-        + (r.segs.length > 1 ? '<div class="bm-sub">' + segLabel(segLast) + ": " + yen(Math.max(0, segLast.monthly - setWari)) + "/月</div>" : "")
+        + (r.segs.length > 1 ? '<div class="bm-sub">↓</div><div class="bm-sub">' + segLabel(segLast) + ": " + yen(Math.max(0, segLast.monthly - setWari)) + "/月</div>" : "")
         + '<div class="bm-sub">ご家族スマホの光セット割 −' + yen(setWari) + "/月 を差引いた金額</div></div>";
     }
     h += '<div class="bm-box"><div class="bm-label">初期費用</div><div class="bm-value">' + yen(r.initial) + "</div></div>";
