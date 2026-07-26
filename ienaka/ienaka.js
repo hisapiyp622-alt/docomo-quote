@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-60";
+  var APP_VERSION = "2026.07.25-61";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -575,26 +575,32 @@
       h += '<p class="memo">※ ワンコインキャンペーン: 開通月〜6か月目まで基本料500円（開通当月は日割り）。さらに開通7か月後にルーターレンタル料6か月分相当のdポイント3,300pt（期間・用途限定）を一括進呈。1ギガからのプラン変更は対象外。</p>';
     }
 
+    // 初期費用とdポイント進呈特典は左右2列に並べて縦の長さを圧縮（10Gなど項目が多くても1枚に収める）
+    var initHtml = "";
     if (r.initRows.length) {
-      h += "<h3>初期費用</h3><table><tbody>";
+      initHtml += "<h3>初期費用</h3><table><tbody>";
       r.initRows.forEach(function (x) {
         var label = esc(x.name) + (x.strike ? '　<s>' + yen(x.strike) + "</s>" : "");
-        h += "<tr><td>" + label + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+        initHtml += "<tr><td>" + label + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
       });
-      h += '<tr class="total"><td>初期費用合計</td><td class="amt">' + yen(r.initial) + "</td></tr>";
-      h += "</tbody></table>";
+      initHtml += '<tr class="total"><td>初期費用合計</td><td class="amt">' + yen(r.initial) + "</td></tr>";
+      initHtml += "</tbody></table>";
     }
-
-    // dポイント進呈特典の一覧
+    var ptHtml = "";
     if (ptRows.length) {
-      h += "<h3>dポイント進呈特典</h3><table><tbody>";
+      ptHtml += "<h3>dポイント進呈特典</h3><table><tbody>";
       ptRows.forEach(function (x) {
-        h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + x.pt.toLocaleString("ja-JP") + (x.monthly ? "pt/月" : "pt") + "</td></tr>";
+        ptHtml += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + x.pt.toLocaleString("ja-JP") + (x.monthly ? "pt/月" : "pt") + "</td></tr>";
       });
       if (ptTotal > 0) {
-        h += '<tr class="total"><td>進呈ポイント合計（一括進呈分）</td><td class="amt">' + ptTotal.toLocaleString("ja-JP") + "pt</td></tr>";
+        ptHtml += '<tr class="total"><td>進呈ポイント合計（一括進呈分）</td><td class="amt">' + ptTotal.toLocaleString("ja-JP") + "pt</td></tr>";
       }
-      h += "</tbody></table>";
+      ptHtml += "</tbody></table>";
+    }
+    if (initHtml && ptHtml) {
+      h += '<div class="sheet-cols"><div class="sheet-col">' + initHtml + '</div><div class="sheet-col">' + ptHtml + "</div></div>";
+    } else {
+      h += initHtml + ptHtml;
     }
     // 店舗独自特典（相対対応）: 現金キャッシュバックのみ別枠（ポイントはdポイント進呈特典に合算済み）
     if (num(state.storeCash) > 0) {
