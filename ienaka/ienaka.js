@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-55";
+  var APP_VERSION = "2026.07.25-56";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -76,7 +76,7 @@
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780,
-      dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0,
+      dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -382,6 +382,7 @@
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
     $("storeCash").value = state.storeCash || "";
     $("storePt").value = state.storePt || "";
+    $("setWariTotal").value = state.setWariTotal || "";
     if (num(state.storeCash) > 0 || num(state.storePt) > 0) $("storeTokutenBox").hidden = false;
     renderOpts();
     renderExtras("extraMonthlyList", "extraMonthly");
@@ -474,10 +475,16 @@
 
     var seg0 = r.segs[0], segLast = r.segs[r.segs.length - 1];
     h += '<div class="big-monthly">';
-    h += '<div class="bm-box"><div class="bm-label">毎月のお支払い目安' + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + '</div><div class="bm-value">' + yen(seg0.monthly) + "</div>"
+    // 通常時のお支払い目安: 最初の期間と最後の期間を1枠にまとめて表示
+    h += '<div class="bm-box"><div class="bm-label">通常時お支払い目安' + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + '</div><div class="bm-value">' + yen(seg0.monthly) + "</div>"
+      + (r.segs.length > 1 ? '<div class="bm-sub">' + segLabel(segLast) + ": " + yen(segLast.monthly) + "/月</div>" : "")
       + (r.deviceNote ? '<div class="bm-sub">' + esc(r.deviceNote) + "</div>" : "") + "</div>";
-    if (r.segs.length > 1) {
-      h += '<div class="bm-box"><div class="bm-label">' + segLabel(segLast) + '</div><div class="bm-value">' + yen(segLast.monthly) + "</div></div>";
+    // 光セット割の合計を加味した実質価格（入力があるときだけ表示）
+    var setWari = Math.max(0, num(state.setWariTotal));
+    if (setWari > 0) {
+      h += '<div class="bm-box"><div class="bm-label">実質お支払い目安' + (seg0.to != null ? "（" + segLabel(seg0) + "）" : "") + '</div><div class="bm-value">' + yen(Math.max(0, seg0.monthly - setWari)) + "</div>"
+        + (r.segs.length > 1 ? '<div class="bm-sub">' + segLabel(segLast) + ": " + yen(Math.max(0, segLast.monthly - setWari)) + "/月</div>" : "")
+        + '<div class="bm-sub">ご家族スマホの光セット割 −' + yen(setWari) + "/月 を差引いた金額</div></div>";
     }
     h += '<div class="bm-box"><div class="bm-label">初期費用</div><div class="bm-value">' + yen(r.initial) + "</div></div>";
     // dポイント進呈特典のまとめ
@@ -685,6 +692,7 @@
     if (state.product === "hikari1g" && state.h5Mig) h += row("home 5G→ドコモ光 移行特典", "＋20,000pt（1ギガ 2年定期・前月末時点でhome 5G契約・名義同一の確認）");
     if (num(state.storeCash) > 0) h += row("店舗独自特典: 現金キャッシュバック", "<b>" + yen(num(state.storeCash)) + "</b>（相対対応）");
     if (num(state.storePt) > 0) h += row("店舗独自特典: ポイント還元", "<b>" + Math.round(num(state.storePt)).toLocaleString("ja-JP") + "pt</b>（相対対応）");
+    if (num(state.setWariTotal) > 0) h += row("光セット割 合計（実質表記用）", "−" + yen(num(state.setWariTotal)) + "/月（家族スマホ側の割引）");
     if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
     h += "</tbody></table>";
 
@@ -763,6 +771,7 @@
   });
   $("storeCash").addEventListener("input", function () { state.storeCash = num(this.value); recalc(); });
   $("storePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
+  $("setWariTotal").addEventListener("input", function () { state.setWariTotal = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
   $("router10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
