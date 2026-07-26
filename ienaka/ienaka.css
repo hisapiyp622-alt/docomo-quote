@@ -26,3 +26,27 @@
 .koji-summary .ks-sub{margin-top:4px;font-weight:700;font-size:12px}
 .koji-summary .ks-item{font-size:12px;color:var(--muted);padding-left:4px}
 /* 月額の推移（横並び）のスタイルは共通の ../style.css に定義 */
+
+@media print{
+  /* 共通CSSは常に見積書タブを印刷対象にするため、開いているタブ（見積書 or 引き継ぎ）を印刷する形に上書き */
+  #tab-sheet{display:none}
+  #tab-sheet.active{display:block}
+  #tab-staff.active{display:block}
+  /* イエナカはセクションが多いので、A4 1ページに収まるようさらに詰める */
+  .sheet{font-size:10.5px}
+  .sheet h2.sheet-title{font-size:14px;letter-spacing:.2em;padding-bottom:4px}
+  .sheet .sheet-meta{margin:3px 0 0}
+  .sheet .cust{font-size:12px;margin:4px 0 0}
+  .sheet h3{font-size:11px;margin:5px 0 2px}
+  .sheet table{font-size:10px}
+  .sheet th,.sheet td{padding:1.5px 6px}
+  .sheet .big-monthly{gap:5px;margin:4px 0}
+  .sheet .bm-box{padding:3px 8px;min-width:110px;border-width:1px}
+  .sheet .bm-box .bm-value{font-size:14px}
+  .sheet .bm-box .bm-label{font-size:9.5px}
+  .sheet .bm-box .bm-sub{font-size:8.5px}
+  .sheet .memo{font-size:8px;margin-top:2px;line-height:1.4}
+  .sheet .disclaimer{font-size:7.5px;margin-top:4px;padding-top:3px;line-height:1.35}
+  .sheet .trans-table th,.sheet .trans-table td{padding:2px 5px}
+  .sheet .trans-sub{font-size:8px}
+}
