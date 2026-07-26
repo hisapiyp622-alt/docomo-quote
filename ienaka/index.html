@@ -170,6 +170,11 @@
         <p class="hint">相対対応用。金額・ポイントが入力されているときだけ、見積書・引き継ぎシートに「店舗独自特典」として記載されます（0なら記載されません）。</p>
       </div>
       <p class="hint" id="kojiPointInfo" hidden></p>
+      <div class="field">
+        <label for="setWariTotal">光セット割 合計額</label>
+        <input type="number" id="setWariTotal" inputmode="numeric" min="0" placeholder="0"> 円/月
+      </div>
+      <p class="hint">ご家族のスマホに掛かるセット割（−1,210円/月×回線数など）の合計。入力すると見積書に「実質お支払い目安」として差引後の金額が表示されます。</p>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）スマホとのセット割は携帯側見積もりに記載"></div>
