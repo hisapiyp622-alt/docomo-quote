@@ -1,0 +1,16 @@
+{
+  "name": "イエナカ見積もり",
+  "short_name": "イエナカ",
+  "description": "ドコモ光・ahamo光・home 5G の店頭見積もりアプリ",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F4F5",
+  "theme_color": "#CC0033",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
