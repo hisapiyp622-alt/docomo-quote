@@ -14,6 +14,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
+    <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
   </nav>
 </header>
 
@@ -50,10 +51,20 @@
           </select>
         </div>
         <div class="field" id="ptypeField">
-          <label for="ptype">プロバイダ</label>
+          <label for="ptype">プロバイダ料金タイプ</label>
           <select id="ptype">
             <option value="A">タイプA</option>
             <option value="B">タイプB</option>
+          </select>
+        </div>
+        <div class="field" id="providerField">
+          <label for="provider">プロバイダ</label>
+          <select id="provider">
+            <option value="">未定</option>
+            <option value="OCN インターネット">OCN インターネット</option>
+            <option value="@nifty">@nifty</option>
+            <option value="GMOとくとくBB">GMOとくとくBB</option>
+            <option value="andline">andline</option>
           </select>
         </div>
       </div>
@@ -159,6 +170,14 @@
     <div class="actions no-print">
       <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
       <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <section id="tab-staff" class="tab-page">
+    <div class="sheet" id="staffSheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printStaffBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuoteStaff" type="button">見積もりに戻る</button>
     </div>
   </section>
 

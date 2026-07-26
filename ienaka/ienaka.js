@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-46";
+  var APP_VERSION = "2026.07.25-47";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -67,7 +67,7 @@
 
   function defaultState() {
     return {
-      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A",
+      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "",
       baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
@@ -350,6 +350,8 @@
     $("applyTypeField").hidden = state.product === "home5g";
     $("applyType").value = state.applyType || "shinki";
     $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
+    $("providerField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
+    $("provider").value = state.provider || "";
     $("onecoinWrap").hidden = !is10g();
     $("onecoin").checked = !!state.onecoin;
     $("home5gStep").hidden = state.product !== "home5g";
@@ -445,6 +447,7 @@
     }
     save();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
+    if ($("tab-staff").classList.contains("active")) renderStaffSheet();
   }
 
   /* ---------- 見積書 ---------- */
@@ -572,20 +575,118 @@
     $("sheetBody").innerHTML = h;
   }
 
+  /* ---------- 登録スタッフ引き継ぎシート ---------- */
+  function renderStaffSheet() {
+    var r = calc();
+    var p = PRODUCTS[state.product];
+    var today = new Date();
+    var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
+    function row(k, v) { return "<tr><td style=\"width:38%\">" + k + "</td><td>" + v + "</td></tr>"; }
+    var h = "";
+    h += '<h2 class="sheet-title">登録スタッフ引き継ぎシート</h2>';
+    h += '<div class="sheet-meta"><span>作成日: ' + dateStr + "</span><span>"
+      + (state.staffName ? "受付担当: " + esc(state.staffName) : "") + "</span></div>";
+    if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
+
+    h += "<h3>ご契約内容</h3><table><tbody>";
+    h += row("商材", esc(p.name));
+    if (isHikari()) {
+      h += row("申込区分", APPLY_LABEL[state.applyType] || "新規");
+      h += row("住居タイプ", state.housing === "ht" ? "戸建" : "マンション");
+      if (!p.noPtype) {
+        h += row("プロバイダ", (state.provider ? "<b>" + esc(state.provider) + "</b>" : "（未定）") + "（タイプ" + esc(state.ptype) + "）");
+      }
+    }
+    if (state.product === "home5g") {
+      h += row("端末", esc(state.h5DeviceName || "home 5G 端末") + "　" + yen(num(state.h5DevicePrice))
+        + "（" + (state.h5Pay === "ikkatsu" ? "一括" : "分割48回") + (state.h5Support ? "・月々サポートあり" : "") + "）");
+    }
+    h += row("月額基本料", yen(num(state.baseMonthly)));
+    if (is10g() && state.onecoin) h += row("ワンコインキャンペーン", "適用（開通〜6か月目 基本料500円）");
+    h += "</tbody></table>";
+
+    h += "<h3>お申込みオプション</h3><table><tbody>";
+    var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var anyOpt = false;
+    IENAKA_OPTS.forEach(function (o) {
+      if (o.for.indexOf(state.product) < 0) return;
+      if (o.needsPhone && !phoneOn) return;
+      if (!state.opts[o.id]) return;
+      anyOpt = true;
+      var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
+      var extra = "";
+      if (o.koji) extra = "／電話番号: " + (state.denwaBanpo === "mnp" ? "<b>番号ポータビリティ（同番移行）</b>" : "新規発番");
+      if (o.tvKoji) {
+        var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
+        extra = "／工事: " + esc(tk.label);
+      }
+      h += row(esc(o.name), yen(pr) + "/月" + extra);
+    });
+    state.extraMonthly.forEach(function (a) {
+      if (!a.name && !num(a.amount)) return;
+      anyOpt = true;
+      h += row(esc(a.name || "追加項目"), yen(num(a.amount)) + "/月");
+    });
+    if (!anyOpt) h += row("オプション", "なし");
+    h += "</tbody></table>";
+
+    h += "<h3>工事・初期費用</h3><table><tbody>";
+    h += row("契約事務手数料", yen(num(state.jimuFee)));
+    if (r.kojiTotal > 0) {
+      h += row("工事費合計", yen(r.kojiTotal) + "（" + (state.kojiPay === "b24" ? "分割24回 " + yen(Math.floor(r.kojiTotal / 24)) + "/月" : "一括払い") + "）");
+      if (r.koji > 0) h += row("　内訳: 回線 新規工事料", yen(r.koji));
+      r.optKojiRows.forEach(function (x) { h += row("　内訳: " + esc(x.name), yen(x.amount)); });
+      if (r.koji > 0) h += row("工事費 実質0円特典", state.kojiFree ? "適用（開通6か月後から24回進呈・要エントリー確認）" : "適用なし");
+    } else if (isHikari()) {
+      h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
+    }
+    r.tvRegRows.forEach(function (x) { h += row(esc(x.name), yen(x.amount)); });
+    if (is10g() && state.router10g && num(state.router10gPrice) > 0) h += row("10Gルーター購入", yen(num(state.router10gPrice)));
+    state.extraInitial.forEach(function (a) {
+      if (!a.name && !num(a.amount)) return;
+      h += row(esc(a.name || "追加項目"), yen(num(a.amount)));
+    });
+    h += row("初期費用合計", "<b>" + yen(r.initial) + "</b>");
+    h += "</tbody></table>";
+
+    h += "<h3>特典・その他</h3><table><tbody>";
+    h += row("dカード", state.dcard === "gold" ? "GOLD（充当" + (r.dcardPt || 0) + "pt/月）"
+      : state.dcard === "platinum" ? "PLATINUM（充当" + (r.dcardPt || 0) + "pt/月）" : "なし・その他");
+    if (num(state.dpoint) > 0) h += row("お申込みdポイント進呈", num(state.dpoint).toLocaleString("ja-JP") + "pt（利用開始4か月後の月末）");
+    if (r.tvOn && state.tvPoint && state.applyType !== "tenyo") h += row("テレビ同時申込特典", "＋5,000pt");
+    if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
+    h += "</tbody></table>";
+
+    h += "<h3>登録スタッフ記入欄</h3><table><tbody>";
+    h += row("登録日", "");
+    h += row("登録担当", "");
+    h += row("備考", "");
+    h += "</tbody></table>";
+
+    h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。イエナカ見積もり 版 ' + APP_VERSION + "</div>";
+    $("staffSheetBody").innerHTML = h;
+  }
+
   /* ---------- タブ・イベント ---------- */
   function switchTab(name) {
     document.querySelectorAll(".tab").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
     document.querySelectorAll(".tab-page").forEach(function (s) { s.classList.toggle("active", s.id === "tab-" + name); });
     if (name === "sheet") renderSheet();
-    $("summaryBar").style.display = name === "sheet" ? "none" : "";
+    if (name === "staff") renderStaffSheet();
+    $("summaryBar").style.display = name === "sheet" || name === "staff" ? "none" : "";
   }
   document.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { switchTab(b.dataset.tab); });
   });
   $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
   $("backToQuote").addEventListener("click", function () { switchTab("quote"); });
+  $("backToQuoteStaff").addEventListener("click", function () { switchTab("quote"); });
   $("printBtn").addEventListener("click", function () { window.print(); });
-  window.addEventListener("beforeprint", renderSheet);
+  $("printStaffBtn").addEventListener("click", function () { window.print(); });
+  window.addEventListener("beforeprint", function () {
+    if ($("tab-staff").classList.contains("active")) renderStaffSheet();
+    else renderSheet();
+  });
 
   $("product").addEventListener("change", function () {
     var prevDef = dpointDefaultFor(state.product, state.applyType);
@@ -596,6 +697,7 @@
   });
   $("housing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
   $("ptype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
+  $("provider").addEventListener("change", function () { state.provider = this.value; recalc(); });
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
   $("h5DeviceName").addEventListener("input", function () { state.h5DeviceName = this.value; recalc(); });
   $("h5DevicePrice").addEventListener("input", function () { state.h5DevicePrice = num(this.value); recalc(); });
