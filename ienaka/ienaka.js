@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-50";
+  var APP_VERSION = "2026.07.25-51";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -76,7 +76,7 @@
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780,
-      dcard: "none", dcardPt: null, h5Mig: false,
+      dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
     };
   }
@@ -379,6 +379,10 @@
     $("custName").value = state.custName;
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
+    // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
+    $("storeCash").value = state.storeCash || "";
+    $("storePt").value = state.storePt || "";
+    if (num(state.storeCash) > 0 || num(state.storePt) > 0) $("storeTokutenBox").hidden = false;
     renderOpts();
     renderExtras("extraMonthlyList", "extraMonthly");
     renderExtras("extraInitialList", "extraInitial");
@@ -576,6 +580,17 @@
       }
       h += "</tbody></table>";
     }
+    // 店舗独自特典（相対対応）: 入力があるときだけ見積書に記載
+    if (num(state.storeCash) > 0 || num(state.storePt) > 0) {
+      h += "<h3>店舗独自特典</h3><table><tbody>";
+      if (num(state.storeCash) > 0) {
+        h += '<tr><td>現金キャッシュバック</td><td class="amt">' + yen(num(state.storeCash)) + "</td></tr>";
+      }
+      if (num(state.storePt) > 0) {
+        h += '<tr><td>ポイント還元</td><td class="amt">' + Math.round(num(state.storePt)).toLocaleString("ja-JP") + "pt</td></tr>";
+      }
+      h += "</tbody></table>";
+    }
     if (state.dcard !== "none" && r.dcardPt > 0) {
       h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + (state.dcard === "gold" ? "10" : "20") + '%）は毎月のお支払いへ自動充当した金額です。還元対象・上限はカード規約によります。</p>';
     }
@@ -669,6 +684,8 @@
     if (num(state.dpoint) > 0) h += row("お申込みdポイント進呈", num(state.dpoint).toLocaleString("ja-JP") + "pt（利用開始4か月後の月末）");
     if (r.tvOn && state.tvPoint && state.applyType !== "tenyo") h += row("テレビ同時申込特典", "＋5,000pt");
     if (state.product === "hikari1g" && state.h5Mig) h += row("home 5G→ドコモ光 移行特典", "＋20,000pt（1ギガ 2年定期・前月末時点でhome 5G契約・名義同一の確認）");
+    if (num(state.storeCash) > 0) h += row("店舗独自特典: 現金キャッシュバック", "<b>" + yen(num(state.storeCash)) + "</b>（相対対応）");
+    if (num(state.storePt) > 0) h += row("店舗独自特典: ポイント還元", "<b>" + Math.round(num(state.storePt)).toLocaleString("ja-JP") + "pt</b>（相対対応）");
     if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
     h += "</tbody></table>";
 
@@ -741,6 +758,12 @@
   });
   $("tvPoint").addEventListener("change", function () { state.tvPoint = this.checked; recalc(); });
   $("h5Mig").addEventListener("change", function () { state.h5Mig = this.checked; recalc(); });
+  $("storeTokutenBtn").addEventListener("click", function () {
+    var box = $("storeTokutenBox");
+    box.hidden = !box.hidden;
+  });
+  $("storeCash").addEventListener("input", function () { state.storeCash = num(this.value); recalc(); });
+  $("storePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
   $("router10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
