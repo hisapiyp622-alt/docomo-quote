@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-54";
+  var APP_VERSION = "2026.07.25-55";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -494,7 +494,7 @@
     }
     // 店舗独自特典のポイントはdポイントなので進呈特典と合算して表示
     if (num(state.storePt) > 0) {
-      ptRows.push({ name: "店舗特典ポイント進呈", pt: Math.round(num(state.storePt)) });
+      ptRows.push({ name: "店舗独自特典ポイント進呈", pt: Math.round(num(state.storePt)) });
     }
     if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
       ptRows.push({ name: "新規工事料 実質0円特典（開通6か月後から24回に分けて進呈）", pt: r.koji });
