@@ -11,11 +11,13 @@
 
   /* プロバイダ: よく使う4社はロゴタイル、それ以外は「その他プロバイダ」から一覧で選ぶ
    * logos/<id>.svg（または .png）を置くとロゴ画像で表示され、無い間は名前を表示する */
+  /* mark/color はロゴ画像が入るまでの識別用（各社のロゴではなく、こちらで用意した色分け表示）。
+   * 色やマークの文字は自由に変更してよい。 */
   var PROV_MAIN = [
-    { v: "OCN インターネット", id: "ocn" },
-    { v: "GMOとくとくBB", id: "gmo" },
-    { v: "@nifty", id: "nifty" },
-    { v: "ANDLINE", id: "andline" }
+    { v: "OCN インターネット", id: "ocn", mark: "OCN", color: "#1B6AC9" },
+    { v: "GMOとくとくBB", id: "gmo", mark: "GMO", color: "#E2571E" },
+    { v: "@nifty", id: "nifty", mark: "@n", color: "#6A3FA0" },
+    { v: "ANDLINE", id: "andline", mark: "AND", color: "#1E9E6A" }
   ];
   var PROV_OTHER = [
     { label: "タイプA", items: ["BIGLOBE", "SIS", "hi-ho", "IC-NET", "BB.excite", "エディオンネット", "Tigers-net.com", "シナプス", "楽天ブロードバンド", "DTI", "ネスク", "TikiTikiインターネット", "ドコモnet", "plala"] },
@@ -30,19 +32,29 @@
     sel.value = v;
     sel.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  function logoInto(box, id, name) {
+  function logoInto(box, p) {
+    var id = p.id, name = p.v;
+    // ロゴ画像が無い間の表示（識別用のマーク＋社名）
+    var fb = document.createElement("span");
+    fb.className = "prov-fallback";
+    var mark = document.createElement("span");
+    mark.className = "prov-mark";
+    mark.style.background = p.color || "#6E7075";
+    mark.textContent = p.mark || name.slice(0, 3);
     var txt = document.createElement("span");
     txt.className = "prov-name";
     txt.textContent = name;
-    box.appendChild(txt);
+    fb.appendChild(mark);
+    fb.appendChild(txt);
+    box.appendChild(fb);
     ["svg", "png"].forEach(function (ext) {
       var img = new Image();
       img.onload = function () {
         if (box.querySelector("img")) return;
         img.className = "prov-logo";
         img.alt = name;
-        box.insertBefore(img, txt);
-        txt.style.display = "none";
+        box.insertBefore(img, fb);
+        fb.style.display = "none";
       };
       img.src = "logos/" + id + "." + ext;
     });
@@ -60,7 +72,7 @@
       b.type = "button";
       b.className = "tile-btn prov-tile";
       b.setAttribute("data-val", p.v);
-      logoInto(b, p.id, p.v);
+      logoInto(b, p);
       b.addEventListener("click", function () { setProvider(p.v); setTimeout(syncProvider, 0); });
       wrap.appendChild(b);
     });
