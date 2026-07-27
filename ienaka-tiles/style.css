@@ -425,3 +425,4 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .prov-list{margin-bottom:8px}
 .prov-list:last-child{margin-bottom:0}
 .prov-small{min-width:0;flex:0 0 auto;padding:7px 12px;font-size:12.5px}
+.phone-more{margin:2px 0 6px 24px;padding:6px 12px;font-size:12.5px}
