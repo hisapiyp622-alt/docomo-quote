@@ -173,6 +173,37 @@
     });
   }
 
+  /* 光電話の付加サービス: 既定では発信者番号表示だけを出し、
+   * 「その他オプション」を押したときに残りをまとめて表示する */
+  var PHONE_MORE = ["dpTensou", "dpWch", "dpAddNum"];
+  var phoneOpen = false;
+  function applyPhoneOptions() {
+    var list = document.getElementById("ienakaOptList");
+    if (!list) return;
+    var labels = [];
+    PHONE_MORE.forEach(function (id) {
+      var inp = list.querySelector('input[data-opt="' + id + '"]');
+      if (inp && inp.closest("label")) labels.push(inp.closest("label"));
+    });
+    var btn = document.getElementById("phoneMoreBtn");
+    if (!labels.length) { if (btn) btn.remove(); return; } // 光電話を選んでいないときは何も出さない
+    // すでにチェック済みの項目があれば開いたままにする
+    if (labels.some(function (l) { return l.querySelector("input").checked; })) phoneOpen = true;
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.id = "phoneMoreBtn";
+      btn.className = "btn-sub phone-more";
+      btn.addEventListener("click", function () { phoneOpen = !phoneOpen; applyPhoneOptions(); });
+    }
+    if (btn.nextSibling !== labels[0] || !btn.isConnected) {
+      labels[0].parentNode.insertBefore(btn, labels[0]);
+    }
+    var txt = (phoneOpen ? "− " : "＋ ") + "その他オプション";
+    if (btn.textContent !== txt) btn.textContent = txt;
+    labels.forEach(function (l) { if (l.hidden !== !phoneOpen) l.hidden = !phoneOpen; });
+  }
+
   function targets() {
     var list = [];
     IDS.forEach(function (id) {
@@ -225,6 +256,7 @@
       if (sel.getAttribute("data-tiled") !== "1" || !sel.__tiles || !sel.__tiles.isConnected) build(sel);
     });
     ensureProvider();
+    applyPhoneOptions();
     sync();
     syncProvider();
   }
