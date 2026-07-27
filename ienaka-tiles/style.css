@@ -1,0 +1,407 @@
+/* ドコモ料金見積もり — mobile first */
+:root{
+  --red:#CC0033;
+  --red-dark:#A80029;
+  --ink:#222325;
+  --muted:#6E7075;
+  --line:#E3E4E6;
+  --bg:#F4F4F5;
+  --panel:#FFFFFF;
+  --ok:#1E7B4F;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif;
+  font-size:15px;line-height:1.6;
+  padding-bottom:76px; /* summary bar分 */
+}
+
+/* ---------- header/tabs ---------- */
+.app-header{background:var(--red);color:#fff;padding:14px 16px 0;position:relative}
+.app-header .app-link{position:absolute;right:14px;top:16px;color:#fff;font-size:12px;text-decoration:underline;opacity:.9}
+.app-header h1{font-size:18px;margin:0 0 10px;font-weight:700;letter-spacing:.04em}
+.sync-status{font-size:11px;font-weight:400;letter-spacing:0;opacity:.9;margin-left:6px;vertical-align:middle}
+.sync-status.err{background:#fff;color:var(--red);border-radius:4px;padding:1px 6px}
+.sync-group{
+  font:inherit;font-size:12px;font-weight:400;letter-spacing:0;
+  margin-left:10px;vertical-align:middle;
+  background:rgba(255,255,255,.16);color:#fff;
+  border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:2px 4px;
+}
+.sync-group option{color:#333;background:#fff}
+.tabs{display:flex;gap:4px}
+.tab{
+  flex:1;border:none;background:rgba(255,255,255,.16);color:#fff;
+  padding:9px 4px;font:inherit;font-size:13.5px;cursor:pointer;
+  border-radius:6px 6px 0 0;
+}
+.tab.active{background:var(--bg);color:var(--red);font-weight:700}
+.tab:focus-visible{outline:2px solid #fff;outline-offset:-2px}
+
+/* ---------- layout ---------- */
+main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
+
+/* iPad横向きなどの広い画面ではカードを2列に */
+@media (min-width:900px){
+  #tab-quote.active{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;grid-auto-flow:row dense}
+  #tab-quote .pattern-bar,#tab-quote .actions,#tab-quote .card.full{grid-column:1 / -1}
+  #tab-quote .card{margin-bottom:0}
+  /* ①契約内容と②通話・メールを左列に縦積みし、背の高い③割引を右列に（①下の空白を埋める） */
+  #tab-quote .card.c1,#tab-quote .card.c2{grid-column:1}
+  #tab-quote .card.c3{grid-column:2;grid-row:span 2}
+  /* 半分幅カード内のタイルは3列（全幅カードは5列のまま） */
+  #tab-quote .card:not(.full) .tile-grid{grid-template-columns:repeat(3,1fr)}
+}
+.tab-page{display:none}
+.tab-page.active{display:block}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:12px;
+}
+.card h2{font-size:15px;margin:0 0 10px;color:var(--red);letter-spacing:.03em}
+
+/* ---------- form ---------- */
+[hidden]{display:none !important}
+.field{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+.field label{flex:0 0 11em;font-size:13.5px;color:var(--ink)}
+.field select,.field input[type=text],.field input[type=number]{
+  flex:1;min-width:9em;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+  font:inherit;background:#FBFBFB;
+}
+.field input[type=number]{text-align:right;font-variant-numeric:tabular-nums;max-width:11em}
+.field select:focus,.field input:focus{border-color:var(--red);outline:none}
+.check{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:14px;cursor:pointer}
+.check input{width:19px;height:19px;accent-color:var(--red)}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.plan-note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+
+.pattern-bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:10px 14px;margin-bottom:12px;
+}
+.pattern-bar .lbl{font-size:13px;color:var(--muted)}
+.pat{
+  width:40px;height:36px;border:1px solid var(--red);background:#fff;color:var(--red);
+  border-radius:8px;font:inherit;font-weight:700;cursor:pointer;
+}
+.pat.active{background:var(--red);color:#fff}
+.pat.filled:not(.active)::after{content:"●";font-size:7px;vertical-align:top;margin-left:2px}
+.tpl{
+  min-width:96px;height:36px;border:1px solid var(--gold,#8A6D2F);background:#fff;color:#8A6D2F;
+  border-radius:8px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;padding:0 12px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;
+}
+.tpl.filled{background:#F7F1E3}
+.tpl:active{transform:scale(.97)}
+.tpl.empty{color:var(--muted);border-color:var(--line);font-weight:400;background:#FBFBF9}
+.tpl-saving .tpl{border-color:var(--red);color:var(--red);animation:none}
+.tpl-namebox{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tpl-namebox input{
+  padding:7px 10px;border:1.5px solid var(--red);border-radius:8px;font:inherit;font-size:13.5px;width:12em;
+}
+#tplMsg{color:var(--red)}
+.mv{
+  border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:5px;
+  width:26px;height:26px;font-size:12px;cursor:pointer;padding:0;
+}
+.mv:hover{color:var(--red);border-color:var(--red)}
+.opt-cat{
+  font-size:12px;font-weight:700;color:var(--red);letter-spacing:.06em;
+  margin:12px 0 6px;padding:3px 8px;background:#FBF1F3;border-radius:5px;
+}
+.opt-cat:first-child{margin-top:4px}
+
+/* ---------- タイル式グリッド（横5列） ---------- */
+.tile-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px;
+}
+.tile{
+  border:1.5px solid var(--line);border-radius:8px;background:#FBFBFB;
+  padding:8px 5px 7px;text-align:center;cursor:pointer;user-select:none;
+  display:flex;flex-direction:column;justify-content:space-between;gap:4px;
+  min-height:64px;position:relative;
+}
+.tile:hover{border-color:#C9A0AB}
+.tile:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.tile.on{border-color:var(--red);background:#FBF1F3}
+.tile.on::after{
+  content:"✓";position:absolute;top:2px;right:5px;
+  color:var(--red);font-size:11px;font-weight:700;
+}
+.tile .t-name{
+  font-size:11.5px;line-height:1.35;font-weight:600;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  word-break:break-word;
+}
+.tile.on .t-name{color:var(--red)}
+.tile .t-price{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile.on .t-price{color:var(--red)}
+.tile select{
+  font-size:10.5px;padding:2px 1px;border:1px solid var(--line);border-radius:5px;
+  width:100%;background:#fff;font-family:inherit;
+}
+@media (max-width:600px){
+  .tile-grid{grid-template-columns:repeat(3,1fr)}
+}
+.subhead{
+  font-size:13px;font-weight:700;color:var(--ink);
+  margin:14px 0 4px;padding-top:10px;border-top:1px solid var(--line);
+}
+.tag-once{
+  display:inline-block;font-size:10.5px;color:#fff;background:var(--muted);
+  border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:1px;
+}
+.opt-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed #EEE}
+.opt-row:last-child{border-bottom:none}
+.opt-row .price{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;white-space:nowrap}
+
+.adhoc-list{margin-top:8px}
+.adhoc-row{display:flex;gap:6px;align-items:center;margin:6px 0}
+.adhoc-row input[type=text]{flex:2;min-width:6em;padding:7px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.adhoc-row input[type=number]{flex:1;min-width:5.5em;padding:7px 8px;border:1px solid var(--line);border-radius:6px;font:inherit;text-align:right}
+.adhoc-row select{padding:7px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12.5px}
+.adhoc-row .del{border:none;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px 6px}
+.adhoc-row .del:hover{color:var(--red)}
+
+/* ---------- buttons ---------- */
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.btn-main{
+  flex:1;background:var(--red);color:#fff;border:none;border-radius:8px;
+  padding:13px 18px;font:inherit;font-size:15.5px;font-weight:700;cursor:pointer;
+}
+.btn-main:hover{background:var(--red-dark)}
+.btn-sub{
+  background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+  padding:10px 14px;font:inherit;font-size:13.5px;cursor:pointer;
+}
+.btn-sub:hover{border-color:var(--red);color:var(--red)}
+button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
+/* ---------- summary bar ---------- */
+.summary-bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;
+  background:var(--ink);color:#fff;
+  display:flex;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+}
+.sum-item{flex:1;display:flex;flex-direction:column;align-items:center}
+.sum-label{font-size:11px;color:#BBB}
+.sum-value{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* ---------- 見積書 ---------- */
+.sheet{
+  background:#fff;border:1px solid var(--line);border-radius:8px;
+  padding:22px 20px;max-width:720px;margin:0 auto 14px;
+  font-size:13.5px;
+}
+.sheet h2.sheet-title{
+  text-align:center;font-size:20px;letter-spacing:.3em;margin:0 0 4px;color:var(--ink);
+  border-bottom:2px solid var(--red);padding-bottom:8px;
+}
+.sheet .sheet-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:12.5px;color:var(--muted);margin:8px 0 2px}
+.sheet .cust{font-size:16px;font-weight:700;margin:10px 0 2px;border-bottom:1px solid var(--ink);display:inline-block;padding-right:2em}
+.sheet h3{font-size:14px;margin:18px 0 6px;color:var(--red);border-left:4px solid var(--red);padding-left:8px}
+.sheet table{width:100%;border-collapse:collapse;font-size:13px}
+.sheet th,.sheet td{border:1px solid #D8D9DB;padding:6px 9px;text-align:left}
+.sheet td.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sheet .subrow{font-size:10.5px;font-weight:400;color:var(--muted);margin-top:2px;line-height:1.5}
+.sheet tr.total td{font-weight:700;background:#FBF1F3}
+/* 月額の推移（期間を横軸に表示） */
+.sheet .trans-table th{text-align:center;background:#F7F7F8;font-size:12px;white-space:nowrap}
+.sheet .trans-table td.trans-amt{text-align:center;font-weight:700;font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap}
+.sheet .trans-table .trans-sub{font-size:10px;font-weight:400;color:var(--muted);white-space:nowrap;margin-top:2px}
+.sheet .big-monthly{
+  display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;
+}
+.sheet .bm-box{
+  flex:1;min-width:150px;border:2px solid var(--red);border-radius:8px;padding:10px 12px;text-align:center;
+}
+.sheet .bm-box .bm-label{font-size:12px;color:var(--muted)}
+.sheet .bm-box .bm-value{font-size:22px;font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+.sheet .bm-box .bm-sub{font-size:11.5px;color:var(--muted)}
+.sheet .disclaimer{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7}
+.sheet .memo{font-size:12.5px;margin-top:8px}
+.pay-warn{
+  font-size:12.5px;font-weight:700;color:#B3261E;
+  background:#FDEDEC;border:1px solid #E8A9A4;border-radius:6px;
+  padding:8px 10px;margin:8px 0 0;line-height:1.6;
+}
+.sheet .warnbox{
+  font-size:12.5px;font-weight:700;color:#B3261E;
+  background:#FDEDEC;border:2px solid #B3261E;border-radius:6px;
+  padding:8px 10px;margin:10px 0 0;line-height:1.6;
+}
+.sheet .page2-note{text-align:center;font-size:11px;color:var(--muted);border-top:1px dashed #C9CACC;margin-top:20px;padding-top:8px}
+.sheet .page2-head{display:none}
+
+.export-box{
+  width:100%;min-height:180px;margin-top:8px;
+  font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+  border:1px solid var(--line);border-radius:6px;padding:8px;
+}
+
+/* ---------- master ---------- */
+.master-plan{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.master-plan h3{font-size:14px;margin:0 0 8px;color:var(--ink)}
+.master-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;font-size:13px}
+.master-grid label{color:var(--muted)}
+.master-grid input{padding:5px 8px;border:1px solid var(--line);border-radius:5px;font:inherit;text-align:right;max-width:8em;font-variant-numeric:tabular-nums}
+.gold-flag{font-size:11px;color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:2px}
+
+/* ---------- print ---------- */
+@page{margin:11mm 10mm}
+@media print{
+  body{background:#fff;padding:0;font-size:11px}
+  .no-print{display:none !important}
+  .tab-page{display:none}
+  #tab-sheet{display:block}
+  .sheet{border:none;border-radius:0;padding:0;max-width:none;font-size:12px}
+  .summary-bar{display:none}
+  /* 1枚に収まるよう全体を詰める */
+  .sheet h2.sheet-title{font-size:16px;letter-spacing:.25em;padding-bottom:5px}
+  .sheet .sheet-meta{margin:5px 0 0}
+  .sheet .cust{font-size:14px;margin:6px 0 0}
+  .sheet h3{font-size:12.5px;margin:9px 0 4px}
+  .sheet table{font-size:11.5px}
+  .sheet th,.sheet td{padding:3px 7px}
+  .sheet .subrow{font-size:9.5px;line-height:1.4}
+  .sheet .big-monthly{gap:6px;margin:7px 0}
+  .sheet .bm-box{padding:6px 9px;min-width:130px;border-width:1.5px}
+  .sheet .bm-box .bm-value{font-size:17px}
+  .sheet .bm-box .bm-label{font-size:10.5px}
+  .sheet .bm-box .bm-sub{font-size:10px}
+  .sheet .memo{font-size:10.5px;margin-top:4px}
+  .sheet .disclaimer{font-size:9px;margin-top:8px;padding-top:5px;line-height:1.5}
+  .sheet .warnbox{font-size:11px;padding:6px 8px}
+  /* 2ページ目（本体分割金・初期費用）はここで必ず改ページ */
+  .sheet .sheet-page2{break-before:page;page-break-before:always}
+  .sheet .page2-head{
+    display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    font-size:12px;font-weight:700;color:var(--ink);
+    border-bottom:2px solid var(--red);padding-bottom:4px;margin-bottom:5px;
+  }
+  .sheet .page2-head span{font-size:11px;font-weight:400;color:var(--muted)}
+  /* 表や見出しが中途半端な位置で分断されないようにする */
+  .sheet table,.sheet .big-monthly,.sheet .bm-box{break-inside:avoid;page-break-inside:avoid}
+  .sheet tr{break-inside:avoid;page-break-inside:avoid}
+  .sheet h3{break-after:avoid;page-break-after:avoid}
+}
+
+@media (max-width:480px){
+  .field label{flex-basis:100%;margin-bottom:-2px}
+}
+/* イエナカ見積もり専用の追加スタイル（共通スタイルは ../style.css） */
+.app-header{position:relative}
+.app-link{
+  position:absolute;right:14px;top:16px;
+  color:#fff;font-size:12px;text-decoration:underline;opacity:.9;
+}
+.step{
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:12px;
+}
+/* 広い画面では2列: 左=商材→オプション / 右=初期費用→特典（商材の横に初期費用） */
+@media (min-width:900px){
+  #tab-quote.active{display:block} /* 共通CSS（ケータイ側）のグリッド指定を打ち消し、.qcolsで列を組む */
+  .qcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .qcol{min-width:0}
+}
+.step h2{font-size:15px;margin:0 0 10px;color:var(--red)}
+.ienaka-opt{display:block;margin:6px 0}
+.ienaka-opt.sub{margin-left:24px;font-size:13px}
+.ienaka-opt .opt-price{color:var(--muted);font-size:12.5px}
+.koji-summary{
+  background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;
+  padding:8px 10px;color:var(--ink);font-weight:400;line-height:1.7;
+}
+.koji-summary b{color:var(--red)}
+.koji-summary .ks-sub{margin-top:4px;font-weight:700;font-size:12px}
+.koji-summary .ks-item{font-size:12px;color:var(--muted);padding-left:4px}
+/* 月額の推移（横並び）のスタイルは共通の ../style.css に定義 */
+
+/* 見積書: 初期費用とdポイント進呈特典を左右2列に（縦の長さを圧縮） */
+.sheet-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-items:start}
+.sheet-col{min-width:0}
+@media (max-width:700px){
+  .sheet-cols{display:block}
+}
+
+@media print{
+  /* 共通CSSは常に見積書タブを印刷対象にするため、開いているタブ（見積書 or 引き継ぎ）を印刷する形に上書き */
+  #tab-sheet{display:none}
+  #tab-sheet.active{display:block}
+  #tab-staff.active{display:block}
+  /* イエナカはセクションが多いので、A4 1ページに収まるようさらに詰める */
+  .sheet{font-size:10.5px}
+  .sheet h2.sheet-title{font-size:14px;letter-spacing:.2em;padding-bottom:4px}
+  .sheet .sheet-meta{margin:3px 0 0}
+  .sheet .cust{font-size:12px;margin:4px 0 0}
+  .sheet h3{font-size:11px;margin:5px 0 2px}
+  .sheet table{font-size:10px}
+  .sheet th,.sheet td{padding:1.5px 6px}
+  .sheet .big-monthly{gap:5px;margin:4px 0}
+  .sheet .bm-box{padding:3px 8px;min-width:110px;border-width:1px}
+  .sheet .bm-box .bm-value{font-size:14px}
+  .sheet .bm-box .bm-label{font-size:9.5px}
+  .sheet .bm-box .bm-sub{font-size:8.5px}
+  .sheet .memo{font-size:8px;margin-top:2px;line-height:1.4}
+  .sheet .disclaimer{font-size:7.5px;margin-top:4px;padding-top:3px;line-height:1.35}
+  .sheet .trans-table th,.sheet .trans-table td{padding:2px 5px}
+  .sheet .trans-sub{font-size:8px}
+  /* 印刷時も初期費用とdポイント進呈特典は2列のまま */
+  .sheet-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;break-inside:avoid;page-break-inside:avoid}
+}
+
+/* ヘッダーの担当者切り替え */
+.staff-pick{font-size:12px;font-weight:400;letter-spacing:0;margin-left:10px;vertical-align:middle;color:#fff;white-space:nowrap}
+.staff-pick span{margin-right:4px;opacity:.85}
+.staff-pick select{
+  font:inherit;font-size:12px;max-width:11em;
+  background:rgba(255,255,255,.16);color:#fff;
+  border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:2px 4px;
+}
+.staff-pick select option{color:#333;background:#fff}
+
+/* ログイン画面（クラウド保存が有効な場合のみ表示） */
+.login-overlay{
+  position:fixed;inset:0;z-index:50;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.login-box{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:22px 20px;width:100%;max-width:360px;
+  box-shadow:0 6px 24px rgba(0,0,0,.08);
+}
+.login-box h2{margin:0 0 4px;font-size:18px;color:var(--red)}
+.login-lead{margin:0 0 14px;font-size:12.5px;color:var(--muted)}
+.login-box .field{display:block;margin-bottom:10px}
+.login-box .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.login-box .field input{
+  width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.login-box .btn-main{width:100%;margin-top:4px}
+.login-err{
+  margin:0 0 10px;font-size:12.5px;color:var(--red);
+  background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;padding:7px 9px;
+}
+
+/* ── 試作: プルダウンをタイル選択に置き換える表示 ── */
+.tiled-field{display:block;margin-bottom:2px}
+.tiled-field label{display:block;flex-basis:auto;width:auto;margin-bottom:3px}
+.tiled-field select{display:none}
+.tiles{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.tile-btn{
+  flex:1 1 auto;min-width:100px;
+  background:#fff;border:1.5px solid var(--line);border-radius:8px;
+  padding:10px 10px;font:inherit;font-size:13px;line-height:1.35;color:var(--ink);
+  cursor:pointer;text-align:center;
+}
+.tile-btn:hover{border-color:#C3C4C6}
+.tile-btn.on{border-color:var(--red);background:#FBF1F3;color:var(--red);font-weight:700}
+.tile-btn:focus-visible{outline:2px solid var(--red);outline-offset:1px}
+.proto-badge{
+  font-size:11px;font-weight:700;letter-spacing:0;margin-left:8px;vertical-align:middle;
+  background:#fff;color:var(--red);border-radius:4px;padding:1px 7px;
+}
