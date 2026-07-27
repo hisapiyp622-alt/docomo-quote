@@ -353,3 +353,13 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   /* 印刷時も初期費用とdポイント進呈特典は2列のまま */
   .sheet-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;break-inside:avoid;page-break-inside:avoid}
 }
+
+/* ヘッダーの担当者切り替え */
+.staff-pick{font-size:12px;font-weight:400;letter-spacing:0;margin-left:10px;vertical-align:middle;color:#fff;white-space:nowrap}
+.staff-pick span{margin-right:4px;opacity:.85}
+.staff-pick select{
+  font:inherit;font-size:12px;max-width:11em;
+  background:rgba(255,255,255,.16);color:#fff;
+  border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:2px 4px;
+}
+.staff-pick select option{color:#333;background:#fff}

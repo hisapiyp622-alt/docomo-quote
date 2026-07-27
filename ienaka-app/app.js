@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "1.0.0";
+  var APP_VERSION = "1.1.0";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -80,23 +80,51 @@
       dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
     };
   }
-  var state = defaultState();
+  /* ---------- 店舗設定・担当者 ----------
+   * 店舗名と担当者リストは端末ごとの設定として保存する。
+   * 見積もりの入力内容は担当者ごとに別々の保存領域へ入れ、担当を切り替えても互いに影響しない。 */
+  var CFG_KEY = "ienaka-app-config-v1";
+  function defaultConfig() {
+    return { storeName: "", staff: [{ id: "s1", name: "担当1" }], activeStaffId: "s1" };
+  }
+  var config = defaultConfig();
   try {
-    var saved = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (saved) {
-      state = Object.assign(defaultState(), saved);
-      // エリア対応前の保存データ: 旧既定値(10,000pt)のままなら新しいエリア別既定値へ更新
-      if (saved.region == null && (num(state.dpoint) === 10000 || !num(state.dpoint))) {
-        state.dpoint = dpointDefaultFor(state.product, state.applyType);
-      }
-    }
+    var savedCfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
+    if (savedCfg && savedCfg.staff && savedCfg.staff.length) config = Object.assign(defaultConfig(), savedCfg);
   } catch (e) {}
+  function saveConfig() { try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {} }
+  function activeStaff() {
+    var s = config.staff.filter(function (x) { return x.id === config.activeStaffId; })[0];
+    if (!s) { s = config.staff[0]; config.activeStaffId = s.id; }
+    return s;
+  }
+  function staffLabel() { return (activeStaff().name || "").trim(); }
+  function quoteKey(staffId) { return KEY + ":" + (staffId || activeStaff().id); }
+
+  function loadState() {
+    var st = defaultState();
+    try {
+      var raw = localStorage.getItem(quoteKey());
+      // 担当者分離より前に保存したデータは、最初の担当者の見積もりとして引き継ぐ
+      if (raw == null && activeStaff().id === config.staff[0].id) raw = localStorage.getItem(KEY);
+      var saved = JSON.parse(raw || "null");
+      if (saved) {
+        st = Object.assign(defaultState(), saved);
+        // エリア対応前の保存データ: 旧既定値(10,000pt)のままなら新しいエリア別既定値へ更新
+        if (saved.region == null && (num(st.dpoint) === 10000 || !num(st.dpoint))) {
+          st.dpoint = dpointDefaultFor(st.product, st.applyType);
+        }
+      }
+    } catch (e) {}
+    return st;
+  }
+  var state = loadState();
 
   function $(id) { return document.getElementById(id); }
   function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
   function yen(n) { return (n < 0 ? "−" : "") + Math.abs(Math.round(n)).toLocaleString("ja-JP") + "円"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  function save() { try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {} }
 
   /* 商材・住居・タイプ変更時に標準料金をセット */
   function applyDefaults() {
@@ -377,7 +405,6 @@
     $("router10gPriceField").hidden = !is10g() || state.router10g === false;
     $("router10gPrice").value = state.router10gPrice || "";
     $("custName").value = state.custName;
-    $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
     $("storeCash").value = state.storeCash || "";
@@ -388,6 +415,36 @@
     renderExtras("extraMonthlyList", "extraMonthly");
     renderExtras("extraInitialList", "extraInitial");
     renumberSteps();
+    renderStaffSelect();
+    renderConfigTab();
+  }
+
+  /* ---------- 店舗設定・担当者のUI ---------- */
+  function renderStaffSelect() {
+    var sel = $("staffSelect");
+    sel.innerHTML = config.staff.map(function (s) {
+      return '<option value="' + esc(s.id) + '"' + (s.id === config.activeStaffId ? " selected" : "") + ">"
+        + esc(s.name || "（無名）") + "</option>";
+    }).join("");
+    $("storeLabel").textContent = config.storeName || "";
+  }
+  function renderConfigTab() {
+    $("storeName").value = config.storeName || "";
+    $("staffList").innerHTML = config.staff.map(function (s, i) {
+      return '<div class="adhoc-row">'
+        + '<input type="text" value="' + esc(s.name) + '" data-staff="' + i + '" placeholder="担当者名">'
+        + (config.staff.length > 1 ? '<button class="del" data-staffdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
+        + "</div>";
+    }).join("");
+  }
+  // 担当者を切り替える: その担当者の見積もりを読み直す
+  function switchStaff(id) {
+    save(); // 切り替え前の担当者の入力を保存
+    config.activeStaffId = id;
+    saveConfig();
+    state = loadState();
+    syncForm();
+    recalc();
   }
   function recalc() {
     var r = calc();
@@ -469,8 +526,9 @@
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
     var h = "";
     h += '<h2 class="sheet-title">お見積書</h2>';
-    h += '<div class="sheet-meta"><span>作成日: ' + dateStr + "</span><span>"
-      + (state.staffName ? "担当: " + esc(state.staffName) : "") + "</span></div>";
+    h += '<div class="sheet-meta"><span>' + (config.storeName ? esc(config.storeName) + "　" : "")
+      + "作成日: " + dateStr + "</span><span>"
+      + (staffLabel() ? "担当: " + esc(staffLabel()) : "") + "</span></div>";
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
 
     var seg0 = r.segs[0], segLast = r.segs[r.segs.length - 1];
@@ -627,8 +685,9 @@
     function row(k, v) { return "<tr><td style=\"width:38%\">" + k + "</td><td>" + v + "</td></tr>"; }
     var h = "";
     h += '<h2 class="sheet-title">登録スタッフ引き継ぎシート</h2>';
-    h += '<div class="sheet-meta"><span>作成日: ' + dateStr + "</span><span>"
-      + (state.staffName ? "受付担当: " + esc(state.staffName) : "") + "</span></div>";
+    h += '<div class="sheet-meta"><span>' + (config.storeName ? esc(config.storeName) + "　" : "")
+      + "作成日: " + dateStr + "</span><span>"
+      + (staffLabel() ? "受付担当: " + esc(staffLabel()) : "") + "</span></div>";
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
 
     h += "<h3>ご契約内容</h3><table><tbody>";
@@ -723,7 +782,7 @@
     document.querySelectorAll(".tab-page").forEach(function (s) { s.classList.toggle("active", s.id === "tab-" + name); });
     if (name === "sheet") renderSheet();
     if (name === "staff") renderStaffSheet();
-    $("summaryBar").style.display = name === "sheet" || name === "staff" ? "none" : "";
+    $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
   document.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { switchTab(b.dataset.tab); });
@@ -791,7 +850,37 @@
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
   $("custName").addEventListener("input", function () { state.custName = this.value; recalc(); });
-  $("staffName").addEventListener("input", function () { state.staffName = this.value; recalc(); });
+  /* 店舗設定・担当者 */
+  $("staffSelect").addEventListener("change", function () { switchStaff(this.value); });
+  $("storeName").addEventListener("input", function () {
+    config.storeName = this.value; saveConfig(); renderStaffSelect();
+    if ($("tab-sheet").classList.contains("active")) renderSheet();
+    if ($("tab-staff").classList.contains("active")) renderStaffSheet();
+  });
+  $("addStaff").addEventListener("click", function () {
+    config.staff.push({ id: "s" + Date.now().toString(36), name: "" });
+    saveConfig(); renderConfigTab(); renderStaffSelect();
+    var inputs = $("staffList").querySelectorAll("input[data-staff]");
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  });
+  $("staffList").addEventListener("input", function (e) {
+    var i = e.target.getAttribute("data-staff");
+    if (i == null) return;
+    config.staff[+i].name = e.target.value;
+    saveConfig(); renderStaffSelect();
+  });
+  $("staffList").addEventListener("click", function (e) {
+    var i = e.target.getAttribute("data-staffdel");
+    if (i == null) return;
+    var s = config.staff[+i];
+    if (!confirm("担当者「" + (s.name || "無名") + "」を削除しますか？\nこの担当者の見積もりも削除されます。")) return;
+    try { localStorage.removeItem(quoteKey(s.id)); } catch (err) {}
+    config.staff.splice(+i, 1);
+    var wasActive = config.activeStaffId === s.id;
+    saveConfig();
+    if (wasActive) { config.activeStaffId = config.staff[0].id; saveConfig(); state = loadState(); syncForm(); }
+    renderConfigTab(); renderStaffSelect(); recalc();
+  });
   $("quoteMemo").addEventListener("input", function () { state.quoteMemo = this.value; recalc(); });
 
   $("ienakaOptList").addEventListener("change", function (e) {

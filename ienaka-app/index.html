@@ -14,11 +14,17 @@
 <body>
 
 <header class="app-header no-print">
-  <h1>イエナカ見積もり <span class="sync-status">ドコモ光・ahamo光・home 5G</span></h1>
+  <h1>イエナカ見積もり
+    <span class="sync-status" id="storeLabel"></span>
+    <label class="staff-pick"><span>担当</span>
+      <select id="staffSelect" title="担当者を切り替えます（担当ごとに見積もりが分かれます）"></select>
+    </label>
+  </h1>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
+    <button class="tab" data-tab="config" type="button">設定</button>
   </nav>
 </header>
 
@@ -180,8 +186,8 @@
       </div>
       <p class="hint">ご家族のスマホに掛かるセット割（−1,210円/月×回線数など）の合計。入力すると見積書に「実質お支払い目安」として差引後の金額が表示されます。</p>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
-      <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）工事希望日は今月末以降"></div>
+      <p class="hint">担当者は画面上部で切り替えます（名前の追加・変更は「設定」タブ）。</p>
       <p class="hint">※ ドコモ光／home 5G セット割はご家族のスマホ料金から割引されます。上の「光セット割 合計額」に入力すると、実質価格として見積書に表示されます。</p>
     </div>
 
@@ -207,6 +213,29 @@
     <div class="actions no-print">
       <button class="btn-main" id="printStaffBtn" type="button">印刷／PDF保存</button>
       <button class="btn-sub" id="backToQuoteStaff" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <section id="tab-config" class="tab-page no-print">
+    <div class="qcols">
+      <div class="qcol">
+        <div class="step">
+          <h2>店舗情報</h2>
+          <div class="field">
+            <label for="storeName">店舗名</label>
+            <input type="text" id="storeName" placeholder="例）ドコモショップ○○店">
+          </div>
+          <p class="hint">入力すると見積書・引き継ぎシートに表示されます。</p>
+        </div>
+      </div>
+      <div class="qcol">
+        <div class="step">
+          <h2>担当者</h2>
+          <div class="adhoc-list" id="staffList"></div>
+          <button class="btn-sub" id="addStaff" type="button">＋ 担当者を追加</button>
+          <p class="hint">画面上部の「担当」で切り替えます。見積もりの入力内容は担当者ごとに保存されるため、別の担当者の作業中の見積もりに影響しません。担当者を削除すると、その担当者の見積もりも削除されます。</p>
+        </div>
+      </div>
     </div>
   </section>
 
