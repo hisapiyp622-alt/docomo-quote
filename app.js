@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-44";
+  var APP_VERSION = "2026.07.25-45";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -832,10 +832,12 @@
         var kb = state.optionKubun[o.id] || (on ? "new" : "");
         var isOff = kb === "off";
         var kubunHtml = (on || isOff)
-          ? '<select class="t-kubun" data-optkubun="' + esc(o.id) + '">'
+          ? '<span class="t-kubun">'
             + [["new", "新規"], ["keep", "継続"], ["off", "廃止"]].map(function (k) {
-                return '<option value="' + k[0] + '"' + (kb === k[0] ? " selected" : "") + ">" + k[1] + "</option>";
-              }).join("") + "</select>"
+                return '<label class="kb' + (kb === k[0] ? " on" : "") + '">'
+                  + '<input type="checkbox" data-optkubun="' + esc(o.id) + '" value="' + k[0] + '"'
+                  + (kb === k[0] ? " checked" : "") + "> " + k[1] + "</label>";
+              }).join("") + "</span>"
           : "";
         return tileHtml("data-opt", o.id, o.name, on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
       }).join("") + "</div>";
@@ -1744,7 +1746,7 @@
 
     // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
     function toggleTile(e) {
-      if (e.target.closest("select")) return;
+      if (e.target.closest("select") || e.target.closest(".t-kubun")) return;
       var tile = e.target.closest(".tile");
       if (!tile) return;
       var optId = tile.getAttribute("data-opt");
@@ -1792,10 +1794,12 @@
       if (pid) { state.optionPrices[pid] = num(e.target.value); recalc(); }
       var kid = e.target.getAttribute("data-optkubun");
       if (kid) {
-        var v = e.target.value;
-        state.optionKubun[kid] = v;
-        state.options[kid] = v !== "off"; // 廃止は月額に含めない
-        renderOptionList();
+        if (e.target.checked) {
+          var v = e.target.value;
+          state.optionKubun[kid] = v;
+          state.options[kid] = v !== "off"; // 廃止は月額に含めない
+        }
+        renderOptionList(); // チェックを外した場合は元の区分に戻す
         recalc();
       }
     });
