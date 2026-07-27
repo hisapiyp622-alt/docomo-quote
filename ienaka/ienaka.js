@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-61";
+  var APP_VERSION = "2026.07.25-62";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -37,6 +37,23 @@
       note: "工事不要・コンセントに挿すだけ。プラン月額5,280円（税込）・事務手数料4,950円（店頭）。"
     }
   };
+  /* プロバイダ（ドコモ光公式のプロバイダ一覧・料金タイプ別） */
+  var PROVIDERS = {
+    A: ["OCN インターネット", "GMOとくとくBB", "@nifty", "ANDLINE", "BIGLOBE", "SIS", "hi-ho", "IC-NET",
+      "BB.excite", "エディオンネット", "Tigers-net.com", "シナプス", "楽天ブロードバンド", "DTI", "ネスク",
+      "TikiTikiインターネット", "ドコモnet", "plala"],
+    B: ["AsahiNet", "WAKWAK", "@T COM", "TNC", "@ちゃんぷるネット", "OCN"]
+  };
+  // 選択中の料金タイプに合わせて、プロバイダの選択肢を作り直す
+  function renderProviders() {
+    var t = state.ptype === "B" ? "B" : "A";
+    var list = PROVIDERS[t];
+    if (list.indexOf(state.provider) < 0) state.provider = ""; // タイプに無いプロバイダは未選択へ戻す
+    $("provider").innerHTML = '<option value="">未定</option>'
+      + list.map(function (v) {
+          return '<option value="' + esc(v) + '"' + (state.provider === v ? " selected" : "") + ">" + esc(v) + "</option>";
+        }).join("");
+  }
   function is10g() { return state.product === "hikari10g" || state.product === "ahamo10g"; }
   function isHikari() { return state.product !== "home5g"; }
   /* 月額オプション（チェック式・金額は見積もりごとに編集可）
@@ -44,12 +61,25 @@
   var IENAKA_OPTS = [
     { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 光電話の付加サービス（ドコモ光電話向けサービスの公式一覧・税込）
+     * inValue: ドコモ光電話バリューの月額に含まれるもの */
+    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpWaiting", name: "通話中着信", price: 330, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpNumReq", name: "ナンバー・リクエスト", price: 220, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpStop", name: "迷惑電話ストップサービス", price: 220, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpMail", name: "着信お知らせメール", price: 110, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "skyp", name: "映像サービス", price: 0, sumOf: "needsVideo", for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 映像サービスの内訳（「映像サービス」にチェックしたときだけ表示）。金額は見積もりごとに変更可 */
+    { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン（チューナーレンタル込み）", price: 3850, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsHikariHajime", name: "ひかりTV初めて割（2年間）", price: -1100, timedMonths: 24, needsVideo: true, needsHikariTv: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBase", name: "スカパー！基本料", price: 429, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBasic", name: "スカパー！基本プラン", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSelect5", name: "スカパー！セレクト5", price: 1980, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSelect10", name: "スカパー！セレクト10", price: 2860, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g", "hikari10g"] },
     { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g", "ahamo10g"] },
     { id: "apHome", name: "あんしんパック ホーム（デジタル機器補償＋ネットトータルサポート＋ネットワークセキュリティ）", price: 968, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
@@ -111,17 +141,45 @@
     state.jimuFee = p.jimu;
   }
 
+  // 見出しオプション（映像サービスなど）に紐づく、選択中の内訳の合計月額
+  function groupTotal(parent) {
+    var t = 0;
+    IENAKA_OPTS.forEach(function (c) {
+      if (!c[parent.sumOf] || !state.opts[c.id]) return;
+      if (c.for.indexOf(state.product) < 0) return;
+      if (c.needsHikariTv && !state.opts.vsHikariTv) return;
+      t += state.optPrices[c.id] != null ? num(state.optPrices[c.id]) : c.price;
+    });
+    return t;
+  }
+  // 見出しの合計表示だけを更新する（内訳の金額を編集した直後に使う）
+  function updateGroupTotals() {
+    IENAKA_OPTS.forEach(function (o) {
+      if (!o.sumOf) return;
+      var inp = document.querySelector('#ienakaOptList input[data-opt="' + o.id + '"]');
+      if (!inp) return;
+      var el = inp.closest("label").querySelector(".opt-sum");
+      if (el) el.textContent = "合計 " + yen(groupTotal(o)) + "/月";
+    });
+  }
+
   /* ---------- 計算 ---------- */
   function calc() {
     var p = PRODUCTS[state.product];
     var rows = [{ name: p.name + productLabel(), amount: num(state.baseMonthly) }];
     var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var optTimed = []; // 期間限定のオプション割引（あとで月額の推移へ反映）
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       if (o.needsPhone && !phoneOn) return; // 光電話の付加サービスは光電話利用時のみ
+      if (o.needsVideo && !state.opts.skyp) return; // 映像サービスの内訳は映像サービス利用時のみ
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
       if (!state.opts[o.id]) return;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
-      rows.push({ name: o.name, amount: pr });
+      if (o.timedMonths) { optTimed.push({ name: o.name, amount: pr, from: 1, to: o.timedMonths }); return; }
+      if (o.sumOf) return; // 見出し行。金額は内訳側で計上する
+      // 映像サービス（ひかりTV・スカパー）はドコモ光の利用料金ではないため、dカード還元の対象外
+      rows.push({ name: o.name, amount: pr, noDcard: !!(o.needsVideo || o.needsHikariTv) });
     });
     state.extraMonthly.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -130,7 +188,7 @@
 
     // dカードGOLD/PLATINUM還元: 利用料金1,100円（税込）ごとに100pt（GOLD 10%）/ 200pt（PLATINUM 20%）
     var dcardEligible = 0;
-    rows.forEach(function (x) { if (x.amount > 0) dcardEligible += x.amount; });
+    rows.forEach(function (x) { if (x.amount > 0 && !x.noDcard) dcardEligible += x.amount; });
     var dcardRate = state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
     var dcardPt = state.dcard === "none" ? 0 : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
@@ -141,6 +199,7 @@
 
     // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
     var timed = [], deviceNote = "";
+    optTimed.forEach(function (t) { timed.push(t); });
 
     // 10ギガ ワンコインキャンペーン: 開通〜最大6か月目まで基本料500円（税込）
     var onecoinOn = is10g() && state.onecoin && num(state.baseMonthly) > 500;
@@ -278,15 +337,35 @@
   }
 
   /* ---------- 画面描画 ---------- */
+  /* 光電話の付加サービス: 既定では発信者番号表示のみ表示し、残りは「その他オプション」で開閉 */
+  var PHONE_MORE = ["dpWaiting", "dpTensou", "dpNumReq", "dpStop", "dpMail", "dpWch", "dpAddNum"];
+  var phoneMoreOpen = false;
   function renderOpts() {
-    var h = "", banpoShown = false;
+    var h = "", banpoShown = false, phoneMoreShown = false;
+    // すでにチェック済みの項目があれば開いたままにする
+    if (PHONE_MORE.some(function (id) { return state.opts[id]; })) phoneMoreOpen = true;
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       var shinki = state.applyType === "shinki" && state.product !== "home5g";
       if (o.needsPhone && !(state.opts.denwa || state.opts.denwaBV)) return; // 光電話チェック時のみ表示
+      if (o.needsVideo && !state.opts.skyp) return; // 映像サービスチェック時のみ表示
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTVチェック時のみ表示
+      // 光電話の付加サービスは、発信者番号表示だけを出して残りは「その他オプション」で開閉する
+      if (o.needsPhone && PHONE_MORE.indexOf(o.id) >= 0) {
+        if (!phoneMoreShown) {
+          phoneMoreShown = true;
+          h += '<button class="btn-sub phone-more" id="phoneMoreBtn" type="button">'
+            + (phoneMoreOpen ? "− " : "＋ ") + "その他オプション</button>";
+        }
+        if (!phoneMoreOpen) return;
+      }
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
-      h += '<label class="check ienaka-opt' + (o.needsPhone ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
-        + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
+      var priceHtml = o.sumOf
+        ? (state.opts[o.id] ? ' <span class="opt-price opt-sum">合計 ' + yen(groupTotal(o)) + "/月</span>" : "")
+        : ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>';
+      h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
+        + esc(o.name) + priceHtml
+        + (o.inValue && state.opts.denwaBV ? ' <span class="opt-price in-value">バリューに含む</span>' : "")
         + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
       // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
@@ -352,7 +431,7 @@
     $("applyType").value = state.applyType || "shinki";
     $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("providerField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
-    $("provider").value = state.provider || "";
+    renderProviders();
     // プロバイダ無料無線ルーターレンタルは1ギガのみ（10ギガは対象プロバイダなし・別途購入）
     $("routerRentalField").hidden = state.product !== "hikari1g";
     $("routerRental").value = state.routerRental || "ari";
@@ -657,7 +736,10 @@
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       if (o.needsPhone && !phoneOn) return;
+      if (o.needsVideo && !state.opts.skyp) return;
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return;
       if (!state.opts[o.id]) return;
+      if (o.sumOf) return; // 見出し行は内訳で表現する
       anyOpt = true;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
       var extra = "";
@@ -794,6 +876,9 @@
   $("staffName").addEventListener("input", function () { state.staffName = this.value; recalc(); });
   $("quoteMemo").addEventListener("input", function () { state.quoteMemo = this.value; recalc(); });
 
+  $("ienakaOptList").addEventListener("click", function (e) {
+    if (e.target.id === "phoneMoreBtn") { phoneMoreOpen = !phoneMoreOpen; renderOpts(); }
+  });
   $("ienakaOptList").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-opt");
     if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
@@ -806,7 +891,7 @@
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");
-    if (id) { state.optPrices[id] = num(e.target.value); recalc(); }
+    if (id) { state.optPrices[id] = num(e.target.value); updateGroupTotals(); recalc(); }
   });
   function bindExtras(listId) {
     $(listId).addEventListener("input", function (e) {
