@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="イエナカ見積もり">
+  <rect width="512" height="512" rx="96" fill="#CC0033"/>
+  <!-- 家 -->
+  <path d="M256 122 L410 250 L410 396 A16 16 0 0 1 394 412 L118 412 A16 16 0 0 1 102 396 L102 250 Z" fill="#fff"/>
+  <!-- Wi-Fi 電波 -->
+  <g fill="none" stroke="#CC0033" stroke-width="22" stroke-linecap="round">
+    <path d="M196 316 A86 86 0 0 1 316 316"/>
+    <path d="M226 348 A44 44 0 0 1 286 348"/>
+  </g>
+  <circle cx="256" cy="380" r="15" fill="#CC0033"/>
+</svg>
