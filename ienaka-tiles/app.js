@@ -60,7 +60,7 @@
     { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン（チューナーレンタル込み）", price: 3850, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsHikariHajime", name: "ひかりTV初めて割（2年間）", price: -1100, timedMonths: 24, needsVideo: true, needsHikariTv: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSkyBase", name: "スカパー！基本料", price: 429, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "vsSkyBasic", name: "スカパー！基本パック", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBasic", name: "スカパー！基本プラン", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSelect5", name: "スカパー！セレクト5", price: 1980, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSelect10", name: "スカパー！セレクト10", price: 2860, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g", "hikari10g"] },
