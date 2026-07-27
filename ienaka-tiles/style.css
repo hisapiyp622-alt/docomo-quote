@@ -405,3 +405,17 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   font-size:11px;font-weight:700;letter-spacing:0;margin-left:8px;vertical-align:middle;
   background:#fff;color:var(--red);border-radius:4px;padding:1px 7px;
 }
+
+/* 試作: プロバイダのロゴタイルと「その他プロバイダ」一覧 */
+.prov-tile{min-width:130px;padding:8px 10px;display:flex;align-items:center;justify-content:center;min-height:52px}
+.prov-logo{max-width:118px;max-height:34px;display:block}
+.prov-name{font-size:13px;line-height:1.3}
+.prov-other{min-width:130px}
+.prov-panel{
+  background:#FAFAFB;border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;margin:0 0 12px;
+}
+.prov-group{font-size:12px;font-weight:700;color:var(--muted);margin:2px 0 6px}
+.prov-list{margin-bottom:8px}
+.prov-list:last-child{margin-bottom:0}
+.prov-small{min-width:0;flex:0 0 auto;padding:7px 12px;font-size:12.5px}
