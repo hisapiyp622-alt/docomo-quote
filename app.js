@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-41";
+  var APP_VERSION = "2026.07.25-43";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -136,6 +136,7 @@
       procType: "shinki", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
       voice: "none", options: {}, optionPrices: {}, feeItems: {},
+      optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
@@ -148,6 +149,9 @@
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
       custName: "", shopName: "", staffName: "", quoteMemo: "",
+      // 引き継ぎシートの作業指示
+      todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
+      todoPlan: "", todoOptOff: "", todoOther: "",
     };
   }
   var store = { active: 0, patterns: [defaultState(), defaultState(), defaultState()] };
@@ -172,6 +176,7 @@
     } catch (e) {}
     // 旧・代理店サービスのチェック状態をオプションへ統合（全パターン共通）
     store.patterns.forEach(function (pt) {
+      if (!pt.optionKubun) pt.optionKubun = {};
       if (pt.agencyOptions) {
         Object.keys(pt.agencyOptions).forEach(function (k) {
           if (pt.agencyOptions[k]) pt.options[k] = true;
@@ -770,8 +775,9 @@
     sel.options[1].textContent = "有り（" + yen(mo.price) + "/月）";
     $("mailHint").textContent = "MAX・mini等のキャリアプランはドコモメール標準込み（無しのままでOK）。ahamo・irumoは有料オプション。";
   }
-  function tileHtml(attr, id, name, on, priceHtml) {
-    return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
+  function tileHtml(attr, id, name, on, priceHtml, extraClass) {
+    return '<div class="tile' + (on ? " on" : "") + (extraClass ? " " + extraClass : "")
+      + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
       + '" tabindex="0" ' + attr + '="' + esc(id) + '">'
       + '<span class="t-name">' + esc(name) + "</span>"
       + priceHtml
@@ -801,7 +807,16 @@
         } else {
           priceHtml = '<span class="t-price">' + yen(o.price) + "/月</span>";
         }
-        return tileHtml("data-opt", o.id, o.name, on, priceHtml);
+        // 区分（新規／継続／廃止）は、対象にしているオプションだけに表示する
+        var kb = state.optionKubun[o.id] || (on ? "new" : "");
+        var isOff = kb === "off";
+        var kubunHtml = (on || isOff)
+          ? '<select class="t-kubun" data-optkubun="' + esc(o.id) + '">'
+            + [["new", "新規"], ["keep", "継続"], ["off", "廃止"]].map(function (k) {
+                return '<option value="' + k[0] + '"' + (kb === k[0] ? " selected" : "") + ">" + k[1] + "</option>";
+              }).join("") + "</select>"
+          : "";
+        return tileHtml("data-opt", o.id, o.name, on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
       }).join("") + "</div>";
     });
     $("optionList").innerHTML = h;
@@ -940,6 +955,8 @@
     $("shopName").value = state.shopName;
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
+    ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
+    ["todoPlan", "todoOptOff", "todoOther"].forEach(function (k) { $(k).value = state[k] || ""; });
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptDcard").value = state.pointDcard || "";
@@ -1022,6 +1039,21 @@
     var devWarn = deviceInputWarning();
     if (devWarn) h += '<div class="warnbox">⚠ ' + esc(devWarn) + "</div>";
 
+    // 手続き・作業内容（登録スタッフへの指示）
+    h += "<h3>手続き・作業内容</h3><table><tbody>";
+    var anyTodo = false;
+    if (state.todoPlan) { anyTodo = true; h += row("プラン", "<b>" + esc(state.todoPlan) + "</b>"); }
+    if (state.todoOptOff) { anyTodo = true; h += row("オプション廃止", "<b>" + esc(state.todoOptOff) + "</b>"); }
+    var apps = [];
+    if (state.todoDcard) apps.push("dカード申し込み");
+    if (state.todoDenki) apps.push("ドコモでんき");
+    if (state.todoGas) apps.push("ドコモガス");
+    if (state.todoHikari) apps.push("ドコモ光申し込み");
+    if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
+    if (state.todoOther) { anyTodo = true; h += row("その他の作業", esc(state.todoOther)); }
+    if (!anyTodo) h += row("作業内容", "（記入なし）");
+    h += "</tbody></table>";
+
     // 契約内容
     h += "<h3>ご契約内容</h3><table><tbody>";
     h += row("手続き種別", "<b>" + procLabel + "</b>");
@@ -1049,10 +1081,32 @@
     if (!anyWari) h += row("割引", "なし");
     h += "</tbody></table>";
 
-    // オプション
-    h += "<h3>お申込みオプション</h3><table><tbody>";
+    // オプション（新規／継続／廃止をまとめる）
+    var kNew = [], kKeep = [], kOff = [];
+    MASTER.options.forEach(function (o) {
+      var kb = state.optionKubun[o.id] || (state.options[o.id] ? "new" : "");
+      if (!kb) return;
+      var pr = optPrice(o, state);
+      var lb = o.priceLabels && o.priceLabels[String(pr)];
+      var nm = o.name + (lb ? "（" + lb + "）" : "");
+      if (kb === "off") kOff.push(nm);
+      else if (kb === "keep") kKeep.push({ name: nm, price: pr });
+      else kNew.push({ name: nm, price: pr });
+    });
+    h += "<h3>オプション（新規・継続・廃止）</h3><table><tbody>";
     var anyOpt = false;
-    r.optRows.forEach(function (o) { anyOpt = true; h += row(esc(o.name), yen(o.price) + "/月"); });
+    if (kNew.length) {
+      anyOpt = true;
+      h += row("<b>新規に付ける</b>", kNew.map(function (x) { return esc(x.name) + "　" + yen(x.price) + "/月"; }).join("<br>"));
+    }
+    if (kKeep.length) {
+      anyOpt = true;
+      h += row("継続", kKeep.map(function (x) { return esc(x.name) + "　" + yen(x.price) + "/月"; }).join("<br>"));
+    }
+    if (kOff.length) {
+      anyOpt = true;
+      h += row("<b>廃止する</b>", '<b style="color:var(--red)">' + kOff.map(esc).join("<br>") + "</b>");
+    }
     state.adhocMonthly.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
       anyOpt = true;
@@ -1665,7 +1719,17 @@
       var optId = tile.getAttribute("data-opt");
       var feeId = tile.getAttribute("data-fee");
       var accId = tile.getAttribute("data-acc");
-      if (optId) { state.options[optId] = !state.options[optId]; renderOptionList(); }
+      if (optId) {
+        // 対象にしている（新規・継続・廃止のいずれか）状態と、対象外とを切り替える
+        if (state.options[optId] || state.optionKubun[optId] === "off") {
+          state.options[optId] = false;
+          delete state.optionKubun[optId];
+        } else {
+          state.options[optId] = true;
+          state.optionKubun[optId] = "new";
+        }
+        renderOptionList();
+      }
       if (feeId) { state.feeItems[feeId] = !state.feeItems[feeId]; renderFeeItemList(); }
       if (accId) {
         if (state.accSel[accId]) delete state.accSel[accId];
@@ -1695,6 +1759,14 @@
     $("optionList").addEventListener("change", function (e) {
       var pid = e.target.getAttribute("data-optprice");
       if (pid) { state.optionPrices[pid] = num(e.target.value); recalc(); }
+      var kid = e.target.getAttribute("data-optkubun");
+      if (kid) {
+        var v = e.target.value;
+        state.optionKubun[kid] = v;
+        state.options[kid] = v !== "off"; // 廃止は月額に含めない
+        renderOptionList();
+        recalc();
+      }
     });
 
     // アクセサリ
@@ -1785,6 +1857,13 @@
     // お客様情報
     ["custName", "shopName", "staffName", "quoteMemo"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); });
+    });
+    // 引き継ぎシートの作業指示
+    ["todoPlan", "todoOptOff", "todoOther"].forEach(function (id) {
+      $(id).addEventListener("input", function () { state[id] = this.value; saveState(); renderStaffSheet(); });
+    });
+    ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
+      $(id).addEventListener("change", function () { state[id] = this.checked; saveState(); renderStaffSheet(); });
     });
 
     $("clearQuote").addEventListener("click", function () {
