@@ -53,6 +53,20 @@
       <span class="hint" id="tplMsg"></span>
     </div>
 
+    <div class="card full">
+      <h2>手続き内容</h2>
+      <div class="proc-checks">
+        <label class="check"><input type="checkbox" data-proc="kishu"> 機種変更</label>
+        <label class="check"><input type="checkbox" data-proc="shinki"> 新規</label>
+        <label class="check"><input type="checkbox" data-proc="mnp"> MNP</label>
+        <label class="check"><input type="checkbox" data-proc="plan"> プラン変更</label>
+        <label class="check"><input type="checkbox" id="todoDcard"> dカード申し込み</label>
+        <label class="check"><input type="checkbox" id="todoDenkiGas"> でんき・ガス申し込み</label>
+        <label class="check"><input type="checkbox" id="todoHikari"> 光申し込み</label>
+      </div>
+      <p class="hint">チェックした内容が引き継ぎシートに記載されます。機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェック時は MNP → 新規 → 機種変更 → プラン変更 の順で判定）。</p>
+    </div>
+
     <div class="card c1">
       <h2>① 契約内容</h2>
       <div class="field">
@@ -244,10 +258,7 @@
   <section id="tab-staff" class="tab-page">
     <div class="card full no-print">
       <h2>手続き・作業内容（登録スタッフへの指示）</h2>
-      <label class="check"><input type="checkbox" id="todoDcard"> dカード申し込み</label>
-      <label class="check"><input type="checkbox" id="todoDenki"> ドコモでんき</label>
-      <label class="check"><input type="checkbox" id="todoGas"> ドコモガス</label>
-      <label class="check"><input type="checkbox" id="todoHikari"> ドコモ光申し込み</label>
+      <p class="hint">申し込み内容（dカード・でんき・ガス・光）と手続き種別は、見積もりタブの「手続き内容」でチェックしてください。</p>
       <div class="field">
         <label for="todoPlan">プラン</label>
         <input type="text" id="todoPlan" placeholder="例）ギガホからドコモ MAXへ変更">
