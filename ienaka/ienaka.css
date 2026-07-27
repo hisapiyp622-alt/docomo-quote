@@ -59,3 +59,6 @@
   /* 印刷時も初期費用とdポイント進呈特典は2列のまま */
   .sheet-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;break-inside:avoid;page-break-inside:avoid}
 }
+.opt-price.in-value{color:var(--red);font-weight:700}
+.opt-price.opt-sum{color:var(--red);font-weight:700;font-size:13px}
+.phone-more{margin:2px 0 6px 24px;padding:6px 12px;font-size:12.5px}
