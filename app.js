@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-52";
+  var APP_VERSION = "2026.07.25-53";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -151,7 +151,7 @@
       custName: "", shopName: "", staffName: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
-      todoDcardType: "", todoDenkiType: "", todoGasType: "",
+      todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
       todoPlan: "", todoOptOff: "", todoOther: "",
@@ -428,6 +428,48 @@
     kaji: "家事トク料金", motto: "もっと割料金", yukadan: "床暖料金",
     myhome: "マイホーム発電料金"
   };
+  // ガスの割引オプション（大阪ガスエリア）
+  // 出典: https://denki.docomo.ne.jp/assets_brand/pdf/gas/discount_terms.pdf
+  var GAS_DISC_EQUIP = [
+    { id: "conro", name: "ガスコンロ", rate: 2 },
+    { id: "bath", name: "ガス温水浴室暖房乾燥機", rate: 5 },
+    { id: "bathmist", name: "ガス温水浴室暖房乾燥機（ミスト機能付）", rate: 7 }
+  ];
+  var GAS_DISCOUNT = {
+    attame: [
+      { id: "bath", name: "ガス温水浴室暖房乾燥機", rate: 4 },
+      { id: "denki", name: "電気", rate: 3 },
+      { id: "hosho", name: "ガス機器保証サービス等", rate: 2 }
+    ],
+    smart: [
+      { id: "yukabath", name: "床暖房およびガス温水浴室暖房乾燥機", rate: 4 },
+      { id: "solar", name: "太陽光発電", rate: 3 },
+      { id: "battery", name: "蓄電池またはV2H", rate: 3 },
+      { id: "kaitori", name: "余剰電力買取", rate: 2 }
+    ],
+    house: GAS_DISC_EQUIP,
+    yukadan: GAS_DISC_EQUIP,
+    myhome: GAS_DISC_EQUIP,
+    kaji: [
+      { id: "denki", name: "電気", rate: 3 },
+      { id: "hosho", name: "ガス機器保証サービス等", rate: 2 }
+    ],
+    motto: [
+      { id: "denki", name: "電気", rate: 3 }
+    ]
+  };
+  // 割引対象を最大3つ・合計9%までに制限する料金メニュー（PDF ※2）
+  var GAS_DISC_CAPPED = { smart: true, house: true, yukadan: true, myhome: true };
+  function gasDiscountList() { return GAS_DISCOUNT[state.todoGasType] || []; }
+  function gasDiscountPicked() {
+    var picked = state.todoGasDiscount || {};
+    return gasDiscountList().filter(function (d) { return picked[d.id]; });
+  }
+  function gasDiscountRate() {
+    var r = 0;
+    gasDiscountPicked().forEach(function (d) { r += d.rate; });
+    return GAS_DISC_CAPPED[state.todoGasType] ? Math.min(r, 9) : r;
+  }
   // 手続き内容のチェックから手続き種別を決める（複数選択時の優先順）
   var PROC_ORDER = [["mnp", "mnp"], ["shinki", "shinki"], ["kishu", "kishu"], ["plan", "plan_only"]];
   function procTypeFromTodo() {
@@ -1006,6 +1048,7 @@
     document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
     document.querySelectorAll("[data-denkitype]").forEach(function (cb) { cb.checked = state.todoDenkiType === cb.getAttribute("data-denkitype"); });
     document.querySelectorAll("[data-gastype]").forEach(function (cb) { cb.checked = state.todoGasType === cb.getAttribute("data-gastype"); });
+    renderGasDiscounts();
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
@@ -1070,6 +1113,32 @@
     }
   }
 
+  // ガスの割引オプション欄を料金メニューに合わせて描き直す
+  function renderGasDiscounts() {
+    var wrap = $("gasDiscountWrap");
+    var list = gasDiscountList();
+    if (!state.todoDenkiGas || !list.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+    wrap.hidden = false;
+    var picked = state.todoGasDiscount || {};
+    var capped = GAS_DISC_CAPPED[state.todoGasType];
+    var h = '<span class="sub-label">ガスの割引オプション</span>';
+    list.forEach(function (d) {
+      h += '<label class="check"><input type="checkbox" data-gasdisc="' + d.id + '"'
+        + (picked[d.id] ? " checked" : "") + "> " + esc(d.name) + " " + d.rate + "%</label>";
+    });
+    var picks = gasDiscountPicked();
+    var raw = 0;
+    picks.forEach(function (d) { raw += d.rate; });
+    var over = capped && (picks.length > 3 || raw > 9);
+    if (picks.length) {
+      h += '<span class="sub-note">計 ' + gasDiscountRate() + "%"
+        + (over ? "（最大3つ・9%までのため " + raw + "% から減額）" : "") + "　値引きの上限は4,400円/月</span>";
+    } else if (capped) {
+      h += '<span class="sub-note">割引対象は最大3つ・9%まで</span>';
+    }
+    wrap.innerHTML = h;
+  }
+
   /* ---------- 登録スタッフ引き継ぎシート ---------- */
   function renderStaffSheet() {
     var r = calc();
@@ -1116,8 +1185,15 @@
       }
       apps.push("でんき・ガス申し込み" + (eg.length ? "（" + eg.join("・") + "）" : ""));
     }
+    var gd = state.todoDenkiGas ? gasDiscountPicked() : [];
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
+    if (gd.length) {
+      anyTodo = true;
+      h += row("ガスの割引オプション", "<b>" + gd.map(function (d) {
+        return esc(d.name) + " " + d.rate + "%";
+      }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
+    }
     if (state.todoOther) { anyTodo = true; h += row("その他の作業", esc(state.todoOther)); }
     if (!anyTodo) h += row("作業内容", "（記入なし）");
     h += "</tbody></table>";
@@ -1965,7 +2041,7 @@
         if (id === "todoDcard") { $("dcardTypeWrap").hidden = !this.checked; if (!this.checked) state.todoDcardType = ""; }
         if (id === "todoDenkiGas") {
           $("energyTypeWrap").hidden = !this.checked;
-          if (!this.checked) { state.todoDenkiType = ""; state.todoGasType = ""; }
+          if (!this.checked) { state.todoDenkiType = ""; state.todoGasType = ""; state.todoGasDiscount = {}; }
         }
         syncFormFromState();
         saveState(); renderStaffSheet();
@@ -1979,9 +2055,18 @@
           document.querySelectorAll("[" + pair[0] + "]").forEach(function (o) {
             o.checked = state[pair[1]] === o.getAttribute(pair[0]);
           });
+          if (pair[1] === "todoGasType") { state.todoGasDiscount = {}; renderGasDiscounts(); }
           saveState(); renderStaffSheet();
         });
       });
+    });
+    $("gasDiscountWrap").addEventListener("change", function (e) {
+      var id = e.target.getAttribute && e.target.getAttribute("data-gasdisc");
+      if (!id) return;
+      if (!state.todoGasDiscount) state.todoGasDiscount = {};
+      state.todoGasDiscount[id] = e.target.checked;
+      renderGasDiscounts();
+      saveState(); renderStaffSheet();
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
     $("planChange").addEventListener("change", function () { state.planChange = this.checked; recalc(); });
