@@ -57,7 +57,8 @@
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "skyp", name: "映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     /* 映像サービスの内訳（「映像サービス」にチェックしたときだけ表示）。金額は見積もりごとに変更可 */
-    { id: "vsHikariTv", name: "ひかりTV（STB込み）", price: 1760, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン（チューナーレンタル込み）", price: 3850, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsHikariHajime", name: "ひかりTV初めて割（2年間）", price: -1100, timedMonths: 24, needsVideo: true, needsHikariTv: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSkyBase", name: "スカパー！基本料", price: 429, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSkyBasic", name: "スカパー！基本パック", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSelect5", name: "スカパー！セレクト5", price: 1980, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
@@ -162,12 +163,15 @@
     var p = PRODUCTS[state.product];
     var rows = [{ name: p.name + productLabel(), amount: num(state.baseMonthly) }];
     var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var optTimed = []; // 期間限定のオプション割引（あとで月額の推移へ反映）
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       if (o.needsPhone && !phoneOn) return; // 光電話の付加サービスは光電話利用時のみ
       if (o.needsVideo && !state.opts.skyp) return; // 映像サービスの内訳は映像サービス利用時のみ
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
       if (!state.opts[o.id]) return;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
+      if (o.timedMonths) { optTimed.push({ name: o.name, amount: pr, from: 1, to: o.timedMonths }); return; }
       rows.push({ name: o.name, amount: pr });
     });
     state.extraMonthly.forEach(function (a) {
@@ -188,6 +192,7 @@
 
     // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
     var timed = [], deviceNote = "";
+    optTimed.forEach(function (t) { timed.push(t); });
 
     // 10ギガ ワンコインキャンペーン: 開通〜最大6か月目まで基本料500円（税込）
     var onecoinOn = is10g() && state.onecoin && num(state.baseMonthly) > 500;
@@ -332,6 +337,7 @@
       var shinki = state.applyType === "shinki" && state.product !== "home5g";
       if (o.needsPhone && !(state.opts.denwa || state.opts.denwaBV)) return; // 光電話チェック時のみ表示
       if (o.needsVideo && !state.opts.skyp) return; // 映像サービスチェック時のみ表示
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTVチェック時のみ表示
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
       h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
         + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
@@ -912,6 +918,7 @@
       if (o.for.indexOf(state.product) < 0) return;
       if (o.needsPhone && !phoneOn) return;
       if (o.needsVideo && !state.opts.skyp) return;
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return;
       if (!state.opts[o.id]) return;
       anyOpt = true;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
