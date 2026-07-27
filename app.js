@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-46";
+  var APP_VERSION = "2026.07.25-47";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -151,6 +151,8 @@
       custName: "", shopName: "", staffName: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
+      // 店頭お支払い（頭金・付属品など）の支払方法
+      storePay: {}, usePoint: false, usePointAmount: 0,
       todoPlan: "", todoOptOff: "", todoOther: "",
     };
   }
@@ -980,6 +982,12 @@
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
     $("voiceChange").checked = !!state.voiceChange;
+    document.querySelectorAll("[data-storepay]").forEach(function (cb) {
+      cb.checked = !!(state.storePay || {})[cb.getAttribute("data-storepay")];
+    });
+    $("usePoint").checked = !!state.usePoint;
+    $("usePointField").hidden = !state.usePoint;
+    $("usePointAmount").value = state.usePointAmount || "";
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
@@ -1176,6 +1184,13 @@
       if (r.storeRows.length) h += row("<b>店頭お支払い合計</b>", "<b>" + yen(r.storeTotal) + "</b>");
       r.billRows.forEach(function (x) { h += row(esc(x.name) + "（翌月合算）", (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount))); });
       if (r.billRows.length) h += row("<b>翌月合算払い合計</b>", "<b>" + yen(r.billTotal) + "</b>");
+      var pays = [];
+      if ((state.storePay || {}).cash) pays.push("現金");
+      if ((state.storePay || {}).card) pays.push("カード");
+      h += row("店頭お支払い方法", pays.length ? "<b>" + pays.join("　／　") + "</b>" : "（未選択）");
+      h += row("dポイント利用", state.usePoint
+        ? '<b style="color:var(--red)">あり</b>' + (num(state.usePointAmount) > 0 ? "　" + num(state.usePointAmount).toLocaleString("ja-JP") + "pt" : "")
+        : "なし");
       h += "</tbody></table>";
     }
 
@@ -1904,6 +1919,22 @@
       $(id).addEventListener("change", function () { state[id] = this.checked; saveState(); renderStaffSheet(); });
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
+    // 店頭お支払いの支払方法
+    document.querySelectorAll("[data-storepay]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        if (!state.storePay) state.storePay = {};
+        state.storePay[cb.getAttribute("data-storepay")] = cb.checked;
+        saveState(); renderStaffSheet();
+      });
+    });
+    $("usePoint").addEventListener("change", function () {
+      state.usePoint = this.checked;
+      $("usePointField").hidden = !this.checked;
+      saveState(); renderStaffSheet();
+    });
+    $("usePointAmount").addEventListener("input", function () {
+      state.usePointAmount = num(this.value); saveState(); renderStaffSheet();
+    });
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.addEventListener("change", function () {
         if (!state.procTodo) state.procTodo = {};
