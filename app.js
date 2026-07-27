@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-47";
+  var APP_VERSION = "2026.07.25-48";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -135,7 +135,7 @@
     return {
       procType: "shinki", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
-      voice: "none", voiceChange: false, options: {}, optionPrices: {}, feeItems: {},
+      voice: "none", voiceChange: false, planChange: false, options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
@@ -982,6 +982,7 @@
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
     $("voiceChange").checked = !!state.voiceChange;
+    $("planChange").checked = !!state.planChange;
     document.querySelectorAll("[data-storepay]").forEach(function (cb) {
       cb.checked = !!(state.storePay || {})[cb.getAttribute("data-storepay")];
     });
@@ -1095,15 +1096,18 @@
     h += "</tbody></table>";
 
     // 契約内容
+    var h0 = h; h = "";
     h += "<h3>ご契約内容</h3><table><tbody>";
     h += row("手続き種別", "<b>" + procLabel + "</b>");
-    h += row("料金プラン", "<b>" + esc(r.plan.name) + "</b>（" + esc(r.tier.label) + "）　" + yen(r.tier.price));
+    h += row("料金プラン", "<b>" + esc(r.plan.name) + "</b>（" + esc(r.tier.label) + "）　" + yen(r.tier.price)
+      + (state.planChange ? ' <b style="color:var(--red)">（変更あり）</b>' : '<span style="color:var(--muted)">（変更なし）</span>'));
     var voiceName = r.voice.id !== "none" ? esc(r.voice.name) + "　" + yen(r.voicePrice) + esc(r.voiceNote) : "なし";
     h += row("通話オプション", voiceName
       + (state.voiceChange ? ' <b style="color:var(--red)">（変更あり）</b>' : '<span style="color:var(--muted)">（変更なし）</span>'));
     h += row("ドコモメール", state.mailOpt === "yes" ? "有り" : "無し");
     h += "</tbody></table>";
 
+    var secContract = h; h = "";
     // 適用する割引
     h += "<h3>適用する割引</h3><table><tbody>";
     var anyWari = false;
@@ -1123,6 +1127,7 @@
     if (!anyWari) h += row("割引", "なし");
     h += "</tbody></table>";
 
+    var secWari = h; h = "";
     // オプション（新規／継続／廃止をまとめる）
     var kNew = [], kKeep = [], kOff = [];
     MASTER.options.forEach(function (o) {
@@ -1158,6 +1163,7 @@
     if (!anyOpt) h += row("オプション", "なし");
     h += "</tbody></table>";
 
+    var secOpt = h; h = "";
     // 端末・アクセサリ
     if (num(state.devicePrice) > 0 || state.deviceName || r.accMonthlyRows.length || r.accOnceRows.length) {
       h += "<h3>端末・アクセサリ</h3><table><tbody>";
@@ -1177,6 +1183,7 @@
       h += "</tbody></table>";
     }
 
+    var secDevice = h; h = "";
     // 初期費用
     if (r.storeRows.length || r.billRows.length) {
       h += "<h3>初期費用</h3><table><tbody>";
@@ -1187,6 +1194,7 @@
       var pays = [];
       if ((state.storePay || {}).cash) pays.push("現金");
       if ((state.storePay || {}).card) pays.push("カード");
+      if ((state.storePay || {}).dbarai) pays.push("d払い");
       h += row("店頭お支払い方法", pays.length ? "<b>" + pays.join("　／　") + "</b>" : "（未選択）");
       h += row("dポイント利用", state.usePoint
         ? '<b style="color:var(--red)">あり</b>' + (num(state.usePointAmount) > 0 ? "　" + num(state.usePointAmount).toLocaleString("ja-JP") + "pt" : "")
@@ -1194,6 +1202,7 @@
       h += "</tbody></table>";
     }
 
+    var secInit = h; h = "";
     // ポイント充当・メモ
     h += "<h3>ポイント充当・その他</h3><table><tbody>";
     if (r.pointRows.length) {
@@ -1206,6 +1215,7 @@
     if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
     h += "</tbody></table>";
 
+    var secPoint = h; h = "";
     // 記入欄
     h += "<h3>登録スタッフ記入欄</h3><table><tbody>";
     h += row("登録日", "");
@@ -1213,6 +1223,13 @@
     h += row("備考", "");
     h += "</tbody></table>";
 
+    var secFill = h;
+    // 機種購入があるときは、端末と初期費用（支払方法）を先に読めるよう前へ出す
+    var hasDevice = state.payMethod !== "none" && (num(state.devicePrice) > 0 || state.deviceName);
+    h = h0 + (hasDevice
+      ? secDevice + secInit + secContract + secWari + secOpt
+      : secContract + secWari + secOpt + secDevice + secInit)
+      + secPoint + secFill;
     h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。アプリ版 ' + APP_VERSION + "</div>";
     $("staffSheetBody").innerHTML = h;
   }
@@ -1919,6 +1936,7 @@
       $(id).addEventListener("change", function () { state[id] = this.checked; saveState(); renderStaffSheet(); });
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
+    $("planChange").addEventListener("change", function () { state.planChange = this.checked; recalc(); });
     // 店頭お支払いの支払方法
     document.querySelectorAll("[data-storepay]").forEach(function (cb) {
       cb.addEventListener("change", function () {
