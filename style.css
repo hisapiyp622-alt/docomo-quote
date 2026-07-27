@@ -320,3 +320,4 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 }
 .sub-checks .sub-label{font-size:12px;font-weight:700;color:var(--muted)}
 .sub-checks .check{margin:2px 0;font-size:13px}
+.sub-checks .sub-note{font-size:12px;font-weight:700;color:var(--red)}
