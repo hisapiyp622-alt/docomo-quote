@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-40";
+  var APP_VERSION = "2026.07.25-41";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1000,6 +1000,120 @@
     }
   }
 
+  /* ---------- 登録スタッフ引き継ぎシート ---------- */
+  function renderStaffSheet() {
+    var r = calc();
+    var today = new Date();
+    var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
+    var procLabel = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更のみ" }[state.procType];
+    var payLabel = {
+      none: "端末購入なし", ikkatsu: "一括払い", b12: "分割12回", b24: "分割24回",
+      b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
+    }[state.payMethod] || "";
+    function row(k, v) { return '<tr><td style="width:38%">' + k + "</td><td>" + v + "</td></tr>"; }
+
+    var h = "";
+    h += '<h2 class="sheet-title">登録スタッフ引き継ぎシート</h2>';
+    h += '<div class="sheet-meta"><span>' + (state.shopName ? esc(state.shopName) + "　" : "")
+      + "作成日: " + dateStr + "</span><span>"
+      + (state.staffName ? "受付担当: " + esc(state.staffName) : "") + "</span></div>";
+    if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
+
+    var devWarn = deviceInputWarning();
+    if (devWarn) h += '<div class="warnbox">⚠ ' + esc(devWarn) + "</div>";
+
+    // 契約内容
+    h += "<h3>ご契約内容</h3><table><tbody>";
+    h += row("手続き種別", "<b>" + procLabel + "</b>");
+    h += row("料金プラン", "<b>" + esc(r.plan.name) + "</b>（" + esc(r.tier.label) + "）　" + yen(r.tier.price));
+    if (r.voice.id !== "none") h += row("通話オプション", esc(r.voice.name) + "　" + yen(r.voicePrice) + esc(r.voiceNote));
+    h += row("ドコモメール", state.mailOpt === "yes" ? "有り" : "無し");
+    h += "</tbody></table>";
+
+    // 適用する割引
+    h += "<h3>適用する割引</h3><table><tbody>";
+    var anyWari = false;
+    if (r.dMinna) { anyWari = true; h += row("みんなドコモ割", (state.minna === "2" ? "2回線" : "3回線以上") + "　−" + yen(r.dMinna)); }
+    if (r.dSet) { anyWari = true; h += row("ドコモ光／home 5G セット割", "−" + yen(r.dSet)); }
+    if (r.dCard) {
+      anyWari = true;
+      var cardName = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" }[state.dCard] || "";
+      h += row("dカードお支払割", cardName + "　−" + yen(r.dCard));
+    }
+    if (r.dDenki) { anyWari = true; h += row("ドコモでんきセット割", "−" + yen(r.dDenki)); }
+    if (r.dChoki) { anyWari = true; h += row("長期利用割", (state.choki === "y20" ? "20年以上" : "10年以上") + "　−" + yen(r.dChoki)); }
+    r.campaignRows.forEach(function (c) {
+      anyWari = true;
+      h += row(esc(c.name), "−" + yen(c.amount) + "（" + c.months + "か月間）");
+    });
+    if (!anyWari) h += row("割引", "なし");
+    h += "</tbody></table>";
+
+    // オプション
+    h += "<h3>お申込みオプション</h3><table><tbody>";
+    var anyOpt = false;
+    r.optRows.forEach(function (o) { anyOpt = true; h += row(esc(o.name), yen(o.price) + "/月"); });
+    state.adhocMonthly.forEach(function (a) {
+      if (!a.name && !num(a.amount)) return;
+      anyOpt = true;
+      h += row(esc(a.name || "追加項目"), (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))) + "/月"
+        + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : ""));
+    });
+    if (!anyOpt) h += row("オプション", "なし");
+    h += "</tbody></table>";
+
+    // 端末・アクセサリ
+    if (num(state.devicePrice) > 0 || state.deviceName || r.accMonthlyRows.length || r.accOnceRows.length) {
+      h += "<h3>端末・アクセサリ</h3><table><tbody>";
+      if (state.deviceName || num(state.devicePrice) > 0) {
+        h += row("機種", "<b>" + esc(state.deviceName || "（機種名未入力）") + "</b>　" + yen(num(state.devicePrice)));
+        h += row("お支払い方法", "<b>" + payLabel + "</b>"
+          + (r.device.monthly > 0 ? "　" + yen(r.device.monthly) + "/月 × " + r.device.months + "回" : ""));
+        if (r.device.kaedoki) {
+          h += row("　残価（24回目支払分）", yen(r.device.zanka || 0));
+          if (r.device.kaedokiFee > 0) h += row("　プログラム利用料", yen(r.device.kaedokiFee) + "（返却時・ドコモで買替えなら免除）");
+          h += row("　23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0));
+          h += row("　返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回");
+        }
+      }
+      r.accMonthlyRows.forEach(function (a) { h += row(esc(a.name) + "（アクセサリ）", yen(a.monthly) + "/月 × " + a.months + "回"); });
+      r.accOnceRows.forEach(function (a) { h += row(esc(a.name) + "（アクセサリ）", yen(a.amount) + "（一括）"); });
+      h += "</tbody></table>";
+    }
+
+    // 初期費用
+    if (r.storeRows.length || r.billRows.length) {
+      h += "<h3>初期費用</h3><table><tbody>";
+      r.storeRows.forEach(function (x) { h += row(esc(x.name) + "（店頭）", (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount))); });
+      if (r.storeRows.length) h += row("<b>店頭お支払い合計</b>", "<b>" + yen(r.storeTotal) + "</b>");
+      r.billRows.forEach(function (x) { h += row(esc(x.name) + "（翌月合算）", (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount))); });
+      if (r.billRows.length) h += row("<b>翌月合算払い合計</b>", "<b>" + yen(r.billTotal) + "</b>");
+      h += "</tbody></table>";
+    }
+
+    // ポイント充当・メモ
+    h += "<h3>ポイント充当・その他</h3><table><tbody>";
+    if (r.pointRows.length) {
+      r.pointRows.forEach(function (pt) { h += row(esc(pt.name), pt.amount.toLocaleString("ja-JP") + "pt/月"); });
+    } else {
+      h += row("ポイント充当", "なし");
+    }
+    h += row("毎月のお支払い目安", "<b>" + yen(r.segs[0].monthly) + "</b>"
+      + (r.segs.length > 1 ? "（" + segLabel(r.segs[r.segs.length - 1]) + " " + yen(r.segs[r.segs.length - 1].monthly) + "）" : ""));
+    if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
+    h += "</tbody></table>";
+
+    // 記入欄
+    h += "<h3>登録スタッフ記入欄</h3><table><tbody>";
+    h += row("登録日", "");
+    h += row("登録担当", "");
+    h += row("備考", "");
+    h += "</tbody></table>";
+
+    h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。アプリ版 ' + APP_VERSION + "</div>";
+    $("staffSheetBody").innerHTML = h;
+  }
+
   /* ---------- 見積書描画 ---------- */
   function renderSheet() {
     var r = calc();
@@ -1366,6 +1480,7 @@
     renderPatternTabs();
     saveState();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
+    if ($("tab-staff").classList.contains("active")) renderStaffSheet();
   }
 
   /* ---------- タブ ---------- */
@@ -1377,8 +1492,9 @@
       pg.classList.toggle("active", pg.id === "tab-" + name);
     });
     if (name === "sheet") renderSheet();
+    if (name === "staff") renderStaffSheet();
     if (name === "master") renderMasterTab();
-    $("summaryBar").style.display = name === "sheet" ? "none" : "";
+    $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
   function switchPattern(i) {
     store.active = i;
@@ -1472,7 +1588,14 @@
     $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
     $("backToQuote").addEventListener("click", function () { switchTab("quote"); });
     $("printBtn").addEventListener("click", function () { window.print(); });
-    window.addEventListener("beforeprint", renderSheet); // メニュー印刷でも最新の見積書を出す
+    $("printStaffBtn").addEventListener("click", function () { window.print(); });
+    $("backToQuoteStaff").addEventListener("click", function () { switchTab("quote"); });
+    // メニューからの印刷でも最新の内容を出す。引き継ぎタブを開いている場合はそちらを印刷する
+    window.addEventListener("beforeprint", function () {
+      var onStaff = $("tab-staff").classList.contains("active");
+      document.body.classList.toggle("print-staff", onStaff);
+      if (onStaff) renderStaffSheet(); else renderSheet();
+    });
 
     $("procType").addEventListener("change", function () {
       state.procType = this.value;
