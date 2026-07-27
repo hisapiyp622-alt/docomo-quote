@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-45";
+  var APP_VERSION = "2026.07.25-46";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -135,7 +135,7 @@
     return {
       procType: "shinki", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
-      voice: "none", options: {}, optionPrices: {}, feeItems: {},
+      voice: "none", voiceChange: false, options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
@@ -979,6 +979,7 @@
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
+    $("voiceChange").checked = !!state.voiceChange;
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
@@ -1089,7 +1090,9 @@
     h += "<h3>ご契約内容</h3><table><tbody>";
     h += row("手続き種別", "<b>" + procLabel + "</b>");
     h += row("料金プラン", "<b>" + esc(r.plan.name) + "</b>（" + esc(r.tier.label) + "）　" + yen(r.tier.price));
-    if (r.voice.id !== "none") h += row("通話オプション", esc(r.voice.name) + "　" + yen(r.voicePrice) + esc(r.voiceNote));
+    var voiceName = r.voice.id !== "none" ? esc(r.voice.name) + "　" + yen(r.voicePrice) + esc(r.voiceNote) : "なし";
+    h += row("通話オプション", voiceName
+      + (state.voiceChange ? ' <b style="color:var(--red)">（変更あり）</b>' : '<span style="color:var(--muted)">（変更なし）</span>'));
     h += row("ドコモメール", state.mailOpt === "yes" ? "有り" : "無し");
     h += "</tbody></table>";
 
@@ -1900,6 +1903,7 @@
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () { state[id] = this.checked; saveState(); renderStaffSheet(); });
     });
+    $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.addEventListener("change", function () {
         if (!state.procTodo) state.procTodo = {};
