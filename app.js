@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-50";
+  var APP_VERSION = "2026.07.25-51";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -420,7 +420,14 @@
   // 申し込みの種類（引き継ぎシートの表記）
   var DCARD_TYPE = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
   var DENKI_TYPE = { basic: "ドコモでんき Basic", green: "ドコモでんき Green" };
-  var GAS_TYPE = { osaka: "ドコモガス（大阪ガス）" }; // 関西圏のため大阪ガスのみ
+  // 関西圏のため「ドコモ ガス Supplied by 大阪ガス」の料金メニューのみ
+  var GAS_AREA = "ドコモガス（大阪ガス）";
+  var GAS_TYPE = {
+    ippan: "一般料金", ippanS: "一般料金S", matome: "まとめトク料金",
+    attame: "あっためトク料金", smart: "スマート発電料金", house: "ハウス空調料金",
+    kaji: "家事トク料金", motto: "もっと割料金", yukadan: "床暖料金",
+    myhome: "マイホーム発電料金"
+  };
   // 手続き内容のチェックから手続き種別を決める（複数選択時の優先順）
   var PROC_ORDER = [["mnp", "mnp"], ["shinki", "shinki"], ["kishu", "kishu"], ["plan", "plan_only"]];
   function procTypeFromTodo() {
@@ -1103,7 +1110,10 @@
     if (state.todoDenkiGas) {
       var eg = [];
       if (state.todoDenkiType) eg.push(DENKI_TYPE[state.todoDenkiType]);
-      if (state.todoGasType) eg.push(GAS_TYPE[state.todoGasType] || "ドコモガス");
+      if (state.todoGasType) {
+        // 旧データ（料金メニュー未対応）はエリア名だけを表示する
+        eg.push(GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA);
+      }
       apps.push("でんき・ガス申し込み" + (eg.length ? "（" + eg.join("・") + "）" : ""));
     }
     if (state.todoHikari) apps.push("光申し込み");
