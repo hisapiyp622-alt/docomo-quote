@@ -175,7 +175,7 @@
 
   /* 光電話の付加サービス: 既定では発信者番号表示だけを出し、
    * 「その他オプション」を押したときに残りをまとめて表示する */
-  var PHONE_MORE = ["dpTensou", "dpWch", "dpAddNum"];
+  var PHONE_MORE = ["dpWaiting", "dpTensou", "dpNumReq", "dpStop", "dpMail", "dpWch", "dpAddNum"];
   var phoneOpen = false;
   function applyPhoneOptions() {
     var list = document.getElementById("ienakaOptList");
