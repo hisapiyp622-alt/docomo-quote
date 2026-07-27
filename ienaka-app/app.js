@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "1.1.0";
+  var APP_VERSION = "2.0.0";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -92,7 +92,10 @@
     var savedCfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
     if (savedCfg && savedCfg.staff && savedCfg.staff.length) config = Object.assign(defaultConfig(), savedCfg);
   } catch (e) {}
-  function saveConfig() { try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {} }
+  function saveConfig() {
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {}
+    pushConfig(); // クラウド保存が有効な場合のみ送信
+  }
   function activeStaff() {
     var s = config.staff.filter(function (x) { return x.id === config.activeStaffId; })[0];
     if (!s) { s = config.staff[0]; config.activeStaffId = s.id; }
@@ -124,7 +127,10 @@
   function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
   function yen(n) { return (n < 0 ? "−" : "") + Math.abs(Math.round(n)).toLocaleString("ja-JP") + "円"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function save() { try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {} }
+  function save() {
+    try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {}
+    pushQuote(); // クラウド保存が有効な場合のみ送信
+  }
 
   /* 商材・住居・タイプ変更時に標準料金をセット */
   function applyDefaults() {
@@ -445,6 +451,180 @@
     state = loadState();
     syncForm();
     recalc();
+    watchQuote(); // クラウド保存が有効な場合、購読先を新しい担当者へ切り替え
+  }
+
+  /* ---------- クラウド保存（店舗アカウント） ----------
+   * Firebaseが設定されている場合のみ有効。未設定なら端末内保存のみで動作する。
+   * データは stores/{店舗アカウントのuid} 配下に保存し、
+   * セキュリティルールで他店からは読み書きできないようにしている（firestore.rules）。
+   * お客様名は個人情報のためクラウドへ送信しない。 */
+  var CLOUD = {
+    enabled: false, user: null, db: null, auth: null,
+    suppress: false, cfgTimer: null, quoteTimer: null,
+    unsubStore: null, unsubQuote: null, watchingStaffId: null,
+    clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
+  };
+  function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
+  function cloudStatus(msg, cls) {
+    var el = $("cloudStatus");
+    if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
+  }
+  function storeDoc() { return CLOUD.db.collection("stores").doc(CLOUD.user.uid); }
+  function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
+  function stamp(extra) {
+    var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    for (var k in extra) if (extra.hasOwnProperty(k)) o[k] = extra[k];
+    return o;
+  }
+  function cloudOk() { cloudStatus("同期✓", "ok"); }
+  function cloudNg(err) {
+    cloudStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
+  }
+  function pushConfig() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
+    cloudStatus("同期中…", "");
+    CLOUD.cfgTimer = setTimeout(function () {
+      CLOUD.cfgTimer = null;
+      if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
+      storeDoc().set(stamp({ storeName: config.storeName || "", staff: config.staff }), { merge: true })
+        .then(cloudOk, cloudNg);
+    }, 800);
+  }
+  // 送信用の見積もりデータ。お客様名（個人情報）はクラウドへ送らない
+  function quotePayload() {
+    try {
+      var s = JSON.parse(JSON.stringify(state));
+      s.custName = "";
+      return JSON.stringify(s);
+    } catch (e) { return ""; }
+  }
+  function pushQuote() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    var sid = activeStaff().id;
+    if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
+    cloudStatus("同期中…", "");
+    CLOUD.quoteTimer = setTimeout(function () {
+      CLOUD.quoteTimer = null;
+      if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
+      quoteDoc(sid).set(stamp({ data: quotePayload() })).then(cloudOk, cloudNg);
+    }, 800);
+  }
+  function applyRemoteConfig(d) {
+    CLOUD.suppress = true;
+    try {
+      if (typeof d.storeName === "string") config.storeName = d.storeName;
+      if (d.staff && d.staff.length) {
+        config.staff = d.staff;
+        if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
+          config.activeStaffId = config.staff[0].id;
+          state = loadState();
+          syncForm();
+        }
+      }
+      try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {}
+      renderStaffSelect();
+      renderConfigTab();
+    } finally { CLOUD.suppress = false; }
+  }
+  function applyRemoteQuote(d) {
+    if (!d || !d.data) return;
+    CLOUD.suppress = true;
+    try {
+      var incoming = JSON.parse(d.data);
+      // お客様名は同期しないため、この端末で入力済みの名前を保持する
+      if (incoming && !incoming.custName && state.custName) incoming.custName = state.custName;
+      state = Object.assign(defaultState(), incoming);
+      try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {}
+      syncForm();
+      recalc();
+      cloudOk();
+    } catch (e) {} finally { CLOUD.suppress = false; }
+  }
+  function watchStore() {
+    if (!cloudOn()) return;
+    if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
+    CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d) { pushConfig(); return; } // 初回ログイン → この端末の設定を初期値として保存
+      if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
+      applyRemoteConfig(d);
+      cloudOk();
+    }, function () { cloudStatus("同期:接続エラー", "err"); });
+  }
+  function watchQuote() {
+    if (!cloudOn()) return;
+    var sid = activeStaff().id;
+    if (CLOUD.unsubQuote && CLOUD.watchingStaffId === sid) return;
+    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    CLOUD.watchingStaffId = sid;
+    CLOUD.unsubQuote = quoteDoc(sid).onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d) { pushQuote(); return; }
+      if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
+      if (CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
+      applyRemoteQuote(d);
+    }, function () { cloudStatus("同期:接続エラー", "err"); });
+  }
+  function showLogin(show) {
+    var ov = $("loginOverlay");
+    if (ov) ov.hidden = !show;
+  }
+  function onSignedIn(user) {
+    CLOUD.user = user;
+    showLogin(false);
+    $("accountStep").hidden = false;
+    $("accountInfo").textContent = "ログイン中: " + (user.email || "");
+    cloudStatus("同期中…", "");
+    watchStore();
+    watchQuote();
+  }
+  function onSignedOut() {
+    CLOUD.user = null;
+    if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
+    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    CLOUD.watchingStaffId = null;
+    $("accountStep").hidden = true;
+    cloudStatus("", "");
+    showLogin(true);
+  }
+  function loginErrorMessage(err) {
+    var c = String((err && err.code) || "");
+    if (/user-not-found|wrong-password|invalid-credential|invalid-email/.test(c)) return "メールアドレスまたはパスワードが正しくありません。";
+    if (/too-many-requests/.test(c)) return "試行回数が多すぎます。しばらく時間をおいて再度お試しください。";
+    if (/network/.test(c)) return "通信エラーです。ネットワーク環境をご確認ください。";
+    return "ログインできませんでした。時間をおいて再度お試しください。";
+  }
+  function initCloud() {
+    var configured = typeof IENAKA_FIREBASE !== "undefined" && IENAKA_FIREBASE.projectId
+      && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
+    if (!configured) return; // 未設定 → 端末内保存のみで動作
+    try {
+      CLOUD.auth = firebase.auth();
+      CLOUD.db = firebase.firestore();
+    } catch (e) { return; }
+    CLOUD.enabled = true;
+
+    $("loginForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var err = $("loginErr");
+      err.hidden = true;
+      $("loginBtn").disabled = true;
+      CLOUD.auth.signInWithEmailAndPassword($("loginEmail").value.trim(), $("loginPass").value)
+        .then(function () { $("loginPass").value = ""; }, function (e2) {
+          err.textContent = loginErrorMessage(e2);
+          err.hidden = false;
+        })
+        .then(function () { $("loginBtn").disabled = false; });
+    });
+    $("logoutBtn").addEventListener("click", function () {
+      if (!confirm("ログアウトしますか？")) return;
+      CLOUD.auth.signOut();
+    });
+    CLOUD.auth.onAuthStateChanged(function (user) {
+      if (user) onSignedIn(user); else onSignedOut();
+    });
   }
   function recalc() {
     var r = calc();
@@ -931,4 +1111,5 @@
   /* ---------- 起動 ---------- */
   syncForm();
   recalc();
+  initCloud(); // クラウド保存が設定されていればログイン・同期を開始
 })();

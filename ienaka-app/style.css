@@ -363,3 +363,26 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:2px 4px;
 }
 .staff-pick select option{color:#333;background:#fff}
+
+/* ログイン画面（クラウド保存が有効な場合のみ表示） */
+.login-overlay{
+  position:fixed;inset:0;z-index:50;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.login-box{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:22px 20px;width:100%;max-width:360px;
+  box-shadow:0 6px 24px rgba(0,0,0,.08);
+}
+.login-box h2{margin:0 0 4px;font-size:18px;color:var(--red)}
+.login-lead{margin:0 0 14px;font-size:12.5px;color:var(--muted)}
+.login-box .field{display:block;margin-bottom:10px}
+.login-box .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.login-box .field input{
+  width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.login-box .btn-main{width:100%;margin-top:4px}
+.login-err{
+  margin:0 0 10px;font-size:12.5px;color:var(--red);
+  background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;padding:7px 9px;
+}
