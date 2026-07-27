@@ -257,6 +257,9 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   .no-print{display:none !important}
   .tab-page{display:none}
   #tab-sheet{display:block}
+  /* 引き継ぎタブを開いて印刷した場合はそちらを出す */
+  body.print-staff #tab-sheet{display:none}
+  body.print-staff #tab-staff{display:block}
   .sheet{border:none;border-radius:0;padding:0;max-width:none;font-size:12px}
   .summary-bar{display:none}
   /* 1枚に収まるよう全体を詰める */
