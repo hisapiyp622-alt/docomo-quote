@@ -1,0 +1,26 @@
+rules_version = '2';
+
+/* イエナカ見積もり — 店舗ごとのデータ分離ルール
+ *
+ * データは stores/{storeId} 配下にのみ保存し、storeId は
+ * ログインした店舗アカウントのUID と一致する場合だけ読み書きを許可する。
+ * これにより、ある店舗のアカウントから他店のデータへは一切アクセスできない。
+ * ログインしていない場合はすべて拒否。 */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /stores/{storeId} {
+      allow read, write: if request.auth != null && request.auth.uid == storeId;
+
+      // 見積もりなどの配下データも同じ店舗のみ
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == storeId;
+      }
+    }
+
+    // 上記以外は全面的に拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

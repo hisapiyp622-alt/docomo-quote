@@ -19,6 +19,7 @@
     <label class="staff-pick"><span>担当</span>
       <select id="staffSelect" title="担当者を切り替えます（担当ごとに見積もりが分かれます）"></select>
     </label>
+    <span class="sync-status" id="cloudStatus"></span>
   </h1>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
@@ -229,6 +230,12 @@
         </div>
       </div>
       <div class="qcol">
+        <div class="step" id="accountStep" hidden>
+          <h2>アカウント</h2>
+          <p class="hint" id="accountInfo"></p>
+          <div class="actions"><button class="btn-sub" id="logoutBtn" type="button">ログアウト</button></div>
+          <p class="hint">同じアカウントでログインした端末どうしで、店舗名・担当者・見積もりが自動的に同期されます。お客様名は端末内にのみ保存され、クラウドへは送信されません。</p>
+        </div>
         <div class="step">
           <h2>担当者</h2>
           <div class="adhoc-list" id="staffList"></div>
@@ -245,6 +252,21 @@
   </div>
 </main>
 
+<div class="login-overlay no-print" id="loginOverlay" hidden>
+  <form class="login-box" id="loginForm">
+    <h2>イエナカ見積もり</h2>
+    <p class="login-lead">店舗アカウントでログインしてください。</p>
+    <div class="field"><label for="loginEmail">メールアドレス</label><input type="email" id="loginEmail" autocomplete="username" required></div>
+    <div class="field"><label for="loginPass">パスワード</label><input type="password" id="loginPass" autocomplete="current-password" required></div>
+    <p class="login-err" id="loginErr" hidden></p>
+    <button class="btn-main" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script src="app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
