@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-56";
+  var APP_VERSION = "2026.07.25-57";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -135,7 +135,8 @@
     return {
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
-      voice: "none", voiceChange: false, planChange: false, options: {}, optionPrices: {}, feeItems: {},
+      voice: "none", voiceChange: false, planChange: false, netSvc: {},
+      options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
@@ -423,6 +424,34 @@
     return MASTER.fees.jimu_kishu;
   }
   var CUR_INST_LABEL = "現在の分割支払金（継続中）";
+  // ②のネットワークサービス（単品の月額使用料・税込）
+  var NET_SVC = [
+    { id: "rusuban", name: "留守番電話サービス", price: 330, freeWithKake: true },
+    { id: "catchhone", name: "キャッチホン", price: 220, freeWithKake: true },
+    { id: "melody", name: "メロディコール", price: 110 }
+  ];
+  // オプションパック（上の3つ＋転送でんわ をまとめると割引。転送でんわは単品でも無料）
+  var NET_PACK_PRICE = 440;
+  var NET_PACK_NAME = "オプションパック（留守番電話・キャッチホン・メロディコール・転送でんわ）";
+  // 新カケホーダイ系の通話オプション。付けると留守番電話・キャッチホンは無料になる
+  function kakeVoice(v) { return v === "v5" || v === "kake"; }
+  // 選択中のネットワークサービスを、料金を確定させた行にして返す
+  function netSvcCalc(st) {
+    var free = kakeVoice(st.voice);
+    var picked = NET_SVC.filter(function (n) { return (st.netSvc || {})[n.id]; });
+    var rows = [], total = 0;
+    if (!free && picked.length === NET_SVC.length) {
+      rows.push({ name: NET_PACK_NAME, price: NET_PACK_PRICE });
+      total = NET_PACK_PRICE;
+    } else {
+      picked.forEach(function (n) {
+        var f = free && n.freeWithKake;
+        rows.push({ name: n.name + (f ? "（通話オプションに込み）" : ""), price: f ? 0 : n.price });
+        total += f ? 0 : n.price;
+      });
+    }
+    return { rows: rows, total: total, pack: rows.length === 1 && rows[0].name === NET_PACK_NAME };
+  }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
   // 手続き種別の表示名（未選択のときは空欄と分かる表記にする）
@@ -547,6 +576,11 @@
       optTotal += pr;
     });
 
+    // ②のネットワークサービス（ドコモの利用料金なので還元の対象額にも含める）
+    var net = netSvcCalc(st);
+    net.rows.forEach(function (n) { optRows.push(n); });
+    optTotal += net.total;
+
     // 月額の追加項目（ずっと／期間限定）
     var adhocPerm = 0, adhocLimited = [];
     st.adhocMonthly.forEach(function (a) {
@@ -637,7 +671,7 @@
     // dカード還元特典の自動計算
     // 対象＝プラン基本料＋通話オプション＋対象（carrier）オプションのみ。
     // 税込1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt
-    var dcardGoldBase = tier.price + voicePrice;
+    var dcardGoldBase = tier.price + voicePrice + net.total;
     MASTER.options.forEach(function (o) {
       if (st.options[o.id] && o.carrier) dcardGoldBase += optPrice(o, st);
     });
@@ -847,7 +881,32 @@
     }
     $("planNote").textContent = plan.note || "";
   }
+  // ネットワークサービスの選択欄（通話オプションで金額が変わるので描き直す）
+  function renderNetSvc() {
+    var free = kakeVoice(state.voice);
+    var picked = state.netSvc || {};
+    var all = NET_SVC.every(function (n) { return picked[n.id]; });
+    $("netSvcList").innerHTML = NET_SVC.map(function (n) {
+      var f = free && n.freeWithKake;
+      var pr = f ? "無料（通話オプションに込み）"
+        : (!free && all ? "パック適用" : yen(n.price) + "/月");
+      return '<div class="opt-row"><label class="check"><input type="checkbox" data-netsvc="' + n.id + '"'
+        + (picked[n.id] ? " checked" : "") + "> " + esc(n.name) + '</label><span class="price">' + pr + "</span></div>";
+    }).join("");
+    var net = netSvcCalc(state);
+    var msg;
+    if (free) {
+      msg = "通話オプション（880円／1,980円）を付けているため、留守番電話・キャッチホンは無料です。";
+      if (picked.melody) msg += "メロディコールは110円/月かかります。";
+    } else if (net.pack) {
+      msg = "3つまとめて " + yen(NET_PACK_PRICE) + "/月（オプションパック。単品合計660円のところ220円おトク）。転送でんわも無料で付けられます。";
+    } else {
+      msg = "3つすべて選ぶとオプションパックで " + yen(NET_PACK_PRICE) + "/月（単品合計660円）になります。";
+    }
+    $("netSvcHint").textContent = msg;
+  }
   function renderVoiceSelect() {
+    renderNetSvc();
     var plan = currentPlan();
     $("voice").innerHTML = MASTER.voiceOptions.map(function (v) {
       var pr = voicePriceFor(plan, v);
@@ -1061,6 +1120,7 @@
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
     $("voiceChange").checked = !!state.voiceChange;
+    renderNetSvc();
     $("planChange").checked = !!state.planChange;
     document.querySelectorAll("[data-storepay]").forEach(function (cb) {
       cb.checked = !!(state.storePay || {})[cb.getAttribute("data-storepay")];
@@ -1290,6 +1350,13 @@
       h += row(esc(a.name || "追加項目"), (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))) + "/月"
         + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : ""));
     });
+    var netSheet = netSvcCalc(state);
+    if (netSheet.rows.length) {
+      anyOpt = true;
+      h += row("ネットワークサービス", netSheet.rows.map(function (n) {
+        return "<b>" + esc(n.name) + "</b>　" + yen(n.price) + "/月";
+      }).join("<br>"));
+    }
     if (num(state.currentInst) > 0) {
       anyOpt = true;
       h += row(CUR_INST_LABEL, "<b>" + yen(num(state.currentInst)) + "/月</b>"
@@ -1738,6 +1805,7 @@
 
   function recalc() {
     syncDcardAuto();
+    renderNetSvc();
     var r = calc();
     renderSummary(r);
     renderPatternTabs();
@@ -2117,6 +2185,13 @@
         }
         recalc();
       });
+    });
+    $("netSvcList").addEventListener("change", function (e) {
+      var id = e.target.getAttribute && e.target.getAttribute("data-netsvc");
+      if (!id) return;
+      if (!state.netSvc) state.netSvc = {};
+      state.netSvc[id] = e.target.checked;
+      recalc();
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
     $("planChange").addEventListener("change", function () { state.planChange = this.checked; recalc(); });
