@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-43";
+  var APP_VERSION = "2026.07.25-44";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -149,8 +149,8 @@
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
       custName: "", shopName: "", staffName: "", quoteMemo: "",
-      // 引き継ぎシートの作業指示
-      todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
+      // 手続き内容（引き継ぎシートに記載）
+      procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
       todoPlan: "", todoOptOff: "", todoOther: "",
     };
   }
@@ -177,6 +177,11 @@
     // 旧・代理店サービスのチェック状態をオプションへ統合（全パターン共通）
     store.patterns.forEach(function (pt) {
       if (!pt.optionKubun) pt.optionKubun = {};
+      if (pt.todoDenki || pt.todoGas) pt.todoDenkiGas = true;
+      if (!pt.procTodo || !Object.keys(pt.procTodo).length) {
+        pt.procTodo = {};
+        if (pt.procType) pt.procTodo[pt.procType === "plan_only" ? "plan" : pt.procType] = true;
+      }
       if (pt.agencyOptions) {
         Object.keys(pt.agencyOptions).forEach(function (k) {
           if (pt.agencyOptions[k]) pt.options[k] = true;
@@ -409,6 +414,22 @@
   }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
+  // 手続き内容のチェックから手続き種別を決める（複数選択時の優先順）
+  var PROC_ORDER = [["mnp", "mnp"], ["shinki", "shinki"], ["kishu", "kishu"], ["plan", "plan_only"]];
+  function procTypeFromTodo() {
+    var t = state.procTodo || {};
+    for (var i = 0; i < PROC_ORDER.length; i++) if (t[PROC_ORDER[i][0]]) return PROC_ORDER[i][1];
+    return state.procType;
+  }
+  // 手続き種別を切り替え、頭金・事務手数料の自動判定もあわせて行う
+  function applyProcType(v) {
+    state.procType = v;
+    state.jimuFee = autoFeeProc(v) ? jimuFeeFor(v) : 0;
+    state.atamakin = autoFeeProc(v) ? MASTER.fees.atamakin_default : 0;
+    $("procType").value = v;
+    $("jimuFee").value = state.jimuFee || "";
+    $("atamakin").value = state.atamakin || "";
+  }
   // GOLD系カード（お支払割はGOLD区分・還元特典の自動計算対象）
   function isGoldCard(c) { return c === "goldu" || c === "gold" || c === "platinum"; }
   // 還元特典の自動計算: 対象額 税込1,100円ごとのpt（GOLD U 5%／GOLD 10%／PLATINUM 20%）
@@ -955,7 +976,10 @@
     $("shopName").value = state.shopName;
     $("staffName").value = state.staffName;
     $("quoteMemo").value = state.quoteMemo;
-    ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
+    ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
+    document.querySelectorAll("[data-proc]").forEach(function (cb) {
+      cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
+    });
     ["todoPlan", "todoOptOff", "todoOther"].forEach(function (k) { $(k).value = state[k] || ""; });
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
@@ -1042,13 +1066,18 @@
     // 手続き・作業内容（登録スタッフへの指示）
     h += "<h3>手続き・作業内容</h3><table><tbody>";
     var anyTodo = false;
+    var PROC_LABEL = { kishu: "機種変更", shinki: "新規", mnp: "MNP", plan: "プラン変更" };
+    var procs = [];
+    ["kishu", "shinki", "mnp", "plan"].forEach(function (k) {
+      if ((state.procTodo || {})[k]) procs.push(PROC_LABEL[k]);
+    });
+    if (procs.length) { anyTodo = true; h += row("手続き", "<b>" + procs.join("　／　") + "</b>"); }
     if (state.todoPlan) { anyTodo = true; h += row("プラン", "<b>" + esc(state.todoPlan) + "</b>"); }
     if (state.todoOptOff) { anyTodo = true; h += row("オプション廃止", "<b>" + esc(state.todoOptOff) + "</b>"); }
     var apps = [];
     if (state.todoDcard) apps.push("dカード申し込み");
-    if (state.todoDenki) apps.push("ドコモでんき");
-    if (state.todoGas) apps.push("ドコモガス");
-    if (state.todoHikari) apps.push("ドコモ光申し込み");
+    if (state.todoDenkiGas) apps.push("でんき・ガス申し込み");
+    if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
     if (state.todoOther) { anyTodo = true; h += row("その他の作業", esc(state.todoOther)); }
     if (!anyTodo) h += row("作業内容", "（記入なし）");
@@ -1652,12 +1681,14 @@
     });
 
     $("procType").addEventListener("change", function () {
-      state.procType = this.value;
       // 新規契約・機種変更のときだけ頭金・事務手数料を自動セット（それ以外は0・手入力は可能）
-      state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
-      state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
-      $("jimuFee").value = state.jimuFee || "";
-      $("atamakin").value = state.atamakin || "";
+      applyProcType(this.value);
+      // 「手続き内容」のチェックも選んだ種別に合わせる
+      state.procTodo = {};
+      state.procTodo[this.value === "plan_only" ? "plan" : this.value] = true;
+      document.querySelectorAll("[data-proc]").forEach(function (cb) {
+        cb.checked = !!state.procTodo[cb.getAttribute("data-proc")];
+      });
       recalc();
     });
     $("planGroup").addEventListener("change", function () {
@@ -1862,8 +1893,16 @@
     ["todoPlan", "todoOptOff", "todoOther"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); renderStaffSheet(); });
     });
-    ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
+    ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () { state[id] = this.checked; saveState(); renderStaffSheet(); });
+    });
+    document.querySelectorAll("[data-proc]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        if (!state.procTodo) state.procTodo = {};
+        state.procTodo[cb.getAttribute("data-proc")] = cb.checked;
+        applyProcType(procTypeFromTodo());
+        recalc();
+      });
     });
 
     $("clearQuote").addEventListener("click", function () {

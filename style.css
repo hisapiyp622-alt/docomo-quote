@@ -304,3 +304,7 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .tile.kubun-off{border-color:#C9CACC;background:#F3F3F4}
 .tile.kubun-off .t-name{text-decoration:line-through;color:var(--muted)}
 .tile.kubun-off .t-price{color:var(--muted)}
+
+/* 手続き内容のチェック欄 */
+.proc-checks{display:flex;flex-wrap:wrap;gap:4px 18px}
+.proc-checks .check{margin:4px 0}
