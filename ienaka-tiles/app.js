@@ -44,8 +44,14 @@
   var IENAKA_OPTS = [
     { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 光電話の付加サービス（ドコモ光電話向けサービスの公式一覧・税込）
+     * inValue: ドコモ光電話バリューの月額に含まれるもの */
+    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpWaiting", name: "通話中着信", price: 330, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpNumReq", name: "ナンバー・リクエスト", price: 220, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpStop", name: "迷惑電話ストップサービス", price: 220, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpMail", name: "着信お知らせメール", price: 110, needsPhone: true, inValue: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
@@ -329,6 +335,7 @@
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
       h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
         + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
+        + (o.inValue && state.opts.denwaBV ? ' <span class="opt-price in-value">バリューに含む</span>' : "")
         + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
       // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
