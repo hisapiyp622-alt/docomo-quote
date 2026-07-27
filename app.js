@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-54";
+  var APP_VERSION = "2026.07.25-55";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -400,14 +400,19 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  // 料金プラン未選択のときに使うダミー（料金0・割引なし）
+  var NO_PLAN = { id: "", name: "未選択", group: "", note: "", discounts: {}, tiers: [{ label: "", price: 0 }] };
   function planOf(st) {
+    if (!st.planId) return NO_PLAN;
     var p = MASTER.plans.filter(function (x) { return x.id === st.planId; })[0];
     if (!p) {
+      // マスタから消えたプランを参照していた場合だけ、同じ世代の先頭に寄せる
       p = MASTER.plans.filter(function (x) { return x.group === st.planGroup; })[0] || MASTER.plans[0];
       st.planId = p.id;
     }
     return p;
   }
+  function hasPlan() { return !!state.planId; }
   function currentPlan() { return planOf(state); }
   function jimuFeeFor(proc) {
     if (proc === "plan_only") return 0;
@@ -774,7 +779,8 @@
     var procLabel = { shinki: "新規", mnp: "MNP", kishu: "機種変更", plan_only: "プラン変更" }[state.procType] || "";
     var cur = MASTER.templates[i];
     tplPendingSlot = i;
-    $("tplNameInput").value = cur ? cur.name : (plan.name + " " + procLabel).slice(0, 20);
+    $("tplNameInput").value = cur ? cur.name
+      : ((state.planId ? plan.name + " " : "") + procLabel).trim().slice(0, 20);
     $("tplNameBox").hidden = false;
     $("saveTplBtn").hidden = true;
     tplMsg("");
@@ -805,11 +811,12 @@
   function renderPlanSelect() {
     var sel = $("planId");
     var opts = MASTER.plans.filter(function (pl) { return pl.group === state.planGroup; });
-    sel.innerHTML = opts.map(function (pl) {
+    sel.innerHTML = '<option value="">（未選択）</option>' + opts.map(function (pl) {
       return '<option value="' + esc(pl.id) + '">' + esc(pl.name) + "</option>";
     }).join("");
-    if (!opts.some(function (pl) { return pl.id === state.planId; })) {
-      state.planId = opts.length ? opts[0].id : "";
+    // 世代を切り替えて選択中のプランが無くなったときは未選択へ戻す
+    if (state.planId && !opts.some(function (pl) { return pl.id === state.planId; })) {
+      state.planId = "";
     }
     sel.value = state.planId;
     renderTierSelect();
@@ -974,7 +981,7 @@
     var list = (MASTER.campaigns || []).filter(function (c) {
       return !(c.plans && c.plans.length) || c.plans.indexOf(plan.id) >= 0;
     });
-    if (!list.length) { $("campaignList").innerHTML = ""; return; }
+    if (!hasPlan() || !list.length) { $("campaignList").innerHTML = ""; return; }
     var h = '<div class="subhead">キャンペーン割引（このプランで使えるもの）</div>';
     list.forEach(function (c) {
       var checked = state.campaigns[c.id] ? " checked" : "";
@@ -1002,6 +1009,7 @@
   function renderDiscountHint() {
     var plan = currentPlan();
     var msgs = [];
+    if (!hasPlan()) { $("discountHint").textContent = ""; return; }
     if (!plan.discounts.minna2 && !plan.discounts.minna3) msgs.push("このプランはみんなドコモ割の割引対象外です（回線数のカウントには含まれる場合があります）。");
     if (!plan.discounts.set) msgs.push("セット割の対象外プランです。");
     if (!plan.discounts.dcard && !plan.discounts.dcardGold) msgs.push("dカードお支払割の対象外プランです。");
@@ -1206,7 +1214,9 @@
     var h0 = h; h = "";
     h += "<h3>ご契約内容</h3><table><tbody>";
     h += row("手続き種別", "<b>" + procLabel + "</b>");
-    h += row("料金プラン", "<b>" + esc(r.plan.name) + "</b>（" + esc(r.tier.label) + "）　" + yen(r.tier.price)
+    h += row("料金プラン", (hasPlan()
+        ? "<b>" + esc(r.plan.name) + "</b>（" + esc(r.tier.label) + "）　" + yen(r.tier.price)
+        : "<b>未選択</b>")
       + (state.planChange ? ' <b style="color:var(--red)">（変更あり）</b>' : '<span style="color:var(--muted)">（変更なし）</span>'));
     var voiceName = r.voice.id !== "none" ? esc(r.voice.name) + "　" + yen(r.voicePrice) + esc(r.voiceNote) : "なし";
     h += row("通話オプション", voiceName
@@ -1402,7 +1412,7 @@
     // 月額内訳（1ページ目: プラン・オプション。分割支払金は合計行のみ・明細は2ページ目）
     h += "<h3>月額内訳（" + segLabel(seg0) + (lbl0 ? "" : "毎月") + "）</h3><table><tbody>";
     if (state.procType) h += row("手続き種別", procLabel, false);
-    h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
+    if (hasPlan()) h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
     // プランの割引は「セット割」1行にまとめ、内訳を横並びで小さく表記
     var setWari = [];
     if (r.dMinna) setWari.push({ name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
