@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-53";
+  var APP_VERSION = "2026.07.25-54";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -133,7 +133,7 @@
   /* ---------- 見積もり状態（3パターン） ---------- */
   function defaultState() {
     return {
-      procType: "shinki", planGroup: "current", planId: "", tierIdx: 0,
+      procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
       voice: "none", voiceChange: false, planChange: false, options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
@@ -411,12 +411,16 @@
   function currentPlan() { return planOf(state); }
   function jimuFeeFor(proc) {
     if (proc === "plan_only") return 0;
+    if (!proc) return 0;   // 未選択のあいだは0円
     if (proc === "shinki") return MASTER.fees.jimu_shinki;
     if (proc === "mnp") return MASTER.fees.jimu_mnp;
     return MASTER.fees.jimu_kishu;
   }
-  // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ
+  // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
+  // 手続き種別の表示名（未選択のときは空欄と分かる表記にする）
+  var PROC_NAME = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更のみ" };
+  function procName(v) { return PROC_NAME[v] || "未選択"; }
   // 申し込みの種類（引き継ぎシートの表記）
   var DCARD_TYPE = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
   var DENKI_TYPE = { basic: "ドコモでんき Basic", green: "ドコモでんき Green" };
@@ -483,8 +487,8 @@
     state.jimuFee = autoFeeProc(v) ? jimuFeeFor(v) : 0;
     state.atamakin = autoFeeProc(v) ? MASTER.fees.atamakin_default : 0;
     $("procType").value = v;
-    $("jimuFee").value = state.jimuFee || "";
-    $("atamakin").value = state.atamakin || "";
+    $("jimuFee").value = state.jimuFee;
+    $("atamakin").value = state.atamakin;
   }
   // GOLD系カード（お支払割はGOLD区分・還元特典の自動計算対象）
   function isGoldCard(c) { return c === "goldu" || c === "gold" || c === "platinum"; }
@@ -1144,7 +1148,7 @@
     var r = calc();
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
-    var procLabel = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更のみ" }[state.procType];
+    var procLabel = procName(state.procType);
     var payLabel = {
       none: "端末購入なし", ikkatsu: "一括払い", b12: "分割12回", b24: "分割24回",
       b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
@@ -1342,7 +1346,7 @@
     var r = calc();
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
-    var procLabel = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更" }[state.procType];
+    var procLabel = procName(state.procType);
     var seg0 = r.segs[0], segLast = r.segs[r.segs.length - 1];
 
     var h = "";
@@ -1397,7 +1401,7 @@
 
     // 月額内訳（1ページ目: プラン・オプション。分割支払金は合計行のみ・明細は2ページ目）
     h += "<h3>月額内訳（" + segLabel(seg0) + (lbl0 ? "" : "毎月") + "）</h3><table><tbody>";
-    h += row("手続き種別", procLabel, false);
+    if (state.procType) h += row("手続き種別", procLabel, false);
     h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
     // プランの割引は「セット割」1行にまとめ、内訳を横並びで小さく表記
     var setWari = [];
