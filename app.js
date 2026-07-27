@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-55";
+  var APP_VERSION = "2026.07.25-56";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -142,6 +142,7 @@
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
       dcardGoldAuto: true,               // dカード還元特典を見積もりに含めるか（GOLD系選択時）
+      currentInst: 0, currentInstMonths: 0,  // 見直し前から支払い中の分割金（0=ずっと）
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
@@ -421,6 +422,7 @@
     if (proc === "mnp") return MASTER.fees.jimu_mnp;
     return MASTER.fees.jimu_kishu;
   }
+  var CUR_INST_LABEL = "現在の分割支払金（継続中）";
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
   // 手続き種別の表示名（未選択のときは空欄と分かる表記にする）
@@ -552,6 +554,14 @@
       if (num(a.months) > 0) adhocLimited.push({ name: a.name, amount: num(a.amount), months: Math.round(num(a.months)) });
       else adhocPerm += num(a.amount);
     });
+
+    // 見直し前から支払い中の分割金（料金見直しの案内用）
+    var curInst = num(st.currentInst);
+    if (curInst > 0) {
+      var curInstMonths = Math.round(num(st.currentInstMonths));
+      if (curInstMonths > 0) adhocLimited.push({ name: CUR_INST_LABEL, amount: curInst, months: curInstMonths });
+      else adhocPerm += curInst;
+    }
 
     // キャンペーン割引（期間限定・対象プランのみ。セグメント計算に合流）
     var campaignRows = [];
@@ -1042,6 +1052,9 @@
     $("kaedokiFee").value = state.kaedokiFee || "";
     $("atamakin").value = state.atamakin;
     $("jimuFee").value = state.jimuFee;
+    $("currentInst").value = state.currentInst || "";
+    $("currentInstMonths").value = state.currentInstMonths || "";
+    $("currentInstMonthsField").hidden = !num(state.currentInst);
     $("custName").value = state.custName;
     $("shopName").value = state.shopName;
     $("staffName").value = state.staffName;
@@ -1277,6 +1290,11 @@
       h += row(esc(a.name || "追加項目"), (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))) + "/月"
         + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : ""));
     });
+    if (num(state.currentInst) > 0) {
+      anyOpt = true;
+      h += row(CUR_INST_LABEL, "<b>" + yen(num(state.currentInst)) + "/月</b>"
+        + (num(state.currentInstMonths) > 0 ? "　残り " + Math.round(num(state.currentInstMonths)) + "回" : "　（残り回数の入力なし）"));
+    }
     if (!anyOpt) h += row("オプション", "なし");
     h += "</tbody></table>";
 
@@ -1440,13 +1458,21 @@
       var label2 = esc(a.name || "調整") + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : "");
       h += row(label2, (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))), true);
     });
+    var curInstRow = num(state.currentInst) > 0
+      ? row("現在の分割支払金（継続中"
+          + (num(state.currentInstMonths) > 0 ? "・残り" + Math.round(num(state.currentInstMonths)) + "回" : "")
+          + "）", yen(num(state.currentInst)), true)
+      : "";
     if (hasInstallment) {
-      h += row("プラン・オプション小計", yen(Math.max(0, seg0.monthly - devAccSum)), true);
+      h += row("プラン・オプション小計", yen(Math.max(0, seg0.monthly - devAccSum - num(state.currentInst))), true);
+      h += curInstRow;
       var instLabel;
       if (r.device.monthly > 0 && r.accMonthlyRows.length) instLabel = "機種代金・アクセサリ 分割支払金";
       else if (r.device.monthly > 0) instLabel = "機種代金 分割支払金" + (r.device.kaedoki ? "（〜23回）" : "（分割" + r.device.months + "回）");
       else instLabel = "アクセサリ 分割支払金";
       h += row(instLabel + "＜明細は2ページ目＞", yen(devAccSum), true);
+    } else {
+      h += curInstRow;
     }
     h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
       + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
@@ -2081,6 +2107,16 @@
       state.todoGasDiscount[id] = e.target.checked;
       renderGasDiscounts();
       saveState(); renderStaffSheet();
+    });
+    ["currentInst", "currentInstMonths"].forEach(function (id) {
+      $(id).addEventListener("input", function () {
+        state[id] = num(this.value);
+        if (id === "currentInst") {
+          $("currentInstMonthsField").hidden = !state.currentInst;
+          if (!state.currentInst) { state.currentInstMonths = 0; $("currentInstMonths").value = ""; }
+        }
+        recalc();
+      });
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
     $("planChange").addEventListener("change", function () { state.planChange = this.checked; recalc(); });

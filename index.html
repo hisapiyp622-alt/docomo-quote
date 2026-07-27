@@ -230,6 +230,15 @@
         <input type="number" id="kaedokiFee" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <div class="field">
+        <label for="currentInst">現在の分割支払金</label>
+        <input type="number" id="currentInst" inputmode="numeric" placeholder="0" min="0"> 円/月
+      </div>
+      <div class="field" id="currentInstMonthsField" hidden>
+        <label for="currentInstMonths">残り回数</label>
+        <input type="number" id="currentInstMonths" inputmode="numeric" placeholder="0" min="0"> 回
+      </div>
+      <p class="hint">料金見直しのご案内用です。いま支払い中の機種代金の分割金を入れると、毎月のお支払い目安に合算されます。残り回数を入れると、払い終わったあとの金額も自動で出ます（空欄・0は「ずっと」）。</p>
+      <div class="field">
         <label for="atamakin">店頭頭金</label>
         <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
       </div>
