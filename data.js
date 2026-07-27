@@ -565,6 +565,36 @@ const DEFAULT_DATA = {
       "note": "個人1,200/ファミリー1,980・最大10%還元"
     },
     {
+      "id": "dphoto",
+      "name": "dフォト",
+      "price": 594,
+      "category": "エンタメ",
+      "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料"
+    },
+    {
+      "id": "dmagazine",
+      "name": "dマガジン",
+      "price": 580,
+      "category": "エンタメ",
+      "note": "雑誌読み放題・初回7日間無料"
+    },
+    {
+      "id": "dhits",
+      "name": "dヒッツ",
+      "price": 690,
+      "priceChoices": [690, 330],
+      "priceLabels": { "690": "dヒッツ", "330": "dヒッツ（300円）" },
+      "category": "エンタメ",
+      "note": "dヒッツ690円／dヒッツ（300円）330円（プレイリスト再生のみ）"
+    },
+    {
+      "id": "dhealthcare",
+      "name": "dヘルスケア",
+      "price": 440,
+      "category": "エンタメ",
+      "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）"
+    },
+    {
       "id": "op_1784460515071",
       "name": "あんしんセキュリティ詐欺電話対策",
       "price": 999,
