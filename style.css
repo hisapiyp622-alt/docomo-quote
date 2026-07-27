@@ -311,3 +311,12 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 /* 手続き内容のチェック欄 */
 .proc-checks{display:flex;flex-wrap:wrap;gap:4px 18px}
 .proc-checks .check{margin:4px 0}
+
+/* 申し込みの種類（dカード・でんき・ガス） */
+.sub-checks{
+  display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;
+  margin:2px 0 6px 22px;padding:6px 10px;
+  background:#FAFAFB;border:1px solid var(--line);border-radius:8px;
+}
+.sub-checks .sub-label{font-size:12px;font-weight:700;color:var(--muted)}
+.sub-checks .check{margin:2px 0;font-size:13px}

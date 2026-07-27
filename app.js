@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-48";
+  var APP_VERSION = "2026.07.25-49";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -151,6 +151,7 @@
       custName: "", shopName: "", staffName: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
+      todoDcardType: "", todoDenkiType: "", todoGasType: "",
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
       todoPlan: "", todoOptOff: "", todoOther: "",
@@ -416,6 +417,10 @@
   }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
+  // 申し込みの種類（引き継ぎシートの表記）
+  var DCARD_TYPE = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
+  var DENKI_TYPE = { basic: "ドコモでんき Basic", green: "ドコモでんき Green" };
+  var GAS_TYPE = { osaka: "ドコモガス（大阪ガス）", tokyo: "ドコモガス（東京ガス）", toho: "ドコモガス（東邦ガス）" };
   // 手続き内容のチェックから手続き種別を決める（複数選択時の優先順）
   var PROC_ORDER = [["mnp", "mnp"], ["shinki", "shinki"], ["kishu", "kishu"], ["plan", "plan_only"]];
   function procTypeFromTodo() {
@@ -989,6 +994,11 @@
     $("usePoint").checked = !!state.usePoint;
     $("usePointField").hidden = !state.usePoint;
     $("usePointAmount").value = state.usePointAmount || "";
+    $("dcardTypeWrap").hidden = !state.todoDcard;
+    $("energyTypeWrap").hidden = !state.todoDenkiGas;
+    document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
+    document.querySelectorAll("[data-denkitype]").forEach(function (cb) { cb.checked = state.todoDenkiType === cb.getAttribute("data-denkitype"); });
+    document.querySelectorAll("[data-gastype]").forEach(function (cb) { cb.checked = state.todoGasType === cb.getAttribute("data-gastype"); });
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
@@ -1087,8 +1097,15 @@
     if (state.todoPlan) { anyTodo = true; h += row("プラン", "<b>" + esc(state.todoPlan) + "</b>"); }
     if (state.todoOptOff) { anyTodo = true; h += row("オプション廃止", "<b>" + esc(state.todoOptOff) + "</b>"); }
     var apps = [];
-    if (state.todoDcard) apps.push("dカード申し込み");
-    if (state.todoDenkiGas) apps.push("でんき・ガス申し込み");
+    if (state.todoDcard) {
+      apps.push("dカード申し込み" + (state.todoDcardType ? "（" + DCARD_TYPE[state.todoDcardType] + "）" : ""));
+    }
+    if (state.todoDenkiGas) {
+      var eg = [];
+      if (state.todoDenkiType) eg.push(DENKI_TYPE[state.todoDenkiType]);
+      if (state.todoGasType) eg.push(GAS_TYPE[state.todoGasType]);
+      apps.push("でんき・ガス申し込み" + (eg.length ? "（" + eg.join("・") + "）" : ""));
+    }
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
     if (state.todoOther) { anyTodo = true; h += row("その他の作業", esc(state.todoOther)); }
@@ -1933,7 +1950,28 @@
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); renderStaffSheet(); });
     });
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (id) {
-      $(id).addEventListener("change", function () { state[id] = this.checked; saveState(); renderStaffSheet(); });
+      $(id).addEventListener("change", function () {
+        state[id] = this.checked;
+        if (id === "todoDcard") { $("dcardTypeWrap").hidden = !this.checked; if (!this.checked) state.todoDcardType = ""; }
+        if (id === "todoDenkiGas") {
+          $("energyTypeWrap").hidden = !this.checked;
+          if (!this.checked) { state.todoDenkiType = ""; state.todoGasType = ""; }
+        }
+        syncFormFromState();
+        saveState(); renderStaffSheet();
+      });
+    });
+    // 種類の選択（同時に1つだけ・もう一度押すと解除）
+    [["data-dcardtype", "todoDcardType"], ["data-denkitype", "todoDenkiType"], ["data-gastype", "todoGasType"]].forEach(function (pair) {
+      document.querySelectorAll("[" + pair[0] + "]").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          state[pair[1]] = cb.checked ? cb.getAttribute(pair[0]) : "";
+          document.querySelectorAll("[" + pair[0] + "]").forEach(function (o) {
+            o.checked = state[pair[1]] === o.getAttribute(pair[0]);
+          });
+          saveState(); renderStaffSheet();
+        });
+      });
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
     $("planChange").addEventListener("change", function () { state.planChange = this.checked; recalc(); });
