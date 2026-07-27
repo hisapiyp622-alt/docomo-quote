@@ -55,7 +55,7 @@
     { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "skyp", name: "映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "skyp", name: "映像サービス", price: 0, sumOf: "needsVideo", for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     /* 映像サービスの内訳（「映像サービス」にチェックしたときだけ表示）。金額は見積もりごとに変更可 */
     { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン（チューナーレンタル込み）", price: 3850, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsHikariHajime", name: "ひかりTV初めて割（2年間）", price: -1100, timedMonths: 24, needsVideo: true, needsHikariTv: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
@@ -158,6 +158,29 @@
     state.jimuFee = p.jimu;
   }
 
+  // 見出しオプション（映像サービスなど）に紐づく、選択中の内訳の合計月額
+  function groupTotal(parent) {
+    var t = 0;
+    IENAKA_OPTS.forEach(function (c) {
+      if (!c[parent.sumOf] || !state.opts[c.id]) return;
+      if (c.for.indexOf(state.product) < 0) return;
+      if (c.needsHikariTv && !state.opts.vsHikariTv) return;
+      t += state.optPrices[c.id] != null ? num(state.optPrices[c.id]) : c.price;
+    });
+    return t;
+  }
+
+  // 見出しの合計表示だけを更新する（内訳の金額を編集した直後に使う）
+  function updateGroupTotals() {
+    IENAKA_OPTS.forEach(function (o) {
+      if (!o.sumOf) return;
+      var inp = document.querySelector('#ienakaOptList input[data-opt="' + o.id + '"]');
+      if (!inp) return;
+      var el = inp.closest("label").querySelector(".opt-sum");
+      if (el) el.textContent = "合計 " + yen(groupTotal(o)) + "/月";
+    });
+  }
+
   /* ---------- 計算 ---------- */
   function calc() {
     var p = PRODUCTS[state.product];
@@ -172,7 +195,9 @@
       if (!state.opts[o.id]) return;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
       if (o.timedMonths) { optTimed.push({ name: o.name, amount: pr, from: 1, to: o.timedMonths }); return; }
-      rows.push({ name: o.name, amount: pr });
+      if (o.sumOf) return; // 見出し行。金額は内訳側で計上する
+      // 映像サービス（ひかりTV・スカパー）はドコモ光の利用料金ではないため、dカード還元の対象外
+      rows.push({ name: o.name, amount: pr, noDcard: !!(o.needsVideo || o.needsHikariTv) });
     });
     state.extraMonthly.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -181,7 +206,7 @@
 
     // dカードGOLD/PLATINUM還元: 利用料金1,100円（税込）ごとに100pt（GOLD 10%）/ 200pt（PLATINUM 20%）
     var dcardEligible = 0;
-    rows.forEach(function (x) { if (x.amount > 0) dcardEligible += x.amount; });
+    rows.forEach(function (x) { if (x.amount > 0 && !x.noDcard) dcardEligible += x.amount; });
     var dcardRate = state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
     var dcardPt = state.dcard === "none" ? 0 : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
@@ -339,8 +364,11 @@
       if (o.needsVideo && !state.opts.skyp) return; // 映像サービスチェック時のみ表示
       if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTVチェック時のみ表示
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
+      var priceHtml = o.sumOf
+        ? (state.opts[o.id] ? ' <span class="opt-price opt-sum">合計 ' + yen(groupTotal(o)) + "/月</span>" : "")
+        : ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>';
       h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
-        + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
+        + esc(o.name) + priceHtml
         + (o.inValue && state.opts.denwaBV ? ' <span class="opt-price in-value">バリューに含む</span>' : "")
         + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
@@ -920,6 +948,7 @@
       if (o.needsVideo && !state.opts.skyp) return;
       if (o.needsHikariTv && !state.opts.vsHikariTv) return;
       if (!state.opts[o.id]) return;
+      if (o.sumOf) return; // 見出し行は内訳で表現する
       anyOpt = true;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
       var extra = "";
@@ -1098,7 +1127,7 @@
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");
-    if (id) { state.optPrices[id] = num(e.target.value); recalc(); }
+    if (id) { state.optPrices[id] = num(e.target.value); updateGroupTotals(); recalc(); }
   });
   function bindExtras(listId) {
     $(listId).addEventListener("input", function (e) {
