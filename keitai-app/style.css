@@ -51,6 +51,10 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
   /* ①契約内容と②通話・メールを左列に縦積みし、背の高い③割引を右列に（①下の空白を埋める） */
   #tab-quote .card.c1,#tab-quote .card.c2{grid-column:1}
   #tab-quote .card.c3{grid-column:2;grid-row:span 2}
+  /* ⑤端末代金は縦に長いので、右列に⑥アクセサリと⑦初期費用を縦積みして空白を埋める */
+  #tab-quote .card.c5{grid-column:1;grid-row:span 2}
+  #tab-quote .card.c6,#tab-quote .card.c7{grid-column:2}
+  #tab-quote .card.c8{grid-column:1 / -1}
   /* 半分幅カード内のタイルは3列（全幅カードは5列のまま） */
   #tab-quote .card:not(.full) .tile-grid{grid-template-columns:repeat(3,1fr)}
 }
