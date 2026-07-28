@@ -521,6 +521,16 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 .sheet .sheet-sign b{font-size:12.5px}
 
+/* 料金表の更新のお知らせ */
+.mu-box{border:1px solid var(--red);background:#FFF7F9}
+.mu-box h3{color:var(--red)}
+.mu-box .actions{margin-top:8px}
+.staff-note{
+  margin:6px 0 0;padding:7px 9px;border-radius:7px;
+  background:#FFF3F6;border:1px solid var(--red);color:var(--red);
+  font-size:12.5px;line-height:1.5;text-align:left;
+}
+
 /* 料金プランの編集 */
 .plan-edit{
   border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin:8px 0;background:#FCFCFC;
