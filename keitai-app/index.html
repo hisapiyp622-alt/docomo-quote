@@ -151,7 +151,7 @@
 
     <div class="card c3">
       <h2>③ 割引</h2>
-      <div class="field">
+      <div class="field" id="minnaWrap">
         <label for="minna">みんなドコモ割</label>
         <select id="minna">
           <option value="0">適用なし（1回線）</option>
@@ -159,8 +159,8 @@
           <option value="3">3回線以上</option>
         </select>
       </div>
-      <label class="check"><input type="checkbox" id="dSet"> ドコモ光／home 5G セット割</label>
-      <div class="field">
+      <label class="check" id="dSetWrap"><input type="checkbox" id="dSet"> ドコモ光／home 5G セット割</label>
+      <div class="field" id="dCardWrap">
         <label for="dCardSel">dカードお支払割</label>
         <select id="dCardSel">
           <option value="none">適用なし</option>
@@ -170,8 +170,8 @@
           <option value="platinum">dカード PLATINUM（還元20%）</option>
         </select>
       </div>
-      <label class="check"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
-      <div class="field">
+      <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
+      <div class="field" id="chokiWrap">
         <label for="choki">長期利用割（MAX・ポイ活MAXのみ）</label>
         <select id="choki">
           <option value="none">適用なし</option>
@@ -179,6 +179,7 @@
           <option value="y20">ドコモ歴20年以上</option>
         </select>
       </div>
+      <p class="hint" id="discountOff" hidden></p>
       <div id="campaignList"></div>
       <div class="subhead">ポイント自動充当（実質額の案内用・自由入力）</div>
       <div class="field">

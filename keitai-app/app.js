@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.6";
+  var APP_VERSION = "1.6.7";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2177,16 +2177,36 @@
     });
     $("campaignList").innerHTML = h;
   }
+  /* 選んだプランで効かない割引は出さない。
+   * 出しておくと、対象外なのに選べてしまい、案内を誤りやすいため。
+   * 何が対象外なのかは1行にまとめて下に出す。 */
+  var DISCOUNT_FIELDS = [
+    { wrap: "minnaWrap", name: "みんなドコモ割", note: "回線数のカウントには含まれます",
+      on: function (d) { return !!(d.minna2 || d.minna3); } },
+    { wrap: "dSetWrap", name: "ドコモ光／home 5G セット割", on: function (d) { return !!d.set; } },
+    { wrap: "dCardWrap", name: "dカードお支払割", on: function (d) { return !!(d.dcard || d.dcardGold); } },
+    { wrap: "dDenkiWrap", name: "ドコモでんきセット割", on: function (d) { return !!d.denki; } },
+    { wrap: "chokiWrap", name: "長期利用割", on: function (d) { return !!d.choki10; } }
+  ];
   function renderDiscountHint() {
     var plan = currentPlan();
-    var msgs = [];
-    if (!hasPlan()) { $("discountHint").textContent = ""; return; }
-    if (!plan.discounts.minna2 && !plan.discounts.minna3) msgs.push("このプランはみんなドコモ割の割引対象外です（回線数のカウントには含まれる場合があります）。");
-    if (!plan.discounts.set) msgs.push("セット割の対象外プランです。");
-    if (!plan.discounts.dcard && !plan.discounts.dcardGold) msgs.push("dカードお支払割の対象外プランです。");
-    if (!plan.discounts.choki10) msgs.push("長期利用割は対象外です。");
-    if (!plan.discounts.denki) msgs.push("でんきセット割は対象外です。");
-    $("discountHint").textContent = msgs.join(" ");
+    var shown = hasPlan();
+    var offs = [];
+    DISCOUNT_FIELDS.forEach(function (f) {
+      var el = $(f.wrap);
+      if (!el) return;
+      var ok = !shown || f.on(plan.discounts || {});
+      el.hidden = !ok;
+      if (!ok) offs.push(f.name + (f.note ? "（" + f.note + "）" : ""));
+    });
+    var off = $("discountOff");
+    if (off) {
+      off.textContent = offs.length
+        ? esc(plan.name) + " は " + offs.join("／") + " の対象外です。"
+        : "";
+      off.hidden = !offs.length;
+    }
+    $("discountHint").textContent = "";
   }
   function syncFormFromState() {
     renderPatternTabs();
