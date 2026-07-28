@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-59";
+  var APP_VERSION = "2026.07.25-60";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -618,9 +618,14 @@
     });
 
     // 端末
-    var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, kaedokiFee: 0, jisshitsu: 0 };
+    var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
     var initialDevice = 0;
-    var p = num(st.devicePrice);
+    var deviceTotal = num(st.devicePrice);          // 端末代金総額（頭金を含む）
+    var deviceAtama = Math.max(0, num(st.atamakin));
+    // 一括は総額をそのまま店頭でお支払い。分割は総額から頭金を引いた残りを分ける
+    var p = st.payMethod === "ikkatsu" ? deviceTotal : Math.max(0, deviceTotal - deviceAtama);
+    device.total = deviceTotal;
+    device.atama = deviceAtama;
     if (st.payMethod === "ikkatsu") {
       initialDevice = p;
     } else if (/^b\d+$/.test(st.payMethod)) {
@@ -640,7 +645,8 @@
         device.after = z > 0 ? Math.floor(z / 24) : 0;
         device.zanka = z;
         device.kaedokiFee = num(st.kaedokiFee);
-        device.jisshitsu = (p - z) + device.kaedokiFee;
+        // 頭金も端末代金総額の一部なので実質負担に含める
+        device.jisshitsu = deviceAtama + (p - z) + device.kaedokiFee;
       }
     }
 
@@ -725,8 +731,8 @@
     var initialRows = [];
     if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee), where: "bill" });
     if (initialDevice > 0) {
-      // 一括購入時は頭金を機種代金へ含めて1行で表示（「店頭頭金」の行は出さない）
-      initialRows.push({ name: "機種代金（一括）", amount: initialDevice + atama, where: "store" });
+      // 一括購入時は頭金も総額に含まれているため、「店頭頭金」の行は出さず1行で表示
+      initialRows.push({ name: "機種代金（一括）", amount: initialDevice, where: "store" });
     } else if (atama > 0) {
       initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
     }
@@ -1167,6 +1173,11 @@
         + (p > 0 ? "（" + yen(p) + "）" : "") + "が入力されていますが、支払い方法が「端末購入なし」のため"
         + "機種代金が見積もりに含まれていません。支払い方法（分割・カエドキ・一括）を選択してください。";
     }
+    var at = Math.max(0, num(state.atamakin));
+    if (state.payMethod !== "none" && state.payMethod !== "ikkatsu" && p > 0 && at >= p) {
+      return "店頭頭金（" + yen(at) + "）が端末代金総額（" + yen(p) + "）以上のため、分割する金額が0円になっています。"
+        + "端末代金総額は頭金を含んだ総額を入力してください。";
+    }
     if (state.payMethod !== "none" && p <= 0 && state.deviceName) {
       return "機種「" + state.deviceName + "」の機種代金が未入力（0円）のため、端末のお支払いが見積もりに含まれていません。";
     }
@@ -1586,7 +1597,8 @@
     // カエドキ説明
     if (r.device.kaedoki) {
       p2 += "<h3>いつでもカエドキプログラム</h3><table><tbody>";
-      p2 += row("機種代金（総額）", yen(num(state.devicePrice)), true);
+      p2 += row("端末代金総額", yen(r.device.total || 0), true);
+      if (r.device.atama > 0) p2 += row("店頭頭金（総額のうち店頭でお支払い）", yen(r.device.atama), true);
       p2 += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
       p2 += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
       if (r.device.kaedokiFee > 0) p2 += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
