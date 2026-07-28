@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.10.0";
+  var APP_VERSION = "1.11.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -551,6 +551,150 @@
     if (!el) return;
     el.textContent = t;
     el.hidden = !t;
+  }
+
+  /* ---------- バックアップ ----------
+   * 店舗のデータ（店舗情報・担当者・料金マスタ・マスタ履歴・保存した見積もり・
+   * テンプレート）を1つのファイルにまとめて書き出し、読み込みで戻せるようにする。
+   *
+   * クラウド同期は「いまの状態を写す」もので、間違えて消した・壊した場合の
+   * 備えにはならない。誤操作からの復旧と、店舗が自分のデータを持ち出せることの
+   * 両方をこれで担保する。
+   *
+   * お客様名は既定で含めない。料金設定を残すのが主目的で、
+   * 個人情報を持ち出す必要が無いため。必要なときだけチェックで含める。 */
+  var BACKUP_KIND = "keitai-quote-backup";
+  function readJson(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
+  }
+  function buildBackup(withCust) {
+    var saved = {}, tpl = {};
+    (config.staff || []).forEach(function (s) {
+      var sv = readJson(SAVED_KEY + ":" + s.id);
+      if (sv && sv.length) {
+        if (!withCust) {
+          sv = JSON.parse(JSON.stringify(sv));
+          sv.forEach(function (it) {
+            it.custName = "";
+            if (it.data && it.data.patterns) {
+              it.data.patterns.forEach(function (pt) { pt.custName = ""; });
+            }
+          });
+        }
+        saved[s.id] = sv;
+      }
+      var tp = readJson(TPL_KEY + ":" + s.id);
+      if (tp && tp.length) tpl[s.id] = tp;
+    });
+    return {
+      kind: BACKUP_KIND,
+      version: 1,
+      at: nowStamp(),
+      appVersion: APP_VERSION,
+      storeName: config.storeName || "",
+      withCustomerName: !!withCust,
+      config: config,
+      master: MASTER,
+      history: histList,
+      saved: saved,
+      templates: tpl
+    };
+  }
+  function backupFileName() {
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    var store = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
+    return "見積もりバックアップ_" + store + "_"
+      + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + ".json";
+  }
+  function doBackup() {
+    var withCust = !!($("bkWithCust") && $("bkWithCust").checked);
+    var json = JSON.stringify(buildBackup(withCust), null, 2);
+    try {
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = backupFileName();
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      backupMsg("バックアップを保存しました（" + backupFileName() + "）。安全な場所に保管してください。");
+    } catch (e) {
+      backupMsg("保存できませんでした。お使いのブラウザがファイルの保存に対応していない可能性があります。");
+    }
+  }
+  function backupMsg(t, warn) {
+    var el = $("backupMsg");
+    if (!el) return;
+    el.textContent = t || "";
+    el.hidden = !t;
+    el.className = "hint" + (warn ? " backup-warn" : "");
+  }
+  /* 読み込んだ内容で置き換える。戻す前の内容はマスタ履歴に残す。 */
+  function restoreBackup(d) {
+    if (!d || d.kind !== BACKUP_KIND) {
+      backupMsg("このファイルはバックアップではないようです。", true);
+      return;
+    }
+    if (!d.master || !d.master.plans) {
+      backupMsg("バックアップの中身が読み取れませんでした。", true);
+      return;
+    }
+    var msg = "バックアップを読み込みます。\n\n"
+      + "作成日時: " + (d.at || "不明") + "\n"
+      + "店舗: " + (d.storeName || "（未設定）") + "\n"
+      + "お客様名: " + (d.withCustomerName ? "含む" : "含まない") + "\n\n"
+      + "いまの内容はすべて置き換わります。よろしいですか？";
+    if (!window.confirm(msg)) return;
+
+    histSettle();
+    /* 戻す前の内容は、復元後の履歴の先頭に置く。
+     * 先に histAdd してしまうと、直後に履歴ごと上書きされて消えてしまう。 */
+    var backEntry = {
+      id: "h" + Date.now() + Math.random().toString(36).slice(2, 6),
+      at: nowStamp(), by: histEditor(),
+      label: "バックアップを読み込む前の内容", auto: true,
+      data: JSON.stringify(MASTER)
+    };
+    try {
+      if (d.config) localStorage.setItem(CFG_KEY, JSON.stringify(d.config));
+      localStorage.setItem(MASTER_KEY, JSON.stringify(d.master));
+      var hs = (d.history && d.history.length) ? d.history.slice(0, HIST_MAX - 1) : [];
+      hs.unshift(backEntry);
+      localStorage.setItem(HIST_KEY, JSON.stringify(hs));
+      Object.keys(d.saved || {}).forEach(function (id) {
+        localStorage.setItem(SAVED_KEY + ":" + id, JSON.stringify(d.saved[id]));
+      });
+      Object.keys(d.templates || {}).forEach(function (id) {
+        localStorage.setItem(TPL_KEY + ":" + id, JSON.stringify(d.templates[id]));
+      });
+    } catch (e) {
+      backupMsg("読み込みに失敗しました。端末の空き容量をご確認ください。", true);
+      return;
+    }
+    // 反映漏れが出ないよう、読み直して立ち上げ直す
+    window.alert("バックアップを読み込みました。画面を読み込み直します。");
+    location.reload();
+  }
+  function initBackup() {
+    var b = $("backupBtn");
+    if (b) b.addEventListener("click", doBackup);
+    var f = $("restoreFile");
+    if (f) f.addEventListener("change", function () {
+      var file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        var d = null;
+        try { d = JSON.parse(String(fr.result)); } catch (e) {}
+        restoreBackup(d);
+      };
+      fr.onerror = function () { backupMsg("ファイルを読めませんでした。", true); };
+      fr.readAsText(file);
+    });
   }
 
   /* ---------- 料金表の更新（配信） ----------
@@ -5247,6 +5391,7 @@
   initMasterGate();
   initAbout();
   initDocs();
+  initBackup();
   initIenakaLink();
   initTileSort();
   initTplHold();
