@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-60";
+  var APP_VERSION = "2026.07.25-61";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -424,6 +424,25 @@
     return MASTER.fees.jimu_kishu;
   }
   var CUR_INST_LABEL = "現在の分割支払金（継続中）";
+  // ドコモ MAX／ドコモ ポイ活 MAX の「選べる特典」
+  // 対象4サービスから毎月2つまで追加料金なし。3つ目以降は通常料金
+  var MAX_BONUS_IDS = ["bk_lemino", "bk_danime", "dazn", "nba"];
+  var MAX_BONUS_LIMIT = 2;
+  var MAX_BONUS_NOTE = "選べる特典";
+  function maxBonusPlan(planId) { return planId === "max" || planId === "poikatsu_max"; }
+  // 無料にするのは選択中の対象サービスのうち高い方から2つ
+  function maxBonusFree(st, planId) {
+    var free = {};
+    if (!maxBonusPlan(planId)) return free;
+    var picked = [];
+    MASTER.options.forEach(function (o) {
+      if (MAX_BONUS_IDS.indexOf(o.id) < 0 || !st.options[o.id]) return;
+      picked.push({ id: o.id, price: optPrice(o, st) });
+    });
+    picked.sort(function (a, b) { return b.price - a.price; });
+    picked.slice(0, MAX_BONUS_LIMIT).forEach(function (x) { free[x.id] = true; });
+    return free;
+  }
   // ②のネットワークサービス（単品の月額使用料・税込）
   var NET_SVC = [
     { id: "rusuban", name: "留守番電話サービス", price: 330, freeWithKake: true },
@@ -571,10 +590,15 @@
 
     // オプション・サービス（すべて月額・金額選択対応）
     var optRows = [], optTotal = 0;
+    var bonusFree = maxBonusFree(st, plan.id);
     MASTER.options.forEach(function (o) {
       if (!st.options[o.id]) return;
       var pr = optPrice(o, st);
       var lb = o.priceLabels && o.priceLabels[String(pr)];
+      if (bonusFree[o.id]) {
+        optRows.push({ name: o.name + "（" + MAX_BONUS_NOTE + "）", price: 0 });
+        return;
+      }
       optRows.push({ name: o.name + (lb ? "（" + lb + "）" : ""), price: pr });
       optTotal += pr;
     });
@@ -968,10 +992,17 @@
       });
       if (!items.length) return;
       h += '<div class="opt-cat">' + esc(cat) + "</div>";
+      var bonusFree = maxBonusFree(state, currentPlan().id);
+      var bonusTarget = maxBonusPlan(currentPlan().id);
       h += '<div class="tile-grid">' + items.map(function (o) {
         var on = !!state.options[o.id];
         var priceHtml;
-        if (o.priceChoices && o.priceChoices.length) {
+        if (bonusFree[o.id]) {
+          priceHtml = '<span class="t-price t-bonus">' + esc(MAX_BONUS_NOTE) + " 0円/月</span>";
+        } else if (bonusTarget && MAX_BONUS_IDS.indexOf(o.id) >= 0) {
+          priceHtml = '<span class="t-price">' + yen(optPrice(o, state)) + "/月"
+            + (on ? "<br><small>3つ目以降は有料</small>" : "<br><small>" + esc(MAX_BONUS_NOTE) + "の対象</small>") + "</span>";
+        } else if (o.priceChoices && o.priceChoices.length) {
           var cur = optPrice(o, state);
           priceHtml = '<select data-optprice="' + esc(o.id) + '">'
             + o.priceChoices.map(function (c) {
@@ -1970,6 +2001,7 @@
       syncPoikatsuDefault(prevPlan);
       renderVoiceSelect();
       renderMailOpt();
+      renderOptionList();
       renderCampaigns();
       renderDiscountHint();
       recalc();
@@ -1982,6 +2014,7 @@
       renderTierSelect();
       renderVoiceSelect();
       renderMailOpt();
+      renderOptionList();
       renderCampaigns();
       renderDiscountHint();
       recalc();
