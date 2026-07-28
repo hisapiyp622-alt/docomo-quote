@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.3.3";
+  var APP_VERSION = "1.4.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -87,6 +87,30 @@
   /* ---------- 保存した見積もり ----------
    * 「いまの入力内容」とは別に、3パターン一式を名前を付けて残しておける。
    * 担当者ごとに分かれ、クラウド利用時は stores/{uid}/saved/{担当ID} に同期する。 */
+  /* テンプレートは担当者ごとに持つ（3枠）。
+   * 以前は料金マスタの中にあり、店舗内の全担当で共有していたため、
+   * 誰かが保存すると他の担当のテンプレートが上書きされていた。 */
+  var TPL_KEY = "kq-tpl-v1";
+  var templates = [null, null, null];
+  function tplKey(staffId) { return TPL_KEY + ":" + (staffId || activeStaff().id); }
+  function loadTemplates() {
+    templates = [null, null, null];
+    var got = false;
+    try {
+      var a = JSON.parse(localStorage.getItem(tplKey()) || "null");
+      if (a && a.length === 3) { templates = a; got = true; }
+    } catch (e) {}
+    // 共有だった頃のテンプレートは、最初の1回だけ引き継ぐ
+    if (!got && MASTER.templates && MASTER.templates.some(function (t) { return !!t; })) {
+      templates = JSON.parse(JSON.stringify(MASTER.templates));
+      persistTemplates();
+    }
+  }
+  function persistTemplates() {
+    try { localStorage.setItem(tplKey(), JSON.stringify(templates)); } catch (e) {}
+    if (typeof pushTemplates === "function") pushTemplates();
+  }
+
   var SAVED_KEY = "kq-saved-v1";
   var SAVED_MAX = 50;
   var savedList = [];
@@ -432,6 +456,7 @@
     suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
     savedTimer: null, unsubSaved: null, watchingSavedId: null,
+    tplTimer: null, unsubTpl: null, watchingTplId: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
   function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
@@ -493,6 +518,39 @@
       if (!cloudOn()) return;
       quoteDoc(sid).set(stamp({ data: quotePayload() })).then(cloudOk, cloudNg);
     }, 800);
+  }
+
+  function tplDoc(staffId) { return storeDoc().collection("templates").doc(staffId || activeStaff().id); }
+  function pushTemplates() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    var sid = activeStaff().id;
+    if (CLOUD.tplTimer) clearTimeout(CLOUD.tplTimer);
+    syncStatus("同期中…", "");
+    CLOUD.tplTimer = setTimeout(function () {
+      CLOUD.tplTimer = null;
+      if (!cloudOn()) return;
+      tplDoc(sid).set(stamp({ list: JSON.stringify(templates) })).then(cloudOk, cloudNg);
+    }, 1000);
+  }
+  function watchTemplates() {
+    if (!cloudOn() || !config.activeStaffId) return;
+    var sid = activeStaff().id;
+    if (CLOUD.unsubTpl && CLOUD.watchingTplId === sid) return;
+    if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
+    CLOUD.watchingTplId = sid;
+    CLOUD.unsubTpl = tplDoc(sid).onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d || !d.list) return;
+      if (d.clientId === CLOUD.clientId) return;
+      if (CLOUD.tplTimer) return; // 送信待ちのローカル変更がある間は上書きしない
+      try {
+        var a = JSON.parse(d.list);
+        if (!a || a.length !== 3) return;
+        templates = a;
+        try { localStorage.setItem(tplKey(sid), JSON.stringify(templates)); } catch (e2) {}
+        renderTplBar();
+      } catch (e) {}
+    }, function () {});
   }
 
   function savedDoc(staffId) { return storeDoc().collection("saved").doc(staffId || activeStaff().id); }
@@ -658,12 +716,15 @@
     loadState();
     loadSaved();
     renderSaved();
+    loadTemplates();
+    renderTplBar();
     state = store.patterns[store.active];
     syncFormFromState();
     renderStaffBar();
     recalc();
     watchQuote();
     watchSaved();
+    watchTemplates();
   }
   function renderStaffBar() {
     var el = $("staffBar");
@@ -711,8 +772,10 @@
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
+    if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
     CLOUD.watchingStaffId = null;
     CLOUD.watchingSavedId = null;
+    CLOUD.watchingTplId = null;
     syncStatus("", "");
     armIdle(false);
     var lo = $("logoutBtn"); if (lo) lo.hidden = true;
@@ -815,8 +878,10 @@
   function clearActiveStaff() {
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
+    if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
     CLOUD.watchingStaffId = null;
     CLOUD.watchingSavedId = null;
+    CLOUD.watchingTplId = null;
     config.activeStaffId = "";
     saveConfig();
   }
@@ -1359,13 +1424,14 @@
   var tplSaveMode = false;
   function renderTplBar() {
     document.querySelectorAll(".tpl").forEach(function (b) {
-      var t = MASTER.templates[+b.dataset.tpl];
+      var t = templates[+b.dataset.tpl];
       b.textContent = t ? t.name : "未設定";
       b.classList.toggle("filled", !!t);
       b.classList.toggle("empty", !t);
     });
     var bar = document.querySelector(".tpl").closest(".pattern-bar");
     bar.classList.toggle("tpl-saving", tplSaveMode);
+    closeTplMenu();
     $("saveTplBtn").textContent = tplSaveMode ? "保存先のテンプレボタンをタップ（ここを押すとキャンセル）" : "現在の内容をテンプレに保存";
   }
   function tplSnapshot() {
@@ -1374,7 +1440,7 @@
     return snap;
   }
   function tplApply(i) {
-    var t = MASTER.templates[i];
+    var t = templates[i];
     if (!t) { tplMsg("テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください"); return; }
     var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName };
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
@@ -1382,6 +1448,77 @@
     syncFormFromState();
     recalc();
   }
+  /* テンプレートの長押し削除
+   * 長押し（またはPCの右クリック）で、そのテンプレートを消すかどうかを聞く。
+   * 長押しのあとに click が続けて発生するため、直後の1回は無視する。 */
+  var tplHold = { timer: null, fired: false, slot: -1 };
+  function closeTplMenu() {
+    var m = $("tplMenu");
+    if (m) m.hidden = true;
+    tplHold.slot = -1;
+  }
+  function openTplMenu(i, btn) {
+    var t = templates[i];
+    if (!t) return;                      // 未設定の枠では出さない
+    if (tplSaveMode) return;             // 保存先を選んでいる最中は出さない
+    tplHold.slot = i;
+    var m = $("tplMenu");
+    $("tplMenuName").textContent = t.name;
+    m.hidden = false;
+    // ボタンのすぐ下に出す（画面からはみ出さないように寄せる）
+    var r = btn.getBoundingClientRect();
+    var w = m.offsetWidth || 200;
+    var left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+    m.style.left = left + "px";
+    m.style.top = (r.bottom + 6) + "px";
+  }
+  function initTplHold() {
+    document.querySelectorAll(".tpl").forEach(function (b) {
+      var i = +b.dataset.tpl;
+      function start(e) {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        tplHold.fired = false;
+        clearTimeout(tplHold.timer);
+        tplHold.timer = setTimeout(function () {
+          tplHold.fired = true;
+          openTplMenu(i, b);
+        }, 550);
+      }
+      function cancel() { clearTimeout(tplHold.timer); }
+      b.addEventListener("pointerdown", start);
+      ["pointerup", "pointerleave", "pointercancel"].forEach(function (ev) {
+        b.addEventListener(ev, cancel);
+      });
+      // PCは右クリックでも出せるようにする
+      b.addEventListener("contextmenu", function (e) {
+        e.preventDefault();
+        tplHold.fired = true;
+        openTplMenu(i, b);
+      });
+    });
+    $("tplMenuDel").addEventListener("click", function () {
+      var i = tplHold.slot;
+      if (i < 0 || !templates[i]) { closeTplMenu(); return; }
+      var nm = templates[i].name;
+      templates[i] = null;
+      persistTemplates();
+      renderTplBar();
+      closeTplMenu();
+      tplMsg("「" + nm + "」を削除しました");
+    });
+    $("tplMenuCancel").addEventListener("click", closeTplMenu);
+    // ほかの場所を触ったら閉じる
+    document.addEventListener("pointerdown", function (e) {
+      var m = $("tplMenu");
+      if (!m || m.hidden) return;
+      if (m.contains(e.target) || (e.target.classList && e.target.classList.contains("tpl"))) return;
+      closeTplMenu();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeTplMenu();
+    });
+  }
+
   var tplPendingSlot = null;
   function tplMsg(text) {
     $("tplMsg").textContent = text;
@@ -1391,7 +1528,7 @@
     // iPadのホーム画面起動(PWA)ではprompt()が使えないため、画面内の入力欄で名前を付ける
     var plan = currentPlan();
     var procLabel = { shinki: "新規", mnp: "MNP", kishu: "機種変更", plan_only: "プラン変更" }[state.procType] || "";
-    var cur = MASTER.templates[i];
+    var cur = templates[i];
     tplPendingSlot = i;
     $("tplNameInput").value = cur ? cur.name
       : ((state.planId ? plan.name + " " : "") + procLabel).trim().slice(0, 20);
@@ -1403,8 +1540,8 @@
   function tplSaveDone(ok) {
     if (ok && tplPendingSlot != null) {
       var name = $("tplNameInput").value.trim() || ("テンプレ" + (tplPendingSlot + 1));
-      MASTER.templates[tplPendingSlot] = { name: name.slice(0, 20), state: tplSnapshot() };
-      saveMaster();
+      templates[tplPendingSlot] = { name: name.slice(0, 20), state: tplSnapshot() };
+      persistTemplates();
       tplMsg("「" + name.slice(0, 20) + "」を保存しました");
     }
     tplPendingSlot = null;
@@ -2320,8 +2457,9 @@
 
     // テンプレート管理
     h += '<div class="master-plan"><h3>テンプレート</h3>';
-    h += '<p class="hint">保存は見積もり画面の「現在の内容をテンプレに保存」から。ここでは名前変更と削除ができます。</p>';
-    MASTER.templates.forEach(function (t, i) {
+    h += '<p class="hint">テンプレートは<strong>担当者ごと</strong>です（いまは「' + esc(activeStaff().name || "担当") + '」のもの）。'
+      + '保存は見積もり画面の「現在の内容をテンプレに保存」から。ここでは名前変更と削除ができます。</p>';
+    templates.forEach(function (t, i) {
       h += '<div class="adhoc-row">'
         + '<span class="price" style="min-width:2em">' + (i + 1) + '</span>'
         + (t
@@ -2500,6 +2638,8 @@
     });
     document.querySelectorAll(".tpl").forEach(function (b) {
       b.addEventListener("click", function () {
+        if (tplHold.fired) { tplHold.fired = false; return; } // 長押しで開いた直後は反応させない
+        closeTplMenu();
         var i = +b.dataset.tpl;
         if (tplSaveMode) tplSave(i);
         else tplApply(i);
@@ -2879,7 +3019,11 @@
         var i = +t.getAttribute("data-staffdel");
         if (config.staff.length <= 1) return;
         var removed = config.staff.splice(i, 1)[0];
-        try { localStorage.removeItem(quoteKey(removed.id)); } catch (e2) {}
+        try {
+          localStorage.removeItem(quoteKey(removed.id));
+          localStorage.removeItem(savedKey(removed.id));
+          localStorage.removeItem(tplKey(removed.id));
+        } catch (e2) {}
         if (config.activeStaffId === removed.id) {
           config.activeStaffId = config.staff[0].id;
           loadState(); syncFormFromState(); recalc();
@@ -2976,7 +3120,7 @@
       }
       if (t.hasAttribute("data-tp-name")) {
         var tpi = +t.getAttribute("data-tp-name");
-        if (MASTER.templates[tpi]) { MASTER.templates[tpi].name = t.value.slice(0, 20); markEdited(); renderTplBar(); }
+        if (templates[tpi]) { templates[tpi].name = t.value.slice(0, 20); persistTemplates(); renderTplBar(); }
         return;
       }
       if (t.hasAttribute("data-cp-name")) {
@@ -3000,8 +3144,8 @@
     $("masterBody").addEventListener("click", function (e) {
       var t = e.target;
       if (t.hasAttribute("data-tp-del")) {
-        MASTER.templates[+t.getAttribute("data-tp-del")] = null;
-        markEdited(); renderMasterTab(); renderTplBar();
+        templates[+t.getAttribute("data-tp-del")] = null;
+        persistTemplates(); renderMasterTab(); renderTplBar();
         return;
       }
       if (t.hasAttribute("data-cp-del")) {
@@ -3073,10 +3217,12 @@
   recalc();
   loadSaved();
   renderSaved();
+  loadTemplates();
   renderStoreConfig();
   renderLockConfig();
   initIdle();
   initLocalLock();
   initStaffGate();
+  initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
 })();

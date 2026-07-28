@@ -38,7 +38,7 @@
     </div>
 
     <div class="pattern-bar">
-      <span class="lbl">テンプレート：</span>
+      <span class="lbl" title="長押しで削除できます">テンプレート：</span>
       <button class="tpl" data-tpl="0" type="button">未設定</button>
       <button class="tpl" data-tpl="1" type="button">未設定</button>
       <button class="tpl" data-tpl="2" type="button">未設定</button>
@@ -49,6 +49,11 @@
         <button class="btn-sub" id="tplNameCancel" type="button">キャンセル</button>
       </span>
       <span class="hint" id="tplMsg"></span>
+    </div>
+    <div class="tpl-menu no-print" id="tplMenu" hidden>
+      <div class="tpl-menu-name" id="tplMenuName"></div>
+      <button class="btn-sub tpl-menu-del" id="tplMenuDel" type="button">削除する</button>
+      <button class="btn-sub" id="tplMenuCancel" type="button">キャンセル</button>
     </div>
 
     <div class="card full">

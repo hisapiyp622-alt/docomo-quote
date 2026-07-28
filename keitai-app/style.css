@@ -419,3 +419,18 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   color:var(--muted);text-decoration:underline;cursor:pointer;
 }
 .link-btn:hover{color:var(--red)}
+
+/* テンプレートの長押しメニュー */
+.tpl{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.tpl-menu{
+  position:fixed;z-index:60;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 6px 20px rgba(0,0,0,.14);
+  padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:180px;
+}
+.tpl-menu-name{
+  font-size:12.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;
+}
+.tpl-menu .btn-sub{width:100%}
+.tpl-menu .tpl-menu-del{color:var(--red);border-color:var(--red)}
