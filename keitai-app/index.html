@@ -463,6 +463,22 @@
       <p class="hint">「現在のマスタ構成をコピー」: この端末で編集した料金マスタ一式をクリップボードにコピーします。別の端末へ移すときや、設定内容を控えておくときにお使いください。</p>
       <textarea id="exportMasterBox" class="export-box" hidden readonly></textarea>
     </div>
+    <div class="card">
+      <h2>バックアップ</h2>
+      <p class="hint">店舗情報・担当者・料金マスタ・マスタ履歴・保存した見積もり・テンプレートを、
+        1つのファイルにまとめて保存します。<strong>間違えて消してしまったときに、ここから戻せます。</strong>
+        月に一度など、区切りのよいところで取っておくことをおすすめします。</p>
+      <div class="actions">
+        <button class="btn-sub" id="backupBtn" type="button">バックアップを保存</button>
+        <label class="btn-sub file-btn">バックアップから復元
+          <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="bkWithCust"> お客様名も含める</label>
+      <p class="hint">お客様名は<strong>既定では含めません</strong>。料金の設定を残すことが目的のため、
+        個人情報を持ち出さないようにしています。含める場合は、ファイルの保管場所にご注意ください。</p>
+      <p class="hint" id="backupMsg" hidden></p>
+    </div>
     <div id="masterBody"><!-- JSで生成 --></div>
   </section>
 
