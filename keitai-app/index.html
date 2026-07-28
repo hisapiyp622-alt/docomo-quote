@@ -190,6 +190,12 @@
         <label for="ptPoikatsuFamily">ポイ活ファミリー特典</label>
         <input type="number" id="ptPoikatsuFamily" inputmode="numeric" min="0" placeholder="0"> pt/月
       </div>
+      <div class="field" id="ptBakuageWrap" hidden>
+        <label for="ptBakuage">爆アゲセレクション還元</label>
+        <input type="number" id="ptBakuage" inputmode="numeric" min="0" placeholder="0"> pt/月
+        <button class="btn-sub" id="bakuageReset" type="button" hidden>自動計算値に戻す</button>
+      </div>
+      <p class="hint" id="bakuageHint" hidden></p>
       <div class="field" id="ptDcardField">
         <label for="ptDcard">dカード還元特典</label>
         <input type="number" id="ptDcard" inputmode="numeric" min="0" placeholder="0"> pt/月

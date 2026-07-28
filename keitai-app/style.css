@@ -580,3 +580,9 @@ body.sorting .sort-chip{cursor:grabbing}
 .log-entry.is-new .log-head{color:var(--red)}
 .log-entry ul{margin:3px 0 0;padding-left:17px}
 .log-entry li{font-size:11.5px;line-height:1.6;color:var(--muted)}
+
+/* マスタ設定: 爆アゲの還元率 */
+.baku-flag input[type="number"]{
+  width:44px;padding:2px 3px;margin:0 2px;border:1px solid var(--line);
+  border-radius:5px;font:inherit;font-size:11.5px;text-align:right;
+}
