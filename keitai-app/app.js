@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.8";
+  var APP_VERSION = "1.6.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -257,6 +257,109 @@
   // マスタ設定専用のパスワードを決めているか
   function adminLockEnabled() { return !!(config.adminLock && config.adminLock.hash); }
 
+  /* ---------- 料金マスタの履歴 ----------
+   * 料金改定の前に戻せるように、マスタの内容をまるごと控えておく。
+   * ・マスタ設定を開いてから最初の編集で、編集前の内容を自動で1件残す
+   * ・「いまの内容を履歴に残す」でメモを付けて任意に残せる
+   * クラウド利用時は stores/{UID}/history/{id} に置き、店舗内の全端末で同じ履歴を見る。 */
+  var HIST_KEY = "kq-master-hist-v1";
+  var HIST_MAX = 12;
+  var histList = [];
+  var histLoaded = false;      // クラウドからの読み込みは開いたとき1回だけ
+  var histBaseline = "";       // いまのマスタの内容（編集前）
+  var histAutoDone = false;    // このマスタ設定の滞在で自動保存を済ませたか
+  function histLoadLocal() {
+    histList = [];
+    try {
+      var a = JSON.parse(localStorage.getItem(HIST_KEY) || "null");
+      if (a && a.length) histList = a;
+    } catch (e) {}
+  }
+  function histSaveLocal() {
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(histList)); } catch (e) {}
+  }
+  function histEditor() {
+    if (typeof masterOnly !== "undefined" && masterOnly) return "管理者";
+    var s = activeStaff();
+    return (s && s.name) || "担当";
+  }
+  function histAdd(label, dataJson, auto) {
+    var e = {
+      id: "h" + Date.now() + Math.random().toString(36).slice(2, 6),
+      at: nowStamp(),
+      by: histEditor(),
+      label: String(label || "").slice(0, 40),
+      auto: !!auto,
+      data: dataJson
+    };
+    histList.unshift(e);
+    var over = histList.slice(HIST_MAX);
+    histList = histList.slice(0, HIST_MAX);
+    histSaveLocal();
+    renderHistList();
+    if (typeof histPush === "function") histPush(e, over);
+    return e;
+  }
+  // 編集前の内容を1回だけ自動で残す
+  function histAutoSnapshot() {
+    if (histAutoDone || !histBaseline) return;
+    histAutoDone = true;
+    histAdd("編集前の内容", histBaseline, true);
+  }
+  function histMark() {
+    histBaseline = JSON.stringify(MASTER);
+    histAutoDone = false;
+  }
+  function nowStamp() {
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    return d.getFullYear() + "/" + z(d.getMonth() + 1) + "/" + z(d.getDate())
+      + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+  }
+  function histRestore(id) {
+    var e = histList.filter(function (x) { return x.id === id; })[0];
+    if (!e) return;
+    // 戻す操作自体もやり直せるように、いまの内容を残しておく
+    histAdd("戻す前の内容", JSON.stringify(MASTER), true);
+    try { localStorage.setItem(MASTER_KEY, e.data); } catch (e2) {}
+    loadMaster();
+    histMark();
+    renderMasterTab();
+    renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
+    renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+    renderCampaigns(); renderDiscountHint();
+    syncFormFromState();
+    recalc();
+    histMsg("「" + (e.label || e.at) + "」の内容に戻しました");
+  }
+  function histDelete(id) {
+    histList = histList.filter(function (x) { return x.id !== id; });
+    histSaveLocal();
+    if (typeof histDeleteCloud === "function") histDeleteCloud(id);
+    renderHistList();
+  }
+  function histListHtml() {
+    if (!histList.length) return '<p class="hint">まだ履歴はありません。</p>';
+    return '<div class="hist-list">' + histList.map(function (e) {
+      return '<div class="hist-row">'
+        + '<div class="hist-info"><b>' + esc(e.label || "（メモなし）") + (e.auto ? '<span class="hist-auto">自動</span>' : "") + "</b>"
+        + '<span class="hint">' + esc(e.at) + "　" + esc(e.by || "") + "</span></div>"
+        + '<button class="btn-sub" data-hist-restore="' + esc(e.id) + '" type="button">この内容に戻す</button>'
+        + '<button class="del" data-hist-del="' + esc(e.id) + '" type="button" aria-label="削除">×</button>'
+        + "</div>";
+    }).join("") + "</div>";
+  }
+  function renderHistList() {
+    var box = $("histBox");
+    if (box) box.innerHTML = histListHtml();
+  }
+  function histMsg(t) {
+    var el = $("histMsg");
+    if (!el) return;
+    el.textContent = t;
+    el.hidden = !t;
+  }
+
   /* ---------- マスタ読み込み ---------- */
   var MASTER;
   function upgradeV2(m) {
@@ -422,7 +525,7 @@
       deviceName: "", devicePrice: 0, payMethod: "none", kaedoki23: 0, kaedokiFee: 0,
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
-      custName: "", shopName: "", staffName: "", quoteMemo: "",
+      custName: "", shopName: "", staffName: "", shopTel: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
@@ -576,6 +679,35 @@
     }, 800);
   }
 
+  /* 履歴は店舗で共通。件数が少ないので、マスタ設定を開いたときに読む */
+  function histCol() { return storeDoc().collection("history"); }
+  function histPush(entry, dropped) {
+    if (!cloudOn() || CLOUD.suppress) return;
+    histCol().doc(entry.id).set(entry).then(cloudOk, cloudNg);
+    (dropped || []).forEach(function (d) { histCol().doc(d.id).delete().catch(function () {}); });
+  }
+  function histDeleteCloud(id) {
+    if (!cloudOn()) return;
+    histCol().doc(id).delete().catch(function () {});
+  }
+  function histLoadCloud() {
+    if (!cloudOn() || histLoaded) return;
+    histLoaded = true;
+    histCol().orderBy("at", "desc").limit(HIST_MAX).get().then(function (snap) {
+      var seen = {};
+      histList.forEach(function (e) { seen[e.id] = true; });
+      snap.forEach(function (doc) {
+        var d = doc.data();
+        if (!d || !d.data || seen[d.id || doc.id]) return;
+        histList.push(d);
+      });
+      histList.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+      histList = histList.slice(0, HIST_MAX);
+      histSaveLocal();
+      renderHistList();
+    }, function () { histLoaded = false; });
+  }
+
   function tplDoc(staffId) { return storeDoc().collection("templates").doc(staffId || activeStaff().id); }
   function pushTemplates() {
     if (!cloudOn() || CLOUD.suppress) return;
@@ -680,6 +812,7 @@
         try {
           localStorage.setItem(MASTER_KEY, d.master);
           loadMaster();
+          histMark();
           renderMasterTab();
           renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
           renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
@@ -775,11 +908,13 @@
     var src = store.patterns[store.active] || {};
     var shop = src.shopName || "";
     var staff = src.staffName || "";
+    var tel = src.shopTel || "";
     store.active = 0;
     for (var i = 0; i < 3; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
       store.patterns[i].staffName = staff;
+      store.patterns[i].shopTel = tel;
     }
     state = store.patterns[0];
     // クラウド利用時はこの内容が送信される。購読を始めた直後に
@@ -1542,13 +1677,13 @@
   }
   function tplSnapshot() {
     var snap = JSON.parse(JSON.stringify(state));
-    delete snap.custName; delete snap.shopName; delete snap.staffName;
+    delete snap.custName; delete snap.shopName; delete snap.staffName; delete snap.shopTel;
     return snap;
   }
   function tplApply(i) {
     var t = templates[i];
     if (!t) { tplMsg("テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください"); return; }
-    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName };
+    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     state = store.patterns[store.active];
     syncFormFromState();
@@ -1960,6 +2095,7 @@
     $("custName").value = state.custName;
     $("shopName").value = state.shopName;
     $("staffName").value = state.staffName;
+    $("shopTel").value = state.shopTel || "";
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
     $("voiceChange").checked = !!state.voiceChange;
@@ -2294,8 +2430,7 @@
 
     var h = "";
     h += '<h2 class="sheet-title">お見積書</h2>';
-    h += '<div class="sheet-meta"><span>作成日: ' + dateStr + "</span><span>"
-      + esc(state.shopName || "") + (state.staffName ? "　担当: " + esc(state.staffName) : "") + "</span></div>";
+    h += '<div class="sheet-meta"><span>作成日: ' + dateStr + "</span><span></span></div>";
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
 
     var devWarn = deviceInputWarning();
@@ -2501,6 +2636,13 @@
 
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
 
+    // 発行元（店舗名・担当者名・電話番号）。お客様が後から連絡できるように下端へ置く
+    var signParts = [];
+    if (state.shopName) signParts.push("<b>" + esc(state.shopName) + "</b>");
+    if (state.staffName) signParts.push("担当: " + esc(state.staffName));
+    if (state.shopTel) signParts.push("TEL: " + esc(state.shopTel));
+    if (signParts.length) h += '<div class="sheet-sign">' + signParts.join("　") + "</div>";
+
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。<br>"
       + "料金データ基準日: " + esc(MASTER.updated) + "｜アプリ版 " + APP_VERSION + "</div>";
@@ -2623,6 +2765,17 @@
         + "</select>";
     });
     h += '<div class="actions"><button class="btn-sub" data-add="accessories" type="button">＋ 商品を追加</button></div></div>';
+
+    // 料金マスタの履歴
+    h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
+    h += '<p class="hint">料金改定の前に戻せます。マスタ設定を開いてから最初に編集したときに、編集前の内容を自動で1件残します。'
+      + '大きく変える前は、メモを付けて残しておくと分かりやすくなります（最大' + HIST_MAX + '件・古いものから消えます）。</p>';
+    h += '<div class="hist-save">'
+      + '<input type="text" id="histLabel" maxlength="40" placeholder="メモ（例）2026年8月の料金改定">'
+      + '<button class="btn-sub" id="histSaveBtn" type="button">いまの内容を履歴に残す</button></div>';
+    h += '<p class="hint" id="histMsg" hidden></p>';
+    h += '<div id="histBox">' + histListHtml() + "</div>";
+    h += "</div>";
 
     // テンプレート管理
     h += '<div class="master-plan"><h3>テンプレート</h3>';
@@ -2902,7 +3055,7 @@
     if (nav) nav.hidden = (name === "master");
     if (name === "sheet") renderSheet();
     if (name === "staff") renderStaffSheet();
-    if (name === "master") renderMasterTab();
+    if (name === "master") { histMark(); histLoadCloud(); renderMasterTab(); }
     if (name === "saved") { renderSaved(); $("saveQuoteName").placeholder = savedDefaultName(); }
     $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
@@ -3065,6 +3218,7 @@
     ac: { key: "accessories", newItem: function () { return { id: "acc_" + Date.now(), name: "", price: 0 }; }, stateKey: "accSel", render: renderAccessoryTiles },
   };
   function markEdited() {
+    histAutoSnapshot(); // 編集前の内容を控えてから書き換える
     MASTER.updated = MASTER.updated.replace(/（編集済み.*$/, "") + "（編集済み）";
     saveMaster();
   }
@@ -3380,7 +3534,7 @@
     $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
 
     // お客様情報
-    ["custName", "shopName", "staffName", "quoteMemo"].forEach(function (id) {
+    ["custName", "shopName", "staffName", "shopTel", "quoteMemo"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); });
     });
     $("todoOther").addEventListener("input", function () {
@@ -3633,11 +3787,12 @@
     });
 
     $("clearQuote").addEventListener("click", function () {
-      var keep = { shopName: state.shopName, staffName: state.staffName };
+      var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.patterns[store.active] = defaultState();
       state = store.patterns[store.active];
       state.shopName = keep.shopName;
       state.staffName = keep.staffName;
+      state.shopTel = keep.shopTel;
       state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
       state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
       syncFormFromState();
@@ -3678,6 +3833,23 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");
+      if (hr) {
+        if (window.confirm("この内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);
+        return;
+      }
+      var hd = e.target.getAttribute && e.target.getAttribute("data-hist-del");
+      if (hd) {
+        if (window.confirm("この履歴を削除しますか？")) histDelete(hd);
+        return;
+      }
+      if (e.target.id === "histSaveBtn") {
+        var lb = $("histLabel").value.trim();
+        histAdd(lb || "手動で保存", JSON.stringify(MASTER), false);
+        $("histLabel").value = "";
+        histMsg("履歴に残しました");
+        return;
+      }
       var t = e.target;
       if (t.hasAttribute("data-tp-del")) {
         templates[+t.getAttribute("data-tp-del")] = null;
@@ -3764,6 +3936,8 @@
   renderStoreConfig();
   renderLockConfig();
   renderAdminLock();
+  histLoadLocal();
+  histMark();
   initIdle();
   initLocalLock();
   initStaffGate();

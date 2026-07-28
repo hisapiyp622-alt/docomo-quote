@@ -497,3 +497,30 @@ body.sorting .sort-chip{cursor:grabbing}
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;
 }
 .master-top .hint{margin:0}
+
+/* 見積書の発行元（店舗名・担当者・電話番号） */
+.sheet .sheet-sign{
+  margin-top:14px;padding-top:7px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--ink);text-align:right;
+}
+.sheet .sheet-sign b{font-size:12.5px}
+
+/* 料金マスタの履歴 */
+.hist-save{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.hist-save input{
+  flex:1;min-width:200px;padding:7px 9px;border:1px solid var(--line);
+  border-radius:7px;font:inherit;font-size:13px;
+}
+.hist-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.hist-row{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#FCFCFC;
+}
+.hist-info{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.hist-info b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-info .hint{margin:0;font-size:11.5px}
+.hist-auto{
+  display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;
+  background:#EEE;color:var(--muted);font-size:10.5px;font-weight:600;vertical-align:1px;
+}
+.hist-row .btn-sub{white-space:nowrap}
