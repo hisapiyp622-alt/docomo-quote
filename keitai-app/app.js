@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.4";
+  var APP_VERSION = "1.6.5";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1578,25 +1578,35 @@
     // 端末
     var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
     var initialDevice = 0;
-    /* 端末代金総額（頭金を含む）から、クーポン・キャンペーンの値引きを引いた額で組み立てる。
-     * 頭金・分割・カエドキの計算は、すべて値引き後の金額を土台にする。 */
+    /* 端末代金総額（頭金を含む）から、クーポン・キャンペーンの値引きを引く。
+     * 値引きは店頭でのお支払いが軽くなるよう、
+     * 「頭金 → 分割する分 → 残価」の順に引いていく。 */
     var deviceList = num(st.devicePrice);
     var devOffCoupon = Math.min(Math.max(0, num(st.couponOff)), deviceList);
     var devOffCampaign = Math.min(Math.max(0, num(st.campaignOff)), Math.max(0, deviceList - devOffCoupon));
     var devOffTotal = devOffCoupon + devOffCampaign;
+    var atamaInput = Math.max(0, Math.min(num(st.atamakin), deviceList));
+    var off = devOffTotal;
+    // ①頭金から引く
+    var deviceAtama = Math.max(0, atamaInput - off);
+    off = Math.max(0, off - atamaInput);
     var deviceTotal = Math.max(0, deviceList - devOffTotal);
-    var deviceAtama = Math.max(0, num(st.atamakin));
-    // 一括は総額をそのまま店頭でお支払い。分割は総額から頭金を引いた残りを分ける
-    var p = st.payMethod === "ikkatsu" ? deviceTotal : Math.max(0, deviceTotal - deviceAtama);
-    device.total = deviceTotal;
     device.list = deviceList;
     device.offCoupon = devOffCoupon;
     device.offCampaign = devOffCampaign;
     device.offTotal = devOffTotal;
+    device.atamaList = atamaInput;
     device.atama = deviceAtama;
+    device.atamaOff = atamaInput - deviceAtama;
     if (st.payMethod === "ikkatsu") {
-      initialDevice = p;
+      // 一括は頭金の区別が無いため、値引き後の総額をそのまま店頭でお支払い
+      initialDevice = deviceTotal;
+      device.atama = 0;
+      device.atamaOff = 0;
     } else if (/^b\d+$/.test(st.payMethod)) {
+      // ②残った値引きを分割する分から引く
+      var pBase = Math.max(0, deviceList - atamaInput);
+      var p = Math.max(0, pBase - off);
       var n = parseInt(st.payMethod.slice(1), 10);
       if (p > 0) {
         device.monthly = Math.floor(p / n);
@@ -1605,9 +1615,15 @@
       }
     } else if (st.payMethod === "kaedoki") {
       // 入力は「23回分の総額（頭金込み）」。残価は 端末代金総額 − その額 で決まる
-      var t23 = Math.min(Math.max(0, num(st.kaedoki23)), deviceTotal);
-      var split23 = Math.max(0, t23 - deviceAtama);   // 23回で分割する金額
-      var z = Math.max(0, deviceTotal - t23);          // 残価（24回目支払分）
+      var t23In = Math.min(Math.max(0, num(st.kaedoki23)), deviceList);
+      // ②23回で分割する分から引く
+      var split23Base = Math.max(0, t23In - atamaInput);
+      var split23 = Math.max(0, split23Base - off);
+      off = Math.max(0, off - split23Base);
+      // ③残価から引く
+      var zBase = Math.max(0, deviceList - t23In);
+      var z = Math.max(0, zBase - off);
+      var t23 = deviceAtama + split23;   // 値引き後の「23回分の総額（頭金込み）」
       if (deviceTotal > 0) {
         device.kaedoki = true;
         device.monthly = Math.floor(split23 / 23);
@@ -1621,6 +1637,7 @@
         device.jisshitsu = t23 + device.kaedokiFee;
       }
     }
+    device.total = deviceTotal;
 
     // アクセサリ（一括／分割）
     var accOnceRows = [], accMonthlyRows = [], accFirstExtra = 0;
@@ -1700,7 +1717,7 @@
     var firstExtra = device.firstExtra + accFirstExtra;
 
     // 初期費用
-    var atama = Math.max(0, num(st.atamakin));
+    var atama = device.atama; // 値引きを引いたあとの頭金
     // where: "store"=店頭お支払い / "bill"=翌月の携帯料金と合算
     var initialRows = [];
     if (num(st.jimuFee) > 0) initialRows.push({ name: "契約事務手数料", amount: num(st.jimuFee), where: "bill" });
@@ -2242,8 +2259,15 @@
     var el = $("deviceOffHint");
     if (!el) return;
     if (!r || !r.device.offTotal) { el.hidden = true; return; }
-    el.innerHTML = "端末代金 " + yen(r.device.list) + " − 値引き " + yen(r.device.offTotal)
-      + " = <strong>" + yen(r.device.total) + "</strong>　この金額を頭金・分割の計算に使います。";
+    var msg = "端末代金 " + yen(r.device.list) + " − 値引き " + yen(r.device.offTotal)
+      + " = <strong>" + yen(r.device.total) + "</strong>";
+    if (r.device.atamaOff > 0) {
+      msg += "　値引きはまず頭金から引きます（頭金 " + yen(r.device.atamaList)
+        + " → <strong>" + yen(r.device.atama) + "</strong>）。";
+    } else {
+      msg += "　値引きは頭金 → 分割 → 残価の順に引きます。";
+    }
+    el.innerHTML = msg;
     el.hidden = false;
   }
   function deviceInputWarning() {
@@ -2484,7 +2508,8 @@
         h += row("機種", "<b>" + esc(state.deviceName || "（機種名未入力）") + "</b>　" + yen(r.device.list));
         if (r.device.offCoupon > 0) h += row("　クーポン値引き", "−" + yen(r.device.offCoupon));
         if (r.device.offCampaign > 0) h += row("　キャンペーン値引き", "−" + yen(r.device.offCampaign));
-        if (r.device.offTotal > 0) h += row("　<b>値引き後の端末代金</b>", "<b>" + yen(r.device.total) + "</b>");
+        if (r.device.offTotal > 0) h += row("　<b>値引き後の端末代金</b>", "<b>" + yen(r.device.total) + "</b>"
+          + (r.device.atamaOff > 0 ? "　店頭頭金 " + yen(r.device.atamaList) + " → " + yen(r.device.atama) : ""));
         h += row("お支払い方法", "<b>" + payLabel + "</b>"
           + (r.device.monthly > 0 ? "　" + yen(r.device.monthly) + "/月 × " + r.device.months + "回" : ""));
         if (r.device.kaedoki) {
@@ -2680,6 +2705,9 @@
       if (r.device.offCoupon > 0) p2 += row("クーポン値引き", "−" + yen(r.device.offCoupon), true);
       if (r.device.offCampaign > 0) p2 += row("キャンペーン値引き", "−" + yen(r.device.offCampaign), true);
       p2 += '<tr class="total"><td>値引き後の端末代金</td><td class="amt">' + yen(r.device.total) + "</td></tr>";
+      if (r.device.atamaOff > 0) {
+        p2 += row("店頭頭金（値引き適用後）", yen(r.device.atamaList) + " → " + yen(r.device.atama), true);
+      }
       p2 += "</tbody></table>";
     }
 
