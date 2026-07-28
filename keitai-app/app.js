@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.0";
+  var APP_VERSION = "1.5.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -718,7 +718,27 @@
   function anyStaffCode() {
     return config.staff.some(function (s) { return String(s.code || "").trim() !== ""; });
   }
-  function enterStaff(s) {
+  /* 担当者コード（またはお名前）で入り直したときは、新しいお客様として最初から始める。
+   * 前のお客様の入力が残っていると、そのまま次の接客に持ち込んでしまうため。
+   * 見積書に出す店舗名・担当者名だけは、毎回入れ直さずに済むよう引き継ぐ。
+   * 作りかけの内容を残したいときは「保存」タブで保存しておく。 */
+  function resetQuoteForNewCustomer() {
+    var src = store.patterns[store.active] || {};
+    var shop = src.shopName || "";
+    var staff = src.staffName || "";
+    store.active = 0;
+    for (var i = 0; i < 3; i++) {
+      store.patterns[i] = defaultState();
+      store.patterns[i].shopName = shop;
+      store.patterns[i].staffName = staff;
+    }
+    state = store.patterns[0];
+    // クラウド利用時はこの内容が送信される。購読を始めた直後に
+    // 前の内容で上書きされないよう、watchQuote より先に呼ぶ
+    saveState();
+  }
+  // fresh=true … 担当者コード画面から入ったとき（新しいお客様として始める）
+  function enterStaff(s, fresh) {
     config.activeStaffId = s.id;
     saveConfig();
     showStaffGate(false);
@@ -728,6 +748,7 @@
     loadTemplates();
     renderTplBar();
     state = store.patterns[store.active];
+    if (fresh) resetQuoteForNewCustomer();
     syncFormFromState();
     renderStaffBar();
     recalc();
@@ -917,7 +938,7 @@
         se.hidden = false;
         return;
       }
-      enterStaff(hit);
+      enterStaff(hit, true);
     });
     var sw2 = $("switchStaffBtn");
     if (sw2) sw2.addEventListener("click", function () {
@@ -935,7 +956,7 @@
       var id = e.target.getAttribute && e.target.getAttribute("data-staffpick");
       if (!id) return;
       var hit = config.staff.filter(function (s) { return s.id === id; })[0];
-      if (hit) enterStaff(hit);
+      if (hit) enterStaff(hit, true);
     });
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
     var sc = $("staffToSetting");
