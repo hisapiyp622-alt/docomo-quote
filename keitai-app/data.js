@@ -643,6 +643,13 @@ const DEFAULT_DATA = {
   ],
   "feeItems": [
     {
+      "id": "fi_free_datamove",
+      "name": "無料データ移行",
+      "price": 0,
+      "pay": "store",
+      "own": true
+    },
+    {
       "id": "fi_1784431925115",
       "name": "初期設定・データ移行サポート",
       "price": 2200,
