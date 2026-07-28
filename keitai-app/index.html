@@ -220,14 +220,10 @@
         <input type="number" id="devicePrice" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <div class="field">
-        <label for="couponOff">クーポン値引き</label>
-        <input type="number" id="couponOff" inputmode="numeric" placeholder="0" min="0"> 円
+        <label for="atamakin">店頭頭金</label>
+        <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
       </div>
-      <div class="field">
-        <label for="campaignOff">キャンペーン値引き</label>
-        <input type="number" id="campaignOff" inputmode="numeric" placeholder="0" min="0"> 円
-      </div>
-      <p class="hint" id="deviceOffHint" hidden></p>
+      <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
       <div class="field">
         <label for="payMethod">支払い方法</label>
         <select id="payMethod">
@@ -250,6 +246,15 @@
         <input type="number" id="kaedokiFee" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <div class="field">
+        <label for="couponOff">クーポン値引き</label>
+        <input type="number" id="couponOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="campaignOff">キャンペーン値引き</label>
+        <input type="number" id="campaignOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <p class="hint" id="deviceOffHint" hidden></p>
+      <div class="field">
         <label for="currentInst">現在の分割支払金</label>
         <input type="number" id="currentInst" inputmode="numeric" placeholder="0" min="0"> 円/月
       </div>
@@ -258,11 +263,6 @@
         <input type="number" id="currentInstMonths" inputmode="numeric" placeholder="0" min="0"> 回
       </div>
       <p class="hint">料金見直しのご案内用です。いま支払い中の機種代金の分割金を入れると、毎月のお支払い目安に合算されます。残り回数を入れると、払い終わったあとの金額も自動で出ます（空欄・0は「ずっと」）。</p>
-      <div class="field">
-        <label for="atamakin">店頭頭金</label>
-        <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
-      </div>
-      <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
       <p class="hint" id="kaedokiHint" hidden></p>
       <p class="pay-warn" id="payWarn" hidden></p>
     </div>
