@@ -61,6 +61,13 @@
           <label for="provider">プロバイダ</label>
           <select id="provider"><!-- 料金タイプに応じてJSで生成 --></select>
         </div>
+        <div class="field" id="providerTypeField" hidden>
+          <label for="providerType">プロバイダの扱い</label>
+          <select id="providerType">
+            <option value="shinki">新規（このプロバイダを新しく契約）</option>
+            <option value="keizoku">継続（いまのプロバイダを継続・メールアドレスを残す）</option>
+          </select>
+        </div>
         <div class="field" id="routerRentalField">
           <label for="routerRental">プロバイダ無料無線ルーターレンタル</label>
           <select id="routerRental">

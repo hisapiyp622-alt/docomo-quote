@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.25-62";
+  var APP_VERSION = "2026.07.28-63";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -98,7 +98,7 @@
 
   function defaultState() {
     return {
-      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "", routerRental: "ari",
+      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "", providerType: "shinki", routerRental: "ari",
       baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
@@ -432,6 +432,12 @@
     $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("providerField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
     renderProviders();
+    /* 新規申込でも、いまのプロバイダを残してメールアドレスを引き継ぐことがあるため、
+     * 申込区分によらず、プロバイダを選んだら聞く。 */
+    var ptOn = !$("providerField").hidden && !!state.provider;
+    $("providerTypeField").hidden = !ptOn;
+    if (!ptOn && state.providerType !== "shinki") state.providerType = "shinki";
+    $("providerType").value = state.providerType || "shinki";
     // プロバイダ無料無線ルーターレンタルは1ギガのみ（10ギガは対象プロバイダなし・別途購入）
     $("routerRentalField").hidden = state.product !== "hikari1g";
     $("routerRental").value = state.routerRental || "ari";
@@ -716,7 +722,11 @@
       h += row("申込区分", APPLY_LABEL[state.applyType] || "新規");
       h += row("住居タイプ", state.housing === "ht" ? "戸建" : "マンション");
       if (!p.noPtype) {
-        h += row("プロバイダ", (state.provider ? "<b>" + esc(state.provider) + "</b>" : "（未定）") + "（タイプ" + esc(state.ptype) + "）");
+        var pvNote = "（タイプ" + esc(state.ptype) + "）";
+        if (state.provider) {
+          pvNote = "（" + (state.providerType === "keizoku" ? "<b>継続</b>" : "新規") + "・タイプ" + esc(state.ptype) + "）";
+        }
+        h += row("プロバイダ", (state.provider ? "<b>" + esc(state.provider) + "</b>" : "（未定）") + pvNote);
       }
       if (state.product === "hikari1g") {
         h += row("プロバイダ無料無線ルーターレンタル", state.routerRental === "nashi" ? "なし" : "<b>あり</b>（無料レンタル利用）");
@@ -829,7 +839,8 @@
   });
   $("housing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
   $("ptype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
-  $("provider").addEventListener("change", function () { state.provider = this.value; recalc(); });
+  $("provider").addEventListener("change", function () { state.provider = this.value; syncForm(); recalc(); });
+  $("providerType").addEventListener("change", function () { state.providerType = this.value; recalc(); });
   $("routerRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
   $("h5DeviceName").addEventListener("input", function () { state.h5DeviceName = this.value; recalc(); });
