@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.4";
+  var APP_VERSION = "1.5.5";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -23,7 +23,9 @@
     return {
       storeName: "", staff: [{ id: "s1", name: "担当1", code: "" }], activeStaffId: "s1",
       // 端末内で使う場合の店舗ログイン（Firebase未設定のときだけ使う）
-      lock: { storeId: "", hash: "", salt: "", algo: "" }
+      lock: { storeId: "", hash: "", salt: "", algo: "" },
+      // マスタ設定を開くためのパスワード（未設定なら店舗ログインのパスワードを使う）
+      adminLock: { hash: "", salt: "", algo: "" }
     };
   }
   function loadConfig() {
@@ -33,6 +35,7 @@
       if (saved && saved.staff && saved.staff.length) config = Object.assign(defaultConfig(), saved);
     } catch (e) {}
     if (!config.lock) config.lock = { storeId: "", hash: "", salt: "", algo: "" };
+    if (!config.adminLock) config.adminLock = { hash: "", salt: "", algo: "" };
     config.staff.forEach(function (s2, i) {
       if (!s2.id) s2.id = "s" + (i + 1);
       if (typeof s2.code !== "string") s2.code = "";
@@ -68,6 +71,20 @@
     if (clr) clr.hidden = !on;
     var idEl = $("lockStoreId");
     if (idEl && document.activeElement !== idEl) idEl.value = config.lock.storeId || "";
+  }
+  // マスタ設定のパスワードの状態を画面に反映する
+  function renderAdminLock() {
+    var st = $("adminLockState");
+    if (!st) return;
+    var on = adminLockEnabled();
+    st.textContent = on
+      ? "設定中です。マスタ設定を開くときは、このパスワードを使います。"
+      : "未設定です。マスタ設定を開くときは、店舗ID＋店舗のパスワードを使います。";
+    st.className = "hint" + (on ? " lock-on" : "");
+    var clr = $("adminLockClearBtn");
+    if (clr) clr.hidden = !on;
+    var save = $("adminLockSaveBtn");
+    if (save) save.textContent = on ? "パスワードを変更する" : "この内容で設定する";
   }
   // 設定タブの店舗設定カードを描き直す
   function renderStoreConfig() {
@@ -237,6 +254,8 @@
     return "s" + h1.toString(16) + h2.toString(16);
   }
   function lockEnabled() { return !!(config.lock && config.lock.hash); }
+  // マスタ設定専用のパスワードを決めているか
+  function adminLockEnabled() { return !!(config.adminLock && config.adminLock.hash); }
 
   /* ---------- マスタ読み込み ---------- */
   var MASTER;
@@ -499,7 +518,11 @@
     CLOUD.cfgTimer = setTimeout(function () {
       CLOUD.cfgTimer = null;
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
-      storeDoc().set(stamp({ storeName: config.storeName || "", staff: config.staff }), { merge: true })
+      storeDoc().set(stamp({
+        storeName: config.storeName || "",
+        staff: config.staff,
+        adminLock: config.adminLock || { hash: "", salt: "", algo: "" }
+      }), { merge: true })
         .then(cloudOk, cloudNg);
     }, 800);
   }
@@ -623,6 +646,8 @@
     var lostStaff = false;
     try {
       if (typeof d.storeName === "string") config.storeName = d.storeName;
+      // マスタ設定のパスワードは店舗共通（解除も伝わるよう、空でも受け取る）
+      if (d.adminLock && typeof d.adminLock.hash === "string") config.adminLock = d.adminLock;
       if (d.staff && d.staff.length) {
         config.staff = d.staff;
         // 選択中の担当が消えていた場合は、担当を選び直してもらう
@@ -968,8 +993,8 @@
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
     var mb = $("masterBackBtn");
     if (mb) mb.addEventListener("click", function () {
+      switchTab("quote"); // 設定の内容をコード入力画面の裏に残さない
       if (anyStaffCode()) { clearActiveStaff(); showStaffGate(true); }
-      else switchTab("quote"); // コード未設定の店舗はコード画面が無いので見積もりへ
     });
     var sc = $("staffToSetting");
     if (sc) sc.addEventListener("click", function () {
@@ -2664,7 +2689,13 @@
    * 照合するものが無く、店舗ログインの設定自体がこのタブにあるため素通しにする。 */
   var masterUnlocked = false;
   var masterGateFrom = null; // キャンセルしたときに戻る先
-  function masterGateOn() { return !masterUnlocked && (lockEnabled() || cloudOn()); }
+  /* マスタ設定のパスワードを忘れたときは、店舗ID＋店舗のパスワードで開けるようにする。
+   * 店舗の資格情報のほうが上位なので、これを塞ぐと復旧手段が無くなってしまう。 */
+  var masterGateFallback = false;
+  function masterGateAdminMode() { return adminLockEnabled() && !masterGateFallback; }
+  function masterGateOn() {
+    return !masterUnlocked && (adminLockEnabled() || lockEnabled() || cloudOn());
+  }
   function showMasterGate(show) {
     var el = $("masterGate");
     if (!el) return;
@@ -2672,13 +2703,33 @@
     if (!show) return;
     var err = $("masterGateErr"); if (err) err.hidden = true;
     var pw = $("masterGatePass"); if (pw) pw.value = "";
+    masterGateFallback = false;
+    renderMasterGateFields();
+    setTimeout(function () { if (pw) pw.focus(); }, 50);
+  }
+  // 「マスタ設定のパスワード」で聞くか、「店舗ID＋パスワード」で聞くかを切り替える
+  function renderMasterGateFields() {
+    var admin = masterGateAdminMode();
+    // マスタ設定のパスワードを決めている場合は、店舗IDは使わない
+    var wrap = $("masterGateIdWrap");
+    if (wrap) wrap.hidden = admin;
+    var forgot = $("masterGateForgot");
+    if (forgot) forgot.hidden = !admin;
+    var lead = $("masterGateLead");
+    if (lead) {
+      lead.innerHTML = admin
+        ? "マスタ設定は店舗の管理者のみが開けます。<br>マスタ設定のパスワードを入力してください。"
+        : "マスタ設定は店舗の管理者のみが開けます。<br>店舗IDとパスワードを入力してください。";
+    }
+    var pwLabel = $("masterGatePassLabel");
+    if (pwLabel) pwLabel.textContent = admin ? "マスタ設定のパスワード" : "パスワード";
     var id = $("masterGateId");
     if (id) {
+      id.required = !admin;
       // ログイン中の店舗IDを入れておく（クラウド利用時は変更できない）
       id.value = cloudOn() ? String(CLOUD.user.email || "").replace(/@.*$/, "")
         : (config.lock && config.lock.storeId) || "";
       id.readOnly = cloudOn();
-      setTimeout(function () { (pw || id).focus(); }, 50);
     }
   }
   function masterGateFail(msg) {
@@ -2686,8 +2737,16 @@
     if (err) { err.textContent = msg; err.hidden = false; }
     var pw = $("masterGatePass"); if (pw) pw.value = "";
   }
-  // 入力された店舗ID・パスワードを照合する（Promise<bool>）
+  // 入力された内容を照合する（Promise<bool>）
   function masterGateVerify(id, pass) {
+    // マスタ設定のパスワードを決めている場合は、そちらだけで判定する
+    if (masterGateAdminMode()) {
+      var al = config.adminLock;
+      if (al.algo === "sha256" && lockAlgo() !== "sha256") {
+        return Promise.reject(new Error("この環境では確認できません。設定したときと同じ方法（https）でお開きください。"));
+      }
+      return lockHash(pass, al.salt, al.algo).then(function (h) { return h === al.hash; });
+    }
     if (cloudOn()) {
       // ログイン中の店舗と別のIDでは通さない（別アカウントに入れ替わるのを防ぐ）
       if (storeIdToEmail(id) !== String(CLOUD.user.email || "")) return Promise.resolve(false);
@@ -2720,7 +2779,12 @@
       var id = String($("masterGateId").value || "").trim();
       masterGateVerify(id, $("masterGatePass").value).then(function (ok) {
         btn.disabled = false;
-        if (!ok) { masterGateFail("店舗IDまたはパスワードが正しくありません。"); return; }
+        if (!ok) {
+          masterGateFail(masterGateAdminMode()
+            ? "パスワードが正しくありません。"
+            : "店舗IDまたはパスワードが正しくありません。");
+          return;
+        }
         masterUnlocked = true;
         $("masterGatePass").value = "";
         showMasterGate(false);
@@ -2733,6 +2797,14 @@
         btn.disabled = false;
         masterGateFail((e2 && e2.message) || "確認できませんでした。時間をおいて再度お試しください。");
       });
+    });
+    $("masterGateForgot").addEventListener("click", function () {
+      masterGateFallback = true;
+      var err = $("masterGateErr"); if (err) err.hidden = true;
+      $("masterGatePass").value = "";
+      renderMasterGateFields();
+      var idEl = $("masterGateId");
+      setTimeout(function () { (idEl && !idEl.readOnly ? idEl : $("masterGatePass")).focus(); }, 50);
     });
     $("masterGateCancel").addEventListener("click", function () {
       showMasterGate(false);
@@ -3304,6 +3376,41 @@
         });
       });
     }
+    var adminSave = $("adminLockSaveBtn");
+    if (adminSave) {
+      adminSave.addEventListener("click", function () {
+        var msg = $("adminLockMsg");
+        var p1 = $("adminPass").value;
+        var p2 = $("adminPass2").value;
+        function say(t, ok) { msg.textContent = t; msg.className = "hint" + (ok ? " lock-on" : " lock-err"); msg.hidden = false; }
+        if (!p1) return say("パスワードを入力してください。", false);
+        if (p1.length < 4) return say("パスワードは4文字以上にしてください。", false);
+        if (p1 !== p2) return say("パスワードが一致しません。", false);
+        var salt = lockSalt();
+        var algo = lockAlgo();
+        lockHash(p1, salt, algo).then(function (h) {
+          config.adminLock = { hash: h, salt: salt, algo: algo };
+          saveConfig();
+          $("adminPass").value = "";
+          $("adminPass2").value = "";
+          renderAdminLock();
+          masterUnlocked = true; // 決めた本人なので、いまの操作は続けられるようにする
+          say("マスタ設定のパスワードを設定しました。次に開くときから有効になります。", true);
+        });
+      });
+    }
+    var adminClear = $("adminLockClearBtn");
+    if (adminClear) {
+      adminClear.addEventListener("click", function () {
+        config.adminLock = { hash: "", salt: "", algo: "" };
+        saveConfig();
+        renderAdminLock();
+        var msg = $("adminLockMsg");
+        msg.textContent = "解除しました。マスタ設定は店舗ID＋店舗のパスワードで開きます。";
+        msg.className = "hint";
+        msg.hidden = false;
+      });
+    }
     var lockClear = $("lockClearBtn");
     if (lockClear) {
       lockClear.addEventListener("click", function () {
@@ -3563,6 +3670,7 @@
   loadTemplates();
   renderStoreConfig();
   renderLockConfig();
+  renderAdminLock();
   initIdle();
   initLocalLock();
   initStaffGate();

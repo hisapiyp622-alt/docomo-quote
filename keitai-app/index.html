@@ -372,6 +372,29 @@
         <strong>このロックは画面を覆うだけの簡易的なものです。</strong>見積もりは端末内に暗号化せずに保存されるため、端末を自由に操作できる方（ブラウザの開発者ツールや設定を使える方）には、ロック中でも中身を見ることやロックの解除ができます。盗難・紛失への備えとしては、<strong>端末自体の画面ロックを必ず併用してください。</strong><br>
         複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>SETUP.md の手順でクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
     </div>
+    <div class="card" id="adminLockBox">
+      <h2>マスタ設定のパスワード</h2>
+      <p class="hint" id="adminLockState"></p>
+      <div class="field">
+        <label for="adminPass">新しいパスワード</label>
+        <input type="password" id="adminPass" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="adminPass2">新しいパスワード（確認）</label>
+        <input type="password" id="adminPass2" autocomplete="new-password">
+      </div>
+      <div class="actions">
+        <button class="btn-main" id="adminLockSaveBtn" type="button">この内容で設定する</button>
+        <button class="btn-sub" id="adminLockClearBtn" type="button" hidden>解除する（店舗のパスワードに戻す）</button>
+      </div>
+      <p class="hint" id="adminLockMsg" hidden></p>
+      <p class="hint">マスタ設定を開くためだけのパスワードです。店舗のログインとは別に決められるので、
+        <strong>店舗のパスワードを知らせずに、マスタ設定だけを任せる</strong>ことができます。
+        設定していない間は、店舗ID＋店舗のパスワードで開きます。<br>
+        この設定は<strong>店舗内の全端末で共通</strong>です（クラウド利用時は自動で揃います）。<br>
+        忘れた場合は、パスワードを聞かれる画面の「<strong>マスタ設定のパスワードを忘れた場合</strong>」から、
+        <strong>店舗ID＋店舗のパスワード</strong>で開いて決め直せます。</p>
+    </div>
     <div class="card">
       <h2>店舗設定</h2>
       <p class="hint" id="accountInfo"></p>
@@ -446,17 +469,18 @@
 <div class="login-overlay no-print" id="masterGate" hidden>
   <form class="login-box" id="masterGateForm">
     <h2>マスタ設定</h2>
-    <p class="login-lead">マスタ設定は店舗の管理者のみが開けます。<br>店舗IDとパスワードを入力してください。</p>
+    <p class="login-lead" id="masterGateLead">マスタ設定は店舗の管理者のみが開けます。<br>店舗IDとパスワードを入力してください。</p>
     <p class="login-err" id="masterGateErr" hidden></p>
-    <div class="field">
+    <div class="field" id="masterGateIdWrap">
       <label for="masterGateId">店舗ID</label>
       <input type="text" id="masterGateId" autocomplete="username" autocapitalize="none" spellcheck="false" required>
     </div>
     <div class="field">
-      <label for="masterGatePass">パスワード</label>
+      <label for="masterGatePass" id="masterGatePassLabel">パスワード</label>
       <input type="password" id="masterGatePass" autocomplete="current-password" required>
     </div>
     <button class="btn-main" id="masterGateBtn" type="submit">開く</button>
+    <p class="login-lead" id="masterGateForgot" hidden><button type="button" class="link-btn">マスタ設定のパスワードを忘れた場合（店舗ID・パスワードで開く）</button></p>
     <p class="login-lead"><button type="button" class="link-btn" id="masterGateCancel">見積もりに戻る</button></p>
   </form>
 </div>
