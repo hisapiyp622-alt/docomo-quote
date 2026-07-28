@@ -438,6 +438,24 @@
   </form>
 </div>
 
+<div class="login-overlay no-print" id="masterGate" hidden>
+  <form class="login-box" id="masterGateForm">
+    <h2>マスタ設定</h2>
+    <p class="login-lead">マスタ設定は店舗の管理者のみが開けます。<br>店舗IDとパスワードを入力してください。</p>
+    <p class="login-err" id="masterGateErr" hidden></p>
+    <div class="field">
+      <label for="masterGateId">店舗ID</label>
+      <input type="text" id="masterGateId" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    </div>
+    <div class="field">
+      <label for="masterGatePass">パスワード</label>
+      <input type="password" id="masterGatePass" autocomplete="current-password" required>
+    </div>
+    <button class="btn-main" id="masterGateBtn" type="submit">開く</button>
+    <p class="login-lead"><button type="button" class="link-btn" id="masterGateCancel">見積もりに戻る</button></p>
+  </form>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
