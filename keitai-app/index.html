@@ -305,6 +305,7 @@
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
       <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）山田"></div>
       <div class="field"><label for="shopTel">電話番号</label><input type="tel" id="shopTel" placeholder="例）072-000-0000" inputmode="tel"></div>
+      <p class="hint">店舗名・電話番号・担当は、マスタ設定の店舗情報から自動で入ります。この見積もりだけ変えたいときは直接書き換えられます。</p>
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
     </div>
 
@@ -411,8 +412,13 @@
       <p class="hint" id="accountInfo"></p>
       <div class="field">
         <label for="storeNameInput">店舗名</label>
-        <input type="text" id="storeNameInput" placeholder="例）○○店">
+        <input type="text" id="storeNameInput" placeholder="例）ドコモショップ○○店">
       </div>
+      <div class="field">
+        <label for="storeTelInput">電話番号</label>
+        <input type="tel" id="storeTelInput" placeholder="例）072-000-0000" inputmode="tel">
+      </div>
+      <p class="hint">ここで登録した店舗名・電話番号と、ログイン中の担当者名が、<strong>見積書の下端に自動で入ります。</strong></p>
       <div class="subhead">担当者</div>
       <div id="staffList"><!-- JSで生成 --></div>
       <div class="actions">

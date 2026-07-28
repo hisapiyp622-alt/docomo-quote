@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.3";
+  var APP_VERSION = "1.6.4";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -21,7 +21,7 @@
   var config;
   function defaultConfig() {
     return {
-      storeName: "", staff: [{ id: "s1", name: "担当1", code: "" }], activeStaffId: "s1",
+      storeName: "", storeTel: "", staff: [{ id: "s1", name: "担当1", code: "" }], activeStaffId: "s1",
       // 端末内で使う場合の店舗ログイン（Firebase未設定のときだけ使う）
       lock: { storeId: "", hash: "", salt: "", algo: "" },
       // マスタ設定を開くためのパスワード（未設定なら店舗ログインのパスワードを使う）
@@ -90,6 +90,8 @@
   function renderStoreConfig() {
     var nameEl = $("storeNameInput");
     if (nameEl && nameEl.value !== (config.storeName || "")) nameEl.value = config.storeName || "";
+    var telEl = $("storeTelInput");
+    if (telEl && telEl.value !== (config.storeTel || "")) telEl.value = config.storeTel || "";
     var list = $("staffList");
     if (!list) return;
     list.innerHTML = config.staff.map(function (s2, i) {
@@ -263,11 +265,13 @@
    * ・「いまの内容を履歴に残す」でメモを付けて任意に残せる
    * クラウド利用時は stores/{UID}/history/{id} に置き、店舗内の全端末で同じ履歴を見る。 */
   var HIST_KEY = "kq-master-hist-v1";
-  var HIST_MAX = 12;
+  var HIST_MAX = 20;
+  var HIST_SETTLE_MS = 60 * 1000; // これだけ編集が途切れたら、ひと区切りとみなす
   var histList = [];
   var histLoaded = false;      // クラウドからの読み込みは開いたとき1回だけ
-  var histBaseline = "";       // いまのマスタの内容（編集前）
-  var histAutoDone = false;    // このマスタ設定の滞在で自動保存を済ませたか
+  var histBaseline = "";       // ひと区切り前のマスタの内容
+  var histBurst = false;       // いま編集が続いている最中か
+  var histSettleTimer = null;
   function histLoadLocal() {
     histList = [];
     try {
@@ -300,15 +304,27 @@
     if (typeof histPush === "function") histPush(e, over);
     return e;
   }
-  // 編集前の内容を1回だけ自動で残す
+  /* 編集のたびに残すと履歴が埋まってしまうため、編集の「かたまり」ごとに1件残す。
+   * 編集が始まったらその直前の内容を控え、しばらく編集が途切れたらひと区切りにする。
+   * これで、続けて何度直しても段階的に戻せる。 */
   function histAutoSnapshot() {
-    if (histAutoDone || !histBaseline) return;
-    histAutoDone = true;
+    if (histSettleTimer) clearTimeout(histSettleTimer);
+    histSettleTimer = setTimeout(histSettle, HIST_SETTLE_MS);
+    if (histBurst || !histBaseline) return;
+    histBurst = true;
     histAdd("編集前の内容", histBaseline, true);
   }
-  function histMark() {
+  // ひと区切り。次の編集は新しい戻し先になる
+  function histSettle() {
+    if (histSettleTimer) { clearTimeout(histSettleTimer); histSettleTimer = null; }
+    if (!histBurst) return;
+    histBurst = false;
     histBaseline = JSON.stringify(MASTER);
-    histAutoDone = false;
+  }
+  function histMark() {
+    if (histSettleTimer) { clearTimeout(histSettleTimer); histSettleTimer = null; }
+    histBaseline = JSON.stringify(MASTER);
+    histBurst = false;
   }
   function nowStamp() {
     var d = new Date();
@@ -642,6 +658,7 @@
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
       storeDoc().set(stamp({
         storeName: config.storeName || "",
+        storeTel: config.storeTel || "",
         staff: config.staff,
         adminLock: config.adminLock || { hash: "", salt: "", algo: "" }
       }), { merge: true })
@@ -797,6 +814,7 @@
     var lostStaff = false;
     try {
       if (typeof d.storeName === "string") config.storeName = d.storeName;
+      if (typeof d.storeTel === "string") config.storeTel = d.storeTel;
       // マスタ設定のパスワードは店舗共通（解除も伝わるよう、空でも受け取る）
       if (d.adminLock && typeof d.adminLock.hash === "string") config.adminLock = d.adminLock;
       if (d.staff && d.staff.length) {
@@ -905,11 +923,36 @@
    * 前のお客様の入力が残っていると、そのまま次の接客に持ち込んでしまうため。
    * 見積書に出す店舗名・担当者名だけは、毎回入れ直さずに済むよう引き継ぐ。
    * 作りかけの内容を残したいときは「保存」タブで保存しておく。 */
+  /* 見積書に出す店舗名・電話番号・担当者名を、店舗設定とログイン中の担当者から入れる。
+   * force のときは上書きする（店舗設定を変えたとき・新しいお客様を始めるとき）。
+   * それ以外は空欄のときだけ補う（その見積もりだけ手で変えた内容を消さないため）。 */
+  function applyStoreDefaults(force) {
+    var st = activeStaff();
+    var vals = {
+      shopName: config.storeName || "",
+      shopTel: config.storeTel || "",
+      staffName: (st && st.name) || ""
+    };
+    var changed = false;
+    store.patterns.forEach(function (pt) {
+      Object.keys(vals).forEach(function (k) {
+        if (!vals[k]) return;                  // 店舗設定が空なら手入力を消さない
+        if (!force && pt[k]) return;
+        if (pt[k] === vals[k]) return;
+        pt[k] = vals[k];
+        changed = true;
+      });
+    });
+    if (!changed) return;
+    syncFormFromState();
+    recalc();
+  }
   function resetQuoteForNewCustomer() {
     var src = store.patterns[store.active] || {};
-    var shop = src.shopName || "";
-    var staff = src.staffName || "";
-    var tel = src.shopTel || "";
+    var st0 = activeStaff();
+    var shop = config.storeName || src.shopName || "";
+    var staff = (st0 && st0.name) || src.staffName || "";
+    var tel = config.storeTel || src.shopTel || "";
     store.active = 0;
     for (var i = 0; i < 3; i++) {
       store.patterns[i] = defaultState();
@@ -935,6 +978,7 @@
     renderTplBar();
     state = store.patterns[store.active];
     if (fresh) resetQuoteForNewCustomer();
+    else applyStoreDefaults(false); // 空欄なら店舗設定から補う
     syncFormFromState();
     renderStaffBar();
     switchTab("quote"); // マスタ設定から担当者を選んだときも見積もり画面から始める
@@ -1087,6 +1131,7 @@
   }
   // ログアウト（自動・手動の共通処理）
   function doLogout(auto) {
+    histSettle();
     masterOnly = false;
     clearActiveStaff();
     masterUnlocked = false;
@@ -1201,6 +1246,7 @@
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
     var mb = $("masterBackBtn");
     if (mb) mb.addEventListener("click", function () {
+      histSettle(); // 設定を離れるので、ここでひと区切り
       masterOnly = false;
       switchTab("quote"); // 設定の内容をコード入力画面の裏に残さない
       if (anyStaffCode()) { clearActiveStaff(); showStaffGate(true); }
@@ -2886,7 +2932,8 @@
 
     // 料金マスタの履歴
     h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
-    h += '<p class="hint">料金改定の前に戻せます。マスタ設定を開いてから最初に編集したときに、編集前の内容を自動で1件残します。'
+    h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残ります</strong>'
+      + '（編集の区切りごとに1件。続けて直しているあいだは1件にまとめます）。'
       + '大きく変える前は、メモを付けて残しておくと分かりやすくなります（最大' + HIST_MAX + '件・古いものから消えます）。</p>';
     h += '<div class="hist-save">'
       + '<input type="text" id="histLabel" maxlength="40" placeholder="メモ（例）2026年8月の料金改定">'
@@ -3217,6 +3264,7 @@
     if (name === "sheet") renderSheet();
     if (name === "staff") renderStaffSheet();
     if (name === "master") { histMark(); histLoadCloud(); renderMasterTab(); }
+    else histSettle();
     if (name === "saved") { renderSaved(); $("saveQuoteName").placeholder = savedDefaultName(); }
     $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
@@ -3932,6 +3980,15 @@
         config.storeName = this.value;
         saveConfig();
         renderStaffBar();
+        applyStoreDefaults(true); // 見積書の表示にすぐ反映する
+      });
+    }
+    var storeTelEl = $("storeTelInput");
+    if (storeTelEl) {
+      storeTelEl.addEventListener("input", function () {
+        config.storeTel = this.value;
+        saveConfig();
+        applyStoreDefaults(true);
       });
     }
     var addStaffBtn = $("addStaffBtn");
@@ -3955,6 +4012,7 @@
         } else return;
         saveConfig();
         renderStaffBar();
+        applyStoreDefaults(true); // 担当者名を変えたら見積書の表示にも反映する
       });
       staffList.addEventListener("click", function (e) {
         var t = e.target;
@@ -4187,6 +4245,7 @@
   renderSaved();
   loadTemplates();
   renderStoreConfig();
+  applyStoreDefaults(false);
   renderLockConfig();
   renderAdminLock();
   histLoadLocal();
