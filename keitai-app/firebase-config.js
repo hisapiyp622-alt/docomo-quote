@@ -9,12 +9,12 @@
  * ここに書く値は公開されても問題ないもので、データの保護は
  * Firestoreのセキュリティルール（firestore.rules）で行います。 */
 var KEITAI_FIREBASE = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyDu1fQ-1s9CxvCsByvclJ7mIivpS0ji8kY",
+  authDomain: "keitai-quote.firebaseapp.com",
+  projectId: "keitai-quote",
+  storageBucket: "keitai-quote.firebasestorage.app",
+  messagingSenderId: "102296077296",
+  appId: "1:102296077296:web:18d543d5459c1434e21335"
 };
 
 /* 店舗IDをログイン用のアドレスへ変換するときのドメイン。
