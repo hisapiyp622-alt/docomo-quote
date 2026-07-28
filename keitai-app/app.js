@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.9";
+  var APP_VERSION = "1.7.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -441,13 +441,20 @@
         if (typeof o.own === "undefined") o.own = known[o.id] ? defOwn[o.id] : true;
       });
     });
-    // 爆アゲセレクションの還元率を初期データから補完
+    // 爆アゲセレクションの還元率・プラン区分を初期データから補完
     var defBaku = {};
-    (DEFAULT_DATA.options || []).forEach(function (o) {
-      if (typeof o.bakuage === "number") defBaku[o.id] = o.bakuage;
-    });
+    (DEFAULT_DATA.options || []).forEach(function (o) { defBaku[o.id] = o; });
     MASTER.options.forEach(function (o) {
-      if (typeof o.bakuage === "undefined" && typeof defBaku[o.id] === "number") o.bakuage = defBaku[o.id];
+      var d2 = defBaku[o.id];
+      if (!d2) return;
+      if (typeof o.bakuage === "undefined" && typeof d2.bakuage === "number") o.bakuage = d2.bakuage;
+      if (typeof o.bakuage2 === "undefined" && typeof d2.bakuage2 === "number") o.bakuage2 = d2.bakuage2;
+      if (typeof o.bakuageFixed === "undefined" && typeof d2.bakuageFixed === "number") o.bakuageFixed = d2.bakuageFixed;
+    });
+    var defTier = {};
+    (DEFAULT_DATA.plans || []).forEach(function (pl) { defTier[pl.id] = pl.bakuageTier; });
+    MASTER.plans.forEach(function (pl) {
+      if (typeof pl.bakuageTier === "undefined" && typeof defTier[pl.id] === "string") pl.bakuageTier = defTier[pl.id];
     });
     // dカードGOLD10%対象フラグを初期データから補完（保存済みマスタに未設定のもののみ）
     var defCarrier = {};
@@ -1688,17 +1695,30 @@
     var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard);
 
     /* 爆アゲセレクションの還元ポイント。
-     * 各サービスの還元率（マスタ設定で変更可）× 実際に支払う月額。
-     * 選べる特典で0円になっているものは支払いが無いため対象外。 */
+     * 還元率はプランの区分で変わる（ドコモMAX・ポイ活MAX と、それ以外の対象プラン）。
+     * 対象外のプラン（ドコモmini・irumo・キッズなど）では還元されない。
+     * 選べる特典で0円になっているものも、支払いが無いため対象外。 */
+    var bakuTier = plan.bakuageTier || "";
     var bakuageRows = [];
     var bakuageAutoPt = 0;
     MASTER.options.forEach(function (o) {
-      if (!st.options[o.id] || !num(o.bakuage)) return;
-      if (bonusFree[o.id]) return;
+      if (!st.options[o.id]) return;
+      if (bonusFree[o.id]) return;      // 0円のものは支払いが無いため還元されない
+      var fixed = num(o.bakuageFixed);
       var pr = optPrice(o, st);
-      var pt = Math.floor(pr * num(o.bakuage) / 100);
+      var pt = 0, label = "";
+      if (fixed > 0) {
+        // 固定ポイントはプランの区分によらず進呈するもの
+        pt = fixed;
+        label = "固定";
+      } else if (bakuTier) {
+        var rate = num(bakuTier === "max" ? o.bakuage : o.bakuage2);
+        if (!rate) return;
+        pt = Math.floor(pr * rate / 100);
+        label = rate + "%";
+      }
       if (pt <= 0) return;
-      bakuageRows.push({ name: o.name, rate: num(o.bakuage), price: pr, pt: pt });
+      bakuageRows.push({ name: o.name, rate: label, price: pr, pt: pt });
       bakuageAutoPt += pt;
     });
 
@@ -1778,7 +1798,7 @@
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
-      bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt,
+      bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt, bakuageTier: bakuTier,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
       device: device, baseMonthly: baseMonthly,
       segs: segs, firstExtra: firstExtra,
@@ -2396,9 +2416,18 @@
     if (bakuOn) {
       $("bakuageHint").innerHTML = "内訳: "
         + (r.bakuageRows || []).map(function (x) {
-            return esc(x.name) + " " + x.rate + "%（" + x.pt.toLocaleString("ja-JP") + "pt）";
+            return esc(x.name) + " " + esc(x.rate) + "（" + x.pt.toLocaleString("ja-JP") + "pt）";
           }).join("／")
-        + "　還元率はマスタ設定のオプション欄で変更できます。";
+        + "　" + (r.bakuageTier === "max" ? "率はドコモ MAX／ポイ活 MAX のもの"
+            : r.bakuageTier ? "率はポイ活20・ahamo・eximo・ギガホのもの" : "")
+        + "です。還元率はマスタ設定のオプション欄で変更できます。";
+    }
+    // 対象外のプランを選んでいるときは、その旨を出す
+    var bakuOff = $("bakuageOff");
+    if (bakuOff) {
+      var offNow = hasPlan() && !r.bakuageTier;
+      bakuOff.hidden = !offNow;
+      if (offNow) bakuOff.textContent = currentPlan().name + " は爆アゲ セレクションの対象プランではありません（固定ポイントのものだけ加算されます）。";
     }
     $("bakuageReset").hidden = !bakuOn || num(state.pointBakuage) === (r.bakuageAutoPt || 0);
     $("dcardAutoWrap").hidden = !goldOn;
@@ -2962,7 +2991,9 @@
           }).join("")
         + "</select>"
         + '<label class="gold-flag"><input type="checkbox" data-op-gold="' + o.__i + '"' + (o.carrier ? " checked" : "") + '>GOLD10%</label>'
-        + '<label class="gold-flag baku-flag">爆アゲ<input type="number" min="0" max="100" value="' + (num(o.bakuage) || "") + '" placeholder="0" data-op-baku="' + o.__i + '">%</label>'
+        + '<label class="gold-flag baku-flag" title="ドコモMAX／ポイ活MAXの還元率">爆アゲMAX<input type="number" min="0" max="100" value="' + (num(o.bakuage) || "") + '" placeholder="0" data-op-baku="' + o.__i + '">%</label>'
+        + '<label class="gold-flag baku-flag" title="ポイ活20・ahamo・eximo・ギガホの還元率">他<input type="number" min="0" max="100" value="' + (num(o.bakuage2) || "") + '" placeholder="0" data-op-baku2="' + o.__i + '">%</label>'
+        + '<label class="gold-flag baku-flag" title="率ではなく固定のポイント数で進呈するもの。プランの区分によらず加算します">固定<input type="number" min="0" value="' + (num(o.bakuageFixed) || "") + '" placeholder="0" data-op-bakufix="' + o.__i + '">pt</label>'
         + '<button class="btn-sub choice-btn" data-op-choices="' + o.__i + '" type="button">'
         + (o.priceChoices ? "選択式 " + o.priceChoices.length + "件" : "選択式にする")
         + (openChoices[o.id] ? " ▲" : "") + "</button>";
@@ -3696,6 +3727,10 @@
         var key = String(lo.priceChoices[+lp[1]]);
         if (t.value.trim()) lo.priceLabels[key] = t.value.trim();
         else delete lo.priceLabels[key];
+      } else if (evType === "input" && prefix === "op" && attr("baku2") != null) {
+        list[+attr("baku2")].bakuage2 = Math.max(0, Math.min(100, num(t.value)));
+      } else if (evType === "input" && prefix === "op" && attr("bakufix") != null) {
+        list[+attr("bakufix")].bakuageFixed = Math.max(0, num(t.value));
       } else if (evType === "input" && prefix === "op" && attr("baku") != null) {
         list[+attr("baku")].bakuage = Math.max(0, Math.min(100, num(t.value)));
       } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
