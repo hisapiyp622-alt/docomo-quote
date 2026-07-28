@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.3.1";
+  var APP_VERSION = "1.3.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -102,11 +102,12 @@
     try { localStorage.setItem(savedKey(), JSON.stringify(savedList)); } catch (e) {}
     if (typeof pushSaved === "function") pushSaved();
   }
+  // 保存名は他の端末にも同期されるため、お客様名は既定に入れない
   function savedDefaultName() {
     var d = new Date();
     var mm = ("0" + (d.getMonth() + 1)).slice(-2), dd = ("0" + d.getDate()).slice(-2);
-    var nm = (state.custName || "").trim();
-    return (nm ? nm + " " : "") + (d.getFullYear() + "/" + mm + "/" + dd);
+    var plan = state.planId ? currentPlan().name : "";
+    return (d.getFullYear() + "/" + mm + "/" + dd) + (plan ? " " + plan : "");
   }
   // いま開いている3パターン一式を保存する
   function saveQuote(name) {
@@ -524,8 +525,21 @@
       if (d.clientId === CLOUD.clientId) return;
       if (CLOUD.savedTimer) return; // 送信待ちのローカル変更がある間は上書きしない
       try {
-        savedList = JSON.parse(d.list) || [];
-        try { localStorage.setItem(savedKey(sid), JSON.stringify(savedList)); } catch (e) {}
+        var incoming = JSON.parse(d.list) || [];
+        // お客様名は同期しないため、この端末に残っている名前を引き継ぐ
+        var mine = {};
+        savedList.forEach(function (x) { mine[x.id] = x; });
+        incoming.forEach(function (x) {
+          var old = mine[x.id];
+          if (!old) return;
+          if (!x.custName && old.custName) x.custName = old.custName;
+          var op = (old.data && old.data.patterns) || [];
+          ((x.data && x.data.patterns) || []).forEach(function (pt, i) {
+            if (!pt.custName && op[i] && op[i].custName) pt.custName = op[i].custName;
+          });
+        });
+        savedList = incoming;
+        try { localStorage.setItem(savedKey(sid), JSON.stringify(savedList)); } catch (e2) {}
         renderSaved();
       } catch (e) {}
     }, function () {});
@@ -847,7 +861,7 @@
   }
 
   function initCloud() {
-    // 端末内だけで使う場合（Firebase未設定）はログイン画面を出さない
+    // Firebase未設定のときは端末内モード。店舗ログインを設定していればそちらで守る
     var wantCloud = typeof KEITAI_FIREBASE !== "undefined" && !!KEITAI_FIREBASE.projectId;
     var configured = wantCloud && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
     // クラウドを使う設定なのに読み込めない（通信不可・CDN遮断など）→ 素通りさせない
