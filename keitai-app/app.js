@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.1";
+  var APP_VERSION = "1.5.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2488,6 +2488,17 @@
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
 
+    // 見積もり画面のタイルの並び（長押しドラッグ）
+    h += '<div class="master-plan"><h3>見積もり画面のタイルの並び</h3>';
+    h += '<p class="hint">タイルを<strong>長押ししてから動かす</strong>と、順番を入れ替えたり、別のカテゴリへ移したりできます。'
+      + 'ここでの並びが、そのまま見積もり画面のタイルの並びになります。</p>';
+    h += sorterHtml("op", optCatGroups(), true);
+    h += '<div class="subhead">初期費用の定番項目</div>';
+    h += sorterHtml("fi", [{ cat: "", items: MASTER.feeItems || [] }], false);
+    h += '<div class="subhead">アクセサリ</div>';
+    h += sorterHtml("ac", [{ cat: "", items: MASTER.accessories || [] }], false);
+    h += "</div>";
+
     h += '<div class="master-plan"><h3>オプション・サービス（月額）</h3>';
     h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は下の「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
       + '「<strong>店舗独自</strong>」にチェックを入れると、下の「店舗独自サービス」へ移ります。<strong>見積もり画面の表示は変わりません</strong>（従来どおりカテゴリごとに並びます）。</p>';
@@ -2735,6 +2746,147 @@
     }
     syncFormFromState();
     recalc();
+  }
+
+  /* ---------- 見積もり画面のタイルの並べ替え ----------
+   * マスタ設定に、見積もり画面と同じ区分けでタイルを並べたカードを出し、
+   * スマホのアイコンのように長押し → ドラッグで動かせるようにする。
+   * オプションはカテゴリをまたいで移せる（＝カテゴリの変更になる）。
+   * 確定すると MASTER の配列そのものを並べ替えるため、見積もり画面にも反映される。 */
+  var SORT_LISTS = {
+    op: { key: "options", render: renderOptionList, cats: true },
+    fi: { key: "feeItems", render: renderFeeItemList, cats: false },
+    ac: { key: "accessories", render: renderAccessoryTiles, cats: false }
+  };
+  // 見積もり画面と同じ規則でカテゴリ分けする（ドコモメールは②で選ぶため除く）
+  function optCatGroups() {
+    var mailDef = mailOptDef();
+    return OPT_CATEGORIES.map(function (cat) {
+      return {
+        cat: cat,
+        items: MASTER.options.filter(function (o) {
+          if (mailDef && o.id === mailDef.id) return false;
+          var c = OPT_CATEGORIES.indexOf(o.category) >= 0 ? o.category : "その他";
+          return c === cat;
+        })
+      };
+    });
+  }
+  function sorterHtml(prefix, groups, showCatName) {
+    return '<div class="sorter" data-sorter="' + prefix + '">' + groups.map(function (g) {
+      return (showCatName ? '<div class="sort-cat">' + esc(g.cat) + "</div>" : "")
+        + '<div class="sort-grid" data-cat="' + esc(g.cat) + '">'
+        + g.items.map(function (o) {
+            return '<div class="sort-chip' + (o.own ? " own" : "") + '" data-sid="' + esc(o.id) + '">'
+              + '<span class="t-name">' + esc(o.name || "（名称未設定）") + "</span></div>";
+          }).join("")
+        + "</div>";
+    }).join("") + "</div>";
+  }
+  // 画面の並びを MASTER の配列へ書き戻す
+  function commitSort(root) {
+    var def = SORT_LISTS[root.getAttribute("data-sorter")];
+    if (!def) return;
+    var list = MASTER[def.key] || [];
+    var byId = {};
+    list.forEach(function (o) { byId[o.id] = o; });
+    var next = [], seen = {};
+    Array.prototype.forEach.call(root.querySelectorAll(".sort-grid"), function (g) {
+      var cat = g.getAttribute("data-cat");
+      Array.prototype.forEach.call(g.querySelectorAll(".sort-chip"), function (c) {
+        var o = byId[c.getAttribute("data-sid")];
+        if (!o || seen[o.id]) return;
+        if (def.cats && cat) o.category = cat;
+        next.push(o);
+        seen[o.id] = true;
+      });
+    });
+    // 並べ替えの対象に出していないもの（ドコモメールなど）は後ろへ残す
+    list.forEach(function (o) { if (!seen[o.id]) next.push(o); });
+    MASTER[def.key] = next;
+    markEdited();
+    def.render();
+    recalc();
+    renderMasterTab(); // 一覧（▲▼）の位置番号を振り直す
+  }
+
+  var SORT = { chip: null, ghost: null, root: null, timer: null, active: false, x0: 0, y0: 0 };
+  function sortCancelHold() { if (SORT.timer) { clearTimeout(SORT.timer); SORT.timer = null; } }
+  function sortBegin(chip, x, y) {
+    var r = chip.getBoundingClientRect();
+    SORT.active = true;
+    SORT.chip = chip;
+    SORT.root = chip.closest(".sorter");
+    SORT.x0 = x;
+    SORT.y0 = y;
+    var g = chip.cloneNode(true);
+    g.className = "sort-chip sort-ghost";
+    g.style.left = r.left + "px";
+    g.style.top = r.top + "px";
+    g.style.width = r.width + "px";
+    g.style.height = r.height + "px";
+    g.style.transform = "scale(1.06)";
+    document.body.appendChild(g);
+    SORT.ghost = g;
+    chip.classList.add("sort-src");
+    document.body.classList.add("sorting");
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+  }
+  function sortEnd(commit) {
+    sortCancelHold();
+    if (!SORT.active) return;
+    SORT.active = false;
+    if (SORT.ghost) { SORT.ghost.remove(); SORT.ghost = null; }
+    if (SORT.chip) SORT.chip.classList.remove("sort-src");
+    document.body.classList.remove("sorting");
+    var root = SORT.root;
+    SORT.chip = null;
+    SORT.root = null;
+    if (commit && root) commitSort(root);
+  }
+  function initTileSort() {
+    var body = $("masterBody");
+    if (!body) return;
+    body.addEventListener("pointerdown", function (e) {
+      var chip = e.target.closest && e.target.closest(".sort-chip");
+      if (!chip) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      sortCancelHold();
+      var x = e.clientX, y = e.clientY;
+      SORT.x0 = x; SORT.y0 = y;
+      SORT.timer = setTimeout(function () { SORT.timer = null; sortBegin(chip, x, y); }, 400);
+    });
+    document.addEventListener("pointermove", function (e) {
+      if (!SORT.active) {
+        // 長押しの前に大きく動いたらスクロール操作とみなす
+        if (SORT.timer && (Math.abs(e.clientX - SORT.x0) > 8 || Math.abs(e.clientY - SORT.y0) > 8)) sortCancelHold();
+        return;
+      }
+      e.preventDefault();
+      SORT.ghost.style.transform = "translate(" + (e.clientX - SORT.x0) + "px," + (e.clientY - SORT.y0) + "px) scale(1.06)";
+      var el = document.elementFromPoint(e.clientX, e.clientY); // ゴーストは pointer-events:none
+      if (!el || !el.closest) return;
+      var grid = el.closest(".sort-grid");
+      if (!grid || grid.closest(".sorter") !== SORT.root) return; // 別の一覧へは移さない
+      var over = el.closest(".sort-chip");
+      if (over && over !== SORT.chip) {
+        var r = over.getBoundingClientRect();
+        var after = e.clientX > r.left + r.width / 2;
+        grid.insertBefore(SORT.chip, after ? over.nextSibling : over);
+      } else if (!over && grid !== SORT.chip.parentNode) {
+        grid.appendChild(SORT.chip); // 空のカテゴリへ移す
+      }
+    }, { passive: false });
+    ["pointerup", "pointercancel"].forEach(function (ev) {
+      document.addEventListener(ev, function () { sortEnd(ev === "pointerup"); });
+    });
+    // iOSで指を動かしたときに画面ごとスクロールしないようにする
+    document.addEventListener("touchmove", function (e) {
+      if (SORT.active) e.preventDefault();
+    }, { passive: false });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") sortEnd(false);
+    });
   }
 
   /* ---------- 汎用: マスタのリスト編集ハンドラ ---------- */
@@ -3396,6 +3548,7 @@
   initLocalLock();
   initStaffGate();
   initMasterGate();
+  initTileSort();
   initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
 })();
