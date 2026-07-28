@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.28-72";
+  var APP_VERSION = "2026.07.28-73";
   var MASTER_KEY = "dq-master-v3"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "dq-state-v3";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -705,6 +705,25 @@
     MASTER.options.forEach(function (o) {
       var nf = NAME_FIXES[o.id];
       if (nf && o.name === nf[0]) o.name = nf[1];
+    });
+    /* プランの性質を初期データから補完する。
+     * 初期データに無いプラン（店舗が自分で登録したもの）は、
+     * 昔と同じ判定（idに poikatsu を含む／idが max）で埋めておく。 */
+    var defPlanDef = {};
+    (DEFAULT_DATA.plans || []).forEach(function (p) { defPlanDef[p.id] = p; });
+    MASTER.plans.forEach(function (pl) {
+      var dp = defPlanDef[pl.id];
+      if (typeof pl.poikatsuPt === "undefined") {
+        pl.poikatsuPt = (dp && typeof dp.poikatsuPt === "number") ? dp.poikatsuPt
+          : (/poikatsu/.test(pl.id) ? (pl.id === "poikatsu_20" ? 2500 : 5000) : 0);
+      }
+      if (typeof pl.maxBonus === "undefined") {
+        pl.maxBonus = (dp && typeof dp.maxBonus === "boolean") ? dp.maxBonus
+          : (pl.id === "max" || pl.id === "poikatsu_max");
+      }
+      if (!pl.tiers || !pl.tiers.length) pl.tiers = [{ label: "", price: 0 }];
+      if (!pl.discounts) pl.discounts = {};
+      if (pl.group !== "current" && pl.group !== "legacy") pl.group = "current";
     });
     // 初期データに後から増えた項目を保存済みマスタへ追記（ユーザーが削除済みのものは復活させない）
     if (!MASTER.removedIds) MASTER.removedIds = [];
@@ -1603,7 +1622,11 @@
   var MAX_BONUS_IDS = ["bk_lemino", "bk_danime", "dazn", "nba"];
   var MAX_BONUS_LIMIT = 2;
   var MAX_BONUS_NOTE = "選べる特典";
-  function maxBonusPlan(planId) { return planId === "max" || planId === "poikatsu_max"; }
+  function planById(id) {
+    return MASTER.plans.filter(function (p) { return p.id === id; })[0] || null;
+  }
+  // 対象かどうかはマスタ設定の「選べる特典の対象」で決まる
+  function maxBonusPlan(planId) { var p = planById(planId); return !!(p && p.maxBonus); }
   // 無料にするのは選択中の対象サービスのうち高い方から2つ
   function maxBonusFree(st, planId) {
     var free = {};
@@ -2036,11 +2059,12 @@
 
   // ポイ活プラン選択時の還元ポイント初期値（ポイ活20は上限2,500pt）
   // ポイ活プランかどうか（還元ポイントの入力欄と、実質額への充当はこのプランだけ）
-  function poikatsuPlan(planId) { return /poikatsu/.test(planId || ""); }
+  // ポイ活プランかどうかは、マスタ設定の「ポイ活の還元上限」が0より大きいかで決まる
   function poikatsuDefaultPt(planId) {
-    if (planId === "poikatsu_20") return 2500;
-    return /poikatsu/.test(planId || "") ? 5000 : 0;
+    var p = planById(planId);
+    return p ? Math.max(0, num(p.poikatsuPt)) : 0;
   }
+  function poikatsuPlan(planId) { return poikatsuDefaultPt(planId) > 0; }
   // プラン切替時に初期値を自動セット（手入力した値は上書きしない）
   function syncPoikatsuDefault(prevPlanId) {
     var cur = num(state.pointPoikatsu);
@@ -3170,16 +3194,77 @@
       ["choki10", "長期利用割（10年〜）"],
       ["choki20", "長期利用割（20年〜）"],
     ];
+    var BAKU_TIERS = [
+      ["", "対象外"],
+      ["max", "ドコモ MAX／ポイ活 MAX の率"],
+      ["std", "ポイ活20・ahamo・eximo・ギガホ の率"]
+    ];
+    h += '<div class="master-plan"><h3>料金プラン</h3>';
+    h += '<p class="hint">新しいプランが出たときは、ここから登録できます。'
+      + '<strong>似ているプランの「複製」から作ると早いです</strong>（割引や詳細設定がそのまま写ります）。'
+      + '見積もり画面のプルダウンには、ここで「現行」にしたものだけが出ます。</p>';
     MASTER.plans.forEach(function (pl, pi) {
-      h += '<div class="master-plan"><h3>' + esc(pl.name) + "</h3><div class=\"master-grid\">";
+      var last = pi === MASTER.plans.length - 1;
+      h += '<div class="plan-edit">';
+      h += '<div class="plan-head">'
+        + '<button class="mv" data-pl-up="' + pi + '" type="button" aria-label="上へ"' + (pi === 0 ? " disabled" : "") + ">▲</button>"
+        + '<button class="mv" data-pl-down="' + pi + '" type="button" aria-label="下へ"' + (last ? " disabled" : "") + ">▼</button>"
+        + '<input type="text" class="plan-name" value="' + esc(pl.name) + '" placeholder="プラン名" data-pl-name="' + pi + '">'
+        + '<select data-pl-group="' + pi + '">'
+        + '<option value="current"' + (pl.group === "current" ? " selected" : "") + ">現行</option>"
+        + '<option value="legacy"' + (pl.group === "legacy" ? " selected" : "") + ">旧プラン</option>"
+        + "</select>"
+        + '<button class="btn-sub" data-pl-copy="' + pi + '" type="button">複製</button>'
+        + '<button class="del" data-pl-del="' + pi + '" type="button" aria-label="削除">×</button>'
+        + "</div>";
+
+      h += '<div class="plan-sec"><span class="plan-lbl">基本料金</span>';
       pl.tiers.forEach(function (t, ti) {
-        h += mInput("基本料金（" + esc(t.label) + "）", "plans." + pi + ".tiers." + ti + ".price");
+        h += '<div class="plan-tier">'
+          + '<input type="text" value="' + esc(t.label || "") + '" placeholder="段階名（例）〜3GB）" data-pl-tlabel="' + pi + ":" + ti + '">'
+          + '<input type="number" value="' + num(t.price) + '" data-pl-tprice="' + pi + ":" + ti + '">'
+          + '<span class="unit">円</span>'
+          + '<button class="del" data-pl-tdel="' + pi + ":" + ti + '" type="button" aria-label="削除"' + (pl.tiers.length < 2 ? " disabled" : "") + ">×</button>"
+          + "</div>";
       });
+      h += '<button class="btn-sub" data-pl-tadd="' + pi + '" type="button">＋ 段階を追加</button>';
+      h += '<p class="hint">段階が1つだけのときは、見積もり画面に段階のプルダウンを出しません。</p>';
+      h += "</div>";
+
+      h += '<div class="plan-sec"><span class="plan-lbl">割引</span><div class="plan-disc">';
       D_LABELS.forEach(function (dl) {
-        if (dl[0] in pl.discounts) h += mInput(dl[1], "plans." + pi + ".discounts." + dl[0]);
+        var on = dl[0] in pl.discounts;
+        h += '<label class="disc-row">'
+          + '<input type="checkbox" data-pl-dison="' + pi + ":" + dl[0] + '"' + (on ? " checked" : "") + ">"
+          + "<span>" + dl[1] + "</span>"
+          + '<input type="number" value="' + (on ? num(pl.discounts[dl[0]]) : "") + '" placeholder="0" data-pl-disamt="' + pi + ":" + dl[0] + '"' + (on ? "" : " disabled") + ">円"
+          + "</label>";
       });
-      h += "</div></div>";
+      h += "</div><p class=\"hint\">チェックを外した割引は、このプランを選んだときに③の欄へ出しません。</p></div>";
+
+      h += '<details class="plan-more"><summary>詳細設定</summary><div class="plan-sec">';
+      h += '<label class="plan-f"><span>爆アゲ セレクションの区分</span>'
+        + '<select data-pl-baku="' + pi + '">'
+        + BAKU_TIERS.map(function (b) {
+            return '<option value="' + b[0] + '"' + ((pl.bakuageTier || "") === b[0] ? " selected" : "") + ">" + b[1] + "</option>";
+          }).join("")
+        + "</select></label>";
+      h += '<label class="plan-f"><span>ポイ活の還元上限</span>'
+        + '<input type="number" min="0" value="' + (num(pl.poikatsuPt) || "") + '" placeholder="0" data-pl-poi="' + pi + '">pt/月'
+        + '<span class="hint">0にすると、このプランではポイ活の欄を出しません</span></label>';
+      h += '<label class="plan-f chk"><input type="checkbox" data-pl-5min="' + pi + '"' + (pl.includes5min ? " checked" : "") + ">"
+        + "<span>5分通話無料がプランに含まれる</span></label>";
+      h += '<label class="plan-f chk"><input type="checkbox" data-pl-dcard10="' + pi + '"' + (pl.dcard10 === false ? "" : " checked") + ">"
+        + "<span>dカード GOLD系の10%還元の対象</span></label>";
+      h += '<label class="plan-f chk"><input type="checkbox" data-pl-maxbonus="' + pi + '"' + (pl.maxBonus ? " checked" : "") + ">"
+        + "<span>「選べる特典」（対象サービスから毎月2つ無料）の対象</span></label>";
+      h += '<label class="plan-f"><span>メモ</span>'
+        + '<input type="text" value="' + esc(pl.note || "") + '" placeholder="社内用。お客様には出ません" data-pl-note="' + pi + '"></label>';
+      h += "</div></details>";
+      h += "</div>";
     });
+    h += '<div class="actions"><button class="btn-sub" data-pl-add="1" type="button">＋ プランを追加</button></div>';
+    h += "</div>";
 
     h += '<div class="master-plan"><h3>通話オプション</h3><div class="master-grid">';
     MASTER.voiceOptions.forEach(function (v, vi) {
@@ -3954,6 +4039,125 @@
     if (o.priceChoices.indexOf(num(o.price)) < 0) o.price = o.priceChoices[0];
   }
 
+  /* ---------- 料金プランの編集 ----------
+   * 新しいプランが出たときに、店舗がここから登録できるようにする。 */
+  function newPlan() {
+    return {
+      id: "pl_" + Date.now(), group: "current", name: "",
+      tiers: [{ label: "", price: 0 }], discounts: {},
+      includes5min: false, poikatsuPt: 0, maxBonus: false, bakuageTier: "", note: ""
+    };
+  }
+  // 入力中は作り直さない（作り直すと入力欄からカーソルが外れるため）
+  function planTouch() {
+    markEdited();
+    renderPlanSelect();
+    renderDiscountHint();
+    recalc();
+  }
+  // 増減・並べ替えなど、画面の作りが変わるとき
+  function planRestructure() {
+    markEdited();
+    renderMasterTab();
+    renderPlanSelect();
+    renderDiscountHint();
+    syncFormFromState();
+    recalc();
+  }
+  function handlePlanEvent(t, evType) {
+    if (!t || !t.getAttribute) return false;
+    function g(n) { return t.getAttribute("data-pl-" + n); }
+    var v, p, parts;
+
+    if (evType === "input") {
+      if ((v = g("name")) != null) { MASTER.plans[+v].name = t.value; planTouch(); return true; }
+      if ((v = g("note")) != null) { MASTER.plans[+v].note = t.value; markEdited(); return true; }
+      if ((v = g("poi")) != null) { MASTER.plans[+v].poikatsuPt = Math.max(0, num(t.value)); planTouch(); return true; }
+      if ((v = g("tlabel")) != null) {
+        parts = v.split(":");
+        MASTER.plans[+parts[0]].tiers[+parts[1]].label = t.value;
+        markEdited(); renderTierSelect(); return true;
+      }
+      if ((v = g("tprice")) != null) {
+        parts = v.split(":");
+        MASTER.plans[+parts[0]].tiers[+parts[1]].price = num(t.value);
+        planTouch(); return true;
+      }
+      if ((v = g("disamt")) != null) {
+        parts = v.split(":");
+        MASTER.plans[+parts[0]].discounts[parts[1]] = num(t.value);
+        planTouch(); return true;
+      }
+    }
+
+    if (evType === "change") {
+      if ((v = g("group")) != null) { MASTER.plans[+v].group = t.value; planRestructure(); return true; }
+      if ((v = g("baku")) != null) { MASTER.plans[+v].bakuageTier = t.value; planTouch(); return true; }
+      if ((v = g("5min")) != null) { MASTER.plans[+v].includes5min = t.checked; planTouch(); return true; }
+      if ((v = g("dcard10")) != null) { MASTER.plans[+v].dcard10 = t.checked; planTouch(); return true; }
+      if ((v = g("maxbonus")) != null) { MASTER.plans[+v].maxBonus = t.checked; planTouch(); return true; }
+      if ((v = g("dison")) != null) {
+        parts = v.split(":");
+        p = MASTER.plans[+parts[0]];
+        if (t.checked) { if (!(parts[1] in p.discounts)) p.discounts[parts[1]] = 0; }
+        else { delete p.discounts[parts[1]]; }
+        planRestructure(); return true;
+      }
+    }
+
+    if (evType !== "click") return false;
+
+    if (g("add") != null) { MASTER.plans.push(newPlan()); planRestructure(); return true; }
+
+    if ((v = g("copy")) != null) {
+      var src = MASTER.plans[+v];
+      var cp = JSON.parse(JSON.stringify(src));
+      cp.id = "pl_" + Date.now();
+      cp.name = (src.name || "プラン") + "（コピー）";
+      MASTER.plans.splice(+v + 1, 0, cp);
+      planRestructure(); return true;
+    }
+
+    if ((v = g("del")) != null) {
+      p = MASTER.plans[+v];
+      if (MASTER.plans.length < 2) { window.alert("プランを1つも無い状態にはできません。"); return true; }
+      if (!window.confirm("「" + (p.name || "このプラン") + "」を削除しますか？\nこのプランを選んでいる見積もりは、プラン未選択に戻ります。")) return true;
+      store.patterns.forEach(function (pt) {
+        if (pt.planId === p.id) { pt.planId = ""; pt.tierIdx = 0; }
+      });
+      // 初期データにあるプランを消したときは、次回起動で復活しないよう覚えておく
+      if (!MASTER.removedIds) MASTER.removedIds = [];
+      if (MASTER.removedIds.indexOf(p.id) < 0) MASTER.removedIds.push(p.id);
+      MASTER.plans.splice(+v, 1);
+      planRestructure(); return true;
+    }
+
+    var up = g("up"), dn = g("down");
+    if (up != null || dn != null) {
+      var i = +(up != null ? up : dn);
+      var j = up != null ? i - 1 : i + 1;
+      if (j < 0 || j >= MASTER.plans.length) return true;
+      var tmp = MASTER.plans[i]; MASTER.plans[i] = MASTER.plans[j]; MASTER.plans[j] = tmp;
+      planRestructure(); return true;
+    }
+
+    if ((v = g("tadd")) != null) {
+      MASTER.plans[+v].tiers.push({ label: "", price: 0 });
+      planRestructure(); return true;
+    }
+    if ((v = g("tdel")) != null) {
+      parts = v.split(":");
+      p = MASTER.plans[+parts[0]];
+      if (p.tiers.length < 2) return true;
+      p.tiers.splice(+parts[1], 1);
+      store.patterns.forEach(function (pt) {
+        if (pt.planId === p.id && pt.tierIdx >= p.tiers.length) pt.tierIdx = 0;
+      });
+      planRestructure(); return true;
+    }
+    return false;
+  }
+
   /* ---------- 汎用: マスタのリスト編集ハンドラ ---------- */
   var LIST_DEFS = {
     op: { key: "options", newItem: function () { return { id: "op_" + Date.now(), name: "", price: 0, category: "その他", note: "" }; }, stateKey: "options", render: renderOptionList },
@@ -4640,6 +4844,7 @@
     // マスタ編集
     $("masterBody").addEventListener("input", function (e) {
       var t = e.target;
+      if (handlePlanEvent(t, "input")) return;
       var path = t.getAttribute("data-mpath");
       if (path) {
         setPath(path, num(t.value));
@@ -4668,9 +4873,11 @@
       handleListEvent(t, "input");
     });
     $("masterBody").addEventListener("change", function (e) {
+      if (handlePlanEvent(e.target, "change")) return;
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      if (handlePlanEvent(e.target, "click")) return;
       var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");
       if (hr) {
         if (window.confirm("この時点の内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);

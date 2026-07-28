@@ -43,7 +43,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "3段階制・無制限。エンタメ特典（Lemino/dアニメ/DAZN/NBAから毎月2つ無料）・Amazonプライム最大6か月無料・海外ローミング30GB/15日込み。",
-      "bakuageTier": "max"
+      "bakuageTier": "max",
+      "poikatsuPt": 0,
+      "maxBonus": true
     },
     {
       "id": "poikatsu_max",
@@ -67,7 +69,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "d払い/dカード決済にポイント還元（PLATINUM10%/GOLD系5%/その他3%・上限5,000pt/月）。還元は月額とは別枠。",
-      "bakuageTier": "max"
+      "bakuageTier": "max",
+      "poikatsuPt": 5000,
+      "maxBonus": true
     },
     {
       "id": "poikatsu_20",
@@ -93,7 +97,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "還元はPLATINUM5%/GOLD系2%/その他1%・上限2,500pt/月。長期利用割は対象外。",
-      "bakuageTier": "std"
+      "bakuageTier": "std",
+      "poikatsuPt": 2500,
+      "maxBonus": false
     },
     {
       "id": "mini",
@@ -120,7 +126,9 @@ const DEFAULT_DATA = {
       "includes5min": false,
       "dcard10": false,
       "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "ahamo",
@@ -149,7 +157,9 @@ const DEFAULT_DATA = {
       },
       "dcard10": false,
       "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。",
-      "bakuageTier": "std"
+      "bakuageTier": "std",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "u15",
@@ -174,7 +184,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": true,
       "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "keitai",
@@ -195,7 +207,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "kids",
@@ -216,7 +230,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "キッズケータイ専用（12歳以下）。国内通話・SMSは家族間無料。各種割引対象外・みんなドコモ割の回線数カウント対象外。料金はマスタ設定で調整可。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "dataplus",
@@ -237,7 +253,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "eximo",
@@ -266,7 +284,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "2025年6月4日新規受付終了。既存契約者の比較・プラン変更提案用。",
-      "bakuageTier": "std"
+      "bakuageTier": "std",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "eximo_poikatsu",
@@ -287,7 +307,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "2025年6月4日新規受付終了。d払い/dカード決済3〜10%還元（上限5,000pt/月）。",
-      "bakuageTier": "std"
+      "bakuageTier": "std",
+      "poikatsuPt": 5000,
+      "maxBonus": false
     },
     {
       "id": "irumo",
@@ -326,7 +348,9 @@ const DEFAULT_DATA = {
       "includes5min": false,
       "dcard10": false,
       "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。dカードGOLD/PLATINUMの利用料金10%（20%）還元は対象外。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "gigaho_premier",
@@ -351,7 +375,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "2023年6月30日新規受付終了。",
-      "bakuageTier": "std"
+      "bakuageTier": "std",
+      "poikatsuPt": 0,
+      "maxBonus": false
     },
     {
       "id": "gigalite",
@@ -390,7 +416,9 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "2023年6月30日新規受付終了。光セット割は段階により異なる（〜1GB対象外/〜3GB−550円）。7GB超過後は最大128kbps。",
-      "bakuageTier": ""
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
     }
   ],
   "voiceOptions": [
