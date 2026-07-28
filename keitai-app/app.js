@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.8.0";
+  var APP_VERSION = "1.8.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1146,10 +1146,30 @@
     if (document.body) document.body.className =
       document.body.className.replace(/\bbooting\b/g, "").replace(/\s+/g, " ").trim();
   }
+  /* 店舗IDはその端末で最後に使ったものを覚えておき、次から入力済みにする。
+   * 秘密の情報ではないので保存してもリスクは増えない。
+   * パスワードはアプリに保存しない（ブラウザの保存機能に任せる）。 */
+  var LAST_STORE_ID_KEY = "kq-last-store-id";
+  function rememberedStoreId() {
+    try { return localStorage.getItem(LAST_STORE_ID_KEY) || ""; } catch (e) { return ""; }
+  }
+  function rememberStoreId(id) {
+    try { localStorage.setItem(LAST_STORE_ID_KEY, String(id || "")); } catch (e) {}
+  }
+  function fillStoreId() {
+    var si = $("loginStoreId");
+    if (!si) return;
+    si.value = rememberedStoreId();
+    // 入力済みのときは、続きのパスワード欄から始められるようにする
+    if (si.value) {
+      var sp = $("loginPass");
+      if (sp) setTimeout(function () { sp.focus(); }, 60);
+    }
+  }
   function showLogin(show) {
     var el = $("loginOverlay");
     if (el) el.hidden = !show;
-    if (show) bootDone();
+    if (show) { fillStoreId(); bootDone(); }
   }
   function showStaffGate(show) {
     var el = $("staffOverlay");
@@ -1316,6 +1336,7 @@
 
   function onSignedIn(user) {
     CLOUD.user = user;
+    rememberStoreId(String(user.email || "").replace(/@.*$/, ""));
     switchStoreIfNeeded(user.uid); // 前の店舗の内容を持ち込まない
     showLogin(false);
     syncStatus("同期中…", "");
@@ -1352,15 +1373,16 @@
     var sh1 = $("sheetBody"); if (sh1) sh1.innerHTML = "";
     var sh2 = $("staffSheetBody"); if (sh2) sh2.innerHTML = "";
     showStaffGate(false);
-    var si = $("loginStoreId"); if (si) si.value = "";
-    var sp = $("loginPass"); if (sp) sp.value = "";
-    showLogin(true);
+    var sp1 = $("loginPass"); if (sp1) sp1.value = "";
+    showLogin(true); // 店舗IDはここで入力済みに戻る
   }
 
   /* ---------- 自動ログアウト ----------
    * 店頭の共有端末を開いたまま離席したときのために、
-   * 操作が1時間途切れたらログイン画面へ戻す。 */
-  var IDLE_MS = 60 * 60 * 1000;
+   * 操作が長く途切れたらログイン画面へ戻す。 */
+  /* 日中の接客中には落ちず、閉店から翌朝までの間隔では確実に落ちる長さにしている。
+   * 短くすると店頭で店舗パスワードを打ち直す手間が増える。 */
+  var IDLE_MS = 12 * 60 * 60 * 1000;
   var IDLE = { last: Date.now(), timer: null, armed: false };
   function idleTouch() { IDLE.last = Date.now(); }
   function idleCheck() {
@@ -1398,11 +1420,11 @@
     var sb2 = $("staffSheetBody"); if (sb2) sb2.innerHTML = "";
     showStaffGate(false);
     var sb = $("staffBar"); if (sb) sb.hidden = true;
-    var si = $("loginStoreId"); if (si) si.value = "";
-    var sp = $("loginPass"); if (sp) sp.value = "";
+    var sp0 = $("loginPass"); if (sp0) sp0.value = "";
+    fillStoreId();
     var le = $("loginErr");
     if (le) {
-      if (auto) { le.textContent = "1時間操作がなかったため、自動でログアウトしました。"; le.hidden = false; }
+      if (auto) { le.textContent = "しばらく操作がなかったため、自動でログアウトしました。"; le.hidden = false; }
       else le.hidden = true;
     }
     if (CLOUD.enabled && CLOUD.auth) { CLOUD.auth.signOut(); return; }
