@@ -8,6 +8,7 @@
 | `OPERATIONS.md` | 販売側の運用手順（店舗の追加・停止、契約前に決めること） |
 | `SETUP.md` | Firebase プロジェクトの構築手順（販売側が1回だけ行う） |
 | `SALES.md` | 営業向けの共有メモ（小川さん用）。現状・言ってはいけないこと・お願いしたいこと |
+| `RSS_WATCH.md` | ドコモの新着RSSの監視メモ。毎朝のRoutineが読み、確認したら更新する |
 | `BAKUAGE.md` | 爆アゲ セレクションの還元率の調査メモ。月初・15日のルーティンが最初に読む |
 
 店舗・代理店に渡す文書は `keitai-app/` 側にあります（`README.md` `TERMS.md` `LICENSE.md` `SUPPORT.md`）。
