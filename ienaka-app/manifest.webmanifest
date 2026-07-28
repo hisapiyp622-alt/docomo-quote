@@ -3,7 +3,7 @@
   "short_name": "イエナカ",
   "description": "ドコモ光・ahamo光・home 5G の店頭見積もりアプリ",
   "start_url": "./",
-  "scope": "./",
+  "scope": "../",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#F4F4F5",
