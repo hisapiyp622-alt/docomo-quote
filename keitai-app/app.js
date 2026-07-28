@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.7.3";
+  var APP_VERSION = "1.7.4";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -835,10 +835,14 @@
       // マスタ設定のパスワードは店舗共通（解除も伝わるよう、空でも受け取る）
       if (d.adminLock && typeof d.adminLock.hash === "string") config.adminLock = d.adminLock;
       if (d.staff && d.staff.length) {
+        /* 担当者一覧は店舗で共通なので、他の端末の変更をそのまま受け取る。
+         * ただし「選択中の担当が消えた」と判断するのは、
+         * こちらで担当を確定している場合だけにする。
+         * 担当を選び直している最中（activeStaffIdが空）に他の端末から
+         * 設定が届くと、そのたびに担当者コードの画面へ引き戻されてしまうため。 */
+        var prevId = config.activeStaffId;
         config.staff = d.staff;
-        // 選択中の担当が消えていた場合は、担当を選び直してもらう
-        // （料金マスタの取り込みはここで止めず、最後まで行う）
-        if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
+        if (prevId && !config.staff.some(function (s) { return s.id === prevId; })) {
           config.activeStaffId = "";
           lostStaff = true;
         }
@@ -859,8 +863,12 @@
       syncFormFromState();
       recalc();
     } finally { CLOUD.suppress = false; }
-    // 担当が確定できない場合だけ選び直し（コード未設定の店舗は先頭の担当で続行）
+    /* 担当が本当に消えたときだけ選び直してもらう。
+     * マスタ設定を開いている最中や、ログイン画面を出している最中は割り込まない。 */
     if (lostStaff) {
+      if (masterOnly) return;
+      var lv = $("loginOverlay");
+      if (lv && !lv.hidden) return;
       if (anyStaffCode()) showStaffGate(true);
       else enterStaff(config.staff[0]);
     }
