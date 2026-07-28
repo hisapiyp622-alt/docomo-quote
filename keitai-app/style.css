@@ -392,6 +392,8 @@ body.booting>header,body.booting>main{visibility:hidden}
   background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin-left:6px;
 }
 .hd-btn:hover{color:var(--red);border-color:var(--red)}
+/* 別アプリへの移動（リンクだがヘッダのボタンと同じ見た目にする） */
+.hd-link{display:inline-block;text-decoration:none;white-space:nowrap}
 
 /* 担当者の一覧（設定タブ） */
 .staff-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}

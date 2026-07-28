@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.9.0";
+  var APP_VERSION = "1.9.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3967,6 +3967,28 @@
     el.hidden = !show;
     if (!show) markVersionSeen();
   }
+  /* ---------- イエナカ見積もりへの移動 ----------
+   * 同じサイトの別アプリなので、店舗名・担当者名・お客様名を引き渡して、
+   * 移った先で入力し直さなくて済むようにする。
+   * 受け渡しは localStorage（同一オリジンのため読める）。一度読んだら消える。 */
+  var HANDOFF_KEY = "kq-handoff-v1";
+  function initIenakaLink() {
+    var a = $("toIenaka");
+    if (!a) return;
+    a.addEventListener("click", function () {
+      var st = activeStaff();
+      try {
+        localStorage.setItem(HANDOFF_KEY, JSON.stringify({
+          storeName: config.storeName || "",
+          storeTel: config.storeTel || "",
+          staffName: (st && st.name) || "",
+          custName: (state && state.custName) || "",
+          at: Date.now()
+        }));
+      } catch (e) {}
+      // リンクの既定の動作でそのまま移動する
+    });
+  }
   function initDocs() {
     var ov = $("docOverlay");
     if (!ov) return;
@@ -5157,6 +5179,7 @@
   initMasterGate();
   initAbout();
   initDocs();
+  initIenakaLink();
   initTileSort();
   initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始

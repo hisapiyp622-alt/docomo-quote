@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.0.0";
+  var APP_VERSION = "2.0.1";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -1108,7 +1108,38 @@
     state = defaultState(); applyDefaults(); syncForm(); recalc();
   });
 
+  /* ケータイ見積もりから移ってきたときは、店舗名・担当者名・お客様名を引き継ぐ。
+   * 同一オリジンの localStorage 経由。読んだら消す（次に開いたときに残らないように）。 */
+  function takeHandoff() {
+    var raw = null;
+    try { raw = localStorage.getItem("kq-handoff-v1"); } catch (e) {}
+    if (!raw) return;
+    try { localStorage.removeItem("kq-handoff-v1"); } catch (e) {}
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { return; }
+    if (!d) return;
+    // 古い引き渡しは使わない（10分）
+    if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return;
+
+    if (d.storeName) { config.storeName = d.storeName; }
+    if (d.staffName) {
+      var hit = config.staff.filter(function (s) { return (s.name || "") === d.staffName; })[0];
+      if (!hit) {
+        var n = 1;
+        while (config.staff.some(function (s) { return s.id === "s" + n; })) n++;
+        hit = { id: "s" + n, name: d.staffName };
+        config.staff.push(hit);
+      }
+      config.activeStaffId = hit.id;
+      state.staffName = d.staffName;
+    }
+    if (d.custName) state.custName = d.custName;
+    saveConfig();
+    save();
+  }
+
   /* ---------- 起動 ---------- */
+  takeHandoff();
   syncForm();
   recalc();
   initCloud(); // クラウド保存が設定されていればログイン・同期を開始
