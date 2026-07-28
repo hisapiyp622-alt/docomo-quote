@@ -291,7 +291,7 @@
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <p class="hint">※ お客様名（個人情報）は端末間で同期されません。印刷する端末で入力してください。</p>
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
-      <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）安藤"></div>
+      <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）山田"></div>
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
     </div>
 
@@ -328,7 +328,7 @@
         <button class="btn-sub" id="resetMaster" type="button">マスタを初期値に戻す</button>
         <button class="btn-sub" id="exportMaster" type="button">現在のマスタ構成をコピー</button>
       </div>
-      <p class="hint">「現在のマスタ構成をコピー」: この端末で編集した初期値一式をコピーします。アプリ本体の標準初期値にしたい場合は、コピーした内容をそのままClaudeに貼り付けてください。</p>
+      <p class="hint">「現在のマスタ構成をコピー」: この端末で編集した料金マスタ一式をクリップボードにコピーします。別の端末へ移すときや、設定内容を控えておくときにお使いください。</p>
       <textarea id="exportMasterBox" class="export-box" hidden readonly></textarea>
     </div>
     <div id="masterBody"><!-- JSで生成 --></div>

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.0.0";
+  var APP_VERSION = "1.0.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2363,7 +2363,7 @@
       var b = $("exportMaster");
       var json = JSON.stringify(MASTER, null, 2);
       var done = function () {
-        b.textContent = "コピーしました（Claudeに貼り付けてください）";
+        b.textContent = "コピーしました";
         setTimeout(function () { b.textContent = "現在のマスタ構成をコピー"; }, 4000);
       };
       var fallback = function () {
