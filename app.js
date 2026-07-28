@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-64";
+  var APP_VERSION = "2026.07.25-65";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -480,7 +480,7 @@
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
   // 手続き種別の表示名（未選択のときは空欄と分かる表記にする）
-  var PROC_NAME = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更のみ" };
+  var PROC_NAME = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更" };
   function procName(v) { return PROC_NAME[v] || "未選択"; }
   // 申し込みの種類（引き継ぎシートの表記）
   var DCARD_TYPE = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
