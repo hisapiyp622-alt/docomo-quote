@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.8.1";
+  var APP_VERSION = "1.9.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -553,6 +553,140 @@
     el.hidden = !t;
   }
 
+  /* ---------- 料金表の更新（配信） ----------
+   * 料金改定はこちらが data.js を更新して配る。ただし店舗のマスタが優先されるため、
+   * そのままでは価格の改定が届かない。版数を比べて「更新があります」と知らせ、
+   * 店舗が内容を確かめてから適用する形にしている。
+   *
+   * 更新するのはドコモの料金だけ。店舗が登録したもの（独自サービス・アクセサリ・
+   * 頭金の初期値・並び順・カテゴリ・担当者）はそのまま残す。
+   * 適用前の内容は履歴に残るので、あとから戻せる。 */
+  function masterUpdateAvailable() {
+    return num(DEFAULT_DATA.masterVersion) > num(MASTER.masterVersion);
+  }
+  // 上書きしない項目（店舗が決めるもの）
+  var FEE_KEEP = { atamakin_default: true };
+  // 標準から引き継ぐ項目（金額と、計算に効く条件だけ。名前・置き場所は店舗のまま）
+  var PLAN_TAKE = ["tiers", "discounts", "includes5min", "dcard10",
+    "bakuageTier", "poikatsuPt", "maxBonus", "voiceOverrides", "group"];
+  var OPT_TAKE = ["price", "priceChoices", "priceLabels", "carrier",
+    "bakuage", "bakuage2", "bakuageFixed", "note"];
+  var FEE_ITEM_TAKE = ["price", "pay", "note"];
+  var CAMP_TAKE = ["months", "plans", "amountChoices", "note"];
+
+  function takeFields(dst, src, keys) {
+    keys.forEach(function (k) {
+      if (typeof src[k] === "undefined") return;
+      dst[k] = (src[k] && typeof src[k] === "object")
+        ? JSON.parse(JSON.stringify(src[k])) : src[k];
+    });
+  }
+  /* 新しい標準を当てたマスタを作って返す（この時点では保存しない）。 */
+  function buildUpdatedMaster() {
+    var next = JSON.parse(JSON.stringify(MASTER));
+    var removed = next.removedIds || [];
+    var D = DEFAULT_DATA;
+
+    next.fees = next.fees || {};
+    Object.keys(D.fees || {}).forEach(function (k) {
+      if (FEE_KEEP[k]) return;             // 店頭頭金の初期値は店舗のもの
+      next.fees[k] = D.fees[k];
+    });
+
+    (D.plans || []).forEach(function (dp) {
+      var cur = next.plans.filter(function (x) { return x.id === dp.id; })[0];
+      if (!cur) {
+        if (removed.indexOf(dp.id) < 0) next.plans.push(JSON.parse(JSON.stringify(dp)));
+        return;
+      }
+      takeFields(cur, dp, PLAN_TAKE);
+    });
+
+    (D.voiceOptions || []).forEach(function (dv) {
+      var cur = (next.voiceOptions || []).filter(function (x) { return x.id === dv.id; })[0];
+      if (!cur) {
+        if (removed.indexOf(dv.id) < 0) next.voiceOptions.push(JSON.parse(JSON.stringify(dv)));
+        return;
+      }
+      cur.price = dv.price;
+    });
+
+    [["options", OPT_TAKE], ["feeItems", FEE_ITEM_TAKE]].forEach(function (pair) {
+      var key = pair[0], take = pair[1];
+      (D[key] || []).forEach(function (di) {
+        var cur = (next[key] || []).filter(function (x) { return x.id === di.id; })[0];
+        if (!cur) {
+          if (removed.indexOf(di.id) < 0) next[key].push(JSON.parse(JSON.stringify(di)));
+          return;
+        }
+        if (cur.own) return;               // 店舗独自にしているものは触らない
+        takeFields(cur, di, take);
+      });
+    });
+
+    (D.campaigns || []).forEach(function (dc) {
+      var cur = (next.campaigns || []).filter(function (x) { return x.id === dc.id; })[0];
+      if (!cur) {
+        if (removed.indexOf(dc.id) < 0) next.campaigns.push(JSON.parse(JSON.stringify(dc)));
+        return;
+      }
+      takeFields(cur, dc, CAMP_TAKE);
+    });
+
+    next.masterVersion = num(D.masterVersion);
+    next.updated = D.updated;
+    return next;
+  }
+  // 更新で何が変わるかの一覧（履歴の差分と同じ仕組みを使う）
+  function masterUpdateChanges() {
+    return histChanges(JSON.stringify(MASTER), JSON.stringify(buildUpdatedMaster()));
+  }
+  function applyMasterUpdate() {
+    var next = buildUpdatedMaster();
+    histSettle();
+    var back = histAdd("料金表の更新前", JSON.stringify(MASTER), true);
+    try { localStorage.setItem(MASTER_KEY, JSON.stringify(next)); } catch (e) {}
+    loadMaster();
+    histAttachChanges(back, JSON.stringify(MASTER));
+    histMark();
+    renderMasterTab();
+    renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
+    renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+    renderCampaigns(); renderDiscountHint();
+    syncFormFromState();
+    recalc();
+    renderStaffGateNotice();
+  }
+  function masterUpdateHtml() {
+    if (!masterUpdateAvailable()) return "";
+    var c = masterUpdateChanges();
+    var lines = (c && c.lines) || [];
+    var total = lines.length + ((c && c.more) || 0);
+    var h = '<div class="master-plan mu-box"><h3>料金表の更新があります</h3>';
+    h += '<p class="hint">新しい標準の料金表（' + esc(DEFAULT_DATA.updated || "") + '）が届いています。'
+      + '<strong>お店で登録した独自サービス・アクセサリ・店頭頭金・並び順・カテゴリはそのまま残ります。</strong>'
+      + '適用する前の内容は履歴に残るので、あとから戻せます。</p>';
+    if (total) {
+      h += '<details class="hist-diff" open><summary>変わる内容（' + total + '件）</summary><ul>'
+        + lines.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+        + ((c && c.more) ? '<li class="hist-omit">ほか' + c.more + "件</li>" : "")
+        + "</ul></details>";
+    } else {
+      h += '<p class="hint">金額の変更はありません（版数だけが新しくなります）。</p>';
+    }
+    h += '<div class="actions"><button class="btn-main" id="muApply" type="button">この内容に更新する</button></div>';
+    h += "</div>";
+    return h;
+  }
+  // 担当者コードの画面にも一行出す（マスタ設定は毎日は開かないため）
+  function renderStaffGateNotice() {
+    var el = $("staffUpdateNote");
+    if (!el) return;
+    var on = masterUpdateAvailable();
+    el.hidden = !on;
+    if (on) el.textContent = "料金表の更新が届いています。マスタ設定から適用してください。";
+  }
+
   /* ---------- マスタ読み込み ---------- */
   var MASTER;
   function upgradeV2(m) {
@@ -716,6 +850,11 @@
       if (!pl.discounts) pl.discounts = {};
       if (pl.group !== "current" && pl.group !== "legacy") pl.group = "current";
     });
+    /* 料金表の版数。すでに使っている店舗は「いまの内容が最新」として扱い、
+     * 次の改定から知らせる。 */
+    if (typeof MASTER.masterVersion !== "number") {
+      MASTER.masterVersion = num(DEFAULT_DATA.masterVersion);
+    }
     // 初期データに後から増えた項目を保存済みマスタへ追記（ユーザーが削除済みのものは復活させない）
     if (!MASTER.removedIds) MASTER.removedIds = [];
     (DEFAULT_DATA.options || []).forEach(function (d) {
@@ -1178,6 +1317,7 @@
     var f = $("staffCode");
     if (f) { f.value = ""; setTimeout(function () { f.focus(); }, 50); }
     var e2 = $("staffErr"); if (e2) e2.hidden = true;
+    renderStaffGateNotice();
     // コードを設定していない担当者は、名前を押して入れるようにする
     // （一部の担当者だけコードを付けた場合に、他の担当者が入れなくなるのを防ぐ）
     var free = config.staff.filter(function (s) { return String(s.code || "").trim() === ""; });
@@ -3192,7 +3332,7 @@
   /* ---------- マスタ設定タブ ---------- */
   function renderMasterTab() {
     $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
-    var h = "";
+    var h = masterUpdateHtml();
 
     h += '<div class="master-plan"><h3>共通費用</h3><div class="master-grid">';
     h += mInput("事務手数料（新規）", "fees.jimu_shinki");
@@ -4904,6 +5044,10 @@
       var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");
       if (hr) {
         if (window.confirm("この時点の内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);
+        return;
+      }
+      if (e.target.id === "muApply") {
+        if (window.confirm("新しい料金表に更新しますか？\n更新前の内容は履歴に残るので、あとから戻せます。")) applyMasterUpdate();
         return;
       }
       var hd = e.target.getAttribute && e.target.getAttribute("data-hist-del");
