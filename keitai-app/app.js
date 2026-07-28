@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.7";
+  var APP_VERSION = "1.6.8";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1680,8 +1680,10 @@
 
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
-    var ptPoikatsu = Math.max(0, num(st.pointPoikatsu));
-    var ptFamily = Math.max(0, num(st.pointPoikatsuFamily));
+    // ポイ活プラン以外では、入力が残っていても充当しない
+    var isPoikatsu = poikatsuPlan(plan.id);
+    var ptPoikatsu = isPoikatsu ? Math.max(0, num(st.pointPoikatsu)) : 0;
+    var ptFamily = isPoikatsu ? Math.max(0, num(st.pointPoikatsuFamily)) : 0;
     var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false)
       ? 0
       : Math.max(0, num(st.pointDcard));
@@ -1760,6 +1762,8 @@
   function calc() { return calcFor(state); }
 
   // ポイ活プラン選択時の還元ポイント初期値（ポイ活20は上限2,500pt）
+  // ポイ活プランかどうか（還元ポイントの入力欄と、実質額への充当はこのプランだけ）
+  function poikatsuPlan(planId) { return /poikatsu/.test(planId || ""); }
   function poikatsuDefaultPt(planId) {
     if (planId === "poikatsu_20") return 2500;
     return /poikatsu/.test(planId || "") ? 5000 : 0;
@@ -2198,6 +2202,12 @@
       var ok = !shown || f.on(plan.discounts || {});
       el.hidden = !ok;
       if (!ok) offs.push(f.name + (f.note ? "（" + f.note + "）" : ""));
+    });
+    // ポイ活の還元ポイントは、ポイ活プランのときだけ出す
+    var pk = !shown || poikatsuPlan(plan.id);
+    ["ptPoikatsuWrap", "ptPoikatsuFamilyWrap"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.hidden = !pk;
     });
     var off = $("discountOff");
     if (off) {
