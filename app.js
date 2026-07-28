@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-62";
+  var APP_VERSION = "2026.07.25-63";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1350,26 +1350,6 @@
     h += "</tbody></table>";
 
     var secContract = h; h = "";
-    // 適用する割引
-    h += "<h3>適用する割引</h3><table><tbody>";
-    var anyWari = false;
-    if (r.dMinna) { anyWari = true; h += row("みんなドコモ割", (state.minna === "2" ? "2回線" : "3回線以上") + "　−" + yen(r.dMinna)); }
-    if (r.dSet) { anyWari = true; h += row("ドコモ光／home 5G セット割", "−" + yen(r.dSet)); }
-    if (r.dCard) {
-      anyWari = true;
-      var cardName = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" }[state.dCard] || "";
-      h += row("dカードお支払割", cardName + "　−" + yen(r.dCard));
-    }
-    if (r.dDenki) { anyWari = true; h += row("ドコモでんきセット割", "−" + yen(r.dDenki)); }
-    if (r.dChoki) { anyWari = true; h += row("長期利用割", (state.choki === "y20" ? "20年以上" : "10年以上") + "　−" + yen(r.dChoki)); }
-    r.campaignRows.forEach(function (c) {
-      anyWari = true;
-      h += row(esc(c.name), "−" + yen(c.amount) + "（" + c.months + "か月間）");
-    });
-    if (!anyWari) h += row("割引", "なし");
-    h += "</tbody></table>";
-
-    var secWari = h; h = "";
     // オプション（新規／継続／廃止をまとめる）
     var kNew = [], kKeep = [], kOff = [];
     netSvcCalc(state).off.forEach(function (n) { kOff.push(n.name); });
@@ -1477,8 +1457,8 @@
     // 機種購入があるときは、端末と初期費用（支払方法）を先に読めるよう前へ出す
     var hasDevice = state.payMethod !== "none" && (num(state.devicePrice) > 0 || state.deviceName);
     h = h0 + (hasDevice
-      ? secDevice + secInit + secContract + secWari + secOpt
-      : secContract + secWari + secOpt + secDevice + secInit)
+      ? secDevice + secInit + secContract + secOpt
+      : secContract + secOpt + secDevice + secInit)
       + secPoint;
     h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。アプリ版 ' + APP_VERSION + "</div>";
     $("staffSheetBody").innerHTML = h;
