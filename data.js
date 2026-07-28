@@ -1,12 +1,11 @@
 /* =========================================================
- * 料金マスタ（店舗標準フォーマット初期値）
- * 2026-07-23 に本人運用中のマスタ構成を標準として焼き込み。
- * 料金は2026-07-10のドコモ公式調査値ベース＋店舗実売価格。
- * マスタ設定タブの編集(localStorage)がここより優先される。
- * 「マスタを初期値に戻す」でこの標準構成に戻る。
+ * 料金マスタ（社内版・阪南店の運用マスタ）
+ * 店舗独自の商材（コネクトα・ハルトコーティング・photocube など）を含む。
+ * 製品版（keitai-app/data.js）はドコモ商材のみで、ここより少ない。
+ * マスタ設定の編集(localStorage)がここより優先される。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "updated": "2026-07-23（店舗標準フォーマット・料金は公式調査値ベース）",
+  "updated": "2026-07-28",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -43,7 +42,8 @@ const DEFAULT_DATA = {
         "choki20": 220
       },
       "includes5min": false,
-      "note": "3段階制・無制限。エンタメ特典（Lemino/dアニメ/DAZN/NBAから毎月2つ無料）・Amazonプライム最大6か月無料・海外ローミング30GB/15日込み。"
+      "note": "3段階制・無制限。エンタメ特典（Lemino/dアニメ/DAZN/NBAから毎月2つ無料）・Amazonプライム最大6か月無料・海外ローミング30GB/15日込み。",
+      "bakuageTier": "max"
     },
     {
       "id": "poikatsu_max",
@@ -66,7 +66,8 @@ const DEFAULT_DATA = {
         "choki20": 220
       },
       "includes5min": false,
-      "note": "d払い/dカード決済にポイント還元（PLATINUM10%/GOLD系5%/その他3%・上限5,000pt/月）。還元は月額とは別枠。"
+      "note": "d払い/dカード決済にポイント還元（PLATINUM10%/GOLD系5%/その他3%・上限5,000pt/月）。還元は月額とは別枠。",
+      "bakuageTier": "max"
     },
     {
       "id": "poikatsu_20",
@@ -91,7 +92,8 @@ const DEFAULT_DATA = {
         "denki": 110
       },
       "includes5min": false,
-      "note": "還元はPLATINUM5%/GOLD系2%/その他1%・上限2,500pt/月。長期利用割は対象外。"
+      "note": "還元はPLATINUM5%/GOLD系2%/その他1%・上限2,500pt/月。長期利用割は対象外。",
+      "bakuageTier": "std"
     },
     {
       "id": "mini",
@@ -117,7 +119,8 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "dcard10": false,
-      "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。"
+      "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。",
+      "bakuageTier": ""
     },
     {
       "id": "ahamo",
@@ -145,7 +148,8 @@ const DEFAULT_DATA = {
         "kake": 1100
       },
       "dcard10": false,
-      "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。"
+      "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。",
+      "bakuageTier": "std"
     },
     {
       "id": "u15",
@@ -169,7 +173,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": true,
-      "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。"
+      "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。",
+      "bakuageTier": ""
     },
     {
       "id": "keitai",
@@ -189,7 +194,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。"
+      "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": ""
     },
     {
       "id": "kids",
@@ -209,7 +215,8 @@ const DEFAULT_DATA = {
         "dcardGold": 0
       },
       "includes5min": false,
-      "note": "キッズケータイ専用（12歳以下）。国内通話・SMSは家族間無料。各種割引対象外・みんなドコモ割の回線数カウント対象外。料金はマスタ設定で調整可。"
+      "note": "キッズケータイ専用（12歳以下）。国内通話・SMSは家族間無料。各種割引対象外・みんなドコモ割の回線数カウント対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": ""
     },
     {
       "id": "dataplus",
@@ -229,7 +236,8 @@ const DEFAULT_DATA = {
         "dcardGold": 0
       },
       "includes5min": false,
-      "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。"
+      "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": ""
     },
     {
       "id": "eximo",
@@ -257,7 +265,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2025年6月4日新規受付終了。既存契約者の比較・プラン変更提案用。"
+      "note": "2025年6月4日新規受付終了。既存契約者の比較・プラン変更提案用。",
+      "bakuageTier": "std"
     },
     {
       "id": "eximo_poikatsu",
@@ -277,7 +286,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2025年6月4日新規受付終了。d払い/dカード決済3〜10%還元（上限5,000pt/月）。"
+      "note": "2025年6月4日新規受付終了。d払い/dカード決済3〜10%還元（上限5,000pt/月）。",
+      "bakuageTier": "std"
     },
     {
       "id": "irumo",
@@ -315,7 +325,8 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "dcard10": false,
-      "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。dカードGOLD/PLATINUMの利用料金10%（20%）還元は対象外。"
+      "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。dカードGOLD/PLATINUMの利用料金10%（20%）還元は対象外。",
+      "bakuageTier": ""
     },
     {
       "id": "gigaho_premier",
@@ -339,7 +350,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2023年6月30日新規受付終了。"
+      "note": "2023年6月30日新規受付終了。",
+      "bakuageTier": "std"
     },
     {
       "id": "gigalite",
@@ -377,7 +389,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2023年6月30日新規受付終了。光セット割は段階により異なる（〜1GB対象外/〜3GB−550円）。7GB超過後は最大128kbps。"
+      "note": "2023年6月30日新規受付終了。光セット割は段階により異なる（〜1GB対象外/〜3GB−550円）。7GB超過後は最大128kbps。",
+      "bakuageTier": ""
     }
   ],
   "voiceOptions": [
@@ -421,7 +434,8 @@ const DEFAULT_DATA = {
       ],
       "note": "機種により330〜1,720円（2022/9/15以降発売機種）",
       "category": "補償",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "anshin_pack",
@@ -429,7 +443,22 @@ const DEFAULT_DATA = {
       "price": 462,
       "note": "",
       "category": "補償",
-      "carrier": true
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "ag_connect_p",
+      "name": "コネクトα -PLATINUM-",
+      "price": 1280,
+      "category": "補償",
+      "own": true
+    },
+    {
+      "id": "ag_connect",
+      "name": "コネクトα -Plus-",
+      "price": 550,
+      "category": "補償",
+      "own": true
     },
     {
       "id": "dvaluepass",
@@ -437,185 +466,31 @@ const DEFAULT_DATA = {
       "price": 682,
       "note": "旧いちおしパック（2026年3月改定・初回31日無料）",
       "category": "バックアップ",
-      "carrier": true
-    },
-    {
-      "id": "ag_support",
-      "name": "店舗あんしんサポートmini",
-      "price": 550,
-      "category": "その他"
-    },
-    {
-      "id": "ag_secpack",
-      "name": "あんしんセキュリティパック",
-      "price": 1650,
-      "category": "セキュリティ",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "ag_hozon",
       "name": "hozon",
       "price": 550,
-      "category": "バックアップ"
-    },
-    {
-      "id": "ag_connect_p",
-      "name": "コネクトα -PLATINUM-",
-      "price": 1280,
-      "category": "補償"
-    },
-    {
-      "id": "ag_connect",
-      "name": "コネクトα -Plus-",
-      "price": 550,
-      "category": "補償"
+      "category": "バックアップ",
+      "own": true
     },
     {
       "id": "op_1784430850898",
       "name": "photocube 分割36回払い",
       "price": 919,
       "category": "バックアップ",
-      "note": ""
+      "note": "",
+      "own": true
     },
     {
-      "id": "op_1784430913381",
-      "name": "店頭あんしんサポート定額",
-      "price": 990,
-      "category": "その他",
-      "note": ""
-    },
-    {
-      "id": "op_1784430972981",
-      "name": "amazon prime",
-      "price": 600,
-      "category": "エンタメ",
-      "note": ""
-    },
-    {
-      "id": "netflix",
-      "name": "NETFLIX",
-      "price": 890,
-      "priceChoices": [890, 1590, 2290],
-      "priceLabels": { "890": "広告つきスタンダード", "1590": "スタンダード", "2290": "プレミアム" },
-      "category": "エンタメ",
-      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円"
-    },
-    {
-      "id": "bk_disney",
-      "name": "ディズニープラス（爆アゲ）",
-      "price": 1250,
-      "priceChoices": [1250, 1670],
-      "priceLabels": { "1250": "スタンダード", "1670": "プレミアム" },
-      "category": "エンタメ",
-      "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
-      "carrier": true
-    },
-    {
-      "id": "bk_lemino",
-      "name": "Leminoプレミアム（爆アゲ）",
-      "price": 1540,
-      "category": "エンタメ",
-      "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
-    },
-    {
-      "id": "dazn",
-      "name": "DAZN for docomo",
-      "price": 4200,
-      "category": "エンタメ",
-      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
-    },
-    {
-      "id": "nba",
-      "name": "NBA docomo",
-      "price": 2728,
-      "priceChoices": [2728, 1078],
-      "priceLabels": { "2728": "通常", "1078": "ahamo" },
-      "category": "エンタメ",
-      "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
-    },
-    {
-      "id": "bk_spotify",
-      "name": "Spotify Premium（爆アゲ）",
-      "price": 1080,
-      "category": "エンタメ",
-      "note": "最大25%還元"
-    },
-    {
-      "id": "bk_youtube",
-      "name": "YouTube Premium（爆アゲ）",
-      "price": 1280,
-      "category": "エンタメ",
-      "note": "最大10%還元"
-    },
-    {
-      "id": "bk_jump",
-      "name": "週刊少年ジャンプ 定期購読（爆アゲ）",
-      "price": 980,
-      "category": "エンタメ",
-      "note": "最大20%還元"
-    },
-    {
-      "id": "bk_danime",
-      "name": "dアニメストア（爆アゲ）",
-      "price": 660,
-      "category": "エンタメ",
-      "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
-    },
-    {
-      "id": "bk_googleone",
-      "name": "Google One（爆アゲ）",
-      "price": 290,
-      "priceChoices": [290, 440, 1450],
-      "priceLabels": { "290": "ベーシック(100GB)", "440": "スタンダード(200GB)", "1450": "Google AI Plus(2TB)" },
-      "category": "エンタメ",
-      "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元"
-    },
-    {
-      "id": "bk_appleone",
-      "name": "Apple One（爆アゲ）",
-      "price": 1200,
-      "category": "エンタメ",
-      "priceChoices": [
-        1200,
-        1980
-      ],
-      "note": "個人1,200/ファミリー1,980・最大10%還元"
-    },
-    {
-      "id": "dphoto",
-      "name": "dフォト",
-      "price": 594,
-      "category": "エンタメ",
-      "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料",
-      "carrier": true
-    },
-    {
-      "id": "dmagazine",
-      "name": "dマガジン",
-      "price": 580,
-      "category": "エンタメ",
-      "note": "雑誌読み放題・初回7日間無料",
-      "carrier": true
-    },
-    {
-      "id": "dhits",
-      "name": "dヒッツ",
-      "price": 690,
-      "category": "エンタメ",
-      "note": "音楽聴き放題",
-      "carrier": true
-    },
-    {
-      "id": "dhealthcare",
-      "name": "dヘルスケア",
-      "price": 440,
-      "category": "エンタメ",
-      "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
-      "carrier": true
+      "id": "ag_secpack",
+      "name": "あんしんセキュリティパック",
+      "price": 1650,
+      "category": "セキュリティ",
+      "carrier": false,
+      "own": true
     },
     {
       "id": "op_1784460515071",
@@ -623,7 +498,8 @@ const DEFAULT_DATA = {
       "price": 999,
       "category": "セキュリティ",
       "note": "",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "op_1784460542023",
@@ -631,26 +507,255 @@ const DEFAULT_DATA = {
       "price": 550,
       "category": "セキュリティ",
       "note": "",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "op_1784430972981",
+      "name": "amazon prime",
+      "price": 600,
+      "category": "エンタメ",
+      "note": "ドコモ公式の爆アゲ セレクションの一覧には含まれません。固定120ptとして計算しています（マスタ設定の「固定pt」で変更できます）",
+      "own": false,
+      "bakuage": 0,
+      "bakuage2": 0,
+      "bakuageFixed": 120
+    },
+    {
+      "id": "netflix",
+      "name": "Netflix",
+      "price": 890,
+      "priceChoices": [
+        890,
+        1590,
+        2290
+      ],
+      "priceLabels": {
+        "890": "広告つきスタンダード",
+        "1590": "スタンダード",
+        "2290": "プレミアム"
+      },
+      "category": "エンタメ",
+      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円・爆アゲはMAX系20%（広告つきは15%）／ポイ活20・ahamo・eximo・ギガホは10%",
+      "own": false,
+      "bakuage": 20,
+      "bakuage2": 10
+    },
+    {
+      "id": "bk_disney",
+      "name": "ディズニープラス",
+      "price": 1250,
+      "priceChoices": [
+        1250,
+        1670
+      ],
+      "priceLabels": {
+        "1250": "スタンダード",
+        "1670": "プレミアム"
+      },
+      "category": "エンタメ",
+      "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
+      "carrier": true,
+      "own": false,
+      "bakuage": 20,
+      "bakuage2": 10
+    },
+    {
+      "id": "bk_lemino",
+      "name": "Leminoプレミアム",
+      "price": 1540,
+      "category": "エンタメ",
+      "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true,
+      "own": false,
+      "bakuage": 20,
+      "bakuage2": 10
+    },
+    {
+      "id": "dazn",
+      "name": "DAZN for docomo",
+      "price": 4200,
+      "category": "エンタメ",
+      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象。爆アゲ セレクションは新規の適用が終了しています",
+      "carrier": true,
+      "own": false,
+      "bakuage": 0,
+      "bakuage2": 0
+    },
+    {
+      "id": "nba",
+      "name": "NBA docomo",
+      "price": 2728,
+      "priceChoices": [
+        2728,
+        1078
+      ],
+      "priceLabels": {
+        "1078": "ahamo",
+        "2728": "通常"
+      },
+      "category": "エンタメ",
+      "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "bk_spotify",
+      "name": "Spotify Premium",
+      "price": 1080,
+      "category": "エンタメ",
+      "note": "最大25%還元",
+      "own": false,
+      "bakuage": 25,
+      "bakuage2": 15
+    },
+    {
+      "id": "bk_youtube",
+      "name": "YouTube Premium",
+      "price": 1280,
+      "category": "エンタメ",
+      "note": "最大10%還元",
+      "own": false,
+      "bakuage": 10,
+      "bakuage2": 5
+    },
+    {
+      "id": "bk_jump",
+      "name": "週刊少年ジャンプ 定期購読",
+      "price": 980,
+      "category": "エンタメ",
+      "note": "最大20%還元",
+      "own": false,
+      "bakuage": 20,
+      "bakuage2": 10
+    },
+    {
+      "id": "bk_danime",
+      "name": "dアニメストア",
+      "price": 660,
+      "category": "エンタメ",
+      "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true,
+      "own": false,
+      "bakuage": 10,
+      "bakuage2": 5
+    },
+    {
+      "id": "bk_googleone",
+      "name": "Google One",
+      "price": 290,
+      "priceChoices": [
+        290,
+        440,
+        1450
+      ],
+      "priceLabels": {
+        "290": "ベーシック(100GB)",
+        "440": "スタンダード(200GB)",
+        "1450": "Google AI Plus(2TB)"
+      },
+      "category": "エンタメ",
+      "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元",
+      "own": false,
+      "bakuage": 20,
+      "bakuage2": 10
+    },
+    {
+      "id": "bk_appleone",
+      "name": "Apple One",
+      "price": 1200,
+      "category": "エンタメ",
+      "priceChoices": [
+        1200,
+        1980
+      ],
+      "note": "個人1,200/ファミリー1,980・最大10%還元",
+      "own": false,
+      "bakuage": 10,
+      "bakuage2": 5
+    },
+    {
+      "id": "dphoto",
+      "name": "dフォト",
+      "price": 594,
+      "category": "エンタメ",
+      "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "dmagazine",
+      "name": "dマガジン",
+      "price": 580,
+      "category": "エンタメ",
+      "note": "雑誌読み放題・初回7日間無料",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "dhits",
+      "name": "dヒッツ",
+      "price": 690,
+      "category": "エンタメ",
+      "note": "音楽聴き放題",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "dhealthcare",
+      "name": "dヘルスケア",
+      "price": 440,
+      "category": "エンタメ",
+      "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "op_1785221584602",
+      "name": "店頭あんしんサポート定額プラン",
+      "price": 990,
+      "category": "その他",
+      "note": "",
+      "own": false,
+      "carrier": true
+    },
+    {
+      "id": "op_1785221644318",
+      "name": "店頭あんしんサポートミニプラン",
+      "price": 550,
+      "category": "その他",
+      "note": "",
+      "own": false,
       "carrier": true
     }
   ],
   "feeItems": [
     {
-      "id": "fi_1784431925115",
+      "id": "fi_free_datamove",
+      "name": "無料データ移行",
+      "price": 0,
+      "pay": "store",
+      "own": true
+    },
+    {
+      "id": "fi_1785221683603",
       "name": "初期設定・データ移行サポート",
       "price": 2200,
+      "own": false,
       "pay": "bill"
     },
     {
-      "id": "ag_setup",
+      "id": "fi_1785221704936",
       "name": "初期設定・データ移行サポート(持ち込み)",
       "price": 3300,
+      "own": false,
       "pay": "bill"
     },
     {
-      "id": "fi_1784460259803",
-      "name": "あんしん店頭サポート/回",
+      "id": "fi_1785221719101",
+      "name": "あんしん店頭サポート",
       "price": 3300,
+      "own": false,
       "pay": "bill"
     }
   ],
@@ -733,19 +838,29 @@ const DEFAULT_DATA = {
       "price": 2728
     },
     {
+      "id": "acc_1784850167723",
+      "name": "ACアダプタ",
+      "price": 2420
+    },
+    {
       "id": "acc_1784460060451",
       "name": "ハルトコーティング(両面)",
-      "price": 6600
+      "price": 6600,
+      "own": true
     },
     {
       "id": "acc_1784460083417",
       "name": "ハルトコーティング(片面)",
-      "price": 4400
+      "price": 4400,
+      "own": true
     },
     {
-      "id": "acc_1784850167723",
-      "name": "ACアダプタ",
-      "price": 2420
+      "id": "acc_1785222792120",
+      "name": "photocube 256GB",
+      "price": 31130,
+      "category": "バックアップ",
+      "defaultPay": "b36",
+      "own": true
     }
   ]
 };

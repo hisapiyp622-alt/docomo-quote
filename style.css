@@ -48,9 +48,16 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
   #tab-quote.active{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;grid-auto-flow:row dense}
   #tab-quote .pattern-bar,#tab-quote .actions,#tab-quote .card.full{grid-column:1 / -1}
   #tab-quote .card{margin-bottom:0}
-  /* ①契約内容と②通話・メールを左列に縦積みし、背の高い③割引を右列に（①下の空白を埋める） */
-  #tab-quote .card.c1,#tab-quote .card.c2{grid-column:1}
-  #tab-quote .card.c3{grid-column:2;grid-row:span 2}
+  /* ①契約内容は横幅いっぱいに置き、②通話・メールと③割引を左右に並べる。
+     ポイント類を⑧へ移して③が短くなったため、①②を縦積みにすると③の下が大きく空く */
+  #tab-quote .card.c1{grid-column:1 / -1}
+  #tab-quote .card.c2{grid-column:1}
+  #tab-quote .card.c3{grid-column:2}
+  /* ⑤端末代金は縦に長いので、右列に⑥アクセサリと⑦初期費用を縦積みして空白を埋める */
+  #tab-quote .card.c5{grid-column:1;grid-row:span 2}
+  #tab-quote .card.c6,#tab-quote .card.c7{grid-column:2}
+  #tab-quote .card.c8{grid-column:1}
+  #tab-quote .card.c9{grid-column:2}
   /* 半分幅カード内のタイルは3列（全幅カードは5列のまま） */
   #tab-quote .card:not(.full) .tile-grid{grid-template-columns:repeat(3,1fr)}
 }
@@ -342,3 +349,293 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 
 /* 引き継ぎシートの一覧（新規／継続／廃止・ネットワークサービス）は1件1行 */
 .sheet .kubun-list > i{display:block;font-style:normal;break-inside:avoid;page-break-inside:avoid}
+
+/* ── 店舗ログイン・担当者コード ───────────────────────────── */
+/* 立ち上がり中の目隠し。ログイン画面より手前に置く */
+.boot-splash{
+  position:fixed;inset:0;z-index:60;display:none;
+  align-items:center;justify-content:center;
+  background:var(--bg);color:var(--muted);
+  font-size:13px;letter-spacing:.06em;
+}
+body.booting .boot-splash{display:flex}
+body.booting>header,body.booting>main{visibility:hidden}
+.login-overlay{
+  position:fixed;inset:0;z-index:50;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.login-box{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:22px 20px;width:100%;max-width:360px;
+  box-shadow:0 6px 24px rgba(0,0,0,.08);
+}
+.login-box h2{margin:0 0 4px;font-size:18px;color:var(--red)}
+.login-lead{margin:0 0 14px;font-size:12.5px;color:var(--muted)}
+.login-box .field{display:block;margin-bottom:10px}
+.login-box .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.login-box .field input{
+  width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.login-box .btn-main{width:100%;margin-top:4px}
+.login-err{
+  margin:0 0 10px;font-size:12.5px;color:var(--red);
+  background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;padding:7px 9px;
+}
+
+/* ヘッダーの店舗・担当表示と操作ボタン */
+.staff-bar{
+  font-size:12.5px;font-weight:700;color:var(--ink);
+  background:#F3F3F4;border-radius:999px;padding:3px 11px;margin-left:8px;white-space:nowrap;
+}
+.hd-btn{
+  font:inherit;font-size:12px;color:var(--muted);cursor:pointer;
+  background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin-left:6px;
+}
+.hd-btn:hover{color:var(--red);border-color:var(--red)}
+
+/* 担当者の一覧（設定タブ） */
+.staff-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.staff-row input[type="text"]{
+  padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.staff-row input[data-staffname]{flex:1 1 auto;min-width:0}
+.staff-row input[data-staffcode]{flex:0 0 96px;width:96px}
+.staff-row .del{
+  flex:0 0 auto;width:28px;height:28px;line-height:1;
+  border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--muted);cursor:pointer;
+}
+.staff-row .del:hover{color:var(--red);border-color:var(--red)}
+
+/* 店舗ログインの設定（設定タブ） */
+#lockBox .field input{
+  width:100%;max-width:280px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.hint.lock-on{color:var(--red);font-weight:700}
+.hint.lock-err{color:var(--red)}
+
+/* 保存した見積もりの一覧 */
+.saved-row{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;background:#fff;
+}
+.saved-main{flex:1 1 auto;min-width:0}
+.saved-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.saved-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.saved-row .btn-sub{flex:0 0 auto;padding:5px 12px}
+.saved-row .saved-del{color:var(--muted)}
+.saved-row .saved-del:hover{color:var(--red);border-color:var(--red)}
+#saveQuoteName{width:100%;max-width:320px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit}
+
+/* 担当者コード画面の補助 */
+.staff-free{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.staff-free #staffFreeList{display:flex;flex-wrap:wrap;gap:6px}
+.link-btn{
+  background:none;border:none;padding:0;font:inherit;font-size:12.5px;
+  color:var(--muted);text-decoration:underline;cursor:pointer;
+}
+.link-btn:hover{color:var(--red)}
+
+/* テンプレートの長押しメニュー */
+.tpl{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.tpl-menu{
+  position:fixed;z-index:60;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 6px 20px rgba(0,0,0,.14);
+  padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:180px;
+}
+.tpl-menu-name{
+  font-size:12.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;
+}
+.tpl-menu .btn-sub{width:100%}
+.tpl-menu .tpl-menu-del{color:var(--red);border-color:var(--red)}
+
+/* マスタ設定: ドコモの商材／店舗独自サービスの区切り */
+.master-sub{margin:10px 0 4px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#FCFCFC}
+.master-sub h4{margin:0 0 7px;font-size:12.5px;color:var(--muted);font-weight:700}
+.master-sub.own{background:#FFFBF5;border-color:#E6D9C2}
+.master-sub.own h4{color:#8A6D2F}
+.own-flag{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:11.5px;color:var(--muted);white-space:nowrap;cursor:pointer;
+}
+.own-flag input{width:14px;height:14px;margin:0;accent-color:#8A6D2F}
+
+/* 担当者コード画面の補足 */
+.login-note{font-size:11.5px;color:var(--muted);line-height:1.5;display:inline-block;margin-top:4px}
+
+/* マスタ設定: 見積もりタイルの並べ替え */
+.sorter{margin:4px 0 2px}
+.sort-cat{
+  font-size:12px;font-weight:700;color:var(--red);letter-spacing:.06em;
+  margin:10px 0 5px;padding:3px 8px;background:#FBF1F3;border-radius:5px;
+}
+.sort-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px;
+  min-height:46px;border:1px dashed transparent;border-radius:8px;
+}
+.sort-grid:empty{
+  border-color:var(--line);position:relative;
+}
+.sort-grid:empty::before{
+  content:"ここへドラッグ";position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--muted);
+}
+.sort-chip{
+  border:1.5px solid var(--line);border-radius:8px;background:#FBFBFB;
+  padding:8px 5px;text-align:center;cursor:grab;
+  display:flex;align-items:center;justify-content:center;min-height:46px;
+  -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
+}
+.sort-chip .t-name{
+  font-size:11.5px;line-height:1.3;font-weight:600;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  word-break:break-word;
+}
+.sort-chip.own{border-color:#E6D9C2;background:#FFFBF5}
+.sort-chip.sort-src{opacity:.28;border-style:dashed}
+.sort-ghost{
+  position:fixed;z-index:70;pointer-events:none;margin:0;
+  background:#fff;border-color:var(--red);
+  box-shadow:0 8px 22px rgba(0,0,0,.22);
+  transform-origin:center;
+}
+body.sorting{cursor:grabbing;touch-action:none}
+body.sorting .sort-chip{cursor:grabbing}
+@media (max-width:600px){
+  .sort-grid{grid-template-columns:repeat(3,1fr)}
+}
+
+/* マスタ設定の先頭（担当者の選択へ戻る） */
+.master-top{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;
+}
+.master-top .hint{margin:0}
+
+/* 見積書の発行元（店舗名・担当者・電話番号） */
+.sheet .sheet-sign{
+  margin-top:14px;padding-top:7px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--ink);text-align:right;
+}
+.sheet .sheet-sign b{font-size:12.5px}
+
+/* 料金マスタの履歴 */
+.hist-save{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.hist-save input{
+  flex:1;min-width:200px;padding:7px 9px;border:1px solid var(--line);
+  border-radius:7px;font:inherit;font-size:13px;
+}
+.hist-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.hist-row{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#FCFCFC;
+}
+.hist-info{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.hist-info b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-info .hint{margin:0;font-size:11.5px}
+.hist-auto{
+  display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;
+  background:#EEE;color:var(--muted);font-size:10.5px;font-weight:600;vertical-align:1px;
+}
+.hist-row .btn-sub{white-space:nowrap}
+.hist-more{
+  display:inline-block;margin-left:6px;
+  color:var(--muted);font-size:10.5px;font-weight:600;vertical-align:1px;
+}
+.hist-diff{margin-top:3px}
+.hist-diff summary{
+  font-size:11.5px;color:var(--muted);cursor:pointer;
+  list-style:none;user-select:none;
+}
+.hist-diff summary::-webkit-details-marker{display:none}
+.hist-diff summary::before{content:"▸ "}
+.hist-diff[open] summary::before{content:"▾ "}
+.hist-diff ul{margin:3px 0 0;padding-left:1.1em;font-size:11.5px;line-height:1.5}
+.hist-diff li{margin:1px 0;word-break:break-word;white-space:normal}
+.hist-diff .hist-omit{color:var(--muted);list-style:none;margin-left:-1.1em}
+
+/* 規約などの文書 */
+.doc-box{max-width:720px;display:flex;flex-direction:column;max-height:88vh}
+.doc-body{
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  margin:4px 0 14px;padding-right:6px;font-size:13px;line-height:1.75;text-align:left;
+}
+.doc-body h2{font-size:15px;margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.doc-body h3{font-size:14px;margin:16px 0 4px}
+.doc-body h4,.doc-body h5{font-size:13px;margin:12px 0 4px}
+.doc-body p{margin:6px 0}
+.doc-body ul,.doc-body ol{margin:6px 0;padding-left:1.4em}
+.doc-body li{margin:2px 0}
+.doc-body hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.doc-body blockquote{
+  margin:8px 0;padding:6px 10px;border-left:3px solid var(--line);
+  background:#FAFAFA;color:var(--muted);
+}
+.doc-body code{background:#F2F2F3;border-radius:4px;padding:1px 4px;font-size:12px}
+.doc-body table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}
+.doc-body th,.doc-body td{border:1px solid var(--line);padding:4px 7px;text-align:left;vertical-align:top}
+.doc-body th{background:#F7F7F8;font-weight:600}
+
+/* このアプリについて */
+.about-box{max-width:520px;text-align:left}
+.about-list{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0 0 12px;font-size:12.5px}
+.about-list dt{color:var(--muted);white-space:nowrap}
+.about-list dd{margin:0;word-break:break-word}
+.about-note{font-size:11.5px;color:var(--muted);line-height:1.65;margin:0 0 9px}
+.about-links{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 14px;font-size:12.5px}
+.about-links a{color:var(--red)}
+
+/* マスタ設定: 選択式（金額のプルダウン）の編集 */
+.choice-btn{padding:4px 8px;font-size:11.5px;white-space:nowrap}
+.choice-box{
+  margin:0 0 8px 34px;padding:9px 11px;
+  border:1px solid var(--line);border-left:3px solid var(--red);
+  border-radius:0 8px 8px 0;background:#FDFBFC;
+}
+.choice-box .hint{margin:0 0 7px}
+.choice-row{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.choice-row input[type="number"]{
+  width:96px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+  font:inherit;font-size:13px;text-align:right;
+}
+.choice-row input[type="text"]{
+  flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+  font:inherit;font-size:13px;
+}
+.choice-row .price{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.choice-box .actions{margin:8px 0 0}
+@media (max-width:600px){
+  .choice-box{margin-left:0}
+}
+
+/* 更新履歴 */
+.hd-btn.has-new{position:relative}
+.hd-btn.has-new::after{
+  content:"";position:absolute;top:2px;right:2px;
+  width:7px;height:7px;border-radius:50%;background:#FFD24A;
+}
+.about-log{margin:0 0 12px}
+.about-log .btn-sub{width:100%}
+#aboutLogBox{
+  margin-top:8px;max-height:240px;overflow-y:auto;
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#FCFCFC;
+}
+.log-entry{padding:6px 0;border-bottom:1px dashed var(--line)}
+.log-entry:last-child{border-bottom:none}
+.log-head{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--ink)}
+.log-date{margin-left:auto;font-size:11px;font-weight:400;color:var(--muted)}
+.log-new{
+  padding:0 5px;border-radius:4px;background:var(--red);color:#fff;
+  font-size:10px;font-weight:700;
+}
+.log-entry.is-new .log-head{color:var(--red)}
+.log-entry ul{margin:3px 0 0;padding-left:17px}
+.log-entry li{font-size:11.5px;line-height:1.6;color:var(--muted)}
+
+/* マスタ設定: 爆アゲの還元率 */
+.baku-flag input[type="number"]{
+  width:44px;padding:2px 3px;margin:0 2px;border:1px solid var(--line);
+  border-radius:5px;font:inherit;font-size:11.5px;text-align:right;
+}
