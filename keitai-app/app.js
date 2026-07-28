@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.6";
+  var APP_VERSION = "1.5.7";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -346,6 +346,12 @@
     MASTER.options.forEach(function (o) {
       if (o.id === "dhits" && o.priceChoices) { delete o.priceChoices; delete o.priceLabels; }
     });
+    // photocube 256GB: アクセサリ → バックアップの買い切りオプションへ移動
+    if (MASTER.options.some(function (o) { return o.id === "op_photocube256"; })) {
+      MASTER.accessories = (MASTER.accessories || []).filter(function (a) {
+        return a.id !== "acc_1785222792120";
+      });
+    }
     // NETFLIX 旧3項目（広告付ST/ST/PR）→ 料金選択式の1項目「netflix」へ統合
     var nfOldIds = ["op_1784430991714", "op_1784431033021", "op_1784431044456"];
     MASTER.options = MASTER.options.filter(function (o) { return nfOldIds.indexOf(o.id) < 0; });
@@ -1273,10 +1279,17 @@
 
     // オプション・サービス（すべて月額・金額選択対応）
     var optRows = [], optTotal = 0, bonusRows = [];
+    /* once:true のオプションは買い切り（一括）。月額には入れず、初期費用として数える。
+     * 代理店の物販をカテゴリの中に並べたい、という運用のため。 */
+    var onceOptRows = [];
     var bonusFree = maxBonusFree(st, plan.id);
     MASTER.options.forEach(function (o) {
       if (!st.options[o.id]) return;
       var pr = optPrice(o, st);
+      if (o.once) {
+        onceOptRows.push({ name: o.name, amount: pr, where: o.pay === "bill" ? "bill" : "store" });
+        return;
+      }
       var lb = o.priceLabels && o.priceLabels[String(pr)];
       if (bonusFree[o.id]) {
         // 行は見積書で料金プランの直後にまとめるため optRows とは分けて返す
@@ -1395,6 +1408,7 @@
     var dcardGoldBase = tier.price + voicePrice + net.total;
     MASTER.options.forEach(function (o) {
       if (!st.options[o.id] || !o.carrier) return;
+      if (o.once) return;            // 買い切りは月々の利用料金ではないため対象外
       if (bonusFree[o.id]) return;   // 選べる特典で0円のものは支払いが無いため対象外
       dcardGoldBase += optPrice(o, st);
     });
@@ -1453,6 +1467,9 @@
     (MASTER.feeItems || []).forEach(function (f) {
       if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: f.pay === "bill" ? "bill" : "store" });
     });
+    onceOptRows.forEach(function (o) {
+      initialRows.push({ name: o.name + "（一括）", amount: o.amount, where: o.where });
+    });
     accOnceRows.forEach(function (a) {
       initialRows.push({ name: a.name + "（アクセサリ・一括）", amount: a.amount, where: "store" });
     });
@@ -1471,6 +1488,7 @@
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
+      onceOptRows: onceOptRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
@@ -1771,13 +1789,15 @@
                 var lb = o.priceLabels && o.priceLabels[String(c)] ? esc(o.priceLabels[String(c)]) + " " : "";
                 return '<option value="' + c + '"' + (c === cur ? " selected" : "") + ">" + lb + yen(c) + "/月</option>";
               }).join("") + "</select>";
+        } else if (o.once) {
+          priceHtml = '<span class="t-price">' + yen(optPrice(o, state)) + "<br><small>一括</small></span>";
         } else {
           priceHtml = '<span class="t-price">' + yen(o.price) + "/月</span>";
         }
         // 区分（新規／継続／廃止）は、対象にしているオプションだけに表示する
-        var kb = state.optionKubun[o.id] || (on ? "new" : "");
+        var kb = o.once ? "" : (state.optionKubun[o.id] || (on ? "new" : ""));
         var isOff = kb === "off";
-        var kubunHtml = (on || isOff)
+        var kubunHtml = (o.once ? false : (on || isOff))
           ? '<span class="t-kubun">'
             + [["new", "新規"], ["keep", "継続"], ["off", "廃止"]].map(function (k) {
                 return '<label class="kb' + (kb === k[0] ? " on" : "") + '">'
@@ -2152,7 +2172,13 @@
     var netSheet = netSvcCalc(state);
     netSheet.rows.forEach(function (n) { kNew.push({ name: n.name, price: n.price }); });
     netSheet.off.forEach(function (n) { kOff.push(n.name); });
+    var kOnce = [];
     MASTER.options.forEach(function (o) {
+      if (o.once) {
+        // 買い切りは契約オプションではないので、区分ではなく販売品として出す
+        if (state.options[o.id]) kOnce.push({ name: o.name, price: optPrice(o, state) });
+        return;
+      }
       var kb = state.optionKubun[o.id] || (state.options[o.id] ? "new" : "");
       if (!kb) return;
       var pr = optPrice(o, state);
@@ -2164,6 +2190,11 @@
     });
     h += "<h3>オプション（新規・継続・廃止）</h3><table><tbody>";
     var anyOpt = false;
+    if (kOnce.length) {
+      anyOpt = true;
+      h += row("<b>販売品</b>", '<div class="kubun-list">'
+        + kOnce.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "（一括）</i>"; }).join("") + "</div>");
+    }
     if (kNew.length) {
       anyOpt = true;
       h += row("<b>新規</b>", '<div class="kubun-list">'
@@ -2527,6 +2558,12 @@
           }).join("")
         + "</select>"
         + '<label class="gold-flag"><input type="checkbox" data-op-gold="' + o.__i + '"' + (o.carrier ? " checked" : "") + '>GOLD10%</label>'
+        + '<label class="gold-flag"><input type="checkbox" data-op-once="' + o.__i + '"' + (o.once ? " checked" : "") + ">一括</label>"
+        + (o.once
+            ? '<select data-op-pay="' + o.__i + '">'
+              + '<option value="store"' + (o.pay !== "bill" ? " selected" : "") + ">店頭払い</option>"
+              + '<option value="bill"' + (o.pay === "bill" ? " selected" : "") + ">翌月合算</option></select>"
+            : "")
         + (o.priceChoices ? '<span class="price">選択式</span>' : "");
     }
     function feeExtra(o) {
@@ -2550,6 +2587,8 @@
     h += "</div>";
 
     h += '<div class="master-plan"><h3>オプション・サービス（月額）</h3>';
+    h += '<p class="hint">「<strong>一括</strong>」にチェックを入れると、月額ではなく<strong>買い切り</strong>として扱い、'
+      + '金額は「⑦初期費用」に入ります（タイルはそのカテゴリのまま。物販をカテゴリの中に並べたいとき用）。</p>';
     h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は下の「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
       + '「<strong>店舗独自</strong>」にチェックを入れると、下の「店舗独自サービス」へ移ります。<strong>見積もり画面の表示は変わりません</strong>（従来どおりカテゴリごとに並びます）。</p>';
     h += '<div class="master-sub"><h4>ドコモの商材</h4>';
@@ -2849,6 +2888,10 @@
     document.querySelectorAll(".tab-page").forEach(function (pg) {
       pg.classList.toggle("active", pg.id === "tab-" + name);
     });
+    // マスタ設定を開いている間はタブを出さない。
+    // 出口は「← 担当者の選択に戻る」だけにして、担当者を決めずに見積もりへ移れないようにする
+    var nav = $("tabsNav");
+    if (nav) nav.hidden = (name === "master");
     if (name === "sheet") renderSheet();
     if (name === "staff") renderStaffSheet();
     if (name === "master") renderMasterTab();
@@ -3030,6 +3073,17 @@
         list[+attr("cat")].category = t.value;
       } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
         list[+attr("gold")].carrier = t.checked;
+      } else if (evType === "change" && prefix === "op" && attr("once") != null) {
+        var oo = list[+attr("once")];
+        oo.once = t.checked;
+        if (oo.once && !oo.pay) oo.pay = "store";
+        markEdited();
+        renderMasterTab();
+        renderOptionList();
+        recalc();
+        return true;
+      } else if (evType === "change" && prefix === "op" && attr("pay") != null) {
+        list[+attr("pay")].pay = t.value;
       } else if (evType === "change" && attr("own") != null) {
         list[+attr("own")].own = t.checked;
         markEdited();

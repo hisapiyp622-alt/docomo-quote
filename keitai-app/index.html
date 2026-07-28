@@ -16,7 +16,7 @@
     <button class="hd-btn" id="switchStaffBtn" type="button">担当切替</button>
     <button class="hd-btn" id="logoutBtn" type="button" hidden>ログアウト</button>
     <span class="sync-status" id="syncStatus"></span></h1>
-  <nav class="tabs" role="tablist">
+  <nav class="tabs no-print" id="tabsNav" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
@@ -346,7 +346,7 @@
   <section id="tab-master" class="tab-page no-print">
     <div class="master-top">
       <button class="btn-sub" id="masterBackBtn" type="button">← 担当者の選択に戻る</button>
-      <span class="hint">マスタ設定は担当者コードの画面から開きます（見積もり画面には出ません）。<br>ほかのタブを押すと、担当者コードの入力に戻ります。</span>
+      <span class="hint">マスタ設定は担当者コードの画面から開きます（見積もり画面には出ません）。<br>見積もりに戻るときは左の「担当者の選択に戻る」から。</span>
     </div>
     <div class="card" id="lockBox">
       <h2>店舗ログイン</h2>

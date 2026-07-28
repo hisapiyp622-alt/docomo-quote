@@ -1,12 +1,12 @@
 /* =========================================================
  * 料金マスタ（店舗標準フォーマット初期値）
- * 2026-07-23 に本人運用中のマスタ構成を標準として焼き込み。
+ * 2026-07-28 に阪南店の運用マスタを標準として焼き込み。
  * 料金は2026-07-10のドコモ公式調査値ベース＋店舗実売価格。
- * マスタ設定タブの編集(localStorage)がここより優先される。
+ * マスタ設定の編集(localStorage)がここより優先される。
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "updated": "2026-07-23（店舗標準フォーマット・料金は公式調査値ベース）",
+  "updated": "2026-07-28（阪南店の運用マスタを標準として反映・料金は公式調査値ベース＋店舗実売価格）",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -421,7 +421,8 @@ const DEFAULT_DATA = {
       ],
       "note": "機種により330〜1,720円（2022/9/15以降発売機種）",
       "category": "補償",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "anshin_pack",
@@ -429,37 +430,8 @@ const DEFAULT_DATA = {
       "price": 462,
       "note": "",
       "category": "補償",
-      "carrier": true
-    },
-    {
-      "id": "dvaluepass",
-      "name": "dバリューパス パック",
-      "price": 682,
-      "note": "旧いちおしパック（2026年3月改定・初回31日無料）",
-      "category": "バックアップ",
-      "carrier": true
-    },
-    {
-      "id": "ag_support",
-      "name": "店舗あんしんサポートmini",
-      "price": 550,
-      "category": "その他",
-      "own": true
-    },
-    {
-      "id": "ag_secpack",
-      "name": "あんしんセキュリティパック",
-      "price": 1650,
-      "category": "セキュリティ",
       "carrier": true,
-      "own": true
-    },
-    {
-      "id": "ag_hozon",
-      "name": "hozon",
-      "price": 550,
-      "category": "バックアップ",
-      "own": true
+      "own": false
     },
     {
       "id": "ag_connect_p",
@@ -476,6 +448,22 @@ const DEFAULT_DATA = {
       "own": true
     },
     {
+      "id": "dvaluepass",
+      "name": "dバリューパス パック",
+      "price": 682,
+      "note": "旧いちおしパック（2026年3月改定・初回31日無料）",
+      "category": "バックアップ",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "ag_hozon",
+      "name": "hozon",
+      "price": 550,
+      "category": "バックアップ",
+      "own": true
+    },
+    {
       "id": "op_1784430850898",
       "name": "photocube 分割36回払い",
       "price": 919,
@@ -484,38 +472,83 @@ const DEFAULT_DATA = {
       "own": true
     },
     {
-      "id": "op_1784430913381",
-      "name": "店頭あんしんサポート定額",
-      "price": 990,
-      "category": "その他",
-      "note": "",
+      "id": "op_photocube256",
+      "name": "photocube 256GB",
+      "price": 31130,
+      "category": "バックアップ",
+      "note": "買い切り（一括）",
+      "once": true,
+      "pay": "store",
       "own": true
+    },
+    {
+      "id": "ag_secpack",
+      "name": "あんしんセキュリティパック",
+      "price": 1650,
+      "category": "セキュリティ",
+      "carrier": false,
+      "own": true
+    },
+    {
+      "id": "op_1784460515071",
+      "name": "あんしんセキュリティ詐欺電話対策",
+      "price": 999,
+      "category": "セキュリティ",
+      "note": "",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "op_1784460542023",
+      "name": "あんしんセキュリティ スタンダード",
+      "price": 550,
+      "category": "セキュリティ",
+      "note": "",
+      "carrier": true,
+      "own": false
     },
     {
       "id": "op_1784430972981",
       "name": "amazon prime",
       "price": 600,
       "category": "エンタメ",
-      "note": ""
+      "note": "",
+      "own": false
     },
     {
       "id": "netflix",
       "name": "NETFLIX",
       "price": 890,
-      "priceChoices": [890, 1590, 2290],
-      "priceLabels": { "890": "広告つきスタンダード", "1590": "スタンダード", "2290": "プレミアム" },
+      "priceChoices": [
+        890,
+        1590,
+        2290
+      ],
+      "priceLabels": {
+        "890": "広告つきスタンダード",
+        "1590": "スタンダード",
+        "2290": "プレミアム"
+      },
       "category": "エンタメ",
-      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円"
+      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円",
+      "own": false
     },
     {
       "id": "bk_disney",
       "name": "ディズニープラス（爆アゲ）",
       "price": 1250,
-      "priceChoices": [1250, 1670],
-      "priceLabels": { "1250": "スタンダード", "1670": "プレミアム" },
+      "priceChoices": [
+        1250,
+        1670
+      ],
+      "priceLabels": {
+        "1250": "スタンダード",
+        "1670": "プレミアム"
+      },
       "category": "エンタメ",
       "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "bk_lemino",
@@ -523,7 +556,8 @@ const DEFAULT_DATA = {
       "price": 1540,
       "category": "エンタメ",
       "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "dazn",
@@ -531,38 +565,49 @@ const DEFAULT_DATA = {
       "price": 4200,
       "category": "エンタメ",
       "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "nba",
       "name": "NBA docomo",
       "price": 2728,
-      "priceChoices": [2728, 1078],
-      "priceLabels": { "2728": "通常", "1078": "ahamo" },
+      "priceChoices": [
+        2728,
+        1078
+      ],
+      "priceLabels": {
+        "1078": "ahamo",
+        "2728": "通常"
+      },
       "category": "エンタメ",
       "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "bk_spotify",
       "name": "Spotify Premium（爆アゲ）",
       "price": 1080,
       "category": "エンタメ",
-      "note": "最大25%還元"
+      "note": "最大25%還元",
+      "own": false
     },
     {
       "id": "bk_youtube",
       "name": "YouTube Premium（爆アゲ）",
       "price": 1280,
       "category": "エンタメ",
-      "note": "最大10%還元"
+      "note": "最大10%還元",
+      "own": false
     },
     {
       "id": "bk_jump",
       "name": "週刊少年ジャンプ 定期購読（爆アゲ）",
       "price": 980,
       "category": "エンタメ",
-      "note": "最大20%還元"
+      "note": "最大20%還元",
+      "own": false
     },
     {
       "id": "bk_danime",
@@ -570,16 +615,26 @@ const DEFAULT_DATA = {
       "price": 660,
       "category": "エンタメ",
       "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "bk_googleone",
       "name": "Google One（爆アゲ）",
       "price": 290,
-      "priceChoices": [290, 440, 1450],
-      "priceLabels": { "290": "ベーシック(100GB)", "440": "スタンダード(200GB)", "1450": "Google AI Plus(2TB)" },
+      "priceChoices": [
+        290,
+        440,
+        1450
+      ],
+      "priceLabels": {
+        "290": "ベーシック(100GB)",
+        "440": "スタンダード(200GB)",
+        "1450": "Google AI Plus(2TB)"
+      },
       "category": "エンタメ",
-      "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元"
+      "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元",
+      "own": false
     },
     {
       "id": "bk_appleone",
@@ -590,7 +645,8 @@ const DEFAULT_DATA = {
         1200,
         1980
       ],
-      "note": "個人1,200/ファミリー1,980・最大10%還元"
+      "note": "個人1,200/ファミリー1,980・最大10%還元",
+      "own": false
     },
     {
       "id": "dphoto",
@@ -598,7 +654,8 @@ const DEFAULT_DATA = {
       "price": 594,
       "category": "エンタメ",
       "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "dmagazine",
@@ -606,7 +663,8 @@ const DEFAULT_DATA = {
       "price": 580,
       "category": "エンタメ",
       "note": "雑誌読み放題・初回7日間無料",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "dhits",
@@ -614,7 +672,8 @@ const DEFAULT_DATA = {
       "price": 690,
       "category": "エンタメ",
       "note": "音楽聴き放題",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
       "id": "dhealthcare",
@@ -622,22 +681,25 @@ const DEFAULT_DATA = {
       "price": 440,
       "category": "エンタメ",
       "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
-      "carrier": true
+      "carrier": true,
+      "own": false
     },
     {
-      "id": "op_1784460515071",
-      "name": "あんしんセキュリティ詐欺電話対策",
-      "price": 999,
-      "category": "セキュリティ",
+      "id": "op_1785221584602",
+      "name": "店頭あんしんサポート定額プラン",
+      "price": 990,
+      "category": "その他",
       "note": "",
+      "own": false,
       "carrier": true
     },
     {
-      "id": "op_1784460542023",
-      "name": "あんしんセキュリティ スタンダード",
+      "id": "op_1785221644318",
+      "name": "店頭安心サポートミニプラン",
       "price": 550,
-      "category": "セキュリティ",
+      "category": "その他",
       "note": "",
+      "own": false,
       "carrier": true
     }
   ],
@@ -650,25 +712,25 @@ const DEFAULT_DATA = {
       "own": true
     },
     {
-      "id": "fi_1784431925115",
+      "id": "fi_1785221683603",
       "name": "初期設定・データ移行サポート",
       "price": 2200,
-      "pay": "bill",
-      "own": true
+      "own": false,
+      "pay": "bill"
     },
     {
-      "id": "ag_setup",
+      "id": "fi_1785221704936",
       "name": "初期設定・データ移行サポート(持ち込み)",
       "price": 3300,
-      "pay": "bill",
-      "own": true
+      "own": false,
+      "pay": "bill"
     },
     {
-      "id": "fi_1784460259803",
-      "name": "あんしん店頭サポート/回",
+      "id": "fi_1785221719101",
+      "name": "あんしん店頭サポート",
       "price": 3300,
-      "pay": "bill",
-      "own": true
+      "own": false,
+      "pay": "bill"
     }
   ],
   "kaedoki": {
@@ -750,19 +812,21 @@ const DEFAULT_DATA = {
       "price": 2728
     },
     {
+      "id": "acc_1784850167723",
+      "name": "ACアダプタ",
+      "price": 2420
+    },
+    {
       "id": "acc_1784460060451",
       "name": "ハルトコーティング(両面)",
-      "price": 6600
+      "price": 6600,
+      "own": true
     },
     {
       "id": "acc_1784460083417",
       "name": "ハルトコーティング(片面)",
-      "price": 4400
-    },
-    {
-      "id": "acc_1784850167723",
-      "name": "ACアダプタ",
-      "price": 2420
+      "price": 4400,
+      "own": true
     }
   ]
 };
