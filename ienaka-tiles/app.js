@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.0.1-tiles（試作）";
+  var APP_VERSION = "2.0.2-tiles（試作）";
   var KEY = "ienaka-tiles-v1"; // 試作版の保存領域（製品版とは分離）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */

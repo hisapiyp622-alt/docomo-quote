@@ -51,6 +51,8 @@
     sel.value = v;
     sel.dispatchEvent(new Event("change", { bubbles: true }));
   }
+  // ロゴ画像の拡張子（この順に探して、最初に読めたものを使う）
+  var LOGO_EXT = ["svg", "png", "jpg", "jpeg", "webp"];
   // ロゴ画像があれば画像、無ければ識別用のマーク＋社名を表示
   function logoInto(box, p) {
     var fb = document.createElement("span");
@@ -65,7 +67,7 @@
     fb.appendChild(mark);
     fb.appendChild(txt);
     box.appendChild(fb);
-    ["svg", "png"].forEach(function (ext) {
+    LOGO_EXT.forEach(function (ext) {
       var img = new Image();
       img.onload = function () {
         if (box.querySelector("img")) return;
@@ -81,7 +83,7 @@
   /* 商材タイル: logos/product-<値>.svg（または .png）を置くとロゴ画像で表示する。
    * 画像が無い間は商材名の文字のまま（動作に支障はない）。 */
   function productLogo(btn, value, label) {
-    ["svg", "png"].forEach(function (ext) {
+    LOGO_EXT.forEach(function (ext) {
       var img = new Image();
       img.onload = function () {
         if (btn.querySelector("img")) return;
