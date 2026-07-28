@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-58";
+  var APP_VERSION = "2026.07.25-59";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -135,7 +135,7 @@
     return {
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
-      voice: "none", voiceChange: false, planChange: false, netSvc: {},
+      voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
@@ -428,7 +428,7 @@
   var NET_SVC = [
     { id: "rusuban", name: "留守番電話サービス", price: 330, freeWithKake: true },
     { id: "catchhone", name: "キャッチホン", price: 220, freeWithKake: true },
-    { id: "melody", name: "メロディコール", price: 110 }
+    { id: "melody", name: "メロディコール", price: 110, canOff: true }
   ];
   // オプションパック（上の3つ＋転送でんわ をまとめると割引。転送でんわは単品でも無料）
   var NET_PACK_PRICE = 440;
@@ -438,7 +438,9 @@
   // 選択中のネットワークサービスを、料金を確定させた行にして返す
   function netSvcCalc(st) {
     var free = kakeVoice(st.voice);
-    var picked = NET_SVC.filter(function (n) { return (st.netSvc || {})[n.id]; });
+    var offs = st.netSvcOff || {};
+    var picked = NET_SVC.filter(function (n) { return (st.netSvc || {})[n.id] && !offs[n.id]; });
+    var offRows = NET_SVC.filter(function (n) { return n.canOff && offs[n.id]; });
     var rows = [], total = 0;
     if (!free && picked.length === NET_SVC.length) {
       rows.push({ name: NET_PACK_NAME, price: NET_PACK_PRICE });
@@ -450,7 +452,8 @@
         total += f ? 0 : n.price;
       });
     }
-    return { rows: rows, total: total, pack: rows.length === 1 && rows[0].name === NET_PACK_NAME };
+    return { rows: rows, total: total, off: offRows,
+      pack: rows.length === 1 && rows[0].name === NET_PACK_NAME };
   }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
@@ -885,19 +888,27 @@
   function renderNetSvc() {
     var free = kakeVoice(state.voice);
     var picked = state.netSvc || {};
-    var all = NET_SVC.every(function (n) { return picked[n.id]; });
+    var offs = state.netSvcOff || {};
+    var all = NET_SVC.every(function (n) { return picked[n.id] && !offs[n.id]; });
     $("netSvcList").innerHTML = NET_SVC.map(function (n) {
       var f = free && n.freeWithKake;
-      var pr = f ? "無料（通話オプションに込み）"
+      // 廃止のときは「廃止」の文字が重ならないよう、元の金額に取り消し線を引く
+      var pr = offs[n.id] ? '<span style="text-decoration:line-through;opacity:.5">' + yen(n.price) + "/月</span>"
+        : f ? "無料（通話オプションに込み）"
         : (!free && all ? "パック適用" : yen(n.price) + "/月");
-      return '<div class="opt-row"><label class="check"><input type="checkbox" data-netsvc="' + n.id + '"'
-        + (picked[n.id] ? " checked" : "") + "> " + esc(n.name) + '</label><span class="price">' + pr + "</span></div>";
+      var h = '<div class="opt-row"><label class="check"><input type="checkbox" data-netsvc="' + n.id + '"'
+        + (picked[n.id] && !offs[n.id] ? " checked" : "") + "> " + esc(n.name) + "</label>";
+      if (n.canOff) {
+        h += '<label class="check net-off"><input type="checkbox" data-netsvcoff="' + n.id + '"'
+          + (offs[n.id] ? " checked" : "") + "> 廃止</label>";
+      }
+      return h + '<span class="price">' + pr + "</span></div>";
     }).join("");
     var net = netSvcCalc(state);
     var msg;
     if (free) {
       msg = "通話オプション（880円／1,980円）を付けているため、留守番電話・キャッチホンは無料です。";
-      if (picked.melody) msg += "メロディコールは110円/月かかります。";
+      if (picked.melody && !offs.melody) msg += "メロディコールは110円/月かかります。";
     } else if (net.pack) {
       msg = "3つまとめて " + yen(NET_PACK_PRICE) + "/月（オプションパック。単品合計660円のところ220円おトク）。転送でんわも無料で付けられます。";
     } else {
@@ -1320,6 +1331,7 @@
     var secWari = h; h = "";
     // オプション（新規／継続／廃止をまとめる）
     var kNew = [], kKeep = [], kOff = [];
+    netSvcCalc(state).off.forEach(function (n) { kOff.push(n.name); });
     MASTER.options.forEach(function (o) {
       var kb = state.optionKubun[o.id] || (state.options[o.id] ? "new" : "");
       if (!kb) return;
@@ -2187,10 +2199,20 @@
       });
     });
     $("netSvcList").addEventListener("change", function (e) {
-      var id = e.target.getAttribute && e.target.getAttribute("data-netsvc");
-      if (!id) return;
+      var t = e.target;
+      if (!t.getAttribute) return;
       if (!state.netSvc) state.netSvc = {};
-      state.netSvc[id] = e.target.checked;
+      if (!state.netSvcOff) state.netSvcOff = {};
+      var id = t.getAttribute("data-netsvc");
+      if (id) {
+        state.netSvc[id] = t.checked;
+        if (t.checked) state.netSvcOff[id] = false;   // 付けるなら廃止は外す
+      } else {
+        id = t.getAttribute("data-netsvcoff");
+        if (!id) return;
+        state.netSvcOff[id] = t.checked;
+        if (t.checked) state.netSvc[id] = false;      // 廃止するなら付けるは外す
+      }
       recalc();
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });

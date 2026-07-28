@@ -321,3 +321,6 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sub-checks .sub-label{font-size:12px;font-weight:700;color:var(--muted)}
 .sub-checks .check{margin:2px 0;font-size:13px}
 .sub-checks .sub-note{font-size:12px;font-weight:700;color:var(--red)}
+
+/* ネットワークサービスの「廃止」チェック（②通話・メール） */
+.opt-row .net-off{margin-left:10px;font-size:12px;color:var(--red);white-space:nowrap}
