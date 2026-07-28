@@ -220,6 +220,15 @@
         <input type="number" id="devicePrice" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <div class="field">
+        <label for="couponOff">クーポン値引き</label>
+        <input type="number" id="couponOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="campaignOff">キャンペーン値引き</label>
+        <input type="number" id="campaignOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <p class="hint" id="deviceOffHint" hidden></p>
+      <div class="field">
         <label for="payMethod">支払い方法</label>
         <select id="payMethod">
           <option value="none">端末購入なし</option>
