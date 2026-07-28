@@ -20,6 +20,7 @@
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
+    <button class="tab" data-tab="saved" type="button">保存</button>
     <button class="tab" data-tab="master" type="button">マスタ設定</button>
   </nav>
 </header>
@@ -317,7 +318,51 @@
   </section>
 
   <!-- ============ マスタ設定タブ ============ -->
+  <section id="tab-saved" class="tab-page no-print">
+    <div class="card">
+      <h2>見積もりの保存</h2>
+      <p class="hint">いま入力している3パターン（A・B・C）をまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
+      <div class="field">
+        <label for="saveQuoteName">名前</label>
+        <input type="text" id="saveQuoteName" maxlength="40" placeholder="お客様名 2026/07/28">
+      </div>
+      <div class="actions">
+        <button class="btn-main" id="saveQuoteBtn" type="button">現在の見積もりを保存</button>
+      </div>
+      <p class="hint" id="saveQuoteMsg" hidden></p>
+    </div>
+    <div class="card full">
+      <h2>保存した見積もり</h2>
+      <div id="savedList"><!-- JSで生成 --></div>
+      <p class="hint">最大50件まで保存できます。担当者ごとに分かれて保存されます。</p>
+    </div>
+  </section>
+
   <section id="tab-master" class="tab-page no-print">
+    <div class="card" id="lockBox">
+      <h2>店舗ログイン</h2>
+      <p class="hint" id="lockState"></p>
+      <div class="field">
+        <label for="lockStoreId">店舗ID</label>
+        <input type="text" id="lockStoreId" placeholder="例）hannan01" autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="lockPass">パスワード</label>
+        <input type="password" id="lockPass" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="lockPass2">パスワード（確認）</label>
+        <input type="password" id="lockPass2" autocomplete="new-password">
+      </div>
+      <div class="actions">
+        <button class="btn-main" id="lockSaveBtn" type="button">この内容で設定する</button>
+        <button class="btn-sub" id="lockClearBtn" type="button" hidden>ログインを解除する</button>
+      </div>
+      <p class="hint" id="lockMsg" hidden></p>
+      <p class="hint">設定すると、アプリを開いたときに店舗IDとパスワードを求めます。ヘッダーの「ログアウト」でこの画面に戻せます。<br>
+        <strong>このロックは画面を覆うだけの簡易的なものです。</strong>見積もりは端末内に暗号化せずに保存されるため、端末を自由に操作できる方（ブラウザの開発者ツールや設定を使える方）には、ロック中でも中身を見ることやロックの解除ができます。盗難・紛失への備えとしては、<strong>端末自体の画面ロックを必ず併用してください。</strong><br>
+        複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>SETUP.md の手順でクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
+    </div>
     <div class="card">
       <h2>店舗設定</h2>
       <p class="hint" id="accountInfo"></p>
@@ -379,6 +424,11 @@
       <input type="password" id="staffCode" inputmode="numeric" autocomplete="off" required>
     </div>
     <button class="btn-main" type="submit">開く</button>
+    <div class="staff-free" id="staffFreeWrap" hidden>
+      <p class="login-lead">コードを設定していない担当者は、名前を押してください。</p>
+      <div id="staffFreeList"></div>
+    </div>
+    <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">担当者の登録・コードの変更はこちら</button></p>
   </form>
 </div>
 
