@@ -37,7 +37,7 @@
      同一ドメインに社内版のデータが残っているため、拾うと阪南店のデータを引き継いでしまう
 2. `index.html` — イエナカ見積もりへのリンク（`.app-link`）なし
 3. `firebase-config.js` — 空の雛形（`KEITAI_FIREBASE`）。**レシピアプリと共用の `recipe-box-bd642` は使わない**
-4. `sw.js`（`CACHE = "kq-v1"` 系）、`manifest.webmanifest`、`icon.svg`、`README.md`、`SETUP.md`、`firestore.rules` は製品版専用
+4. `sw.js`（`CACHE = "kq-v1"` 系）、`manifest.webmanifest`、`icon.svg`、`README.md`、`firestore.rules` は製品版専用（社内用の手順書は `_internal/` にあり、GitHub Pagesでは公開されない）
 5. `data.js` / `style.css` はルートと同一（同期時はそのままコピーでよい）
 
 ### イエナカ見積もり（`/ienaka/` → `/ienaka-app/`）

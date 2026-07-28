@@ -556,6 +556,28 @@ body.sorting .sort-chip{cursor:grabbing}
 .hist-diff li{margin:1px 0;word-break:break-word;white-space:normal}
 .hist-diff .hist-omit{color:var(--muted);list-style:none;margin-left:-1.1em}
 
+/* 規約などの文書 */
+.doc-box{max-width:720px;display:flex;flex-direction:column;max-height:88vh}
+.doc-body{
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  margin:4px 0 14px;padding-right:6px;font-size:13px;line-height:1.75;text-align:left;
+}
+.doc-body h2{font-size:15px;margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.doc-body h3{font-size:14px;margin:16px 0 4px}
+.doc-body h4,.doc-body h5{font-size:13px;margin:12px 0 4px}
+.doc-body p{margin:6px 0}
+.doc-body ul,.doc-body ol{margin:6px 0;padding-left:1.4em}
+.doc-body li{margin:2px 0}
+.doc-body hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.doc-body blockquote{
+  margin:8px 0;padding:6px 10px;border-left:3px solid var(--line);
+  background:#FAFAFA;color:var(--muted);
+}
+.doc-body code{background:#F2F2F3;border-radius:4px;padding:1px 4px;font-size:12px}
+.doc-body table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}
+.doc-body th,.doc-body td{border:1px solid var(--line);padding:4px 7px;text-align:left;vertical-align:top}
+.doc-body th{background:#F7F7F8;font-weight:600}
+
 /* このアプリについて */
 .about-box{max-width:520px;text-align:left}
 .about-list{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0 0 12px;font-size:12.5px}

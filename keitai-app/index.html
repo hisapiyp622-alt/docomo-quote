@@ -401,7 +401,7 @@
       <p class="hint" id="lockMsg" hidden></p>
       <p class="hint">設定すると、アプリを開いたときに店舗IDとパスワードを求めます。ヘッダーの「ログアウト」でこの画面に戻せます。<br>
         <strong>このロックは画面を覆うだけの簡易的なものです。</strong>見積もりは端末内に暗号化せずに保存されるため、端末を自由に操作できる方（ブラウザの開発者ツールや設定を使える方）には、ロック中でも中身を見ることやロックの解除ができます。盗難・紛失への備えとしては、<strong>端末自体の画面ロックを必ず併用してください。</strong><br>
-        複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>SETUP.md の手順でクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
+        複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>販売元が発行するクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
     </div>
     <div class="card" id="adminLockBox">
       <h2>マスタ設定のパスワード</h2>
@@ -519,11 +519,19 @@
       <div id="aboutLogBox" hidden></div>
     </div>
     <p class="about-links">
-      <a href="./TERMS.md" target="_blank" rel="noopener">利用規約</a>
-      <a href="./LICENSE.md" target="_blank" rel="noopener">使用許諾条件</a>
-      <a href="./SUPPORT.md" target="_blank" rel="noopener">サポート</a>
+      <button type="button" class="link-btn" data-doc="TERMS.md" data-doc-title="利用規約">利用規約</button>
+      <button type="button" class="link-btn" data-doc="LICENSE.md" data-doc-title="使用許諾条件">使用許諾条件</button>
+      <button type="button" class="link-btn" data-doc="SUPPORT.md" data-doc-title="サポート">サポート</button>
     </p>
     <button class="btn-main" id="aboutClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="docOverlay" hidden>
+  <div class="login-box doc-box">
+    <h2 id="docTitle">文書</h2>
+    <div class="doc-body" id="docBody"></div>
+    <button class="btn-main" id="docClose" type="button">閉じる</button>
   </div>
 </div>
 

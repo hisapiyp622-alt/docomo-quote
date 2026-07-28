@@ -1,8 +1,9 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "kq-v35";
+var CACHE = "kq-v36";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "changelog.js",
   "data.js", "firebase-config.js",
-  "manifest.webmanifest", "icon.svg"];
+  "manifest.webmanifest", "icon.svg",
+  "TERMS.md", "LICENSE.md", "SUPPORT.md"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));

@@ -7,20 +7,20 @@
 以下は**あとから変えるのが難しい**ため、最初の1店舗を売る前に決めてください。
 
 - [ ] 契約単位（店舗単位か、法人単位か）
-- [ ] 初期費用と月額（`LICENSE.md` 3項）
+- [ ] 初期費用と月額（`keitai-app/LICENSE.md` 3項）
 - [ ] 支払方法・締め日（銀行振込か口座振替か）
-- [ ] 解約の予告期間と、解約後のデータ保持期間（`TERMS.md` 9条）
-- [ ] サポートの受付時間と応答目安（`SUPPORT.md`）
+- [ ] 解約の予告期間と、解約後のデータ保持期間（`keitai-app/TERMS.md` 9条）
+- [ ] サポートの受付時間と応答目安（`keitai-app/SUPPORT.md`）
 - [ ] 提供元の名義（個人名か屋号か法人か）
-- [ ] 損害賠償の上限（`TERMS.md` 6条4項）
+- [ ] 損害賠償の上限（`keitai-app/TERMS.md` 6条4項）
 
-決めたら、`TERMS.md` `LICENSE.md` `SUPPORT.md` の〔　〕をすべて埋めてください。
+決めたら、`keitai-app/TERMS.md` `keitai-app/LICENSE.md` `keitai-app/SUPPORT.md` の〔　〕をすべて埋めてください。
 **〔　〕が残ったまま代理店に渡さないでください。**
 
 ## 店舗を追加する
 
 1. [Firebaseコンソール](https://console.firebase.google.com/) → Authentication → Users →「ユーザーを追加」
-2. メールアドレス: `店舗ID@keitai-quote.example`（`@` 以降は `firebase-config.js` の `KEITAI_STORE_DOMAIN` と揃える）
+2. メールアドレス: `店舗ID@keitai-quote.example`（`@` 以降は `keitai-app/firebase-config.js` の `KEITAI_STORE_DOMAIN` と揃える）
 3. パスワードを設定（8文字以上・推測しにくいもの）
 4. 店舗IDとパスワードを、店舗の管理者へ**口頭または安全な方法で**伝える
 5. 店舗側で `SETUP.md` の手順7（担当者の登録）を実施してもらう
@@ -36,7 +36,7 @@
 
 ## 解約後のデータ削除
 
-保持期間（`TERMS.md` 9条2項）が過ぎたら、Firestore Database で `stores/{該当UID}` のドキュメントを配下ごと削除します。
+保持期間（`keitai-app/TERMS.md` 9条2項）が過ぎたら、Firestore Database で `stores/{該当UID}` のドキュメントを配下ごと削除します。
 そのあとで Authentication のユーザーを削除してください。
 
 ## パスワードの再設定
