@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.0.1";
+  var APP_VERSION = "2.0.2";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -1117,7 +1117,7 @@
     try { localStorage.removeItem("kq-handoff-v1"); } catch (e) {}
     var d;
     try { d = JSON.parse(raw); } catch (e) { return; }
-    if (!d) return;
+    if (!d || d.from === "ienaka") return;   // 自分が書いたものは読まない
     // 古い引き渡しは使わない（10分）
     if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return;
 
@@ -1136,6 +1136,21 @@
     if (d.custName) state.custName = d.custName;
     saveConfig();
     save();
+  }
+
+  /* ケータイ見積もりへ戻るとき、担当者名とお客様名を渡す。
+   * 向こうで担当者コードを聞かれずに済むようにするため。 */
+  var backLink = $("toKeitai");
+  if (backLink) {
+    backLink.addEventListener("click", function () {
+      try {
+        localStorage.setItem("kq-handoff-v1", JSON.stringify({
+          staffName: (activeStaff() || {}).name || "",
+          custName: state.custName || "",
+          from: "ienaka", at: Date.now()
+        }));
+      } catch (e) {}
+    });
   }
 
   /* ---------- 起動 ---------- */

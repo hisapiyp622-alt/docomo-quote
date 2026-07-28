@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.9.1";
+  var APP_VERSION = "1.9.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1577,6 +1577,7 @@
     var lo = $("logoutBtn");
     if (lo) lo.hidden = !(lockEnabled() || cloudOn());
     armIdle(lockEnabled() || cloudOn());
+    if (takeHandoffFromIenaka()) { bootDone(); return; }
     if (anyStaffCode()) showStaffGate(true);
     else enterStaff(activeStaff());
     bootDone();
@@ -3983,11 +3984,34 @@
           storeTel: config.storeTel || "",
           staffName: (st && st.name) || "",
           custName: (state && state.custName) || "",
-          at: Date.now()
+          from: "keitai", at: Date.now()
         }));
       } catch (e) {}
       // リンクの既定の動作でそのまま移動する
     });
+  }
+  /* イエナカ見積もりから戻ってきたときは、担当者コードの入力を省く。
+   * 同じ端末で数分前まで使っていた担当者なので、聞き直す意味がない。
+   * 作りかけの見積もりは消さない（同じお客様の続きのため、enterStaff に fresh を渡さない）。 */
+  function takeHandoffFromIenaka() {
+    var raw = null;
+    try { raw = localStorage.getItem(HANDOFF_KEY); } catch (e) {}
+    if (!raw) return false;
+    var d = null;
+    try { d = JSON.parse(raw); } catch (e) {}
+    if (!d || d.from !== "ienaka") return false;   // 自分が書いたものは読まない
+    try { localStorage.removeItem(HANDOFF_KEY); } catch (e) {}
+    if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return false;
+    var hit = config.staff.filter(function (s) { return (s.name || "") === d.staffName; })[0];
+    if (!hit) return false;   // 登録が無い担当者なら、いつもどおりコードを聞く
+    enterStaff(hit);
+    if (d.custName && state && !state.custName) {
+      state.custName = d.custName;
+      var ce = $("custName");
+      if (ce) ce.value = d.custName;
+      saveState();
+    }
+    return true;
   }
   function initDocs() {
     var ov = $("docOverlay");
