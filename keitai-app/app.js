@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.7.5";
+  var APP_VERSION = "1.7.6";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -678,6 +678,25 @@
     // NETFLIX 旧3項目（広告付ST/ST/PR）→ 料金選択式の1項目「netflix」へ統合
     var nfOldIds = ["op_1784430991714", "op_1784431033021", "op_1784431044456"];
     MASTER.options = MASTER.options.filter(function (o) { return nfOldIds.indexOf(o.id) < 0; });
+    /* お客様の見積書にも出る名前なので、社内表記（「（爆アゲ）」など）を外す。
+     * 保存済みマスタが昔の名前のままのときだけ直し、
+     * 店舗が自分で付け直した名前は変えない。 */
+    var NAME_FIXES = {
+      bk_disney: ["ディズニープラス（爆アゲ）", "ディズニープラス"],
+      bk_lemino: ["Leminoプレミアム（爆アゲ）", "Leminoプレミアム"],
+      bk_spotify: ["Spotify Premium（爆アゲ）", "Spotify Premium"],
+      bk_youtube: ["YouTube Premium（爆アゲ）", "YouTube Premium"],
+      bk_jump: ["週刊少年ジャンプ 定期購読（爆アゲ）", "週刊少年ジャンプ 定期購読"],
+      bk_danime: ["dアニメストア（爆アゲ）", "dアニメストア"],
+      bk_googleone: ["Google One（爆アゲ）", "Google One"],
+      bk_appleone: ["Apple One（爆アゲ）", "Apple One"],
+      netflix: ["NETFLIX", "Netflix"],
+      op_1785221644318: ["店頭安心サポートミニプラン", "店頭あんしんサポートミニプラン"]
+    };
+    MASTER.options.forEach(function (o) {
+      var nf = NAME_FIXES[o.id];
+      if (nf && o.name === nf[0]) o.name = nf[1];
+    });
     // 初期データに後から増えた項目を保存済みマスタへ追記（ユーザーが削除済みのものは復活させない）
     if (!MASTER.removedIds) MASTER.removedIds = [];
     (DEFAULT_DATA.options || []).forEach(function (d) {
@@ -3597,6 +3616,85 @@
         + "</div>";
     }).join("");
   }
+  /* ---------- 規約などの文書 ----------
+   * Markdownのまま開くと、ブラウザによってはダウンロードになり、
+   * 表示できても記号がそのまま見えてしまう。アプリの中で整形して出す。 */
+  function mdInline(t) {
+    return esc(t)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function mdTable(rows) {
+    var cells = rows.map(function (r) {
+      return r.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (c) { return c.trim(); });
+    });
+    var out = "<table>";
+    cells.forEach(function (c, i) {
+      // 2行目の「---|---」は区切り線なので出さない
+      if (i === 1 && c.every(function (x) { return /^:?-{2,}:?$/.test(x); })) return;
+      var tag = i === 0 ? "th" : "td";
+      out += "<tr>" + c.map(function (x) { return "<" + tag + ">" + mdInline(x) + "</" + tag + ">"; }).join("") + "</tr>";
+    });
+    return out + "</table>";
+  }
+  function mdToHtml(src) {
+    var lines = String(src).replace(/\r/g, "").split("\n");
+    var h = "", list = null, i, L, m;
+    function closeList() { if (list) { h += "</" + list + ">"; list = null; } }
+    for (i = 0; i < lines.length; i++) {
+      L = lines[i];
+      if (/^\s*$/.test(L)) { closeList(); continue; }
+      if ((m = L.match(/^(#{1,4})\s+(.*)$/))) {
+        closeList();
+        var lv = Math.min(m[1].length + 1, 5);
+        h += "<h" + lv + ">" + mdInline(m[2]) + "</h" + lv + ">";
+        continue;
+      }
+      if (/^\s*(-{3,}|\*{3,})\s*$/.test(L)) { closeList(); h += "<hr>"; continue; }
+      if ((m = L.match(/^\s*>\s?(.*)$/))) {
+        closeList(); h += "<blockquote>" + mdInline(m[1]) + "</blockquote>"; continue;
+      }
+      if (/^\s*\|/.test(L)) {
+        var rows = [];
+        while (i < lines.length && /^\s*\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+        i--;
+        closeList(); h += mdTable(rows); continue;
+      }
+      if ((m = L.match(/^\s*[-*]\s+(.*)$/))) {
+        if (list !== "ul") { closeList(); h += "<ul>"; list = "ul"; }
+        h += "<li>" + mdInline(m[1]) + "</li>"; continue;
+      }
+      if ((m = L.match(/^\s*\d+\.\s+(.*)$/))) {
+        if (list !== "ol") { closeList(); h += "<ol>"; list = "ol"; }
+        h += "<li>" + mdInline(m[1]) + "</li>"; continue;
+      }
+      closeList();
+      h += "<p>" + mdInline(L) + "</p>";
+    }
+    closeList();
+    return h;
+  }
+  var DOC_CACHE = {};
+  function openDoc(file, title) {
+    var ov = $("docOverlay");
+    if (!ov) return;
+    $("docTitle").textContent = title;
+    var body = $("docBody");
+    ov.hidden = false;
+    if (DOC_CACHE[file]) { body.innerHTML = DOC_CACHE[file]; body.scrollTop = 0; return; }
+    body.innerHTML = '<p class="hint">読み込んでいます…</p>';
+    fetch(file, { cache: "no-cache" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (t) {
+        DOC_CACHE[file] = mdToHtml(t);
+        body.innerHTML = DOC_CACHE[file];
+        body.scrollTop = 0;
+      })
+      .catch(function () {
+        body.innerHTML = '<p class="hint">読み込めませんでした。通信環境をご確認のうえ、もう一度お試しください。</p>';
+      });
+  }
   function showAbout(show) {
     var el = $("aboutOverlay");
     if (!el) return;
@@ -3621,6 +3719,17 @@
     }
     el.hidden = !show;
     if (!show) markVersionSeen();
+  }
+  function initDocs() {
+    var ov = $("docOverlay");
+    if (!ov) return;
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || !t.getAttribute) return;
+      var f = t.getAttribute("data-doc");
+      if (f) { openDoc(f, t.getAttribute("data-doc-title") || t.textContent); return; }
+      if (t.id === "docClose") ov.hidden = true;
+    });
   }
   function initAbout() {
     ["aboutBtn", "aboutFromLogin"].forEach(function (id) {
@@ -4674,6 +4783,7 @@
   initStaffGate();
   initMasterGate();
   initAbout();
+  initDocs();
   initTileSort();
   initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始

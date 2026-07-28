@@ -39,7 +39,7 @@
 
 ## 3. 設定値をアプリに貼り付ける
 
-`firebase-config.js` を開き、`KEITAI_FIREBASE` の各項目を手順2の値に差し替えます。
+`keitai-app/firebase-config.js` を開き、`KEITAI_FIREBASE` の各項目を手順2の値に差し替えます。
 
 ```js
 var KEITAI_FIREBASE = {
@@ -70,7 +70,7 @@ var KEITAI_STORE_DOMAIN = "keitai-quote.example";
 
 1. 左メニュー「構築 → Firestore Database」→「データベースの作成」
 2. モードは**本番環境モード**、ロケーションは `asia-northeast1`（東京）を選択
-3. 作成後「ルール」タブを開き、内容を同じフォルダの **`firestore.rules`** の中身に置き換えて「公開」
+3. 作成後「ルール」タブを開き、内容を **`keitai-app/firestore.rules`** の中身に置き換えて「公開」
 
 このルールにより、`stores/{店舗のUID}` 配下へは**その店舗のアカウントでログインしている場合のみ**アクセスできます。他店のデータは読むことも書くこともできません。
 
@@ -193,7 +193,7 @@ Firebaseを設定しない場合は、マスタ設定 →「店舗ログイン�
 
 ## 提供元の表示
 
-`firebase-config.js` の `KEITAI_VENDOR` に提供元名・連絡先・受付時間を入れると、
+`keitai-app/firebase-config.js` の `KEITAI_VENDOR` に提供元名・連絡先・受付時間を入れると、
 アプリ内の「情報」に表示されます。**空のままだと「（未設定）」と出ます。**
 
 ```js

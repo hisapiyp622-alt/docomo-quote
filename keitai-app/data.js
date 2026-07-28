@@ -1,12 +1,13 @@
 /* =========================================================
  * 料金マスタ（店舗標準フォーマット初期値）
- * 2026-07-28 に阪南店の運用マスタを標準として焼き込み。
- * 料金は2026-07-10のドコモ公式調査値ベース＋店舗実売価格。
+ * 2026-07-28 に実運用のマスタを標準として焼き込み（ドコモ商材のみ）。
+ * 店舗独自の商材・価格は各店舗がマスタ設定で登録する前提のため、初期値には含めない。
+ * 料金は2026-07-10のドコモ公式調査値ベース。
  * マスタ設定の編集(localStorage)がここより優先される。
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "updated": "2026-07-28（阪南店の運用マスタを標準として反映・料金は公式調査値ベース＋店舗実売価格）",
+  "updated": "2026-07-28",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -448,20 +449,6 @@ const DEFAULT_DATA = {
       "own": false
     },
     {
-      "id": "ag_connect_p",
-      "name": "コネクトα -PLATINUM-",
-      "price": 1280,
-      "category": "補償",
-      "own": true
-    },
-    {
-      "id": "ag_connect",
-      "name": "コネクトα -Plus-",
-      "price": 550,
-      "category": "補償",
-      "own": true
-    },
-    {
       "id": "dvaluepass",
       "name": "dバリューパス パック",
       "price": 682,
@@ -469,29 +456,6 @@ const DEFAULT_DATA = {
       "category": "バックアップ",
       "carrier": true,
       "own": false
-    },
-    {
-      "id": "ag_hozon",
-      "name": "hozon",
-      "price": 550,
-      "category": "バックアップ",
-      "own": true
-    },
-    {
-      "id": "op_1784430850898",
-      "name": "photocube 分割36回払い",
-      "price": 919,
-      "category": "バックアップ",
-      "note": "",
-      "own": true
-    },
-    {
-      "id": "ag_secpack",
-      "name": "あんしんセキュリティパック",
-      "price": 1650,
-      "category": "セキュリティ",
-      "carrier": false,
-      "own": true
     },
     {
       "id": "op_1784460515071",
@@ -516,7 +480,7 @@ const DEFAULT_DATA = {
       "name": "amazon prime",
       "price": 600,
       "category": "エンタメ",
-      "note": "ドコモ公式の爆アゲ セレクションの一覧には含まれません。当店の運用として固定120ptで計算しています",
+      "note": "ドコモ公式の爆アゲ セレクションの一覧には含まれません。固定120ptとして計算しています（マスタ設定の「固定pt」で変更できます）",
       "own": false,
       "bakuage": 0,
       "bakuage2": 0,
@@ -524,7 +488,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "netflix",
-      "name": "NETFLIX",
+      "name": "Netflix",
       "price": 890,
       "priceChoices": [
         890,
@@ -544,7 +508,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_disney",
-      "name": "ディズニープラス（爆アゲ）",
+      "name": "ディズニープラス",
       "price": 1250,
       "priceChoices": [
         1250,
@@ -563,7 +527,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_lemino",
-      "name": "Leminoプレミアム（爆アゲ）",
+      "name": "Leminoプレミアム",
       "price": 1540,
       "category": "エンタメ",
       "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
@@ -602,7 +566,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_spotify",
-      "name": "Spotify Premium（爆アゲ）",
+      "name": "Spotify Premium",
       "price": 1080,
       "category": "エンタメ",
       "note": "最大25%還元",
@@ -612,7 +576,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_youtube",
-      "name": "YouTube Premium（爆アゲ）",
+      "name": "YouTube Premium",
       "price": 1280,
       "category": "エンタメ",
       "note": "最大10%還元",
@@ -622,7 +586,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_jump",
-      "name": "週刊少年ジャンプ 定期購読（爆アゲ）",
+      "name": "週刊少年ジャンプ 定期購読",
       "price": 980,
       "category": "エンタメ",
       "note": "最大20%還元",
@@ -632,7 +596,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_danime",
-      "name": "dアニメストア（爆アゲ）",
+      "name": "dアニメストア",
       "price": 660,
       "category": "エンタメ",
       "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
@@ -643,7 +607,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_googleone",
-      "name": "Google One（爆アゲ）",
+      "name": "Google One",
       "price": 290,
       "priceChoices": [
         290,
@@ -663,7 +627,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_appleone",
-      "name": "Apple One（爆アゲ）",
+      "name": "Apple One",
       "price": 1200,
       "category": "エンタメ",
       "priceChoices": [
@@ -722,7 +686,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "op_1785221644318",
-      "name": "店頭安心サポートミニプラン",
+      "name": "店頭あんしんサポートミニプラン",
       "price": 550,
       "category": "その他",
       "note": "",
@@ -842,26 +806,6 @@ const DEFAULT_DATA = {
       "id": "acc_1784850167723",
       "name": "ACアダプタ",
       "price": 2420
-    },
-    {
-      "id": "acc_1784460060451",
-      "name": "ハルトコーティング(両面)",
-      "price": 6600,
-      "own": true
-    },
-    {
-      "id": "acc_1784460083417",
-      "name": "ハルトコーティング(片面)",
-      "price": 4400,
-      "own": true
-    },
-    {
-      "id": "acc_1785222792120",
-      "name": "photocube 256GB",
-      "price": 31130,
-      "category": "バックアップ",
-      "defaultPay": "b36",
-      "own": true
     }
   ]
 };

@@ -1,0 +1,8 @@
+# GitHub Pages（Jekyll）の設定。
+# 社内用の文書を配信しないための除外リストです。
+# 先頭が「_」のフォルダは既定で除外されますが、明示しておきます。
+exclude:
+  - _internal
+  - CLAUDE.md
+  - HANDOVER.md
+  - .claude
