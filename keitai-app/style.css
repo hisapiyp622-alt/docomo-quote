@@ -556,3 +556,27 @@ body.sorting .sort-chip{cursor:grabbing}
 @media (max-width:600px){
   .choice-box{margin-left:0}
 }
+
+/* 更新履歴 */
+.hd-btn.has-new{position:relative}
+.hd-btn.has-new::after{
+  content:"";position:absolute;top:2px;right:2px;
+  width:7px;height:7px;border-radius:50%;background:#FFD24A;
+}
+.about-log{margin:0 0 12px}
+.about-log .btn-sub{width:100%}
+#aboutLogBox{
+  margin-top:8px;max-height:240px;overflow-y:auto;
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#FCFCFC;
+}
+.log-entry{padding:6px 0;border-bottom:1px dashed var(--line)}
+.log-entry:last-child{border-bottom:none}
+.log-head{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--ink)}
+.log-date{margin-left:auto;font-size:11px;font-weight:400;color:var(--muted)}
+.log-new{
+  padding:0 5px;border-radius:4px;background:var(--red);color:#fff;
+  font-size:10px;font-weight:700;
+}
+.log-entry.is-new .log-head{color:var(--red)}
+.log-entry ul{margin:3px 0 0;padding-left:17px}
+.log-entry li{font-size:11.5px;line-height:1.6;color:var(--muted)}

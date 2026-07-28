@@ -495,6 +495,10 @@
     <p class="about-note">「ドコモ」「ahamo」「irumo」「eximo」「dカード」「dポイント」「Lemino」その他の名称は、
       株式会社NTTドコモの商標または登録商標です。その他の会社名・製品名・サービス名は各社の商標または登録商標です。
       本アプリは、料金プラン等の名称を説明のために表示しているにとどまります。</p>
+    <div class="about-log">
+      <button class="btn-sub" id="aboutLogBtn" type="button">更新履歴を見る</button>
+      <div id="aboutLogBox" hidden></div>
+    </div>
     <p class="about-links">
       <a href="./TERMS.md" target="_blank" rel="noopener">利用規約</a>
       <a href="./LICENSE.md" target="_blank" rel="noopener">使用許諾条件</a>
@@ -527,6 +531,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="changelog.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script>
