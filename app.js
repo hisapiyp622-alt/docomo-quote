@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-68";
+  var APP_VERSION = "2026.07.25-69";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1335,6 +1335,13 @@
         return esc(d.name) + " " + d.rate + "%";
       }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
     }
+    var dataMove = (MASTER.feeItems || []).filter(function (f) {
+      return state.feeItems[f.id] && /データ移行/.test(f.name || "");
+    });
+    anyTodo = true;
+    h += row("データ移行", dataMove.length
+      ? '<b style="color:var(--red)">あり</b>　' + dataMove.map(function (f) { return esc(f.name); }).join("／")
+      : "<b>なし</b>");
     if (state.todoOther) {
       anyTodo = true;
       h += row("その他", "<b>" + esc(state.todoOther).replace(/\n/g, "<br>") + "</b>");
