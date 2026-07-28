@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-65";
+  var APP_VERSION = "2026.07.25-66";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1353,7 +1353,9 @@
     var secContract = h; h = "";
     // オプション（新規／継続／廃止をまとめる）
     var kNew = [], kKeep = [], kOff = [];
-    netSvcCalc(state).off.forEach(function (n) { kOff.push(n.name); });
+    var netSheet = netSvcCalc(state);
+    netSheet.rows.forEach(function (n) { kNew.push({ name: n.name, price: n.price }); });
+    netSheet.off.forEach(function (n) { kOff.push(n.name); });
     MASTER.options.forEach(function (o) {
       var kb = state.optionKubun[o.id] || (state.options[o.id] ? "new" : "");
       if (!kb) return;
@@ -1368,7 +1370,7 @@
     var anyOpt = false;
     if (kNew.length) {
       anyOpt = true;
-      h += row("<b>新規に付ける</b>", '<div class="kubun-list">'
+      h += row("<b>新規</b>", '<div class="kubun-list">'
         + kNew.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月</i>"; }).join("") + "</div>");
     }
     if (kKeep.length) {
@@ -1378,7 +1380,7 @@
     }
     if (kOff.length) {
       anyOpt = true;
-      h += row("<b>廃止する</b>", '<div class="kubun-list" style="color:var(--red);font-weight:700">'
+      h += row("<b>廃止</b>", '<div class="kubun-list" style="color:var(--red);font-weight:700">'
         + kOff.map(function (x) { return "<i>" + esc(x) + "</i>"; }).join("") + "</div>");
     }
     state.adhocMonthly.forEach(function (a) {
@@ -1387,13 +1389,6 @@
       h += row(esc(a.name || "追加項目"), (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))) + "/月"
         + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : ""));
     });
-    var netSheet = netSvcCalc(state);
-    if (netSheet.rows.length) {
-      anyOpt = true;
-      h += row("ネットワークサービス", '<div class="kubun-list">' + netSheet.rows.map(function (n) {
-        return "<i><b>" + esc(n.name) + "</b>　" + yen(n.price) + "/月</i>";
-      }).join("") + "</div>");
-    }
     if (num(state.currentInst) > 0) {
       anyOpt = true;
       h += row(CUR_INST_LABEL, "<b>" + yen(num(state.currentInst)) + "/月</b>"
