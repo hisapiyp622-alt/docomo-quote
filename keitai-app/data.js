@@ -443,46 +443,53 @@ const DEFAULT_DATA = {
       "id": "ag_support",
       "name": "店舗あんしんサポートmini",
       "price": 550,
-      "category": "その他"
+      "category": "その他",
+      "own": true
     },
     {
       "id": "ag_secpack",
       "name": "あんしんセキュリティパック",
       "price": 1650,
       "category": "セキュリティ",
-      "carrier": true
+      "carrier": true,
+      "own": true
     },
     {
       "id": "ag_hozon",
       "name": "hozon",
       "price": 550,
-      "category": "バックアップ"
+      "category": "バックアップ",
+      "own": true
     },
     {
       "id": "ag_connect_p",
       "name": "コネクトα -PLATINUM-",
       "price": 1280,
-      "category": "補償"
+      "category": "補償",
+      "own": true
     },
     {
       "id": "ag_connect",
       "name": "コネクトα -Plus-",
       "price": 550,
-      "category": "補償"
+      "category": "補償",
+      "own": true
     },
     {
       "id": "op_1784430850898",
       "name": "photocube 分割36回払い",
       "price": 919,
       "category": "バックアップ",
-      "note": ""
+      "note": "",
+      "own": true
     },
     {
       "id": "op_1784430913381",
       "name": "店頭あんしんサポート定額",
       "price": 990,
       "category": "その他",
-      "note": ""
+      "note": "",
+      "own": true
     },
     {
       "id": "op_1784430972981",
@@ -639,19 +646,22 @@ const DEFAULT_DATA = {
       "id": "fi_1784431925115",
       "name": "初期設定・データ移行サポート",
       "price": 2200,
-      "pay": "bill"
+      "pay": "bill",
+      "own": true
     },
     {
       "id": "ag_setup",
       "name": "初期設定・データ移行サポート(持ち込み)",
       "price": 3300,
-      "pay": "bill"
+      "pay": "bill",
+      "own": true
     },
     {
       "id": "fi_1784460259803",
       "name": "あんしん店頭サポート/回",
       "price": 3300,
-      "pay": "bill"
+      "pay": "bill",
+      "own": true
     }
   ],
   "kaedoki": {

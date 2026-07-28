@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.4.1";
+  var APP_VERSION = "1.5.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -293,6 +293,15 @@
       if (!o.category || OPT_CATEGORIES.indexOf(o.category) < 0) {
         o.category = defCat[o.id] || "その他";
       }
+    });
+    // 店舗独自かどうかを初期データから補完。
+    // 初期データに無い項目は、その店舗が自分で足したものなので店舗独自として扱う
+    ["options", "feeItems"].forEach(function (key) {
+      var defOwn = {}, known = {};
+      (DEFAULT_DATA[key] || []).forEach(function (d) { defOwn[d.id] = !!d.own; known[d.id] = true; });
+      (MASTER[key] || []).forEach(function (o) {
+        if (typeof o.own === "undefined") o.own = known[o.id] ? defOwn[o.id] : true;
+      });
     });
     // dカードGOLD10%対象フラグを初期データから補完（保存済みマスタに未設定のもののみ）
     var defCarrier = {};
@@ -769,6 +778,9 @@
   }
   function onSignedOut() {
     CLOUD.user = null;
+    masterUnlocked = false;
+    masterGateFrom = null;
+    showMasterGate(false);
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
@@ -818,6 +830,10 @@
   // ログアウト（自動・手動の共通処理）
   function doLogout(auto) {
     clearActiveStaff();
+    masterUnlocked = false;
+    masterGateFrom = null;
+    showMasterGate(false);
+    switchTab("quote");
     armIdle(false);
     // ロック画面のまま印刷されてもお客様情報が出ないよう、画面の内容を消す
     var sb1 = $("sheetBody"); if (sb1) sb1.innerHTML = "";
@@ -876,6 +892,7 @@
 
   // 担当を確定していない状態にする（購読も解除する）
   function clearActiveStaff() {
+    masterUnlocked = false; // 担当が変わったらマスタ設定は開き直しにする
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
     if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
@@ -923,6 +940,13 @@
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
     var sc = $("staffToSetting");
     if (sc) sc.addEventListener("click", function () {
+      if (masterGateOn()) {
+        // 担当者を確定させる前にロックを通す。キャンセルしたらコード入力へ戻す
+        masterGateFrom = "staff";
+        showStaffGate(false);
+        showMasterGate(true);
+        return;
+      }
       showStaffGate(false);
       if (!config.activeStaffId) enterStaff(config.staff[0]);
       switchTab("master");
@@ -2425,9 +2449,7 @@
     h += "</div></div>";
 
     // オプション・サービス（すべて月額。追加・削除・並び替え・カテゴリ変更可）
-    h += '<div class="master-plan"><h3>オプション・サービス（月額）</h3>';
-    h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は下の「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。</p>';
-    h += listEditor(MASTER.options, "op", function (o) {
+    function optExtra(o) {
       return '<select data-op-cat="' + o.__i + '">'
         + OPT_CATEGORIES.map(function (c) {
             return '<option value="' + c + '"' + ((o.category || "その他") === c ? " selected" : "") + ">" + c + "</option>";
@@ -2435,19 +2457,37 @@
         + "</select>"
         + '<label class="gold-flag"><input type="checkbox" data-op-gold="' + o.__i + '"' + (o.carrier ? " checked" : "") + '>GOLD10%</label>'
         + (o.priceChoices ? '<span class="price">選択式</span>' : "");
-    });
-    h += '<div class="actions"><button class="btn-sub" data-add="options" type="button">＋ オプション・サービスを追加</button></div></div>';
-
-    // 初期費用の定番項目（手数料・コーティング等の一括もの）
-    h += '<div class="master-plan"><h3>初期費用の定番項目（手数料・コーティングなど）</h3>';
-    h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。</p>';
-    h += listEditor(MASTER.feeItems, "fi", function (o) {
+    }
+    function feeExtra(o) {
       return '<select data-fi-pay="' + o.__i + '">'
         + '<option value="store"' + (o.pay !== "bill" ? " selected" : "") + ">店頭払い</option>"
         + '<option value="bill"' + (o.pay === "bill" ? " selected" : "") + ">翌月合算</option>"
         + "</select>";
-    });
-    h += '<div class="actions"><button class="btn-sub" data-add="feeItems" type="button">＋ 項目を追加</button></div></div>';
+    }
+    var isOwn = function (o) { return !!o.own; };
+    var isCarrier = function (o) { return !o.own; };
+
+    h += '<div class="master-plan"><h3>オプション・サービス（月額）</h3>';
+    h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は下の「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
+      + '「<strong>店舗独自</strong>」にチェックを入れると、下の「店舗独自サービス」へ移ります。<strong>見積もり画面の表示は変わりません</strong>（従来どおりカテゴリごとに並びます）。</p>';
+    h += '<div class="master-sub"><h4>ドコモの商材</h4>';
+    h += listEditor(MASTER.options, "op", optExtra, isCarrier) + "</div>";
+    h += '<div class="master-sub own"><h4>店舗独自サービス</h4>';
+    h += listEditor(MASTER.options, "op", optExtra, isOwn) + "</div>";
+    h += '<div class="actions">'
+      + '<button class="btn-sub" data-add="options" type="button">＋ ドコモの商材を追加</button>'
+      + '<button class="btn-sub" data-add="optionsOwn" type="button">＋ 店舗独自サービスを追加</button></div></div>';
+
+    // 初期費用の定番項目（手数料・コーティング等の一括もの）
+    h += '<div class="master-plan"><h3>初期費用の定番項目（手数料・コーティングなど）</h3>';
+    h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。</p>';
+    h += '<div class="master-sub"><h4>ドコモの商材</h4>';
+    h += listEditor(MASTER.feeItems, "fi", feeExtra, isCarrier) + "</div>";
+    h += '<div class="master-sub own"><h4>店舗独自サービス</h4>';
+    h += listEditor(MASTER.feeItems, "fi", feeExtra, isOwn) + "</div>";
+    h += '<div class="actions">'
+      + '<button class="btn-sub" data-add="feeItems" type="button">＋ ドコモの商材を追加</button>'
+      + '<button class="btn-sub" data-add="feeItemsOwn" type="button">＋ 店舗独自サービスを追加</button></div></div>';
 
     // アクセサリの定番商品
     h += '<div class="master-plan"><h3>アクセサリの定番商品（docomo select など）</h3>';
@@ -2492,15 +2532,27 @@
 
     $("masterBody").innerHTML = h;
 
-    function listEditor(list, prefix, extra) {
-      return (list || []).map(function (o, i) {
+    /* filter を渡すと、その条件に合う項目だけを並べる。
+     * 並べ替えは同じグループの中で入れ替わるよう、相手の位置を data-*-swap で渡す。
+     * 位置（data-*-name など）は元の一覧での位置をそのまま使う。 */
+    function listEditor(list, prefix, extra, filter) {
+      var rows = [];
+      (list || []).forEach(function (o, i) {
         o.__i = i;
+        if (!filter || filter(o)) rows.push({ o: o, i: i });
+      });
+      if (!rows.length) return '<p class="hint">項目がありません。</p>';
+      return rows.map(function (r, k) {
+        var o = r.o, i = r.i;
+        var up = k > 0 ? rows[k - 1].i : -1;
+        var dn = k < rows.length - 1 ? rows[k + 1].i : -1;
         return '<div class="adhoc-row">'
-          + '<button class="mv" data-' + prefix + '-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
-          + '<button class="mv" data-' + prefix + '-down="' + i + '" type="button" aria-label="下へ"' + (i === list.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<button class="mv" data-' + prefix + '-up="' + i + '" data-' + prefix + '-swap="' + up + '" type="button" aria-label="上へ"' + (up < 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-' + prefix + '-down="' + i + '" data-' + prefix + '-swap="' + dn + '" type="button" aria-label="下へ"' + (dn < 0 ? " disabled" : "") + ">▼</button>"
           + '<input type="text" value="' + esc(o.name) + '" placeholder="名称" data-' + prefix + '-name="' + i + '">'
           + '<input type="number" value="' + o.price + '" data-' + prefix + '-price="' + i + '">'
           + extra(o)
+          + '<label class="own-flag"><input type="checkbox" data-' + prefix + '-own="' + i + '"' + (o.own ? " checked" : "") + ">店舗独自</label>"
           + '<button class="del" data-' + prefix + '-del="' + i + '" type="button" aria-label="削除">×</button>'
           + "</div>";
       }).join("");
@@ -2554,8 +2606,93 @@
     if ($("tab-staff").classList.contains("active")) renderStaffSheet();
   }
 
+  /* ---------- マスタ設定のロック ----------
+   * マスタ設定は料金・担当者・店舗ログインを触れる管理画面なので、
+   * 店舗ログインと同じ店舗ID＋パスワードを通った人だけが開けるようにする。
+   * 店舗ログインを使っていない（クラウド未設定かつ端末内ロック未設定）場合は、
+   * 照合するものが無く、店舗ログインの設定自体がこのタブにあるため素通しにする。 */
+  var masterUnlocked = false;
+  var masterGateFrom = null; // キャンセルしたときに戻る先
+  function masterGateOn() { return !masterUnlocked && (lockEnabled() || cloudOn()); }
+  function showMasterGate(show) {
+    var el = $("masterGate");
+    if (!el) return;
+    el.hidden = !show;
+    if (!show) return;
+    var err = $("masterGateErr"); if (err) err.hidden = true;
+    var pw = $("masterGatePass"); if (pw) pw.value = "";
+    var id = $("masterGateId");
+    if (id) {
+      // ログイン中の店舗IDを入れておく（クラウド利用時は変更できない）
+      id.value = cloudOn() ? String(CLOUD.user.email || "").replace(/@.*$/, "")
+        : (config.lock && config.lock.storeId) || "";
+      id.readOnly = cloudOn();
+      setTimeout(function () { (pw || id).focus(); }, 50);
+    }
+  }
+  function masterGateFail(msg) {
+    var err = $("masterGateErr");
+    if (err) { err.textContent = msg; err.hidden = false; }
+    var pw = $("masterGatePass"); if (pw) pw.value = "";
+  }
+  // 入力された店舗ID・パスワードを照合する（Promise<bool>）
+  function masterGateVerify(id, pass) {
+    if (cloudOn()) {
+      // ログイン中の店舗と別のIDでは通さない（別アカウントに入れ替わるのを防ぐ）
+      if (storeIdToEmail(id) !== String(CLOUD.user.email || "")) return Promise.resolve(false);
+      try {
+        var cred = firebase.auth.EmailAuthProvider.credential(CLOUD.user.email, pass);
+        return CLOUD.user.reauthenticateWithCredential(cred)
+          .then(function () { return true; }, function (e2) {
+            // パスワード違い以外（通信不良・試行回数超過）は、その理由を出す
+            var c = String((e2 && e2.code) || "");
+            if (/wrong-password|invalid-credential|user-mismatch|invalid-email/.test(c)) return false;
+            throw new Error(loginErrorMessage(e2));
+          });
+      } catch (e) {
+        return Promise.reject(new Error("この環境ではパスワードを確認できませんでした。"));
+      }
+    }
+    // 端末内モード。設定したときと同じ方式で照合する
+    if (config.lock.algo === "sha256" && lockAlgo() !== "sha256") {
+      return Promise.reject(new Error("この環境では確認できません。設定したときと同じ方法（https）でお開きください。"));
+    }
+    return lockHash(pass, config.lock.salt, config.lock.algo).then(function (h) {
+      return id === config.lock.storeId && h === config.lock.hash;
+    });
+  }
+  function initMasterGate() {
+    $("masterGateForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var btn = $("masterGateBtn");
+      btn.disabled = true;
+      var id = String($("masterGateId").value || "").trim();
+      masterGateVerify(id, $("masterGatePass").value).then(function (ok) {
+        btn.disabled = false;
+        if (!ok) { masterGateFail("店舗IDまたはパスワードが正しくありません。"); return; }
+        masterUnlocked = true;
+        $("masterGatePass").value = "";
+        showMasterGate(false);
+        if (masterGateFrom === "staff") {
+          masterGateFrom = null;
+          if (!config.activeStaffId) enterStaff(config.staff[0]);
+        }
+        switchTab("master");
+      }, function (e2) {
+        btn.disabled = false;
+        masterGateFail((e2 && e2.message) || "確認できませんでした。時間をおいて再度お試しください。");
+      });
+    });
+    $("masterGateCancel").addEventListener("click", function () {
+      showMasterGate(false);
+      if (masterGateFrom === "staff") { masterGateFrom = null; showStaffGate(true); return; }
+      switchTab("quote");
+    });
+  }
+
   /* ---------- タブ ---------- */
   function switchTab(name) {
+    if (name === "master" && masterGateOn()) { showMasterGate(true); return; }
     document.querySelectorAll(".tab").forEach(function (b) {
       b.classList.toggle("active", b.dataset.tab === name);
     });
@@ -2602,6 +2739,11 @@
         list[+attr("cat")].category = t.value;
       } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
         list[+attr("gold")].carrier = t.checked;
+      } else if (evType === "change" && attr("own") != null) {
+        list[+attr("own")].own = t.checked;
+        markEdited();
+        renderMasterTab();
+        return true;
       } else if (evType === "change" && prefix === "fi" && attr("pay") != null) {
         list[+attr("pay")].pay = t.value;
       } else if (evType === "click" && attr("del") != null) {
@@ -2613,7 +2755,7 @@
         renderMasterTab();
       } else if (evType === "click" && (attr("up") != null || attr("down") != null)) {
         var i = +(attr("up") != null ? attr("up") : attr("down"));
-        var j = attr("up") != null ? i - 1 : i + 1;
+        var j = attr("swap") != null ? +attr("swap") : (attr("up") != null ? i - 1 : i + 1);
         if (j < 0 || j >= list.length) return false;
         var tmp = list[i]; list[i] = list[j]; list[j] = tmp;
         renderMasterTab();
@@ -2964,7 +3106,9 @@
           $("lockPass2").value = "";
           renderLockConfig();
           var lo = $("logoutBtn"); if (lo) lo.hidden = false;
-          say("店舗ログインを設定しました。次にアプリを開いたときから有効になります。", true);
+          masterUnlocked = true; // 設定した本人なので、いまの操作は続けられるようにする
+          armIdle(true);
+          say("店舗ログインを設定しました。次にアプリを開いたときから有効になります。マスタ設定を開くときにも、このIDとパスワードが必要になります。", true);
         });
       });
     }
@@ -3157,8 +3301,15 @@
         return;
       }
       var addKey = t.getAttribute("data-add");
-      if (addKey === "options") { MASTER.options.push(LIST_DEFS.op.newItem()); }
-      else if (addKey === "feeItems") { MASTER.feeItems.push(LIST_DEFS.fi.newItem()); }
+      if (addKey === "options" || addKey === "optionsOwn") {
+        var no = LIST_DEFS.op.newItem();
+        no.own = addKey === "optionsOwn";
+        MASTER.options.push(no);
+      } else if (addKey === "feeItems" || addKey === "feeItemsOwn") {
+        var nf = LIST_DEFS.fi.newItem();
+        nf.own = addKey === "feeItemsOwn";
+        MASTER.feeItems.push(nf);
+      }
       else if (addKey === "accessories") { MASTER.accessories.push(LIST_DEFS.ac.newItem()); }
       else { handleListEvent(t, "click"); return; }
       markEdited();
@@ -3223,6 +3374,7 @@
   initIdle();
   initLocalLock();
   initStaffGate();
+  initMasterGate();
   initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
 })();
