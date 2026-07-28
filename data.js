@@ -514,7 +514,23 @@ const DEFAULT_DATA = {
       "name": "Leminoプレミアム（爆アゲ）",
       "price": 1540,
       "category": "エンタメ",
-      "note": "最大20%還元・MAX系特典適用中は対象外"
+      "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
+    },
+    {
+      "id": "dazn",
+      "name": "DAZN for docomo",
+      "price": 4200,
+      "category": "エンタメ",
+      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
+    },
+    {
+      "id": "nba",
+      "name": "NBA docomo",
+      "price": 2728,
+      "priceChoices": [2728, 1078],
+      "priceLabels": { "2728": "通常", "1078": "ahamo" },
+      "category": "エンタメ",
+      "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
     },
     {
       "id": "bk_spotify",
@@ -542,7 +558,7 @@ const DEFAULT_DATA = {
       "name": "dアニメストア（爆アゲ）",
       "price": 660,
       "category": "エンタメ",
-      "note": "最大10%還元・MAX系特典適用中は対象外"
+      "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
     },
     {
       "id": "bk_googleone",

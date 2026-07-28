@@ -324,3 +324,6 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 
 /* ネットワークサービスの「廃止」チェック（②通話・メール） */
 .opt-row .net-off{margin-left:10px;font-size:12px;color:var(--red);white-space:nowrap}
+
+/* ドコモ MAX の選べる特典で無料になるオプション */
+.tile .t-price.t-bonus{color:var(--red);font-weight:700}
