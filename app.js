@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-66";
+  var APP_VERSION = "2026.07.25-67";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1389,11 +1389,6 @@
       h += row(esc(a.name || "追加項目"), (num(a.amount) < 0 ? "−" : "") + yen(Math.abs(num(a.amount))) + "/月"
         + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : ""));
     });
-    if (num(state.currentInst) > 0) {
-      anyOpt = true;
-      h += row(CUR_INST_LABEL, "<b>" + yen(num(state.currentInst)) + "/月</b>"
-        + (num(state.currentInstMonths) > 0 ? "　残り " + Math.round(num(state.currentInstMonths)) + "回" : "　（残り回数の入力なし）"));
-    }
     if (!anyOpt) h += row("オプション", "なし");
     h += "</tbody></table>";
 
