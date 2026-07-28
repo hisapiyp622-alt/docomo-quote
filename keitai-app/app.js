@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.5";
+  var APP_VERSION = "1.5.6";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -770,6 +770,7 @@
   }
   // fresh=true … 担当者コード画面から入ったとき（新しいお客様として始める）
   function enterStaff(s, fresh) {
+    masterOnly = false; // 担当者が決まったので通常の画面に戻す
     config.activeStaffId = s.id;
     saveConfig();
     showStaffGate(false);
@@ -882,6 +883,7 @@
   }
   // ログアウト（自動・手動の共通処理）
   function doLogout(auto) {
+    masterOnly = false;
     clearActiveStaff();
     masterUnlocked = false;
     masterGateFrom = null;
@@ -979,6 +981,8 @@
         switchTab("master");
         return;
       }
+      masterOnly = false;
+      switchTab("quote");
       clearActiveStaff();
       showStaffGate(true);
     });
@@ -993,6 +997,7 @@
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
     var mb = $("masterBackBtn");
     if (mb) mb.addEventListener("click", function () {
+      masterOnly = false;
       switchTab("quote"); // 設定の内容をコード入力画面の裏に残さない
       if (anyStaffCode()) { clearActiveStaff(); showStaffGate(true); }
     });
@@ -1008,6 +1013,7 @@
       showStaffGate(false);
       if (!config.activeStaffId) enterStaff(config.staff[0]);
       switchTab("master");
+      enterMasterOnly();
     });
   }
 
@@ -2692,6 +2698,14 @@
   /* マスタ設定のパスワードを忘れたときは、店舗ID＋店舗のパスワードで開けるようにする。
    * 店舗の資格情報のほうが上位なので、これを塞ぐと復旧手段が無くなってしまう。 */
   var masterGateFallback = false;
+  /* 担当者コードの画面からマスタ設定へ入った状態。
+   * このときはまだ「誰が使うか」が決まっていないため、
+   * ほかのタブへ移ろうとしたら担当者コードの入力に戻す。 */
+  var masterOnly = false;
+  function enterMasterOnly() {
+    masterOnly = anyStaffCode();
+    if (masterOnly) { var sb = $("staffBar"); if (sb) sb.hidden = true; }
+  }
   function masterGateAdminMode() { return adminLockEnabled() && !masterGateFallback; }
   function masterGateOn() {
     return !masterUnlocked && (adminLockEnabled() || lockEnabled() || cloudOn());
@@ -2788,11 +2802,13 @@
         masterUnlocked = true;
         $("masterGatePass").value = "";
         showMasterGate(false);
-        if (masterGateFrom === "staff") {
+        var fromGate = masterGateFrom === "staff";
+        if (fromGate) {
           masterGateFrom = null;
           if (!config.activeStaffId) enterStaff(config.staff[0]);
         }
         switchTab("master");
+        if (fromGate) enterMasterOnly();
       }, function (e2) {
         btn.disabled = false;
         masterGateFail((e2 && e2.message) || "確認できませんでした。時間をおいて再度お試しください。");
@@ -2815,6 +2831,17 @@
 
   /* ---------- タブ ---------- */
   function switchTab(name) {
+    // 担当者が決まっていないままマスタ設定から出ようとしたら、コードを入れてもらう
+    if (masterOnly && name !== "master") {
+      masterOnly = false;
+      // 設定中にコードを全部消した場合は聞きようがないので、そのまま通す
+      if (anyStaffCode()) {
+        switchTab("quote");
+        clearActiveStaff();
+        showStaffGate(true);
+        return;
+      }
+    }
     if (name === "master" && masterGateOn()) { showMasterGate(true); return; }
     document.querySelectorAll(".tab").forEach(function (b) {
       b.classList.toggle("active", b.dataset.tab === name);
