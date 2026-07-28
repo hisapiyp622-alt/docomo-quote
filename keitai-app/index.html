@@ -12,12 +12,9 @@
 
 <header class="app-header no-print">
   <h1>ドコモ料金見積もり
-    <select id="syncGroup" class="sync-group" title="同期グループ（同じ担当を選んだ端末同士だけが同期されます）">
-      <option value="A">担当A</option>
-      <option value="B">担当B</option>
-      <option value="C">担当C</option>
-      <option value="off">同期OFF</option>
-    </select>
+    <span class="staff-bar" id="staffBar" hidden></span>
+    <button class="hd-btn" id="switchStaffBtn" type="button">担当切替</button>
+    <button class="hd-btn" id="logoutBtn" type="button" hidden>ログアウト</button>
     <span class="sync-status" id="syncStatus"></span></h1>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
@@ -322,6 +319,20 @@
   <!-- ============ マスタ設定タブ ============ -->
   <section id="tab-master" class="tab-page no-print">
     <div class="card">
+      <h2>店舗設定</h2>
+      <p class="hint" id="accountInfo"></p>
+      <div class="field">
+        <label for="storeNameInput">店舗名</label>
+        <input type="text" id="storeNameInput" placeholder="例）○○店">
+      </div>
+      <div class="subhead">担当者</div>
+      <div id="staffList"><!-- JSで生成 --></div>
+      <div class="actions">
+        <button class="btn-sub" id="addStaffBtn" type="button">＋ 担当者を追加</button>
+      </div>
+      <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
+    </div>
+    <div class="card">
       <h2>料金マスタ</h2>
       <p class="hint">料金改定があったらここで直せます。変更は自動保存されます（この端末のみ）。<br>データ基準日: <strong id="masterUpdated"></strong></p>
       <div class="actions">
@@ -341,7 +352,38 @@
   </div>
 </main>
 
+<div class="login-overlay no-print" id="loginOverlay" hidden>
+  <form class="login-box" id="loginForm">
+    <h2>ケータイ見積もり</h2>
+    <p class="login-lead">店舗IDとパスワードでログインしてください。</p>
+    <p class="login-err" id="loginErr" hidden></p>
+    <div class="field">
+      <label for="loginStoreId">店舗ID</label>
+      <input type="text" id="loginStoreId" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    </div>
+    <div class="field">
+      <label for="loginPass">パスワード</label>
+      <input type="password" id="loginPass" autocomplete="current-password" required>
+    </div>
+    <button class="btn-main" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<div class="login-overlay no-print" id="staffOverlay" hidden>
+  <form class="login-box" id="staffForm">
+    <h2>担当者コード</h2>
+    <p class="login-lead">ご自身の担当者コードを入力してください。</p>
+    <p class="login-err" id="staffErr" hidden></p>
+    <div class="field">
+      <label for="staffCode">担当者コード</label>
+      <input type="password" id="staffCode" inputmode="numeric" autocomplete="off" required>
+    </div>
+    <button class="btn-main" type="submit">開く</button>
+  </form>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="data.js"></script>

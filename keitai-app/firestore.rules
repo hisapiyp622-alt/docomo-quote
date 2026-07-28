@@ -1,20 +1,19 @@
 rules_version = '2';
 // ケータイ見積もり — Firestore セキュリティルール
 //
-// ⚠ このルールはログイン（認証）を使いません。
-//    プロジェクトの projectId を知っている人は、誰でもこれらのドキュメントを
-//    読み書きできます。必ず次の2点を守ってください。
-//      1. Firebaseプロジェクトは「1店舗につき1つ」用意する（使い回さない）
-//      2. Google Cloud コンソールでAPIキーに「ウェブサイトの制限」をかけ、
-//         自店のアプリのURLからのみ利用できるようにする（SETUP.md 手順6）
-//    複数店舗で1つのプロジェクトを共有すると、見積もりが互いに上書きされます。
+// 店舗アカウントでログインしている場合のみ、その店舗自身のデータへアクセスできます。
+// 他店のデータは読むことも書くこともできません。
 //
 // 反映方法: Firebaseコンソール → Firestore Database → ルール にこの内容を貼り付けて公開
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 見積もり（担当A/B/C）と料金マスタ
-    match /settings/{docId} {
-      allow read, write: if docId.matches('keitaiQuote.*');
+    // stores/{店舗のUID} と、その配下の見積もり（quotes/{担当者ID}）
+    match /stores/{storeId} {
+      allow read, write: if request.auth != null && request.auth.uid == storeId;
+
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == storeId;
+      }
     }
     // それ以外は一切許可しない
     match /{document=**} {

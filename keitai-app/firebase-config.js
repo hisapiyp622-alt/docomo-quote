@@ -17,6 +17,12 @@ var KEITAI_FIREBASE = {
   appId: ""
 };
 
+/* 店舗IDをログイン用のアドレスへ変換するときのドメイン。
+ * Firebaseの認証はメールアドレス形式を必要とするため、
+ * 店舗ID「hannan01」→「hannan01@（このドメイン）」として扱います。
+ * 実在するドメインである必要はありません。値は店舗を作るときと揃えてください。 */
+var KEITAI_STORE_DOMAIN = "keitai-quote.example";
+
 if (typeof firebase !== "undefined" && KEITAI_FIREBASE.projectId) {
   try { firebase.initializeApp(KEITAI_FIREBASE); } catch (e) {}
 }

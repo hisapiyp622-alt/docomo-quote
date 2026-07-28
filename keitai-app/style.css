@@ -342,3 +342,50 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 
 /* 引き継ぎシートの一覧（新規／継続／廃止・ネットワークサービス）は1件1行 */
 .sheet .kubun-list > i{display:block;font-style:normal;break-inside:avoid;page-break-inside:avoid}
+
+/* ── 店舗ログイン・担当者コード ───────────────────────────── */
+.login-overlay{
+  position:fixed;inset:0;z-index:50;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.login-box{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:22px 20px;width:100%;max-width:360px;
+  box-shadow:0 6px 24px rgba(0,0,0,.08);
+}
+.login-box h2{margin:0 0 4px;font-size:18px;color:var(--red)}
+.login-lead{margin:0 0 14px;font-size:12.5px;color:var(--muted)}
+.login-box .field{display:block;margin-bottom:10px}
+.login-box .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.login-box .field input{
+  width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.login-box .btn-main{width:100%;margin-top:4px}
+.login-err{
+  margin:0 0 10px;font-size:12.5px;color:var(--red);
+  background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;padding:7px 9px;
+}
+
+/* ヘッダーの店舗・担当表示と操作ボタン */
+.staff-bar{
+  font-size:12.5px;font-weight:700;color:var(--ink);
+  background:#F3F3F4;border-radius:999px;padding:3px 11px;margin-left:8px;white-space:nowrap;
+}
+.hd-btn{
+  font:inherit;font-size:12px;color:var(--muted);cursor:pointer;
+  background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin-left:6px;
+}
+.hd-btn:hover{color:var(--red);border-color:var(--red)}
+
+/* 担当者の一覧（設定タブ） */
+.staff-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.staff-row input[type="text"]{
+  padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;
+}
+.staff-row input[data-staffname]{flex:1 1 auto;min-width:0}
+.staff-row input[data-staffcode]{flex:0 0 96px;width:96px}
+.staff-row .del{
+  flex:0 0 auto;width:28px;height:28px;line-height:1;
+  border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--muted);cursor:pointer;
+}
+.staff-row .del:hover{color:var(--red);border-color:var(--red)}
