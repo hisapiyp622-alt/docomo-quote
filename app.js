@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-69";
+  var APP_VERSION = "2026.07.25-70";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -151,7 +151,7 @@
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
-      deviceName: "", devicePrice: 0, payMethod: "none", zanka: 0, kaedokiFee: 0,
+      deviceName: "", devicePrice: 0, payMethod: "none", kaedoki23: 0, kaedokiFee: 0,
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
       custName: "", shopName: "", staffName: "", quoteMemo: "",
@@ -183,6 +183,13 @@
         }
       }
     } catch (e) {}
+    // カエドキ: 旧「残価」入力から「23回分の総額（頭金込み）」へ移行
+    store.patterns.forEach(function (pt) {
+      if (!pt.kaedoki23 && pt.zanka) {
+        pt.kaedoki23 = Math.max(0, num(pt.devicePrice) - num(pt.zanka));
+      }
+      delete pt.zanka;
+    });
     // 旧・代理店サービスのチェック状態をオプションへ統合（全パターン共通）
     store.patterns.forEach(function (pt) {
       if (!pt.optionKubun) pt.optionKubun = {};
@@ -647,7 +654,7 @@
     });
 
     // 端末
-    var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
+    var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
     var initialDevice = 0;
     var deviceTotal = num(st.devicePrice);          // 端末代金総額（頭金を含む）
     var deviceAtama = Math.max(0, num(st.atamakin));
@@ -665,17 +672,21 @@
         device.firstExtra = p - device.monthly * n;
       }
     } else if (st.payMethod === "kaedoki") {
-      var z = Math.min(num(st.zanka), p);
-      if (p > 0) {
+      // 入力は「23回分の総額（頭金込み）」。残価は 端末代金総額 − その額 で決まる
+      var t23 = Math.min(Math.max(0, num(st.kaedoki23)), deviceTotal);
+      var split23 = Math.max(0, t23 - deviceAtama);   // 23回で分割する金額
+      var z = Math.max(0, deviceTotal - t23);          // 残価（24回目支払分）
+      if (deviceTotal > 0) {
         device.kaedoki = true;
-        device.monthly = Math.floor((p - z) / 23);
+        device.monthly = Math.floor(split23 / 23);
         device.months = 23;
-        device.firstExtra = (p - z) - device.monthly * 23;
+        device.firstExtra = split23 - device.monthly * 23;
         device.after = z > 0 ? Math.floor(z / 24) : 0;
         device.zanka = z;
+        device.total23 = t23;
         device.kaedokiFee = num(st.kaedokiFee);
-        // 頭金も端末代金総額の一部なので実質負担に含める
-        device.jisshitsu = deviceAtama + (p - z) + device.kaedokiFee;
+        // 23回分の総額には頭金が含まれているので、そのまま実質負担になる
+        device.jisshitsu = t23 + device.kaedokiFee;
       }
     }
 
@@ -1160,7 +1171,7 @@
     $("deviceName").value = state.deviceName;
     $("devicePrice").value = state.devicePrice || "";
     $("payMethod").value = state.payMethod;
-    $("zanka").value = state.zanka || "";
+    $("kaedoki23").value = state.kaedoki23 || "";
     $("kaedokiFee").value = state.kaedokiFee || "";
     $("atamakin").value = state.atamakin;
     $("jimuFee").value = state.jimuFee;
@@ -1194,7 +1205,7 @@
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptDcard").value = state.pointDcard || "";
-    $("zankaField").hidden = state.payMethod !== "kaedoki";
+    $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
     renderCampaigns();
     renderDiscountHint();
@@ -1208,6 +1219,17 @@
       return "機種" + (state.deviceName ? "「" + state.deviceName + "」" : "")
         + (p > 0 ? "（" + yen(p) + "）" : "") + "が入力されていますが、支払い方法が「端末購入なし」のため"
         + "機種代金が見積もりに含まれていません。支払い方法（分割・カエドキ・一括）を選択してください。";
+    }
+    if (state.payMethod === "kaedoki" && p > 0) {
+      var t = num(state.kaedoki23);
+      if (t > p) {
+        return "23回分の総額（" + yen(t) + "）が端末代金総額（" + yen(p) + "）を超えています。"
+          + "23回分の総額は、端末代金総額のうち残価を除いた金額（頭金込み）を入力してください。";
+      }
+      if (t > 0 && t < Math.max(0, num(state.atamakin))) {
+        return "23回分の総額（" + yen(t) + "）が店頭頭金（" + yen(num(state.atamakin)) + "）を下回っています。"
+          + "23回分の総額には頭金を含めた金額を入力してください。";
+      }
     }
     var at = Math.max(0, num(state.atamakin));
     if (state.payMethod !== "none" && state.payMethod !== "ikkatsu" && p > 0 && at >= p) {
@@ -1227,6 +1249,14 @@
     $("sumMonthlyLabel").textContent = "月額" + (lbl ? "（" + lbl + "）" : "") + "｜パターン" + PAT_NAMES[store.active];
     $("sumMonthly").textContent = yen(seg0.monthly);
     $("sumInitial").textContent = yen(r.initialTotal);
+
+    var k2 = $("kaedoki23Hint");
+    if (state.payMethod === "kaedoki") {
+      k2.hidden = false;
+      k2.textContent = "端末代金総額 " + yen(r.device.total || 0) + " のうち、はじめの23回で "
+        + yen(r.device.total23 || 0) + "（店頭頭金 " + yen(r.device.atama || 0) + " を含む）をお支払い。"
+        + "残りの " + yen(r.device.zanka || 0) + " が残価（24回目支払分）になります。";
+    } else { k2.hidden = true; }
 
     var kh = $("kaedokiHint");
     if (r.device.kaedoki) {
@@ -1622,6 +1652,7 @@
       p2 += "<h3>いつでもカエドキプログラム</h3><table><tbody>";
       p2 += row("端末代金総額", yen(r.device.total || 0), true);
       if (r.device.atama > 0) p2 += row("店頭頭金（総額のうち店頭でお支払い）", yen(r.device.atama), true);
+      p2 += row("23回分の総額（頭金込み）", yen(r.device.total23 || 0), true);
       p2 += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
       p2 += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
       if (r.device.kaedokiFee > 0) p2 += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
@@ -2175,11 +2206,11 @@
     $("devicePrice").addEventListener("input", function () { state.devicePrice = num(this.value); recalc(); });
     $("payMethod").addEventListener("change", function () {
       state.payMethod = this.value;
-      $("zankaField").hidden = state.payMethod !== "kaedoki";
+      $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
       $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
       recalc();
     });
-    $("zanka").addEventListener("input", function () { state.zanka = num(this.value); recalc(); });
+    $("kaedoki23").addEventListener("input", function () { state.kaedoki23 = num(this.value); recalc(); });
     $("kaedokiFee").addEventListener("input", function () { state.kaedokiFee = num(this.value); recalc(); });
     $("atamakin").addEventListener("input", function () { state.atamakin = num(this.value); recalc(); });
     $("jimuFee").addEventListener("input", function () { state.jimuFee = num(this.value); recalc(); });
