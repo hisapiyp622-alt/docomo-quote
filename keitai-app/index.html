@@ -181,34 +181,6 @@
       </div>
       <p class="hint" id="discountOff" hidden></p>
       <div id="campaignList"></div>
-      <div class="subhead">ポイント自動充当（実質額の案内用・自由入力）</div>
-      <div class="field" id="ptPoikatsuWrap">
-        <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
-        <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
-      </div>
-      <div class="field" id="ptPoikatsuFamilyWrap">
-        <label for="ptPoikatsuFamily">ポイ活ファミリー特典</label>
-        <input type="number" id="ptPoikatsuFamily" inputmode="numeric" min="0" placeholder="0"> pt/月
-      </div>
-      <div class="field" id="ptBakuageWrap" hidden>
-        <label for="ptBakuage">爆アゲセレクション還元</label>
-        <input type="number" id="ptBakuage" inputmode="numeric" min="0" placeholder="0"> pt/月
-        <button class="btn-sub" id="bakuageReset" type="button" hidden>自動計算値に戻す</button>
-      </div>
-      <p class="hint" id="bakuageHint" hidden></p>
-      <p class="hint" id="bakuageOff" hidden></p>
-      <label class="check" id="bakuageIncludeWrap" hidden>
-        <input type="checkbox" id="bakuageInclude"> <span id="bakuageIncludeLabel">爆アゲ セレクションの還元を見積もりに含める</span>
-      </label>
-      <div class="field" id="ptDcardField">
-        <label for="ptDcard">dカード還元特典</label>
-        <input type="number" id="ptDcard" inputmode="numeric" min="0" placeholder="0"> pt/月
-        <button class="btn-sub" id="dcardAutoReset" type="button" hidden>自動計算値に戻す</button>
-      </div>
-      <label class="check" id="dcardAutoWrap" hidden>
-        <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
-      </label>
-      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
       <p class="hint" id="discountHint"></p>
     </div>
 
@@ -310,7 +282,40 @@
     </div>
 
     <div class="card c8">
-      <h2>⑧ お客様情報（見積書用・任意）</h2>
+      <h2>⑧ ポイント（実質額のご案内）</h2>
+      <p class="hint">もらえるポイントを月額から差し引いて、実質のお支払い額としてご案内するための欄です。
+        ④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
+      <div class="field" id="ptPoikatsuWrap">
+        <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
+        <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
+      </div>
+      <div class="field" id="ptPoikatsuFamilyWrap">
+        <label for="ptPoikatsuFamily">ポイ活ファミリー特典</label>
+        <input type="number" id="ptPoikatsuFamily" inputmode="numeric" min="0" placeholder="0"> pt/月
+      </div>
+      <div class="field" id="ptBakuageWrap" hidden>
+        <label for="ptBakuage">爆アゲセレクション還元</label>
+        <input type="number" id="ptBakuage" inputmode="numeric" min="0" placeholder="0"> pt/月
+        <button class="btn-sub" id="bakuageReset" type="button" hidden>自動計算値に戻す</button>
+      </div>
+      <p class="hint" id="bakuageHint" hidden></p>
+      <p class="hint" id="bakuageOff" hidden></p>
+      <label class="check" id="bakuageIncludeWrap" hidden>
+        <input type="checkbox" id="bakuageInclude"> <span id="bakuageIncludeLabel">爆アゲ セレクションの還元を見積もりに含める</span>
+      </label>
+      <div class="field" id="ptDcardField">
+        <label for="ptDcard">dカード還元特典</label>
+        <input type="number" id="ptDcard" inputmode="numeric" min="0" placeholder="0"> pt/月
+        <button class="btn-sub" id="dcardAutoReset" type="button" hidden>自動計算値に戻す</button>
+      </div>
+      <label class="check" id="dcardAutoWrap" hidden>
+        <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
+      </label>
+      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
+    </div>
+
+    <div class="card c9">
+      <h2>⑨ お客様情報（見積書用・任意）</h2>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <p class="hint">※ お客様名（個人情報）は端末間で同期されません。印刷する端末で入力してください。</p>
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
