@@ -1,6 +1,7 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "kq-v25";
-var ASSETS = ["./", "index.html", "style.css", "app.js", "data.js", "firebase-config.js",
+var CACHE = "kq-v26";
+var ASSETS = ["./", "index.html", "style.css", "app.js", "changelog.js",
+  "data.js", "firebase-config.js",
   "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", function (e) {

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.5";
+  var APP_VERSION = "1.6.6";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3235,6 +3235,43 @@
       hours: v.hours || ""
     };
   }
+  /* 更新履歴。前回見たときの版を覚えておき、それより新しいものに印を付ける。
+   * 何が変わったのかを店舗の方が自分で確かめられるようにするため。 */
+  var SEEN_VER_KEY = "kq-seen-version";
+  function changelog() {
+    return (typeof KEITAI_CHANGELOG !== "undefined" && KEITAI_CHANGELOG) || [];
+  }
+  function seenVersion() {
+    try { return localStorage.getItem(SEEN_VER_KEY) || ""; } catch (e) { return ""; }
+  }
+  function markVersionSeen() {
+    try { localStorage.setItem(SEEN_VER_KEY, APP_VERSION); } catch (e) {}
+    var b = $("aboutBtn");
+    if (b) b.classList.remove("has-new");
+  }
+  // 前回見た版より新しい項目の数（初めて使う端末では0）
+  function newSinceSeen() {
+    var seen = seenVersion();
+    if (!seen) return 0;
+    var log = changelog();
+    var at = -1;
+    log.forEach(function (e, i) { if (at < 0 && e.v === seen) at = i; });
+    if (at < 0) return 0;   // 覚えている版が履歴に無い場合は印を付けない
+    return at;
+  }
+  function changelogHtml() {
+    var log = changelog();
+    if (!log.length) return '<p class="hint">更新履歴はありません。</p>';
+    var newCount = newSinceSeen();
+    return log.map(function (e, i) {
+      return '<div class="log-entry' + (i < newCount ? " is-new" : "") + '">'
+        + '<div class="log-head">' + esc(e.v)
+        + (i < newCount ? '<span class="log-new">新着</span>' : "")
+        + '<span class="log-date">' + esc(e.d || "") + "</span></div>"
+        + "<ul>" + (e.items || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"
+        + "</div>";
+    }).join("");
+  }
   function showAbout(show) {
     var el = $("aboutOverlay");
     if (!el) return;
@@ -3251,8 +3288,14 @@
       $("aboutMeta").innerHTML = rows.map(function (r) {
         return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
       }).join("");
+      var n = newSinceSeen();
+      var lb = $("aboutLogBtn");
+      if (lb) lb.textContent = n > 0 ? "更新履歴（新着 " + n + "件）" : "更新履歴を見る";
+      $("aboutLogBox").innerHTML = changelogHtml();
+      $("aboutLogBox").hidden = n === 0;   // 新しい版があるときは開いた状態で出す
     }
     el.hidden = !show;
+    if (!show) markVersionSeen();
   }
   function initAbout() {
     ["aboutBtn", "aboutFromLogin"].forEach(function (id) {
@@ -3260,6 +3303,16 @@
       if (b) b.addEventListener("click", function () { showAbout(true); });
     });
     $("aboutClose").addEventListener("click", function () { showAbout(false); });
+    $("aboutLogBtn").addEventListener("click", function () {
+      var box = $("aboutLogBox");
+      box.hidden = !box.hidden;
+    });
+    // 前回開いたときより新しくなっていたら、情報ボタンに印を付ける
+    if (seenVersion() && seenVersion() !== APP_VERSION) {
+      var ab = $("aboutBtn");
+      if (ab) ab.classList.add("has-new");
+    }
+    if (!seenVersion()) markVersionSeen(); // 初めて使う端末では印を付けない
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") showAbout(false);
     });
