@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.1";
+  var APP_VERSION = "1.6.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -966,8 +966,58 @@
     return id + "@" + dom;
   }
 
+  /* 同じ端末で別の店舗にログインしたときの片付け。
+   * 見積もり・料金マスタ・担当者・履歴は端末内にも保存しているため、
+   * そのままだと前の店舗の内容が見えてしまう（クラウドには残っているので消えない）。
+   * この端末で初めてログインする場合だけは、端末内の内容をその店舗の初期値にする。 */
+  var STORE_UID_KEY = "kq-store-uid";
+  function wipeStoreLocal() {
+    try {
+      var kill = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k) continue;
+        if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY
+          || k.indexOf(STATE_KEY + ":") === 0
+          || k.indexOf(SAVED_KEY + ":") === 0
+          || k.indexOf(TPL_KEY + ":") === 0) kill.push(k);
+      }
+      kill.forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) {}
+  }
+  function switchStoreIfNeeded(uid) {
+    var prev = "";
+    try { prev = localStorage.getItem(STORE_UID_KEY) || ""; } catch (e) {}
+    try { localStorage.setItem(STORE_UID_KEY, uid); } catch (e) {}
+    if (!prev || prev === uid) return;
+    CLOUD.suppress = true; // 片付けの途中の内容をクラウドへ送らない
+    try {
+      wipeStoreLocal();
+      loadConfig();
+      loadMaster();
+      histLoadLocal();
+      histMark();
+      histLoaded = false;
+      loadState();
+      state = store.patterns[store.active];
+      loadSaved();
+      loadTemplates();
+      renderStoreConfig();
+      renderLockConfig();
+      renderAdminLock();
+      renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
+      renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+      renderCampaigns(); renderDiscountHint();
+      renderSaved(); renderTplBar(); renderStaffBar();
+      renderMasterTab();
+      syncFormFromState();
+      recalc();
+    } finally { CLOUD.suppress = false; }
+  }
+
   function onSignedIn(user) {
     CLOUD.user = user;
+    switchStoreIfNeeded(user.uid); // 前の店舗の内容を持ち込まない
     showLogin(false);
     syncStatus("同期中…", "");
     var ai = $("accountInfo");
