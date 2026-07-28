@@ -228,10 +228,11 @@
           <option value="kaedoki">いつでもカエドキプログラム（24回・残価設定）</option>
         </select>
       </div>
-      <div class="field" id="zankaField" hidden>
-        <label for="zanka">残価（24回目支払分・税込）</label>
-        <input type="number" id="zanka" inputmode="numeric" placeholder="0" min="0"> 円
+      <div class="field" id="kaedoki23Field" hidden>
+        <label for="kaedoki23">23回分の総額（頭金込み）</label>
+        <input type="number" id="kaedoki23" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
+      <p class="hint" id="kaedoki23Hint" hidden></p>
       <div class="field" id="kaedokiFeeField" hidden>
         <label for="kaedokiFee">プログラム利用料（返却時・機種による）</label>
         <input type="number" id="kaedokiFee" inputmode="numeric" placeholder="0" min="0"> 円
