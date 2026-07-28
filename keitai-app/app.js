@@ -5,16 +5,62 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.0.1";
+  var APP_VERSION = "1.1.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
-  function stateKey() {
-    var g = syncGroup();
-    return g === "A" ? STATE_KEY : STATE_KEY + "-" + g;
+  // 見積もりは担当者ごとに別の領域へ保存する
+  function quoteKey(staffId) {
+    return STATE_KEY + ":" + (staffId || activeStaff().id);
   }
   var PAT_NAMES = ["A", "B", "C"];
   var OPT_CATEGORIES = ["補償", "バックアップ", "セキュリティ", "エンタメ", "その他"];
+
+  /* ---------- 店舗設定（店舗名・担当者） ---------- */
+  var CFG_KEY = "kq-config-v1";
+  var config;
+  function defaultConfig() {
+    return { storeName: "", staff: [{ id: "s1", name: "担当1", code: "" }], activeStaffId: "s1" };
+  }
+  function loadConfig() {
+    config = defaultConfig();
+    try {
+      var saved = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
+      if (saved && saved.staff && saved.staff.length) config = Object.assign(defaultConfig(), saved);
+    } catch (e) {}
+    config.staff.forEach(function (s2, i) {
+      if (!s2.id) s2.id = "s" + (i + 1);
+      if (typeof s2.code !== "string") s2.code = "";
+    });
+  }
+  function saveConfig() {
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {}
+    if (typeof pushConfig === "function") pushConfig();
+  }
+  function activeStaff() {
+    var s2 = config.staff.filter(function (x) { return x.id === config.activeStaffId; })[0];
+    if (!s2) { s2 = config.staff[0]; config.activeStaffId = s2.id; }
+    return s2;
+  }
+  function newStaffId() {
+    var n = 1;
+    while (config.staff.some(function (s2) { return s2.id === "s" + n; })) n++;
+    return "s" + n;
+  }
+  // 設定タブの店舗設定カードを描き直す
+  function renderStoreConfig() {
+    var nameEl = $("storeNameInput");
+    if (nameEl && nameEl.value !== (config.storeName || "")) nameEl.value = config.storeName || "";
+    var list = $("staffList");
+    if (!list) return;
+    list.innerHTML = config.staff.map(function (s2, i) {
+      return '<div class="staff-row">'
+        + '<input type="text" value="' + esc(s2.name) + '" data-staffname="' + i + '" placeholder="担当者名">'
+        + '<input type="text" value="' + esc(s2.code || "") + '" data-staffcode="' + i + '" placeholder="コード" inputmode="numeric">'
+        + (config.staff.length > 1 ? '<button class="del" data-staffdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
+        + "</div>";
+    }).join("");
+  }
 
   /* ---------- マスタ読み込み ---------- */
   var MASTER;
@@ -162,12 +208,16 @@
 
   function loadState() {
     try {
-      var s = JSON.parse(localStorage.getItem(stateKey()) || "null");
+      var s = JSON.parse(localStorage.getItem(quoteKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
         store.active = Math.min(Math.max(s.active | 0, 0), 2);
         for (var i = 0; i < 3; i++) {
           store.patterns[i] = Object.assign(defaultState(), s.patterns[i] || {});
         }
+      } else {
+        // 保存がない担当者に切り替えたときは、前の担当の内容を引き継がない
+        store.active = 0;
+        for (var j = 0; j < 3; j++) store.patterns[j] = defaultState();
       }
     } catch (e) {}
     // カエドキ: 旧「残価」入力から「23回分の総額（頭金込み）」へ移行
@@ -211,176 +261,319 @@
     state = store.patterns[store.active];
   }
   function saveState() {
-    try { localStorage.setItem(stateKey(), JSON.stringify(store)); } catch (e) {}
+    try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
     markLocalEdit();
   }
 
-  /* ---------- 端末間リアルタイム同期（Firestore・レシピアプリと同じプロジェクト） ----------
-   * 担当者（同期グループ）ごとに settings/keitaiQuote〔A|B|C〕 の1ドキュメントを共有。
-   * 同じ担当を選んだ端末同士だけが同期し、別の担当の端末には影響しない。
-   * グループ選択は端末ローカル（localStorage）で、同期対象には含めない。
-   * （settingsコレクションはFirestoreルールで既に許可済みのため、ルール変更なしで使える）
-   * 後勝ち（最終更新が優先）。オフラインでも動作し、復帰時に新しい方が反映される。 */
-  var SYNC_GROUP_KEY = "kq-sync-group"; // この端末の担当グループ（A/B/C/off）
-  function syncGroup() {
-    try {
-      var g = localStorage.getItem(SYNC_GROUP_KEY);
-      return g === "B" || g === "C" || g === "off" ? g : "A";
-    } catch (e) { return "A"; }
-  }
-  function syncMsKey() { return "kq-sync-local-ms-" + syncGroup(); }
-  function syncDocId() { return "keitaiQuote" + syncGroup(); }
-  var SYNC = {
-    ref: null, ready: false, suppress: false, timer: null,
+  /* ---------- 店舗ログイン・端末間同期（Firestore） ----------
+   * 店舗ID＋パスワードで店舗アカウントにログインし、店舗内は担当者コードで担当を選ぶ。
+   * データは stores/{店舗のUID} 配下にのみ保存し、他店からは読み書きできない
+   * （firestore.rules で request.auth.uid == 店舗ID を要求している）。
+   *
+   *   stores/{uid}                  店舗名・担当者一覧・料金マスタ
+   *   stores/{uid}/quotes/{担当ID}   担当者ごとの見積もり
+   *
+   * お客様名は個人情報のためクラウドへ送信しない。
+   * Firebaseを設定していない場合は、ログイン画面を出さずに端末内保存のみで動作する。 */
+  var CLOUD = {
+    enabled: false, user: null, db: null, auth: null,
+    suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
+    unsubStore: null, unsubQuote: null, watchingStaffId: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
+  function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
   function syncStatus(msg, cls) {
     var el = $("syncStatus");
-    if (el) { el.textContent = msg; el.className = "sync-status" + (cls ? " " + cls : ""); }
+    if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
   }
-  function markLocalEdit() {
-    if (!SYNC.ready || SYNC.suppress) return;
-    try { localStorage.setItem(syncMsKey(), String(Date.now())); } catch (e) {}
-    pushSync();
+  function cloudOk() { syncStatus("同期✓", "ok"); }
+  function cloudNg(err) {
+    syncStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
   }
-  // 送信用の見積もりデータ。お客様名（個人情報）は同期に含めない
-  function syncPayloadStore() {
+  function storeDoc() { return CLOUD.db.collection("stores").doc(CLOUD.user.uid); }
+  function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
+  function stamp(extra) {
+    var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    for (var k in extra) if (extra.hasOwnProperty(k)) o[k] = extra[k];
+    return o;
+  }
+
+  // 店舗設定（店舗名・担当者一覧）の送信
+  function pushConfig() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
+    syncStatus("同期中…", "");
+    CLOUD.cfgTimer = setTimeout(function () {
+      CLOUD.cfgTimer = null;
+      if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
+      storeDoc().set(stamp({ storeName: config.storeName || "", staff: config.staff }), { merge: true })
+        .then(cloudOk, cloudNg);
+    }, 800);
+  }
+  // 料金マスタ（店舗で共通）の送信
+  function markMasterEdit() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
+    syncStatus("同期中…", "");
+    CLOUD.masterTimer = setTimeout(function () {
+      CLOUD.masterTimer = null;
+      if (!cloudOn()) return;
+      storeDoc().set(stamp({ master: localStorage.getItem(MASTER_KEY) || "" }), { merge: true })
+        .then(cloudOk, cloudNg);
+    }, 1200);
+  }
+  // 送信用の見積もりデータ。お客様名（個人情報）はクラウドへ送らない
+  function quotePayload() {
     try {
-      var s = JSON.parse(localStorage.getItem(stateKey()) || "null");
-      if (!s) return "";
-      (s.patterns || []).forEach(function (p) { if (p) p.custName = ""; });
+      var s = JSON.parse(JSON.stringify(store));
+      (s.patterns || []).forEach(function (pt) { pt.custName = ""; });
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
-  function pushSync() {
-    if (!SYNC.ref || SYNC.suppress) return;
-    if (SYNC.timer) clearTimeout(SYNC.timer);
+  function markLocalEdit() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    var sid = activeStaff().id;
+    if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
     syncStatus("同期中…", "");
-    SYNC.timer = setTimeout(function () {
-      SYNC.timer = null;
-      SYNC.ref.set({
-        store: syncPayloadStore(),
-        clientId: SYNC.clientId,
-        updatedAtMs: num(localStorage.getItem(syncMsKey())) || Date.now(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }).then(function () { syncStatus("同期✓", "ok"); }, function (err) {
-        syncStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
-      });
+    CLOUD.quoteTimer = setTimeout(function () {
+      CLOUD.quoteTimer = null;
+      if (!cloudOn()) return;
+      quoteDoc(sid).set(stamp({ data: quotePayload() })).then(cloudOk, cloudNg);
     }, 800);
-  }
-  function applyRemote(d) {
-    SYNC.suppress = true;
-    try {
-      if (d.store) {
-        try {
-          // お客様名は同期されないため、この端末で入力済みの名前を保持する
-          var incoming = JSON.parse(d.store);
-          var local = JSON.parse(localStorage.getItem(stateKey()) || "null");
-          if (incoming && incoming.patterns && local && local.patterns) {
-            incoming.patterns.forEach(function (p, i) {
-              if (p && !p.custName && local.patterns[i] && local.patterns[i].custName) {
-                p.custName = local.patterns[i].custName;
-              }
-            });
-          }
-          localStorage.setItem(stateKey(), JSON.stringify(incoming));
-        } catch (e) {}
-      }
-      try { localStorage.setItem(syncMsKey(), String(d.updatedAtMs || Date.now())); } catch (e) {}
-      loadMaster();
-      loadState();
-      syncFormFromState();
-      renderTplBar();
-      renderMasterTab();
-      recalc();
-      syncStatus("同期✓", "ok");
-    } finally { SYNC.suppress = false; }
-  }
-  /* マスタ設定（頭金・料金データ等）は担当に関係なく全端末で共通:
-   * settings/keitaiQuoteMaster の1ドキュメントを全端末で共有（後勝ち） */
-  var MASTER_MS_KEY = "kq-master-sync-ms";
-  var MSYNC = { ref: null, ready: false, suppress: false, timer: null };
-  function markMasterEdit() {
-    if (!MSYNC.ready || MSYNC.suppress || SYNC.suppress) return;
-    try { localStorage.setItem(MASTER_MS_KEY, String(Date.now())); } catch (e) {}
-    pushMasterSync();
-  }
-  function pushMasterSync() {
-    if (!MSYNC.ref || MSYNC.suppress) return;
-    if (MSYNC.timer) clearTimeout(MSYNC.timer);
-    MSYNC.timer = setTimeout(function () {
-      MSYNC.timer = null;
-      MSYNC.ref.set({
-        master: localStorage.getItem(MASTER_KEY) || "",
-        clientId: SYNC.clientId,
-        updatedAtMs: num(localStorage.getItem(MASTER_MS_KEY)) || Date.now(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }).then(function () {}, function () {});
-    }, 800);
-  }
-  function applyRemoteMaster(d) {
-    MSYNC.suppress = true;
-    SYNC.suppress = true;
-    try {
-      if (d.master) { try { localStorage.setItem(MASTER_KEY, d.master); } catch (e) {} }
-      try { localStorage.setItem(MASTER_MS_KEY, String(d.updatedAtMs || Date.now())); } catch (e) {}
-      loadMaster();
-      loadState(); // マスタ依存の正規化（初期費用項目への統合など）を反映
-      syncFormFromState();
-      renderTplBar();
-      renderMasterTab();
-      recalc();
-    } finally { MSYNC.suppress = false; SYNC.suppress = false; }
-  }
-  function initMasterSync(db) {
-    MSYNC.ref = db.collection("settings").doc("keitaiQuoteMaster");
-    MSYNC.ready = true;
-    MSYNC.ref.onSnapshot(function (snap) {
-      var d = snap.exists ? snap.data() : null;
-      if (!d) { pushMasterSync(); return; } // まだ何もない → この端末のマスタを初回送信
-      if (d.clientId === SYNC.clientId) return;
-      var localMs = num(localStorage.getItem(MASTER_MS_KEY));
-      if ((d.updatedAtMs || 0) <= localMs) {
-        if ((d.updatedAtMs || 0) < localMs) pushMasterSync();
-        return;
-      }
-      if (MSYNC.timer) return;
-      applyRemoteMaster(d);
-    }, function () {});
   }
 
-  function initSync() {
-    var sel = $("syncGroup");
-    if (sel) {
-      sel.value = syncGroup();
-      sel.addEventListener("change", function () {
-        try { localStorage.setItem(SYNC_GROUP_KEY, sel.value); } catch (e) {}
-        // 選び直したグループのドキュメントで再接続（リロードが一番確実）
-        location.reload();
-      });
-    }
-    if (syncGroup() === "off") { syncStatus("同期OFF", ""); return; }
-    if (typeof firebase === "undefined" || !firebase.apps || !firebase.apps.length) {
-      syncStatus("", ""); return; // SDK未読み込み（オフライン初回など）→同期なしで動作
-    }
-    var db;
-    try { db = firebase.firestore(); } catch (e) { syncStatus("", ""); return; }
-    initMasterSync(db); // マスタは担当に関係なく全端末で共有
-    SYNC.ref = db.collection("settings").doc(syncDocId());
-    SYNC.ready = true;
-    SYNC.ref.onSnapshot(function (snap) {
+  function applyRemoteStore(d) {
+    CLOUD.suppress = true;
+    try {
+      if (typeof d.storeName === "string") config.storeName = d.storeName;
+      if (d.staff && d.staff.length) {
+        config.staff = d.staff;
+        // 選択中の担当が消えていたら、担当者コードの入力からやり直す
+        if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
+          config.activeStaffId = "";
+          saveConfig();
+          showStaffGate(true);
+          return;
+        }
+      }
+      saveConfig();
+      if (d.master) {
+        try {
+          localStorage.setItem(MASTER_KEY, d.master);
+          loadMaster();
+          renderMasterTab();
+          renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
+          renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+          renderCampaigns(); renderDiscountHint();
+        } catch (e) {}
+      }
+      renderStoreConfig();
+      syncFormFromState();
+      recalc();
+    } finally { CLOUD.suppress = false; }
+  }
+  function applyRemoteQuote(d) {
+    if (!d || !d.data) return;
+    CLOUD.suppress = true;
+    try {
+      var incoming = JSON.parse(d.data);
+      if (!incoming || !incoming.patterns) return;
+      // お客様名は同期しないため、この端末で入力済みの名前を保持する
+      for (var i = 0; i < 3; i++) {
+        var mine = (store.patterns[i] || {}).custName;
+        var pt = incoming.patterns[i] || {};
+        if (!pt.custName && mine) pt.custName = mine;
+        store.patterns[i] = Object.assign(defaultState(), pt);
+      }
+      store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
+      state = store.patterns[store.active];
+      try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
+      syncFormFromState();
+      recalc();
+      cloudOk();
+    } catch (e) {} finally { CLOUD.suppress = false; }
+  }
+  function watchStore() {
+    if (!cloudOn()) return;
+    if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
+    CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
-      if (!d) { pushSync(); return; } // まだ何もない → この端末の内容を初回送信
-      if (d.clientId === SYNC.clientId) { syncStatus("同期✓", "ok"); return; }
-      var localMs = num(localStorage.getItem(syncMsKey()));
-      if ((d.updatedAtMs || 0) <= localMs) {
-        if ((d.updatedAtMs || 0) < localMs) pushSync(); // こちらが新しい → 送信
-        else syncStatus("同期✓", "ok");
+      if (!d) { pushConfig(); markMasterEdit(); return; } // 初回ログイン → この端末の内容を初期値にする
+      if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
+      applyRemoteStore(d);
+      cloudOk();
+    }, function () { syncStatus("同期:接続エラー", "err"); });
+  }
+  function watchQuote() {
+    if (!cloudOn() || !config.activeStaffId) return;
+    var sid = activeStaff().id;
+    if (CLOUD.unsubQuote && CLOUD.watchingStaffId === sid) return;
+    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    CLOUD.watchingStaffId = sid;
+    CLOUD.unsubQuote = quoteDoc(sid).onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d) { markLocalEdit(); return; }
+      if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
+      if (CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
+      applyRemoteQuote(d);
+    }, function () { syncStatus("同期:接続エラー", "err"); });
+  }
+
+  /* ---------- 画面の出し分け（店舗ログイン → 担当者コード → 本体） ---------- */
+  function showLogin(show) { var el = $("loginOverlay"); if (el) el.hidden = !show; }
+  function showStaffGate(show) {
+    var el = $("staffOverlay");
+    if (el) el.hidden = !show;
+    if (show) {
+      var f = $("staffCode");
+      if (f) { f.value = ""; setTimeout(function () { f.focus(); }, 50); }
+      var e2 = $("staffErr"); if (e2) e2.hidden = true;
+    }
+  }
+  // 担当者コードが1つも設定されていない場合は、コード入力を省いて先頭の担当で始める
+  function anyStaffCode() {
+    return config.staff.some(function (s) { return String(s.code || "").trim() !== ""; });
+  }
+  function enterStaff(s) {
+    config.activeStaffId = s.id;
+    saveConfig();
+    showStaffGate(false);
+    loadState();
+    state = store.patterns[store.active];
+    syncFormFromState();
+    renderStaffBar();
+    recalc();
+    watchQuote();
+  }
+  function renderStaffBar() {
+    var el = $("staffBar");
+    if (!el) return;
+    var s = activeStaff();
+    el.textContent = (config.storeName ? config.storeName + " / " : "") + (s.name || "担当");
+    el.hidden = false;
+  }
+
+  function loginErrorMessage(err) {
+    var c = String((err && err.code) || "");
+    if (/user-not-found|wrong-password|invalid-credential|invalid-email/.test(c)) return "店舗IDまたはパスワードが正しくありません。";
+    if (/too-many-requests/.test(c)) return "試行回数が多すぎます。しばらく時間をおいて再度お試しください。";
+    if (/network/.test(c)) return "通信エラーです。ネットワーク環境をご確認ください。";
+    return "ログインできませんでした。時間をおいて再度お試しください。";
+  }
+  // 店舗IDはメールアドレスではないため、内部でログイン用のアドレスに変換する
+  function storeIdToEmail(id) {
+    id = String(id || "").trim();
+    if (!id) return "";
+    if (id.indexOf("@") >= 0) return id; // メールアドレスをそのまま入れた場合も受け付ける
+    var dom = (typeof KEITAI_STORE_DOMAIN === "string" && KEITAI_STORE_DOMAIN) || "keitai-quote.example";
+    return id + "@" + dom;
+  }
+
+  function onSignedIn(user) {
+    CLOUD.user = user;
+    showLogin(false);
+    syncStatus("同期中…", "");
+    var ai = $("accountInfo");
+    if (ai) ai.textContent = "ログイン中の店舗: " + String(user.email || "").replace(/@.*$/, "");
+    var lo = $("logoutBtn"); if (lo) lo.hidden = false;
+    watchStore();
+    // 店舗の担当者一覧を受け取ってから担当者コードを聞く
+    storeDoc().get().then(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (d) applyRemoteStore(d);
+      if (config.activeStaffId && config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
+        showStaffGate(false);
+        renderStaffBar();
+        watchQuote();
+      } else if (!anyStaffCode()) {
+        enterStaff(config.staff[0]);
+      } else {
+        showStaffGate(true);
+      }
+    }, function () {
+      // 取得できなくても端末内の設定で続行する
+      if (config.activeStaffId) { renderStaffBar(); watchQuote(); } else showStaffGate(true);
+    });
+  }
+  function onSignedOut() {
+    CLOUD.user = null;
+    if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
+    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    CLOUD.watchingStaffId = null;
+    syncStatus("", "");
+    var lo = $("logoutBtn"); if (lo) lo.hidden = true;
+    var sb = $("staffBar"); if (sb) sb.hidden = true;
+    showStaffGate(false);
+    showLogin(true);
+  }
+
+  // 担当者コードの入力（クラウドを使わない端末でも動く）
+  function initStaffGate() {
+    $("staffForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var code = String($("staffCode").value || "").trim();
+      var hit = config.staff.filter(function (s) {
+        return code !== "" && String(s.code || "").trim() === code;
+      })[0];
+      if (!hit) {
+        var se = $("staffErr");
+        se.textContent = "担当者コードが正しくありません。";
+        se.hidden = false;
         return;
       }
-      if (SYNC.timer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
-      applyRemote(d);
-    }, function () { syncStatus("同期:接続エラー", "err"); });
+      enterStaff(hit);
+    });
+    var sw2 = $("switchStaffBtn");
+    if (sw2) sw2.addEventListener("click", function () {
+      if (!anyStaffCode()) {
+        // コード未設定のときは、設定タブで担当者を登録してもらう
+        switchTab("master");
+        return;
+      }
+      config.activeStaffId = "";
+      saveConfig();
+      showStaffGate(true);
+    });
+  }
+
+  function initCloud() {
+    // 端末内だけで使う場合（Firebase未設定）はログイン画面を出さない
+    var configured = typeof KEITAI_FIREBASE !== "undefined" && KEITAI_FIREBASE.projectId
+      && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
+    if (!configured) {
+      showLogin(false);
+      if (anyStaffCode()) showStaffGate(true);
+      else renderStaffBar();
+      return;
+    }
+    try {
+      CLOUD.auth = firebase.auth();
+      CLOUD.db = firebase.firestore();
+    } catch (e) { showLogin(false); return; }
+    CLOUD.enabled = true;
+
+    $("loginForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var err = $("loginErr");
+      err.hidden = true;
+      $("loginBtn").disabled = true;
+      CLOUD.auth.signInWithEmailAndPassword(storeIdToEmail($("loginStoreId").value), $("loginPass").value)
+        .then(function () { $("loginPass").value = ""; }, function (e2) {
+          err.textContent = loginErrorMessage(e2);
+          err.hidden = false;
+        })
+        .then(function () { $("loginBtn").disabled = false; });
+    });
+    var lo = $("logoutBtn");
+    if (lo) lo.addEventListener("click", function () {
+      if (!CLOUD.auth) return;
+      config.activeStaffId = "";
+      saveConfig();
+      CLOUD.auth.signOut();
+    });
+    CLOUD.auth.onAuthStateChanged(function (u) {
+      if (u) onSignedIn(u); else onSignedOut();
+    });
   }
 
   /* ---------- ヘルパー ---------- */
@@ -2228,6 +2421,54 @@
         });
       });
     });
+    // 店舗設定（店舗名・担当者）
+    var storeNameEl = $("storeNameInput");
+    if (storeNameEl) {
+      storeNameEl.addEventListener("input", function () {
+        config.storeName = this.value;
+        saveConfig();
+        renderStaffBar();
+      });
+    }
+    var addStaffBtn = $("addStaffBtn");
+    if (addStaffBtn) {
+      addStaffBtn.addEventListener("click", function () {
+        config.staff.push({ id: newStaffId(), name: "担当" + (config.staff.length + 1), code: "" });
+        saveConfig();
+        renderStoreConfig();
+      });
+    }
+    var staffList = $("staffList");
+    if (staffList) {
+      staffList.addEventListener("input", function (e) {
+        var t = e.target, i;
+        if (t.hasAttribute("data-staffname")) {
+          i = +t.getAttribute("data-staffname");
+          config.staff[i].name = t.value;
+        } else if (t.hasAttribute("data-staffcode")) {
+          i = +t.getAttribute("data-staffcode");
+          config.staff[i].code = t.value.trim();
+        } else return;
+        saveConfig();
+        renderStaffBar();
+      });
+      staffList.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t.hasAttribute("data-staffdel")) return;
+        var i = +t.getAttribute("data-staffdel");
+        if (config.staff.length <= 1) return;
+        var removed = config.staff.splice(i, 1)[0];
+        try { localStorage.removeItem(quoteKey(removed.id)); } catch (e2) {}
+        if (config.activeStaffId === removed.id) {
+          config.activeStaffId = config.staff[0].id;
+          loadState(); syncFormFromState(); recalc();
+        }
+        saveConfig();
+        renderStoreConfig();
+        renderStaffBar();
+      });
+    }
+
     $("gasDiscountWrap").addEventListener("change", function (e) {
       var id = e.target.getAttribute && e.target.getAttribute("data-gasdisc");
       if (!id) return;
@@ -2398,9 +2639,10 @@
   }
 
   /* ---------- 起動 ---------- */
+  loadConfig();
   loadMaster();
   loadState();
-  if (!state.jimuFee && autoFeeProc(state.procType) && !localStorage.getItem(stateKey())) {
+  if (!state.jimuFee && autoFeeProc(state.procType) && !localStorage.getItem(quoteKey())) {
     state.jimuFee = jimuFeeFor(state.procType);
     state.atamakin = MASTER.fees.atamakin_default;
   }
@@ -2408,5 +2650,7 @@
   syncFormFromState();
   renderTplBar();
   recalc();
-  initSync(); // 端末間同期はUI初期化が終わってから開始
+  renderStoreConfig();
+  initStaffGate();
+  initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
 })();
