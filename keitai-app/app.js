@@ -751,6 +751,7 @@
     if (fresh) resetQuoteForNewCustomer();
     syncFormFromState();
     renderStaffBar();
+    switchTab("quote"); // マスタ設定から担当者を選んだときも見積もり画面から始める
     recalc();
     watchQuote();
     watchSaved();
@@ -959,6 +960,11 @@
       if (hit) enterStaff(hit, true);
     });
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
+    var mb = $("masterBackBtn");
+    if (mb) mb.addEventListener("click", function () {
+      if (anyStaffCode()) { clearActiveStaff(); showStaffGate(true); }
+      else switchTab("quote"); // コード未設定の店舗はコード画面が無いので見積もりへ
+    });
     var sc = $("staffToSetting");
     if (sc) sc.addEventListener("click", function () {
       if (masterGateOn()) {

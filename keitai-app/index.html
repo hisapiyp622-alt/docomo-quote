@@ -21,7 +21,6 @@
     <button class="tab" data-tab="sheet" type="button">見積書</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
     <button class="tab" data-tab="saved" type="button">保存</button>
-    <button class="tab" data-tab="master" type="button">マスタ設定</button>
   </nav>
 </header>
 
@@ -345,6 +344,10 @@
   </section>
 
   <section id="tab-master" class="tab-page no-print">
+    <div class="master-top">
+      <button class="btn-sub" id="masterBackBtn" type="button">← 担当者の選択に戻る</button>
+      <span class="hint">マスタ設定は担当者コードの画面から開きます（見積もり画面には出ません）。</span>
+    </div>
     <div class="card" id="lockBox">
       <h2>店舗ログイン</h2>
       <p class="hint" id="lockState"></p>
@@ -435,7 +438,8 @@
       <p class="login-lead">コードを設定していない担当者は、名前を押してください。</p>
       <div id="staffFreeList"></div>
     </div>
-    <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">担当者の登録・コードの変更はこちら</button></p>
+    <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">マスタ設定を開く（料金・担当者の登録）</button><br>
+      <span class="login-note">店舗IDとパスワードが必要です。</span></p>
   </form>
 </div>
 

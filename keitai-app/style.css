@@ -491,3 +491,9 @@ body.sorting .sort-chip{cursor:grabbing}
 @media (max-width:600px){
   .sort-grid{grid-template-columns:repeat(3,1fr)}
 }
+
+/* マスタ設定の先頭（担当者の選択へ戻る） */
+.master-top{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;
+}
+.master-top .hint{margin:0}
