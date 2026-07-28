@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-70";
+  var APP_VERSION = "2026.07.25-71";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -722,7 +722,9 @@
     // 税込1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt
     var dcardGoldBase = tier.price + voicePrice + net.total;
     MASTER.options.forEach(function (o) {
-      if (st.options[o.id] && o.carrier) dcardGoldBase += optPrice(o, st);
+      if (!st.options[o.id] || !o.carrier) return;
+      if (bonusFree[o.id]) return;   // 選べる特典で0円のものは支払いが無いため対象外
+      dcardGoldBase += optPrice(o, st);
     });
     // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は還元なし
     var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard);
