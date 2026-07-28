@@ -78,6 +78,22 @@
     });
   }
 
+  /* 商材タイル: logos/product-<値>.svg（または .png）を置くとロゴ画像で表示する。
+   * 画像が無い間は商材名の文字のまま（動作に支障はない）。 */
+  function productLogo(btn, value, label) {
+    ["svg", "png"].forEach(function (ext) {
+      var img = new Image();
+      img.onload = function () {
+        if (btn.querySelector("img")) return;
+        img.className = "product-logo";
+        img.alt = label;
+        btn.textContent = "";
+        btn.appendChild(img);
+      };
+      img.src = "logos/product-" + value + "." + ext;
+    });
+  }
+
   var builtType = null;
   function buildProvider(t) {
     var sel = document.getElementById("provider");
@@ -222,9 +238,10 @@
     Array.prototype.forEach.call(sel.options, function (o) {
       var b = document.createElement("button");
       b.type = "button";
-      b.className = "tile-btn";
+      b.className = "tile-btn" + (sel.id === "product" ? " product-tile" : "");
       b.setAttribute("data-val", o.value);
       b.textContent = o.textContent;
+      if (sel.id === "product") productLogo(b, o.value, o.textContent);
       b.addEventListener("click", function () {
         if (sel.value === o.value) return;
         sel.value = o.value;

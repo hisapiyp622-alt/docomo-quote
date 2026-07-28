@@ -1,5 +1,5 @@
 /* イエナカ見積もり（単体版）— ネット優先・失敗時キャッシュ */
-var CACHE = "ienaka-tiles-v1";
+var CACHE = "ienaka-tiles-v2";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "tiles.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", function (e) {
