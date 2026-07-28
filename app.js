@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-67";
+  var APP_VERSION = "2026.07.25-68";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -158,6 +158,7 @@
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
+      todoOther: "",      // 引き継ぎシートの自由記入
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
     };
@@ -1180,6 +1181,7 @@
     $("usePoint").checked = !!state.usePoint;
     $("usePointField").hidden = !state.usePoint;
     $("usePointAmount").value = state.usePointAmount || "";
+    $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
     $("energyTypeWrap").hidden = !state.todoDenkiGas;
     document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
@@ -1332,6 +1334,10 @@
       h += row("ガスの割引オプション", "<b>" + gd.map(function (d) {
         return esc(d.name) + " " + d.rate + "%";
       }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
+    }
+    if (state.todoOther) {
+      anyTodo = true;
+      h += row("その他", "<b>" + esc(state.todoOther).replace(/\n/g, "<br>") + "</b>");
     }
     if (!anyTodo) h += row("作業内容", "（記入なし）");
     h += "</tbody></table>";
@@ -2174,6 +2180,9 @@
     // お客様情報
     ["custName", "shopName", "staffName", "quoteMemo"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); });
+    });
+    $("todoOther").addEventListener("input", function () {
+      state.todoOther = this.value; saveState(); renderStaffSheet();
     });
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () {
