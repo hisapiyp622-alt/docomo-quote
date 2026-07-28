@@ -286,6 +286,18 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
     border-bottom:2px solid var(--red);padding-bottom:4px;margin-bottom:5px;
   }
   .sheet .page2-head span{font-size:11px;font-weight:400;color:var(--muted)}
+  /* 引き継ぎシートはA4 1枚に収める（項目の多い一覧は段組みにする） */
+  body.print-staff .sheet h2.sheet-title{font-size:14px;letter-spacing:.2em;padding-bottom:3px}
+  body.print-staff .sheet .sheet-meta{margin:3px 0 0;font-size:10px}
+  body.print-staff .sheet .cust{font-size:12.5px;margin:4px 0 0}
+  body.print-staff .sheet h3{font-size:11px;margin:4px 0 2px}
+  /* 余白のぶんだけ確実に1枚へ収まるよう、最後に全体をわずかに縮める */
+  body.print-staff .sheet{zoom:.94}
+  body.print-staff .sheet table{font-size:10px}
+  body.print-staff .sheet th,body.print-staff .sheet td{padding:1.5px 6px}
+  body.print-staff .sheet .kubun-list{columns:2;column-gap:14px;line-height:1.45}
+  body.print-staff .sheet .big-monthly{gap:5px;margin:5px 0}
+  body.print-staff .sheet .disclaimer{font-size:8px;margin-top:4px;padding-top:3px}
   /* 表や見出しが中途半端な位置で分断されないようにする */
   .sheet table,.sheet .big-monthly,.sheet .bm-box{break-inside:avoid;page-break-inside:avoid}
   .sheet tr{break-inside:avoid;page-break-inside:avoid}
@@ -327,3 +339,6 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 
 /* ドコモ MAX の選べる特典で無料になるオプション */
 .tile .t-price.t-bonus{color:var(--red);font-weight:700}
+
+/* 引き継ぎシートの一覧（新規／継続／廃止・ネットワークサービス）は1件1行 */
+.sheet .kubun-list > i{display:block;font-style:normal;break-inside:avoid;page-break-inside:avoid}

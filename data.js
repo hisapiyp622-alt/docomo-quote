@@ -507,21 +507,24 @@ const DEFAULT_DATA = {
       "priceChoices": [1250, 1670],
       "priceLabels": { "1250": "スタンダード", "1670": "プレミアム" },
       "category": "エンタメ",
-      "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元"
+      "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
+      "carrier": true
     },
     {
       "id": "bk_lemino",
       "name": "Leminoプレミアム（爆アゲ）",
       "price": 1540,
       "category": "エンタメ",
-      "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
+      "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true
     },
     {
       "id": "dazn",
       "name": "DAZN for docomo",
       "price": 4200,
       "category": "エンタメ",
-      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
+      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true
     },
     {
       "id": "nba",
@@ -530,7 +533,8 @@ const DEFAULT_DATA = {
       "priceChoices": [2728, 1078],
       "priceLabels": { "2728": "通常", "1078": "ahamo" },
       "category": "エンタメ",
-      "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
+      "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true
     },
     {
       "id": "bk_spotify",
@@ -558,7 +562,8 @@ const DEFAULT_DATA = {
       "name": "dアニメストア（爆アゲ）",
       "price": 660,
       "category": "エンタメ",
-      "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象"
+      "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "carrier": true
     },
     {
       "id": "bk_googleone",
@@ -585,30 +590,32 @@ const DEFAULT_DATA = {
       "name": "dフォト",
       "price": 594,
       "category": "エンタメ",
-      "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料"
+      "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料",
+      "carrier": true
     },
     {
       "id": "dmagazine",
       "name": "dマガジン",
       "price": 580,
       "category": "エンタメ",
-      "note": "雑誌読み放題・初回7日間無料"
+      "note": "雑誌読み放題・初回7日間無料",
+      "carrier": true
     },
     {
       "id": "dhits",
       "name": "dヒッツ",
       "price": 690,
-      "priceChoices": [690, 330],
-      "priceLabels": { "690": "dヒッツ", "330": "dヒッツ（300円）" },
       "category": "エンタメ",
-      "note": "dヒッツ690円／dヒッツ（300円）330円（プレイリスト再生のみ）"
+      "note": "音楽聴き放題",
+      "carrier": true
     },
     {
       "id": "dhealthcare",
       "name": "dヘルスケア",
       "price": 440,
       "category": "エンタメ",
-      "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）"
+      "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
+      "carrier": true
     },
     {
       "id": "op_1784460515071",

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-61";
+  var APP_VERSION = "2026.07.25-62";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -98,6 +98,10 @@
       if (!o.priceChoices) o.priceChoices = d.priceChoices.slice();
       if (d.priceLabels && !o.priceLabels) o.priceLabels = JSON.parse(JSON.stringify(d.priceLabels));
     });
+    // dヒッツ: 330円コースは扱わないため、保存済みマスタからも選択肢を外す
+    MASTER.options.forEach(function (o) {
+      if (o.id === "dhits" && o.priceChoices) { delete o.priceChoices; delete o.priceLabels; }
+    });
     // NETFLIX 旧3項目（広告付ST/ST/PR）→ 料金選択式の1項目「netflix」へ統合
     var nfOldIds = ["op_1784430991714", "op_1784431033021", "op_1784431044456"];
     MASTER.options = MASTER.options.filter(function (o) { return nfOldIds.indexOf(o.id) < 0; });
@@ -156,7 +160,6 @@
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
-      todoPlan: "", todoOptOff: "", todoOther: "",
     };
   }
   var store = { active: 0, patterns: [defaultState(), defaultState(), defaultState()] };
@@ -1185,7 +1188,6 @@
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
-    ["todoPlan", "todoOptOff", "todoOther"].forEach(function (k) { $(k).value = state[k] || ""; });
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptDcard").value = state.pointDcard || "";
@@ -1308,8 +1310,6 @@
       if ((state.procTodo || {})[k]) procs.push(PROC_LABEL[k]);
     });
     if (procs.length) { anyTodo = true; h += row("手続き", "<b>" + procs.join("　／　") + "</b>"); }
-    if (state.todoPlan) { anyTodo = true; h += row("プラン", "<b>" + esc(state.todoPlan) + "</b>"); }
-    if (state.todoOptOff) { anyTodo = true; h += row("オプション廃止", "<b>" + esc(state.todoOptOff) + "</b>"); }
     var apps = [];
     if (state.todoDcard) {
       apps.push("dカード申し込み" + (state.todoDcardType ? "（" + DCARD_TYPE[state.todoDcardType] + "）" : ""));
@@ -1332,7 +1332,6 @@
         return esc(d.name) + " " + d.rate + "%";
       }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
     }
-    if (state.todoOther) { anyTodo = true; h += row("その他の作業", esc(state.todoOther)); }
     if (!anyTodo) h += row("作業内容", "（記入なし）");
     h += "</tbody></table>";
 
@@ -1388,15 +1387,18 @@
     var anyOpt = false;
     if (kNew.length) {
       anyOpt = true;
-      h += row("<b>新規に付ける</b>", kNew.map(function (x) { return esc(x.name) + "　" + yen(x.price) + "/月"; }).join("<br>"));
+      h += row("<b>新規に付ける</b>", '<div class="kubun-list">'
+        + kNew.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月</i>"; }).join("") + "</div>");
     }
     if (kKeep.length) {
       anyOpt = true;
-      h += row("継続", kKeep.map(function (x) { return esc(x.name) + "　" + yen(x.price) + "/月"; }).join("<br>"));
+      h += row("継続", '<div class="kubun-list">'
+        + kKeep.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月</i>"; }).join("") + "</div>");
     }
     if (kOff.length) {
       anyOpt = true;
-      h += row("<b>廃止する</b>", '<b style="color:var(--red)">' + kOff.map(esc).join("<br>") + "</b>");
+      h += row("<b>廃止する</b>", '<div class="kubun-list" style="color:var(--red);font-weight:700">'
+        + kOff.map(function (x) { return "<i>" + esc(x) + "</i>"; }).join("") + "</div>");
     }
     state.adhocMonthly.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -1407,9 +1409,9 @@
     var netSheet = netSvcCalc(state);
     if (netSheet.rows.length) {
       anyOpt = true;
-      h += row("ネットワークサービス", netSheet.rows.map(function (n) {
-        return "<b>" + esc(n.name) + "</b>　" + yen(n.price) + "/月";
-      }).join("<br>"));
+      h += row("ネットワークサービス", '<div class="kubun-list">' + netSheet.rows.map(function (n) {
+        return "<i><b>" + esc(n.name) + "</b>　" + yen(n.price) + "/月</i>";
+      }).join("") + "</div>");
     }
     if (num(state.currentInst) > 0) {
       anyOpt = true;
@@ -1472,20 +1474,12 @@
     h += "</tbody></table>";
 
     var secPoint = h; h = "";
-    // 記入欄
-    h += "<h3>登録スタッフ記入欄</h3><table><tbody>";
-    h += row("登録日", "");
-    h += row("登録担当", "");
-    h += row("備考", "");
-    h += "</tbody></table>";
-
-    var secFill = h;
     // 機種購入があるときは、端末と初期費用（支払方法）を先に読めるよう前へ出す
     var hasDevice = state.payMethod !== "none" && (num(state.devicePrice) > 0 || state.deviceName);
     h = h0 + (hasDevice
       ? secDevice + secInit + secContract + secWari + secOpt
       : secContract + secWari + secOpt + secDevice + secInit)
-      + secPoint + secFill;
+      + secPoint;
     h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。アプリ版 ' + APP_VERSION + "</div>";
     $("staffSheetBody").innerHTML = h;
   }
@@ -2195,10 +2189,6 @@
     // お客様情報
     ["custName", "shopName", "staffName", "quoteMemo"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); });
-    });
-    // 引き継ぎシートの作業指示
-    ["todoPlan", "todoOptOff", "todoOther"].forEach(function (id) {
-      $(id).addEventListener("input", function () { state[id] = this.value; saveState(); renderStaffSheet(); });
     });
     ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () {
