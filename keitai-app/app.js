@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.2";
+  var APP_VERSION = "1.6.3";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -522,7 +522,8 @@
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
-      deviceName: "", devicePrice: 0, payMethod: "none", kaedoki23: 0, kaedokiFee: 0,
+      deviceName: "", devicePrice: 0, couponOff: 0, campaignOff: 0,
+      payMethod: "none", kaedoki23: 0, kaedokiFee: 0,
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
       custName: "", shopName: "", staffName: "", shopTel: "", quoteMemo: "",
@@ -1531,11 +1532,21 @@
     // 端末
     var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
     var initialDevice = 0;
-    var deviceTotal = num(st.devicePrice);          // 端末代金総額（頭金を含む）
+    /* 端末代金総額（頭金を含む）から、クーポン・キャンペーンの値引きを引いた額で組み立てる。
+     * 頭金・分割・カエドキの計算は、すべて値引き後の金額を土台にする。 */
+    var deviceList = num(st.devicePrice);
+    var devOffCoupon = Math.min(Math.max(0, num(st.couponOff)), deviceList);
+    var devOffCampaign = Math.min(Math.max(0, num(st.campaignOff)), Math.max(0, deviceList - devOffCoupon));
+    var devOffTotal = devOffCoupon + devOffCampaign;
+    var deviceTotal = Math.max(0, deviceList - devOffTotal);
     var deviceAtama = Math.max(0, num(st.atamakin));
     // 一括は総額をそのまま店頭でお支払い。分割は総額から頭金を引いた残りを分ける
     var p = st.payMethod === "ikkatsu" ? deviceTotal : Math.max(0, deviceTotal - deviceAtama);
     device.total = deviceTotal;
+    device.list = deviceList;
+    device.offCoupon = devOffCoupon;
+    device.offCampaign = devOffCampaign;
+    device.offTotal = devOffTotal;
     device.atama = deviceAtama;
     if (st.payMethod === "ikkatsu") {
       initialDevice = p;
@@ -2134,6 +2145,8 @@
     renderAdhocInitial();
     $("deviceName").value = state.deviceName;
     $("devicePrice").value = state.devicePrice || "";
+    $("couponOff").value = state.couponOff || "";
+    $("campaignOff").value = state.campaignOff || "";
     $("payMethod").value = state.payMethod;
     $("kaedoki23").value = state.kaedoki23 || "";
     $("kaedokiFee").value = state.kaedokiFee || "";
@@ -2178,6 +2191,15 @@
 
   /* ---------- 端末入力の不整合チェック ---------- */
   // 機種名・機種代金が入っているのに見積もりへ反映されないケースを検出する
+  // 値引きを入れたときに、いくらになったのかを入力欄の下に出す
+  function renderDeviceOff(r) {
+    var el = $("deviceOffHint");
+    if (!el) return;
+    if (!r || !r.device.offTotal) { el.hidden = true; return; }
+    el.innerHTML = "端末代金 " + yen(r.device.list) + " − 値引き " + yen(r.device.offTotal)
+      + " = <strong>" + yen(r.device.total) + "</strong>　この金額を頭金・分割の計算に使います。";
+    el.hidden = false;
+  }
   function deviceInputWarning() {
     var p = num(state.devicePrice);
     if (state.payMethod === "none" && (p > 0 || state.deviceName)) {
@@ -2409,10 +2431,14 @@
 
     var secOpt = h; h = "";
     // 端末・アクセサリ
-    if (num(state.devicePrice) > 0 || state.deviceName || r.accMonthlyRows.length || r.accOnceRows.length) {
+    if (num(state.devicePrice) > 0 || state.deviceName || r.device.offTotal > 0
+        || r.accMonthlyRows.length || r.accOnceRows.length) {
       h += "<h3>端末・アクセサリ</h3><table><tbody>";
-      if (state.deviceName || num(state.devicePrice) > 0) {
-        h += row("機種", "<b>" + esc(state.deviceName || "（機種名未入力）") + "</b>　" + yen(num(state.devicePrice)));
+      if (state.deviceName || num(state.devicePrice) > 0 || r.device.offTotal > 0) {
+        h += row("機種", "<b>" + esc(state.deviceName || "（機種名未入力）") + "</b>　" + yen(r.device.list));
+        if (r.device.offCoupon > 0) h += row("　クーポン値引き", "−" + yen(r.device.offCoupon));
+        if (r.device.offCampaign > 0) h += row("　キャンペーン値引き", "−" + yen(r.device.offCampaign));
+        if (r.device.offTotal > 0) h += row("　<b>値引き後の端末代金</b>", "<b>" + yen(r.device.total) + "</b>");
         h += row("お支払い方法", "<b>" + payLabel + "</b>"
           + (r.device.monthly > 0 ? "　" + yen(r.device.monthly) + "/月 × " + r.device.months + "回" : ""));
         if (r.device.kaedoki) {
@@ -2601,6 +2627,16 @@
     // ---- 2ページ目: 本体分割金・初期費用（印刷時はここで改ページ） ----
     var p2 = "";
 
+    // 端末代金の値引き（クーポン・キャンペーン）
+    if (r.device.offTotal > 0) {
+      p2 += "<h3>端末代金の値引き</h3><table><tbody>";
+      p2 += row((state.deviceName ? esc(state.deviceName) : "端末代金") + "　定価", yen(r.device.list), true);
+      if (r.device.offCoupon > 0) p2 += row("クーポン値引き", "−" + yen(r.device.offCoupon), true);
+      if (r.device.offCampaign > 0) p2 += row("キャンペーン値引き", "−" + yen(r.device.offCampaign), true);
+      p2 += '<tr class="total"><td>値引き後の端末代金</td><td class="amt">' + yen(r.device.total) + "</td></tr>";
+      p2 += "</tbody></table>";
+    }
+
     // 本体分割金（機種代金・アクセサリの分割）
     if (hasInstallment) {
       p2 += "<h3>端末代金・分割支払金</h3><table><tbody>";
@@ -2746,6 +2782,35 @@
     h += "</div></div>";
 
     // オプション・サービス（すべて月額。追加・削除・並び替え・カテゴリ変更可）
+    /* 金額をプルダウンで選ぶ「選択式」の編集。
+     * 補償のように機種で金額が変わるものや、コースが複数あるものに使う。
+     * 行が横に伸びないよう、行の下に折りたたんで出す。 */
+    function optChoicesHtml(o) {
+      if (!openChoices[o.id]) return "";
+      var cs = o.priceChoices || [];
+      var h = '<div class="choice-box">';
+      h += '<p class="hint">お客様には金額のプルダウンとして出ます。ラベルは省略できます（例）「スタンダード」）。'
+        + '行の<strong>金額欄（' + yen(num(o.price)) + '）が初期値</strong>です。'
+        + '金額欄の値が選択肢に無くなった場合は、一番上の金額に合わせます。</p>';
+      if (!cs.length) {
+        h += '<p class="hint">選択肢がありません。「＋ 選択肢を追加」から作ってください。</p>';
+      } else {
+        h += cs.map(function (c, k) {
+          var lb = (o.priceLabels && o.priceLabels[String(c)]) || "";
+          return '<div class="choice-row">'
+            + '<input type="number" value="' + c + '" data-op-cprice="' + o.__i + ":" + k + '">'
+            + '<span class="price">円/月</span>'
+            + '<input type="text" value="' + esc(lb) + '" placeholder="ラベル（任意）" data-op-clabel="' + o.__i + ":" + k + '">'
+            + '<button class="del" data-op-cdel="' + o.__i + ":" + k + '" type="button" aria-label="削除">×</button>'
+            + "</div>";
+        }).join("");
+      }
+      h += '<div class="actions">'
+        + '<button class="btn-sub" data-op-cadd="' + o.__i + '" type="button">＋ 選択肢を追加</button>'
+        + '<button class="btn-sub" data-op-coff="' + o.__i + '" type="button">選択式をやめる</button>'
+        + "</div></div>";
+      return h;
+    }
     function optExtra(o) {
       return '<select data-op-cat="' + o.__i + '">'
         + OPT_CATEGORIES.map(function (c) {
@@ -2753,7 +2818,9 @@
           }).join("")
         + "</select>"
         + '<label class="gold-flag"><input type="checkbox" data-op-gold="' + o.__i + '"' + (o.carrier ? " checked" : "") + '>GOLD10%</label>'
-        + (o.priceChoices ? '<span class="price">選択式</span>' : "");
+        + '<button class="btn-sub choice-btn" data-op-choices="' + o.__i + '" type="button">'
+        + (o.priceChoices ? "選択式 " + o.priceChoices.length + "件" : "選択式にする")
+        + (openChoices[o.id] ? " ▲" : "") + "</button>";
     }
     function feeExtra(o) {
       return '<select data-fi-pay="' + o.__i + '">'
@@ -2779,9 +2846,9 @@
     h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は下の「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
       + '「<strong>店舗独自</strong>」にチェックを入れると、下の「店舗独自サービス」へ移ります。<strong>見積もり画面の表示は変わりません</strong>（従来どおりカテゴリごとに並びます）。</p>';
     h += '<div class="master-sub"><h4>ドコモの商材</h4>';
-    h += listEditor(MASTER.options, "op", optExtra, isCarrier) + "</div>";
+    h += listEditor(MASTER.options, "op", optExtra, isCarrier, optChoicesHtml) + "</div>";
     h += '<div class="master-sub own"><h4>店舗独自サービス</h4>';
-    h += listEditor(MASTER.options, "op", optExtra, isOwn) + "</div>";
+    h += listEditor(MASTER.options, "op", optExtra, isOwn, optChoicesHtml) + "</div>";
     h += '<div class="actions">'
       + '<button class="btn-sub" data-add="options" type="button">＋ ドコモの商材を追加</button>'
       + '<button class="btn-sub" data-add="optionsOwn" type="button">＋ 店舗独自サービスを追加</button></div></div>';
@@ -2868,7 +2935,7 @@
     /* filter を渡すと、その条件に合う項目だけを並べる。
      * 並べ替えは同じグループの中で入れ替わるよう、相手の位置を data-*-swap で渡す。
      * 位置（data-*-name など）は元の一覧での位置をそのまま使う。 */
-    function listEditor(list, prefix, extra, filter) {
+    function listEditor(list, prefix, extra, filter, after) {
       var rows = [];
       (list || []).forEach(function (o, i) {
         o.__i = i;
@@ -2887,7 +2954,8 @@
           + extra(o)
           + '<label class="own-flag"><input type="checkbox" data-' + prefix + '-own="' + i + '"' + (o.own ? " checked" : "") + ">店舗独自</label>"
           + '<button class="del" data-' + prefix + '-del="' + i + '" type="button" aria-label="削除">×</button>'
-          + "</div>";
+          + "</div>"
+          + (after ? after(o) : "");
       }).join("");
     }
     function mInput(label, path) {
@@ -2932,6 +3000,7 @@
     syncDcardAuto();
     renderNetSvc();
     var r = calc();
+    renderDeviceOff(r);
     renderSummary(r);
     renderPatternTabs();
     saveState();
@@ -3303,6 +3372,26 @@
     });
   }
 
+  // 選択式の編集を開いているオプション（マスタ設定を描き直しても開いたままにする）
+  var openChoices = {};
+  /* 選択肢を整える。並びはそのままにして、
+   * 初期値（o.price）が選択肢に無い場合は先頭に合わせる。 */
+  function normalizeChoices(o) {
+    if (!o.priceChoices || !o.priceChoices.length) {
+      delete o.priceChoices;
+      delete o.priceLabels;
+      return;
+    }
+    var labels = {};
+    o.priceChoices = o.priceChoices.map(function (c) { return Math.max(0, num(c)); });
+    o.priceChoices.forEach(function (c) {
+      var lb = o.priceLabels && o.priceLabels[String(c)];
+      if (lb) labels[String(c)] = lb;
+    });
+    o.priceLabels = labels;
+    if (o.priceChoices.indexOf(num(o.price)) < 0) o.price = o.priceChoices[0];
+  }
+
   /* ---------- 汎用: マスタのリスト編集ハンドラ ---------- */
   var LIST_DEFS = {
     op: { key: "options", newItem: function () { return { id: "op_" + Date.now(), name: "", price: 0, category: "その他", note: "" }; }, stateKey: "options", render: renderOptionList },
@@ -3325,6 +3414,76 @@
         list[+attr("price")].price = num(t.value);
       } else if (evType === "change" && prefix === "op" && attr("cat") != null) {
         list[+attr("cat")].category = t.value;
+      } else if (prefix === "op" && attr("choices") != null && evType === "click") {
+        var co = list[+attr("choices")];
+        if (openChoices[co.id]) delete openChoices[co.id];
+        else {
+          openChoices[co.id] = true;
+          if (!co.priceChoices || !co.priceChoices.length) {
+            co.priceChoices = [num(co.price)];
+            co.priceLabels = {};
+            markEdited();
+          }
+        }
+        renderMasterTab();
+        return true;
+      } else if (prefix === "op" && attr("cadd") != null && evType === "click") {
+        var ao = list[+attr("cadd")];
+        if (!ao.priceChoices) ao.priceChoices = [];
+        var nv = 0;
+        while (ao.priceChoices.indexOf(nv) >= 0) nv += 100; // 金額が重なるとラベルが混ざる
+        ao.priceChoices.push(nv);
+        normalizeChoices(ao);
+        markEdited();
+        renderMasterTab();
+        renderOptionList();
+        recalc();
+        return true;
+      } else if (prefix === "op" && attr("coff") != null && evType === "click") {
+        var fo = list[+attr("coff")];
+        delete fo.priceChoices;
+        delete fo.priceLabels;
+        delete openChoices[fo.id];
+        // 選択中の金額の記録も外す（選択式でなくなるため）
+        store.patterns.forEach(function (pt) { delete pt.optionPrices[fo.id]; });
+        markEdited();
+        renderMasterTab();
+        renderOptionList();
+        recalc();
+        return true;
+      } else if (prefix === "op" && attr("cdel") != null && evType === "click") {
+        var dp = attr("cdel").split(":");
+        var doo = list[+dp[0]];
+        doo.priceChoices.splice(+dp[1], 1);
+        normalizeChoices(doo);
+        markEdited();
+        renderMasterTab();
+        renderOptionList();
+        recalc();
+        return true;
+      } else if (prefix === "op" && attr("cprice") != null && evType === "input") {
+        var pp = attr("cprice").split(":");
+        var po = list[+pp[0]];
+        var oldVal = po.priceChoices[+pp[1]];
+        var newVal = Math.max(0, num(t.value));
+        // ラベルは金額をキーに持っているため、いったん行の位置で取り出してから付け直す
+        var byIdx = po.priceChoices.map(function (c) {
+          return (po.priceLabels && po.priceLabels[String(c)]) || "";
+        });
+        po.priceChoices[+pp[1]] = newVal;
+        po.priceLabels = {};
+        po.priceChoices.forEach(function (c, idx) {
+          if (byIdx[idx]) po.priceLabels[String(c)] = byIdx[idx];
+        });
+        if (num(po.price) === oldVal) po.price = newVal; // 初期値にしていた行を追いかける
+        normalizeChoices(po);
+      } else if (prefix === "op" && attr("clabel") != null && evType === "input") {
+        var lp = attr("clabel").split(":");
+        var lo = list[+lp[0]];
+        if (!lo.priceLabels) lo.priceLabels = {};
+        var key = String(lo.priceChoices[+lp[1]]);
+        if (t.value.trim()) lo.priceLabels[key] = t.value.trim();
+        else delete lo.priceLabels[key];
       } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
         list[+attr("gold")].carrier = t.checked;
       } else if (evType === "change" && attr("own") != null) {
@@ -3614,6 +3773,8 @@
     // 端末
     $("deviceName").addEventListener("input", function () { state.deviceName = this.value; saveState(); });
     $("devicePrice").addEventListener("input", function () { state.devicePrice = num(this.value); recalc(); });
+    $("couponOff").addEventListener("input", function () { state.couponOff = num(this.value); recalc(); });
+    $("campaignOff").addEventListener("input", function () { state.campaignOff = num(this.value); recalc(); });
     $("payMethod").addEventListener("change", function () {
       state.payMethod = this.value;
       $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";

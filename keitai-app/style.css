@@ -533,3 +533,26 @@ body.sorting .sort-chip{cursor:grabbing}
 .about-note{font-size:11.5px;color:var(--muted);line-height:1.65;margin:0 0 9px}
 .about-links{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 14px;font-size:12.5px}
 .about-links a{color:var(--red)}
+
+/* マスタ設定: 選択式（金額のプルダウン）の編集 */
+.choice-btn{padding:4px 8px;font-size:11.5px;white-space:nowrap}
+.choice-box{
+  margin:0 0 8px 34px;padding:9px 11px;
+  border:1px solid var(--line);border-left:3px solid var(--red);
+  border-radius:0 8px 8px 0;background:#FDFBFC;
+}
+.choice-box .hint{margin:0 0 7px}
+.choice-row{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.choice-row input[type="number"]{
+  width:96px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+  font:inherit;font-size:13px;text-align:right;
+}
+.choice-row input[type="text"]{
+  flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+  font:inherit;font-size:13px;
+}
+.choice-row .price{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.choice-box .actions{margin:8px 0 0}
+@media (max-width:600px){
+  .choice-box{margin-left:0}
+}
