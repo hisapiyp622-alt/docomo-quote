@@ -8,7 +8,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="booting">
+
+<!-- どの画面を出すか決まるまでの目隠し。app.js が決めたら booting を外す -->
+<div class="boot-splash no-print" id="bootSplash"><span>ケータイ見積もり</span></div>
 
 <header class="app-header no-print">
   <h1>ドコモ料金見積もり

@@ -351,6 +351,15 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sheet .kubun-list > i{display:block;font-style:normal;break-inside:avoid;page-break-inside:avoid}
 
 /* ── 店舗ログイン・担当者コード ───────────────────────────── */
+/* 立ち上がり中の目隠し。ログイン画面より手前に置く */
+.boot-splash{
+  position:fixed;inset:0;z-index:60;display:none;
+  align-items:center;justify-content:center;
+  background:var(--bg);color:var(--muted);
+  font-size:13px;letter-spacing:.06em;
+}
+body.booting .boot-splash{display:flex}
+body.booting>header,body.booting>main{visibility:hidden}
 .login-overlay{
   position:fixed;inset:0;z-index:50;
   background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;
@@ -520,7 +529,7 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 .hist-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .hist-row{
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:flex-start;gap:8px;
   padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#FCFCFC;
 }
 .hist-info{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
@@ -531,6 +540,21 @@ body.sorting .sort-chip{cursor:grabbing}
   background:#EEE;color:var(--muted);font-size:10.5px;font-weight:600;vertical-align:1px;
 }
 .hist-row .btn-sub{white-space:nowrap}
+.hist-more{
+  display:inline-block;margin-left:6px;
+  color:var(--muted);font-size:10.5px;font-weight:600;vertical-align:1px;
+}
+.hist-diff{margin-top:3px}
+.hist-diff summary{
+  font-size:11.5px;color:var(--muted);cursor:pointer;
+  list-style:none;user-select:none;
+}
+.hist-diff summary::-webkit-details-marker{display:none}
+.hist-diff summary::before{content:"▸ "}
+.hist-diff[open] summary::before{content:"▾ "}
+.hist-diff ul{margin:3px 0 0;padding-left:1.1em;font-size:11.5px;line-height:1.5}
+.hist-diff li{margin:1px 0;word-break:break-word;white-space:normal}
+.hist-diff .hist-omit{color:var(--muted);list-style:none;margin-left:-1.1em}
 
 /* このアプリについて */
 .about-box{max-width:520px;text-align:left}
