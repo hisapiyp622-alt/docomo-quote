@@ -1,5 +1,5 @@
 /* イエナカ見積もり（単体版）— ネット優先・失敗時キャッシュ */
-var CACHE = "ienaka-v6";
+var CACHE = "ienaka-v7";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", function (e) {

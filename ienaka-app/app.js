@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.1.0";
+  var APP_VERSION = "2.1.1";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -387,9 +387,9 @@
     $("ptypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("providerField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
     $("provider").value = state.provider || "";
-    /* 新規申込のときは、継続するプロバイダがそもそも無い。
-     * 転用・事業者変更で、プロバイダを選んだときだけ聞く。 */
-    var ptOn = !$("providerField").hidden && state.applyType !== "shinki" && !!state.provider;
+    /* 新規申込でも、いまのプロバイダを残してメールアドレスを引き継ぐことがあるため、
+     * 申込区分によらず、プロバイダを選んだら聞く。 */
+    var ptOn = !$("providerField").hidden && !!state.provider;
     $("providerTypeField").hidden = !ptOn;
     if (!ptOn && state.providerType !== "shinki") state.providerType = "shinki";
     $("providerType").value = state.providerType || "shinki";
@@ -883,7 +883,7 @@
       h += row("住居タイプ", state.housing === "ht" ? "戸建" : "マンション");
       if (!p.noPtype) {
         var pvNote = "（タイプ" + esc(state.ptype) + "）";
-        if (state.provider && state.applyType !== "shinki") {
+        if (state.provider) {
           pvNote = "（" + (state.providerType === "keizoku" ? "<b>継続</b>" : "新規") + "・タイプ" + esc(state.ptype) + "）";
         }
         h += row("プロバイダ", (state.provider ? "<b>" + esc(state.provider) + "</b>" : "（未定）") + pvNote);
