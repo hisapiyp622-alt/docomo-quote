@@ -503,7 +503,8 @@ const DEFAULT_DATA = {
       "price": 600,
       "category": "エンタメ",
       "note": "",
-      "own": false
+      "own": false,
+      "bakuage": 10
     },
     {
       "id": "netflix",
@@ -538,7 +539,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
       "carrier": true,
-      "own": false
+      "own": false,
+      "bakuage": 20
     },
     {
       "id": "bk_lemino",
@@ -547,7 +549,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
       "carrier": true,
-      "own": false
+      "own": false,
+      "bakuage": 20
     },
     {
       "id": "dazn",
@@ -581,7 +584,8 @@ const DEFAULT_DATA = {
       "price": 1080,
       "category": "エンタメ",
       "note": "最大25%還元",
-      "own": false
+      "own": false,
+      "bakuage": 25
     },
     {
       "id": "bk_youtube",
@@ -589,7 +593,8 @@ const DEFAULT_DATA = {
       "price": 1280,
       "category": "エンタメ",
       "note": "最大10%還元",
-      "own": false
+      "own": false,
+      "bakuage": 10
     },
     {
       "id": "bk_jump",
@@ -597,7 +602,8 @@ const DEFAULT_DATA = {
       "price": 980,
       "category": "エンタメ",
       "note": "最大20%還元",
-      "own": false
+      "own": false,
+      "bakuage": 20
     },
     {
       "id": "bk_danime",
@@ -606,7 +612,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
       "carrier": true,
-      "own": false
+      "own": false,
+      "bakuage": 10
     },
     {
       "id": "bk_googleone",
@@ -624,7 +631,8 @@ const DEFAULT_DATA = {
       },
       "category": "エンタメ",
       "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元",
-      "own": false
+      "own": false,
+      "bakuage": 20
     },
     {
       "id": "bk_appleone",
@@ -636,7 +644,8 @@ const DEFAULT_DATA = {
         1980
       ],
       "note": "個人1,200/ファミリー1,980・最大10%還元",
-      "own": false
+      "own": false,
+      "bakuage": 10
     },
     {
       "id": "dphoto",

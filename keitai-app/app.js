@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.8";
+  var APP_VERSION = "1.6.9";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -441,6 +441,14 @@
         if (typeof o.own === "undefined") o.own = known[o.id] ? defOwn[o.id] : true;
       });
     });
+    // 爆アゲセレクションの還元率を初期データから補完
+    var defBaku = {};
+    (DEFAULT_DATA.options || []).forEach(function (o) {
+      if (typeof o.bakuage === "number") defBaku[o.id] = o.bakuage;
+    });
+    MASTER.options.forEach(function (o) {
+      if (typeof o.bakuage === "undefined" && typeof defBaku[o.id] === "number") o.bakuage = defBaku[o.id];
+    });
     // dカードGOLD10%対象フラグを初期データから補完（保存済みマスタに未設定のもののみ）
     var defCarrier = {};
     (DEFAULT_DATA.options || []).forEach(function (o) { defCarrier[o.id] = !!o.carrier; });
@@ -532,6 +540,7 @@
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
+      pointBakuage: 0, pointBakuageAuto: 0,  // 爆アゲセレクションの還元（自動計算・編集可）
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
       dcardGoldAuto: true,               // dカード還元特典を見積もりに含めるか（GOLD系選択時）
       currentInst: 0, currentInstMonths: 0,  // 見直し前から支払い中の分割金（0=ずっと）
@@ -1678,6 +1687,21 @@
     // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は還元なし
     var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard);
 
+    /* 爆アゲセレクションの還元ポイント。
+     * 各サービスの還元率（マスタ設定で変更可）× 実際に支払う月額。
+     * 選べる特典で0円になっているものは支払いが無いため対象外。 */
+    var bakuageRows = [];
+    var bakuageAutoPt = 0;
+    MASTER.options.forEach(function (o) {
+      if (!st.options[o.id] || !num(o.bakuage)) return;
+      if (bonusFree[o.id]) return;
+      var pr = optPrice(o, st);
+      var pt = Math.floor(pr * num(o.bakuage) / 100);
+      if (pt <= 0) return;
+      bakuageRows.push({ name: o.name, rate: num(o.bakuage), price: pr, pt: pt });
+      bakuageAutoPt += pt;
+    });
+
     // ポイント自動充当（実質額の案内用・入力pt=円で月額から差引）
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
     // ポイ活プラン以外では、入力が残っていても充当しない
@@ -1687,13 +1711,15 @@
     var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false)
       ? 0
       : Math.max(0, num(st.pointDcard));
+    var ptBakuage = Math.max(0, num(st.pointBakuage));
     var pointRows = [];
+    if (ptBakuage > 0) pointRows.push({ name: "ポイント充当（爆アゲセレクション還元）", amount: ptBakuage });
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
     if (ptFamily > 0) pointRows.push({ name: "ポイント充当（ポイ活ファミリー特典）", amount: ptFamily });
     if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカード還元特典）", amount: ptDcard });
 
     // 月額（恒久部分）
-    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptFamily - ptDcard;
+    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptFamily - ptDcard - ptBakuage;
 
     // --- 期間セグメント（端末・アクセサリ分割・期間限定項目の切れ目で分割） ---
     var boundarySet = {};
@@ -1752,6 +1778,7 @@
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
+      bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
       device: device, baseMonthly: baseMonthly,
       segs: segs, firstExtra: firstExtra,
@@ -2275,6 +2302,7 @@
     });
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
+    $("ptBakuage").value = state.pointBakuage || "";
     $("ptDcard").value = state.pointDcard || "";
     $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
@@ -2361,6 +2389,18 @@
 
     // dカード還元特典: GOLD系選択時は自動計算値を初期セット（数値は編集可）＋含める/含めないチェック
     var goldOn = isGoldCard(state.dCard);
+    // 爆アゲ: 対象サービスを選んでいるときだけ出す
+    var bakuOn = (r.bakuageRows || []).length > 0 || num(state.pointBakuage) > 0;
+    $("ptBakuageWrap").hidden = !bakuOn;
+    $("bakuageHint").hidden = !bakuOn;
+    if (bakuOn) {
+      $("bakuageHint").innerHTML = "内訳: "
+        + (r.bakuageRows || []).map(function (x) {
+            return esc(x.name) + " " + x.rate + "%（" + x.pt.toLocaleString("ja-JP") + "pt）";
+          }).join("／")
+        + "　還元率はマスタ設定のオプション欄で変更できます。";
+    }
+    $("bakuageReset").hidden = !bakuOn || num(state.pointBakuage) === (r.bakuageAutoPt || 0);
     $("dcardAutoWrap").hidden = !goldOn;
     $("dcardAutoHint").hidden = !goldOn;
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
@@ -2922,6 +2962,7 @@
           }).join("")
         + "</select>"
         + '<label class="gold-flag"><input type="checkbox" data-op-gold="' + o.__i + '"' + (o.carrier ? " checked" : "") + '>GOLD10%</label>'
+        + '<label class="gold-flag baku-flag">爆アゲ<input type="number" min="0" max="100" value="' + (num(o.bakuage) || "") + '" placeholder="0" data-op-baku="' + o.__i + '">%</label>'
         + '<button class="btn-sub choice-btn" data-op-choices="' + o.__i + '" type="button">'
         + (o.priceChoices ? "選択式 " + o.priceChoices.length + "件" : "選択式にする")
         + (openChoices[o.id] ? " ▲" : "") + "</button>";
@@ -3079,6 +3120,17 @@
 
   /* ---------- 再計算 ---------- */
   // dカード還元の自動計算値を入力欄へ初期セット（手で変更した値は上書きしない）
+  /* 爆アゲの還元ポイントを自動でセットする。
+   * 手で書き換えた値は残し、自動セットのままだったものだけ追従させる。 */
+  function syncBakuageAuto() {
+    var stillAuto = num(state.pointBakuage) === num(state.pointBakuageAuto || 0);
+    var auto = calcFor(state).bakuageAutoPt;
+    if (stillAuto) {
+      state.pointBakuage = auto;
+      $("ptBakuage").value = auto || "";
+    }
+    state.pointBakuageAuto = auto;
+  }
   function syncDcardAuto() {
     var stillAuto = num(state.pointDcard) === num(state.pointDcardAuto || 0);
     if (!isGoldCard(state.dCard)) {
@@ -3103,6 +3155,7 @@
     var ov = $("loginOverlay");
     if (ov && !ov.hidden) return;
     syncDcardAuto();
+    syncBakuageAuto();
     renderNetSvc();
     var r = calc();
     renderDeviceOff(r);
@@ -3643,6 +3696,8 @@
         var key = String(lo.priceChoices[+lp[1]]);
         if (t.value.trim()) lo.priceLabels[key] = t.value.trim();
         else delete lo.priceLabels[key];
+      } else if (evType === "input" && prefix === "op" && attr("baku") != null) {
+        list[+attr("baku")].bakuage = Math.max(0, Math.min(100, num(t.value)));
       } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
         list[+attr("gold")].carrier = t.checked;
       } else if (evType === "change" && attr("own") != null) {
@@ -3778,6 +3833,12 @@
     });
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptPoikatsuFamily").addEventListener("input", function () { state.pointPoikatsuFamily = num(this.value); recalc(); });
+    $("ptBakuage").addEventListener("input", function () { state.pointBakuage = num(this.value); recalc(); });
+    $("bakuageReset").addEventListener("click", function () {
+      state.pointBakuage = calcFor(state).bakuageAutoPt;
+      $("ptBakuage").value = state.pointBakuage || "";
+      recalc();
+    });
     $("ptDcard").addEventListener("input", function () { state.pointDcard = num(this.value); recalc(); });
     $("dcardAutoInclude").addEventListener("change", function () { state.dcardGoldAuto = this.checked; recalc(); });
     $("dcardAutoReset").addEventListener("click", function () {
