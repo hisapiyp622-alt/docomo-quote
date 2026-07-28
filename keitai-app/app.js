@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.7.0";
+  var APP_VERSION = "1.7.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -548,6 +548,7 @@
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
       pointBakuage: 0, pointBakuageAuto: 0,  // 爆アゲセレクションの還元（自動計算・編集可）
+      bakuageInclude: true,              // 爆アゲの還元を見積もりに充当するか
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
       dcardGoldAuto: true,               // dカード還元特典を見積もりに含めるか（GOLD系選択時）
       currentInst: 0, currentInstMonths: 0,  // 見直し前から支払い中の分割金（0=ずっと）
@@ -1731,7 +1732,8 @@
     var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false)
       ? 0
       : Math.max(0, num(st.pointDcard));
-    var ptBakuage = Math.max(0, num(st.pointBakuage));
+    // 「見積もりに含める」を外したときは充当しない（もらえるポイントの案内だけに使う）
+    var ptBakuage = st.bakuageInclude === false ? 0 : Math.max(0, num(st.pointBakuage));
     var pointRows = [];
     if (ptBakuage > 0) pointRows.push({ name: "ポイント充当（爆アゲセレクション還元）", amount: ptBakuage });
     if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
@@ -2430,6 +2432,14 @@
       if (offNow) bakuOff.textContent = currentPlan().name + " は爆アゲ セレクションの対象プランではありません（固定ポイントのものだけ加算されます）。";
     }
     $("bakuageReset").hidden = !bakuOn || num(state.pointBakuage) === (r.bakuageAutoPt || 0);
+    $("bakuageIncludeWrap").hidden = !bakuOn;
+    if (bakuOn) {
+      $("bakuageInclude").checked = state.bakuageInclude !== false;
+      $("bakuageIncludeLabel").textContent = "爆アゲ セレクションの還元を見積もりに含める"
+        + (state.bakuageInclude === false
+          ? "（いまは含めていません。もらえるポイントは " + num(state.pointBakuage).toLocaleString("ja-JP") + "pt/月）"
+          : "（月額から " + num(state.pointBakuage).toLocaleString("ja-JP") + "円ぶん差し引いて案内します）");
+    }
     $("dcardAutoWrap").hidden = !goldOn;
     $("dcardAutoHint").hidden = !goldOn;
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
@@ -3869,6 +3879,7 @@
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptPoikatsuFamily").addEventListener("input", function () { state.pointPoikatsuFamily = num(this.value); recalc(); });
     $("ptBakuage").addEventListener("input", function () { state.pointBakuage = num(this.value); recalc(); });
+    $("bakuageInclude").addEventListener("change", function () { state.bakuageInclude = this.checked; recalc(); });
     $("bakuageReset").addEventListener("click", function () {
       state.pointBakuage = calcFor(state).bakuageAutoPt;
       $("ptBakuage").value = state.pointBakuage || "";
