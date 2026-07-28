@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.7.4";
+  var APP_VERSION = "1.7.5";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -271,9 +271,11 @@
   var histLoaded = false;      // クラウドからの読み込みは開いたとき1回だけ
   var histBaseline = "";       // ひと区切り前のマスタの内容
   var histBurst = false;       // いま編集が続いている最中か
+  var histBurstEntry = null;   // いま編集中のかたまりに対応する履歴（あとで変更点を書き込む）
   var histSettleTimer = null;
   function histLoadLocal() {
     histList = [];
+    histBurstEntry = null;
     try {
       var a = JSON.parse(localStorage.getItem(HIST_KEY) || "null");
       if (a && a.length) histList = a;
@@ -287,6 +289,154 @@
     var s = activeStaff();
     return (s && s.name) || "担当";
   }
+  /* ---------- 何を変更したのかを割り出す ----------
+   * 控えておいた「変更前の内容」と、いまの内容を突き合わせて、
+   * 店舗の方が読んで分かる日本語の一覧にする。 */
+  var HIST_MAX_LINES = 12;     // 1件の履歴に残す変更点の上限（超えた分は件数だけ）
+  var HIST_FEE_LABELS = {
+    jimu_shinki: "事務手数料（新規）", jimu_mnp: "事務手数料（MNP）",
+    jimu_kishu: "事務手数料（機種変更）", atamakin_default: "店頭頭金（初期値）"
+  };
+  var HIST_DISC_LABELS = {
+    minna2: "みんなドコモ割（2回線）", minna3: "みんなドコモ割（3回線〜）",
+    set: "光／home 5G セット割", dcard: "dカードお支払割",
+    dcardGold: "dカードお支払割（GOLD系）", denki: "でんきセット割",
+    choki10: "長期利用割（10年〜）", choki20: "長期利用割（20年〜）"
+  };
+  var HIST_LISTS = [
+    ["plans", "プラン"], ["voiceOptions", "通話オプション"], ["options", "オプション"],
+    ["feeItems", "初期費用"], ["accessories", "アクセサリ"], ["campaigns", "キャンペーン"]
+  ];
+  var HIST_FIELD_LABELS = {
+    price: "の金額", note: "の説明", category: "の置き場所",
+    carrier: "のdカードGOLD10%対象", own: "の店舗独自",
+    pay: "の支払い先", defaultPay: "の支払い方法（初期値）",
+    bakuage: "の爆アゲ率（MAX系）", bakuage2: "の爆アゲ率（その他）",
+    bakuageFixed: "の爆アゲ固定pt",
+    priceChoices: "の金額の選択肢", priceLabels: "の選択肢の名前",
+    months: "の期間", plans: "の対象プラン", amountChoices: "の割引額の選択肢",
+    bakuageTier: "の爆アゲ区分", dcard10: "のdカードGOLD10%対象",
+    includes5min: "の5分通話無料", group: "の表示グループ",
+    voiceOverrides: "の通話オプションの金額"
+  };
+  var HIST_UNITS = { bakuage: "%", bakuage2: "%", bakuageFixed: "pt", months: "か月" };
+  function histIsNum(v) { return typeof v === "number" && isFinite(v); }
+  function histAmt(v, unit) {
+    if (!histIsNum(v)) return "（なし）";
+    return v.toLocaleString("ja-JP") + (unit || "円");
+  }
+  function histText(v) {
+    if (v === true) return "あり";
+    if (v === false) return "なし";
+    if (v === null || typeof v === "undefined" || v === "") return "（空欄）";
+    var s = String(v);
+    return s.length > 24 ? s.slice(0, 24) + "…" : s;
+  }
+  function histSame(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  // 名前が空のまま追加された行もあるので、その場合は「名称未設定」と書く
+  function histName(x) {
+    var n = String((x && x.name) || "").trim();
+    return n ? "「" + histText(n) + "」" : "（名称未設定）";
+  }
+  // 基本料金の段階（〜1GB など）
+  function histDiffTiers(head, a, b, out) {
+    var n = Math.max(a.length, b.length);
+    for (var i = 0; i < n; i++) {
+      var x = a[i], y = b[i];
+      if (!x) { out.push(head + "に段階「" + histText(y && y.label) + "」を追加"); continue; }
+      if (!y) { out.push(head + "の段階「" + histText(x.label) + "」を削除"); continue; }
+      if (x.label !== y.label) {
+        out.push(head + "の段階名を「" + histText(x.label) + "」→「" + histText(y.label) + "」に変更");
+      }
+      if (x.price !== y.price) {
+        out.push(head + "の基本料金（" + histText(y.label) + "） " + histAmt(x.price) + " → " + histAmt(y.price));
+      }
+    }
+  }
+  // プランごとの割引額
+  function histDiffDisc(head, a, b, out) {
+    var keys = {}, k;
+    for (k in a) keys[k] = 1;
+    for (k in b) keys[k] = 1;
+    Object.keys(keys).forEach(function (k2) {
+      if (a[k2] === b[k2]) return;
+      var lab = HIST_DISC_LABELS[k2] || k2;
+      if (!(k2 in b)) { out.push(head + "の" + lab + "を削除"); return; }
+      if (!(k2 in a)) { out.push(head + "に" + lab + "を追加（" + histAmt(b[k2]) + "）"); return; }
+      out.push(head + "の" + lab + " " + histAmt(a[k2]) + " → " + histAmt(b[k2]));
+    });
+  }
+  function histDiffFields(sec, x, y, out) {
+    var head = sec + histName(y.name ? y : x);
+    var keys = {}, k;
+    for (k in x) keys[k] = 1;
+    for (k in y) keys[k] = 1;
+    Object.keys(keys).forEach(function (k2) {
+      if (k2 === "id" || k2.charAt(0) === "_") return;
+      var va = x[k2], vb = y[k2];
+      if (histSame(va, vb)) return;
+      if (k2 === "name") {
+        out.push(sec + histName(x) + "の名前を" + histName(y) + "に変更");
+        return;
+      }
+      if (k2 === "tiers") { histDiffTiers(head, va || [], vb || [], out); return; }
+      if (k2 === "discounts") { histDiffDisc(head, va || {}, vb || {}, out); return; }
+      var lab = HIST_FIELD_LABELS[k2] || ("の" + k2);
+      if (histIsNum(va) || histIsNum(vb)) {
+        out.push(head + lab + " " + histAmt(va, HIST_UNITS[k2]) + " → " + histAmt(vb, HIST_UNITS[k2]));
+      } else if (va && typeof va === "object" || vb && typeof vb === "object") {
+        out.push(head + lab + "を変更");
+      } else {
+        out.push(head + lab + "を「" + histText(vb) + "」に変更");
+      }
+    });
+  }
+  function histDiffList(sec, la, lb, out) {
+    var ia = {}, ib = {};
+    la.forEach(function (x) { ia[x.id] = x; });
+    lb.forEach(function (x) { ib[x.id] = x; });
+    lb.forEach(function (x) { if (!ia[x.id]) out.push(sec + histName(x) + "を追加"); });
+    la.forEach(function (x) { if (!ib[x.id]) out.push(sec + histName(x) + "を削除"); });
+    la.forEach(function (x) { if (ib[x.id]) histDiffFields(sec, x, ib[x.id], out); });
+    // 並べ替えだけの変更も分かるようにする（増減した分は除いて比べる）
+    var oa = la.filter(function (x) { return ib[x.id]; }).map(function (x) { return x.id; }).join(",");
+    var ob = lb.filter(function (x) { return ia[x.id]; }).map(function (x) { return x.id; }).join(",");
+    if (oa !== ob) out.push(sec + "の並び順を変更");
+  }
+  /* 変更前後の差を返す。まったく同じなら null（履歴に残す意味がない）。 */
+  function histChanges(beforeJson, afterJson) {
+    if (beforeJson === afterJson) return null;
+    var a, b;
+    try { a = JSON.parse(beforeJson) || {}; b = JSON.parse(afterJson) || {}; }
+    catch (e) { return { lines: ["内容を変更しました"], more: 0 }; }
+    var out = [];
+    var fa = a.fees || {}, fb = b.fees || {};
+    Object.keys(HIST_FEE_LABELS).forEach(function (k) {
+      if (fa[k] === fb[k]) return;
+      out.push(HIST_FEE_LABELS[k] + " " + histAmt(fa[k]) + " → " + histAmt(fb[k]));
+    });
+    HIST_LISTS.forEach(function (s) { histDiffList(s[1], a[s[0]] || [], b[s[0]] || [], out); });
+    if (!out.length) out.push("内容を変更しました");
+    return { lines: out.slice(0, HIST_MAX_LINES), more: Math.max(0, out.length - HIST_MAX_LINES) };
+  }
+  /* 控えたときの内容と、いまの内容の差を、その履歴に書き込む。
+   * 触っただけで結局元に戻した場合は、履歴を残さず消す。 */
+  function histAttachChanges(entry, afterJson) {
+    if (!entry) return;
+    var c = histChanges(entry.data, afterJson);
+    if (!c) { histDelete(entry.id); return; }
+    entry.changes = c.lines;
+    entry.more = c.more;
+    histSaveLocal();
+    renderHistList();
+    if (typeof histPush === "function") histPush(entry, []);
+  }
+  // 一覧に太字で出す見出し。変更点が分かっていればそれを出す
+  function histTitle(e) {
+    var ch = (e && e.changes) || [];
+    return ch.length ? ch[0] : ((e && e.label) || "（メモなし）");
+  }
+
   function histAdd(label, dataJson, auto) {
     var e = {
       id: "h" + Date.now() + Math.random().toString(36).slice(2, 6),
@@ -312,17 +462,26 @@
     histSettleTimer = setTimeout(histSettle, HIST_SETTLE_MS);
     if (histBurst || !histBaseline) return;
     histBurst = true;
-    histAdd("編集前の内容", histBaseline, true);
+    histBurstEntry = histAdd("編集前の内容", histBaseline, true);
+  }
+  // かたまりが終わった時点で、何を変更したのかを履歴に書き込む
+  function histFinishBurst() {
+    if (!histBurstEntry) return;
+    var e = histBurstEntry;
+    histBurstEntry = null;
+    histAttachChanges(e, JSON.stringify(MASTER));
   }
   // ひと区切り。次の編集は新しい戻し先になる
   function histSettle() {
     if (histSettleTimer) { clearTimeout(histSettleTimer); histSettleTimer = null; }
     if (!histBurst) return;
     histBurst = false;
+    histFinishBurst();
     histBaseline = JSON.stringify(MASTER);
   }
   function histMark() {
     if (histSettleTimer) { clearTimeout(histSettleTimer); histSettleTimer = null; }
+    histFinishBurst();
     histBaseline = JSON.stringify(MASTER);
     histBurst = false;
   }
@@ -335,10 +494,12 @@
   function histRestore(id) {
     var e = histList.filter(function (x) { return x.id === id; })[0];
     if (!e) return;
+    histSettle(); // 編集の途中なら、ここでひと区切りにしてから戻す
     // 戻す操作自体もやり直せるように、いまの内容を残しておく
-    histAdd("戻す前の内容", JSON.stringify(MASTER), true);
+    var back = histAdd("戻す前の内容", JSON.stringify(MASTER), true);
     try { localStorage.setItem(MASTER_KEY, e.data); } catch (e2) {}
     loadMaster();
+    histAttachChanges(back, JSON.stringify(MASTER)); // 戻したことで何が変わったか
     histMark();
     renderMasterTab();
     renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
@@ -346,7 +507,7 @@
     renderCampaigns(); renderDiscountHint();
     syncFormFromState();
     recalc();
-    histMsg("「" + (e.label || e.at) + "」の内容に戻しました");
+    histMsg("「" + histTitle(e) + "」の時点の内容に戻しました");
   }
   function histDelete(id) {
     histList = histList.filter(function (x) { return x.id !== id; });
@@ -354,13 +515,29 @@
     if (typeof histDeleteCloud === "function") histDeleteCloud(id);
     renderHistList();
   }
+  function histChangesHtml(e) {
+    var ch = e.changes || [];
+    if (!ch.length) return "";
+    return '<details class="hist-diff"><summary>変更した内容（' + (ch.length + (e.more || 0)) + '件）</summary><ul>'
+      + ch.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+      + (e.more ? '<li class="hist-omit">ほか' + e.more + "件</li>" : "")
+      + "</ul></details>";
+  }
   function histListHtml() {
     if (!histList.length) return '<p class="hint">まだ履歴はありません。</p>';
     return '<div class="hist-list">' + histList.map(function (e) {
+      var ch = e.changes || [];
+      var rest = (ch.length - 1) + (e.more || 0);
       return '<div class="hist-row">'
-        + '<div class="hist-info"><b>' + esc(e.label || "（メモなし）") + (e.auto ? '<span class="hist-auto">自動</span>' : "") + "</b>"
-        + '<span class="hint">' + esc(e.at) + "　" + esc(e.by || "") + "</span></div>"
-        + '<button class="btn-sub" data-hist-restore="' + esc(e.id) + '" type="button">この内容に戻す</button>'
+        + '<div class="hist-info">'
+        + '<b>' + esc(histTitle(e))
+        + (rest > 0 ? '<span class="hist-more">ほか' + rest + "件</span>" : "")
+        + (e.auto ? '<span class="hist-auto">自動</span>' : "") + "</b>"
+        + '<span class="hint">' + esc(e.at) + "　" + esc(e.by || "") + "</span>"
+        + histChangesHtml(e)
+        + "</div>"
+        + '<button class="btn-sub" data-hist-restore="' + esc(e.id) + '" type="button">'
+        + (ch.length ? "この変更の前に戻す" : "この内容に戻す") + "</button>"
         + '<button class="del" data-hist-del="' + esc(e.id) + '" type="button" aria-label="削除">×</button>'
         + "</div>";
     }).join("") + "</div>";
@@ -921,7 +1098,21 @@
   }
 
   /* ---------- 画面の出し分け（店舗ログイン → 担当者コード → 本体） ---------- */
-  function showLogin(show) { var el = $("loginOverlay"); if (el) el.hidden = !show; }
+  /* 立ち上がりの目隠しを外す。
+   * どの画面を出すか決まるまで body.booting のままにしておくことで、
+   * ログイン画面が出るより先に見積もり画面が一瞬見えるのを防ぐ。 */
+  var bootRevealed = false;
+  function bootDone() {
+    if (bootRevealed) return;
+    bootRevealed = true;
+    if (document.body) document.body.className =
+      document.body.className.replace(/\bbooting\b/g, "").replace(/\s+/g, " ").trim();
+  }
+  function showLogin(show) {
+    var el = $("loginOverlay");
+    if (el) el.hidden = !show;
+    if (show) bootDone();
+  }
   function showStaffGate(show) {
     var el = $("staffOverlay");
     if (el) el.hidden = !show;
@@ -1188,6 +1379,7 @@
     armIdle(lockEnabled() || cloudOn());
     if (anyStaffCode()) showStaffGate(true);
     else enterStaff(activeStaff());
+    bootDone();
   }
 
   // 店舗ログイン（端末内モード）
@@ -3080,8 +3272,9 @@
 
     // 料金マスタの履歴
     h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
-    h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残ります</strong>'
+    h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残り、何を変更したのかも記録されます</strong>'
       + '（編集の区切りごとに1件。続けて直しているあいだは1件にまとめます）。'
+      + '「変更した内容」を開くと、変更した項目と金額の前後が分かります。'
       + '大きく変える前は、メモを付けて残しておくと分かりやすくなります（最大' + HIST_MAX + '件・古いものから消えます）。</p>';
     h += '<div class="hist-save">'
       + '<input type="text" id="histLabel" maxlength="40" placeholder="メモ（例）2026年8月の料金改定">'
@@ -4372,7 +4565,7 @@
     $("masterBody").addEventListener("click", function (e) {
       var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");
       if (hr) {
-        if (window.confirm("この内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);
+        if (window.confirm("この時点の内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);
         return;
       }
       var hd = e.target.getAttribute && e.target.getAttribute("data-hist-del");
@@ -4484,4 +4677,6 @@
   initTileSort();
   initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
+  // 何かの理由で画面の決定に至らなくても、隠したままにはしない
+  setTimeout(bootDone, 6000);
 })();
