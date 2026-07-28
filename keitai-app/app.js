@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.6.0";
+  var APP_VERSION = "1.6.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2644,7 +2644,8 @@
     if (signParts.length) h += '<div class="sheet-sign">' + signParts.join("　") + "</div>";
 
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
-      + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。<br>"
+      + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。"
+      + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
       + "料金データ基準日: " + esc(MASTER.updated) + "｜アプリ版 " + APP_VERSION + "</div>";
 
     $("sheetBody").innerHTML = h;
@@ -3026,6 +3027,47 @@
       showMasterGate(false);
       if (masterGateFrom === "staff") { masterGateFrom = null; showStaffGate(true); return; }
       switchTab("quote");
+    });
+  }
+
+  /* ---------- このアプリについて ----------
+   * 提供元・版・商標・免責をまとめて出す。担当者コードを持たない人でも見られるよう、
+   * マスタ設定ではなくヘッダーとログイン画面から開けるようにしている。 */
+  function vendorInfo() {
+    var v = (typeof KEITAI_VENDOR !== "undefined" && KEITAI_VENDOR) || {};
+    return {
+      name: v.name || "（未設定）",
+      contact: v.contact || "（未設定）",
+      hours: v.hours || ""
+    };
+  }
+  function showAbout(show) {
+    var el = $("aboutOverlay");
+    if (!el) return;
+    if (show) {
+      var v = vendorInfo();
+      var rows = [
+        ["アプリ名", "ケータイ見積もり"],
+        ["アプリ版", APP_VERSION],
+        ["料金データ基準日", MASTER.updated],
+        ["提供元", v.name],
+        ["お問い合わせ", v.contact]
+      ];
+      if (v.hours) rows.push(["受付時間", v.hours]);
+      $("aboutMeta").innerHTML = rows.map(function (r) {
+        return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
+      }).join("");
+    }
+    el.hidden = !show;
+  }
+  function initAbout() {
+    ["aboutBtn", "aboutFromLogin"].forEach(function (id) {
+      var b = $(id);
+      if (b) b.addEventListener("click", function () { showAbout(true); });
+    });
+    $("aboutClose").addEventListener("click", function () { showAbout(false); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") showAbout(false);
     });
   }
 
@@ -3942,6 +3984,7 @@
   initLocalLock();
   initStaffGate();
   initMasterGate();
+  initAbout();
   initTileSort();
   initTplHold();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
