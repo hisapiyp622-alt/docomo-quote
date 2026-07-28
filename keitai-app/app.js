@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.5.3";
+  var APP_VERSION = "1.5.4";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -336,6 +336,12 @@
       if (MASTER.options.some(function (o) { return o.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
       MASTER.options.push(JSON.parse(JSON.stringify(d)));
+    });
+    // 初期費用の定番項目も同様に追記
+    (DEFAULT_DATA.feeItems || []).forEach(function (d) {
+      if (MASTER.feeItems.some(function (f) { return f.id === d.id; })) return;
+      if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      MASTER.feeItems.push(JSON.parse(JSON.stringify(d)));
     });
     // 初期データに後から増えたプランも同様に追記（同じグループの末尾に挿入）
     (DEFAULT_DATA.plans || []).forEach(function (d) {
@@ -2079,7 +2085,14 @@
     });
     anyTodo = true;
     h += row("データ移行", dataMove.length
-      ? '<b style="color:var(--red)">あり</b>　' + dataMove.map(function (f) { return esc(f.name); }).join("／")
+      ? '<b style="color:var(--red)">あり</b>　' + dataMove.map(function (f) {
+          // 登録スタッフが金額を取り違えないよう、無料か有料かを添える
+          var pr = num(f.price);
+          var tag = pr === 0
+            ? (String(f.name || "").indexOf("無料") < 0 ? "（無料）" : "")
+            : "（" + yen(pr) + "）";
+          return esc(f.name) + tag;
+        }).join("／")
       : "<b>なし</b>");
     if (state.todoOther) {
       anyTodo = true;
