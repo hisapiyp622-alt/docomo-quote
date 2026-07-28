@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.25-63";
+  var APP_VERSION = "2026.07.25-64";
   var MASTER_KEY = "dq-master-v3"; // v1,v2=開発時（読まない）※マスタは全担当・全端末で共通
   var STATE_KEY = "dq-state-v2";   // v1=単一パターン形式（移行あり）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -448,7 +448,7 @@
   }
   // ②のネットワークサービス（単品の月額使用料・税込）
   var NET_SVC = [
-    { id: "rusuban", name: "留守番電話サービス", price: 330, freeWithKake: true },
+    { id: "rusuban", name: "留守番電話サービス", short: "留守番電話", price: 330, freeWithKake: true },
     { id: "catchhone", name: "キャッチホン", price: 220, freeWithKake: true },
     { id: "melody", name: "メロディコール", price: 110, canOff: true }
   ];
@@ -470,7 +470,7 @@
     } else {
       picked.forEach(function (n) {
         var f = free && n.freeWithKake;
-        rows.push({ name: n.name + (f ? "（通話オプションに込み）" : ""), price: f ? 0 : n.price });
+        rows.push({ name: n.name + (f ? "（通話オプションに込み）" : ""), base: n.short || n.name, incl: !!f, price: f ? 0 : n.price });
         total += f ? 0 : n.price;
       });
     }
@@ -592,14 +592,15 @@
     var voiceNote = (plan.includes5min && vo.id === "v5") ? "（プランに標準込み）" : "";
 
     // オプション・サービス（すべて月額・金額選択対応）
-    var optRows = [], optTotal = 0;
+    var optRows = [], optTotal = 0, bonusRows = [];
     var bonusFree = maxBonusFree(st, plan.id);
     MASTER.options.forEach(function (o) {
       if (!st.options[o.id]) return;
       var pr = optPrice(o, st);
       var lb = o.priceLabels && o.priceLabels[String(pr)];
       if (bonusFree[o.id]) {
-        optRows.push({ name: o.name + "（" + MAX_BONUS_NOTE + "）", price: 0 });
+        // 行は見積書で料金プランの直後にまとめるため optRows とは分けて返す
+        bonusRows.push({ name: o.name + "（" + MAX_BONUS_NOTE + "）", base: o.name.replace("（爆アゲ）", ""), price: 0 });
         return;
       }
       optRows.push({ name: o.name + (lb ? "（" + lb + "）" : ""), price: pr });
@@ -607,8 +608,8 @@
     });
 
     // ②のネットワークサービス（ドコモの利用料金なので還元の対象額にも含める）
+    // 行は見積書で通話オプションの直後に出すため optRows とは分けて返す
     var net = netSvcCalc(st);
-    net.rows.forEach(function (n) { optRows.push(n); });
     optTotal += net.total;
 
     // 月額の追加項目（ずっと／期間限定）
@@ -783,7 +784,7 @@
       dMinna: dMinna, dSet: dSet, dCard: dCard, dDenki: dDenki, dChoki: dChoki,
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
-      optRows: optRows, optTotal: optTotal,
+      optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
@@ -1525,7 +1526,12 @@
     // 月額内訳（1ページ目: プラン・オプション。分割支払金は合計行のみ・明細は2ページ目）
     h += "<h3>月額内訳（" + segLabel(seg0) + (lbl0 ? "" : "毎月") + "）</h3><table><tbody>";
     if (state.procType) h += row("手続き種別", procLabel, false);
-    if (hasPlan()) h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）", yen(r.tier.price), true);
+    if (hasPlan()) {
+      var bonus = r.bonusRows || [];
+      h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）"
+        + (bonus.length ? "（" + bonus.map(function (x) { return esc(x.base); }).join("・") + "）" : ""),
+        yen(r.tier.price), true);
+    }
     // プランの割引は「セット割」1行にまとめ、内訳を横並びで小さく表記
     var setWari = [];
     if (r.dMinna) setWari.push({ name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
@@ -1546,7 +1552,16 @@
     r.pointRows.forEach(function (p) {
       h += row(esc(p.name) + "※", "−" + yen(p.amount), true);
     });
-    if (r.voice.id !== "none") h += row(esc(r.voice.name) + esc(r.voiceNote), yen(r.voicePrice), true);
+    var netIncl = (r.netRows || []).filter(function (n) { return n.incl; });
+    if (r.voice.id !== "none") {
+      h += row(esc(r.voice.name) + esc(r.voiceNote)
+        + (netIncl.length ? "（" + netIncl.map(function (n) { return esc(n.base); }).join("・") + "）" : ""),
+        yen(r.voicePrice), true);
+    }
+    (r.netRows || []).forEach(function (n) {
+      if (n.incl) return;   // 通話オプションの行に含めたので単独では出さない
+      h += row(esc(n.name), yen(n.price), true);
+    });
     r.optRows.forEach(function (o) { h += row(esc(o.name), yen(o.price), true); });
     state.adhocMonthly.forEach(function (a) {
       if (!a.name && !a.amount) return;
