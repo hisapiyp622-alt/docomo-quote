@@ -287,8 +287,15 @@
 
     <div class="card c8">
       <h2>⑧ ポイント（実質額のご案内）</h2>
-      <p class="hint">もらえるポイントを月額から差し引いて、実質のお支払い額としてご案内するための欄です。
-        ④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
+      <p class="hint">④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
+      <div class="field">
+        <label for="pointApply">ポイントの扱い</label>
+        <select id="pointApply">
+          <option value="1">月額から充当する（実質のお支払い額でご案内）</option>
+          <option value="0">充当しない（もらえるポイントとしてご案内）</option>
+        </select>
+      </div>
+      <p class="hint" id="pointSummary" hidden></p>
       <div class="field" id="ptPoikatsuWrap">
         <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
         <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
