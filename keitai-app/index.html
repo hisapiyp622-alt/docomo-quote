@@ -15,6 +15,7 @@
     <span class="staff-bar" id="staffBar" hidden></span>
     <button class="hd-btn" id="switchStaffBtn" type="button">担当切替</button>
     <button class="hd-btn" id="logoutBtn" type="button" hidden>ログアウト</button>
+    <button class="hd-btn" id="aboutBtn" type="button">情報</button>
     <span class="sync-status" id="syncStatus"></span></h1>
   <nav class="tabs no-print" id="tabsNav" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
@@ -444,6 +445,7 @@
       <input type="password" id="loginPass" autocomplete="current-password" required>
     </div>
     <button class="btn-main" id="loginBtn" type="submit">ログイン</button>
+    <p class="login-lead"><button type="button" class="link-btn" id="aboutFromLogin">このアプリについて</button></p>
   </form>
 </div>
 
@@ -465,6 +467,26 @@
     <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">マスタ設定を開く（料金・担当者の登録）</button><br>
       <span class="login-note">店舗IDとパスワードが必要です。</span></p>
   </form>
+</div>
+
+<div class="login-overlay no-print" id="aboutOverlay" hidden>
+  <div class="login-box about-box">
+    <h2>このアプリについて</h2>
+    <dl class="about-list" id="aboutMeta"></dl>
+    <p class="about-note"><strong>本アプリは、株式会社NTTドコモおよびその関連会社が提供する公式のツールではありません。</strong>
+      提供元が独自に開発したものであり、同社との資本関係・提携関係はありません。</p>
+    <p class="about-note">本アプリが表示する金額は、ご説明を補助するための<strong>概算</strong>です。
+      契約の申込・成立を行うものではありません。<strong>最終的な金額および適用条件は、必ず正規の販売システムでご確認ください。</strong></p>
+    <p class="about-note">「ドコモ」「ahamo」「irumo」「eximo」「dカード」「dポイント」「Lemino」その他の名称は、
+      株式会社NTTドコモの商標または登録商標です。その他の会社名・製品名・サービス名は各社の商標または登録商標です。
+      本アプリは、料金プラン等の名称を説明のために表示しているにとどまります。</p>
+    <p class="about-links">
+      <a href="./TERMS.md" target="_blank" rel="noopener">利用規約</a>
+      <a href="./LICENSE.md" target="_blank" rel="noopener">使用許諾条件</a>
+      <a href="./SUPPORT.md" target="_blank" rel="noopener">サポート</a>
+    </p>
+    <button class="btn-main" id="aboutClose" type="button">閉じる</button>
+  </div>
 </div>
 
 <div class="login-overlay no-print" id="masterGate" hidden>

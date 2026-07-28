@@ -524,3 +524,12 @@ body.sorting .sort-chip{cursor:grabbing}
   background:#EEE;color:var(--muted);font-size:10.5px;font-weight:600;vertical-align:1px;
 }
 .hist-row .btn-sub{white-space:nowrap}
+
+/* このアプリについて */
+.about-box{max-width:520px;text-align:left}
+.about-list{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0 0 12px;font-size:12.5px}
+.about-list dt{color:var(--muted);white-space:nowrap}
+.about-list dd{margin:0;word-break:break-word}
+.about-note{font-size:11.5px;color:var(--muted);line-height:1.65;margin:0 0 9px}
+.about-links{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 14px;font-size:12.5px}
+.about-links a{color:var(--red)}
