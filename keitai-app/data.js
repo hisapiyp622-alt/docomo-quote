@@ -43,7 +43,8 @@ const DEFAULT_DATA = {
         "choki20": 220
       },
       "includes5min": false,
-      "note": "3段階制・無制限。エンタメ特典（Lemino/dアニメ/DAZN/NBAから毎月2つ無料）・Amazonプライム最大6か月無料・海外ローミング30GB/15日込み。"
+      "note": "3段階制・無制限。エンタメ特典（Lemino/dアニメ/DAZN/NBAから毎月2つ無料）・Amazonプライム最大6か月無料・海外ローミング30GB/15日込み。",
+      "bakuageTier": "max"
     },
     {
       "id": "poikatsu_max",
@@ -66,7 +67,8 @@ const DEFAULT_DATA = {
         "choki20": 220
       },
       "includes5min": false,
-      "note": "d払い/dカード決済にポイント還元（PLATINUM10%/GOLD系5%/その他3%・上限5,000pt/月）。還元は月額とは別枠。"
+      "note": "d払い/dカード決済にポイント還元（PLATINUM10%/GOLD系5%/その他3%・上限5,000pt/月）。還元は月額とは別枠。",
+      "bakuageTier": "max"
     },
     {
       "id": "poikatsu_20",
@@ -91,7 +93,8 @@ const DEFAULT_DATA = {
         "denki": 110
       },
       "includes5min": false,
-      "note": "還元はPLATINUM5%/GOLD系2%/その他1%・上限2,500pt/月。長期利用割は対象外。"
+      "note": "還元はPLATINUM5%/GOLD系2%/その他1%・上限2,500pt/月。長期利用割は対象外。",
+      "bakuageTier": "std"
     },
     {
       "id": "mini",
@@ -117,7 +120,8 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "dcard10": false,
-      "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。"
+      "note": "小容量プラン。みんなドコモ割・長期利用割は対象外（回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。",
+      "bakuageTier": ""
     },
     {
       "id": "ahamo",
@@ -145,7 +149,8 @@ const DEFAULT_DATA = {
         "kake": 1100
       },
       "dcard10": false,
-      "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。"
+      "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。",
+      "bakuageTier": "std"
     },
     {
       "id": "u15",
@@ -169,7 +174,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": true,
-      "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。"
+      "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。",
+      "bakuageTier": ""
     },
     {
       "id": "keitai",
@@ -189,7 +195,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。"
+      "note": "ドコモケータイ（ガラホ・4G LTEケータイ）向け・データ100MB。みんなドコモ割は回線数カウントのみで割引対象外。光セット割・長期利用割も対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": ""
     },
     {
       "id": "kids",
@@ -209,7 +216,8 @@ const DEFAULT_DATA = {
         "dcardGold": 0
       },
       "includes5min": false,
-      "note": "キッズケータイ専用（12歳以下）。国内通話・SMSは家族間無料。各種割引対象外・みんなドコモ割の回線数カウント対象外。料金はマスタ設定で調整可。"
+      "note": "キッズケータイ専用（12歳以下）。国内通話・SMSは家族間無料。各種割引対象外・みんなドコモ割の回線数カウント対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": ""
     },
     {
       "id": "dataplus",
@@ -229,7 +237,8 @@ const DEFAULT_DATA = {
         "dcardGold": 0
       },
       "includes5min": false,
-      "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。"
+      "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": ""
     },
     {
       "id": "eximo",
@@ -257,7 +266,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2025年6月4日新規受付終了。既存契約者の比較・プラン変更提案用。"
+      "note": "2025年6月4日新規受付終了。既存契約者の比較・プラン変更提案用。",
+      "bakuageTier": "std"
     },
     {
       "id": "eximo_poikatsu",
@@ -277,7 +287,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2025年6月4日新規受付終了。d払い/dカード決済3〜10%還元（上限5,000pt/月）。"
+      "note": "2025年6月4日新規受付終了。d払い/dカード決済3〜10%還元（上限5,000pt/月）。",
+      "bakuageTier": "std"
     },
     {
       "id": "irumo",
@@ -315,7 +326,8 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "dcard10": false,
-      "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。dカードGOLD/PLATINUMの利用料金10%（20%）還元は対象外。"
+      "note": "2025年6月4日新規受付終了（他プランからの変更受付も終了）。みんなドコモ割はカウントのみ（0.5GBはカウント対象外）。dカードGOLD/PLATINUMの利用料金10%（20%）還元は対象外。",
+      "bakuageTier": ""
     },
     {
       "id": "gigaho_premier",
@@ -339,7 +351,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2023年6月30日新規受付終了。"
+      "note": "2023年6月30日新規受付終了。",
+      "bakuageTier": "std"
     },
     {
       "id": "gigalite",
@@ -377,7 +390,8 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": false,
-      "note": "2023年6月30日新規受付終了。光セット割は段階により異なる（〜1GB対象外/〜3GB−550円）。7GB超過後は最大128kbps。"
+      "note": "2023年6月30日新規受付終了。光セット割は段階により異なる（〜1GB対象外/〜3GB−550円）。7GB超過後は最大128kbps。",
+      "bakuageTier": ""
     }
   ],
   "voiceOptions": [
@@ -502,9 +516,11 @@ const DEFAULT_DATA = {
       "name": "amazon prime",
       "price": 600,
       "category": "エンタメ",
-      "note": "",
+      "note": "ドコモ公式の爆アゲ セレクションの一覧には含まれません。当店の運用として固定120ptで計算しています",
       "own": false,
-      "bakuage": 10
+      "bakuage": 0,
+      "bakuage2": 0,
+      "bakuageFixed": 120
     },
     {
       "id": "netflix",
@@ -521,8 +537,10 @@ const DEFAULT_DATA = {
         "2290": "プレミアム"
       },
       "category": "エンタメ",
-      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円",
-      "own": false
+      "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円・爆アゲはMAX系20%（広告つきは15%）／ポイ活20・ahamo・eximo・ギガホは10%",
+      "own": false,
+      "bakuage": 20,
+      "bakuage2": 10
     },
     {
       "id": "bk_disney",
@@ -540,7 +558,8 @@ const DEFAULT_DATA = {
       "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
       "carrier": true,
       "own": false,
-      "bakuage": 20
+      "bakuage": 20,
+      "bakuage2": 10
     },
     {
       "id": "bk_lemino",
@@ -550,16 +569,19 @@ const DEFAULT_DATA = {
       "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
       "carrier": true,
       "own": false,
-      "bakuage": 20
+      "bakuage": 20,
+      "bakuage2": 10
     },
     {
       "id": "dazn",
       "name": "DAZN for docomo",
       "price": 4200,
       "category": "エンタメ",
-      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
+      "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象。爆アゲ セレクションは新規の適用が終了しています",
       "carrier": true,
-      "own": false
+      "own": false,
+      "bakuage": 0,
+      "bakuage2": 0
     },
     {
       "id": "nba",
@@ -585,7 +607,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "最大25%還元",
       "own": false,
-      "bakuage": 25
+      "bakuage": 25,
+      "bakuage2": 15
     },
     {
       "id": "bk_youtube",
@@ -594,7 +617,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "最大10%還元",
       "own": false,
-      "bakuage": 10
+      "bakuage": 10,
+      "bakuage2": 5
     },
     {
       "id": "bk_jump",
@@ -603,7 +627,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "最大20%還元",
       "own": false,
-      "bakuage": 20
+      "bakuage": 20,
+      "bakuage2": 10
     },
     {
       "id": "bk_danime",
@@ -613,7 +638,8 @@ const DEFAULT_DATA = {
       "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
       "carrier": true,
       "own": false,
-      "bakuage": 10
+      "bakuage": 10,
+      "bakuage2": 5
     },
     {
       "id": "bk_googleone",
@@ -632,7 +658,8 @@ const DEFAULT_DATA = {
       "category": "エンタメ",
       "note": "ベーシック100GB 290円／スタンダード200GB 440円／Google AI Plus 2TB 1,450円・最大20%還元",
       "own": false,
-      "bakuage": 20
+      "bakuage": 20,
+      "bakuage2": 10
     },
     {
       "id": "bk_appleone",
@@ -645,7 +672,8 @@ const DEFAULT_DATA = {
       ],
       "note": "個人1,200/ファミリー1,980・最大10%還元",
       "own": false,
-      "bakuage": 10
+      "bakuage": 10,
+      "bakuage2": 5
     },
     {
       "id": "dphoto",
