@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.11.0";
+  var APP_VERSION = "1.11.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2277,25 +2277,37 @@
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
     // ポイ活プラン以外では、入力が残っていても充当しない
     var isPoikatsu = poikatsuPlan(plan.id);
-    var ptPoikatsu = isPoikatsu ? Math.max(0, num(st.pointPoikatsu)) : 0;
-    var ptFamily = isPoikatsu ? Math.max(0, num(st.pointPoikatsuFamily)) : 0;
-    var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false)
-      ? 0
-      : Math.max(0, num(st.pointDcard));
-    // 「見積もりに含める」を外したときは充当しない（もらえるポイントの案内だけに使う）
-    var ptBakuage = st.bakuageInclude === false ? 0 : Math.max(0, num(st.pointBakuage));
-    var pointRows = [];
-    if (ptBakuage > 0) pointRows.push({ name: "爆アゲ セレクション還元", amount: ptBakuage });
-    if (ptPoikatsu > 0) pointRows.push({ name: "ポイ活プラン還元", amount: ptPoikatsu });
-    if (ptFamily > 0) pointRows.push({ name: "ポイ活ファミリー特典", amount: ptFamily });
-    if (ptDcard > 0) pointRows.push({ name: "dカード還元特典", amount: ptDcard });
-    var pointTotal = ptBakuage + ptPoikatsu + ptFamily + ptDcard;
+
+    /* もらえるポイント（実額）。「見積もりに含める」のチェックとは関係なく、
+     * お客様が実際に受け取る分。 */
+    var earnPoikatsu = isPoikatsu ? Math.max(0, num(st.pointPoikatsu)) : 0;
+    var earnFamily = isPoikatsu ? Math.max(0, num(st.pointPoikatsuFamily)) : 0;
+    var earnBakuage = Math.max(0, num(st.pointBakuage));
+    var earnDcard = Math.max(0, num(st.pointDcard));
+
+    /* 月額から差し引く分。個別の「見積もりに含める」を外したものは引かない。 */
+    var ptPoikatsu = earnPoikatsu;
+    var ptFamily = earnFamily;
+    var ptBakuage = st.bakuageInclude === false ? 0 : earnBakuage;
+    var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false) ? 0 : earnDcard;
 
     /* ポイントの扱い。
-     * 充当する … 月額から差し引いて「実質のお支払い額」として出す（従来）
-     * 充当しない … 月額は引かず、「毎月もらえるポイント」と「使った場合の実質」を添える
-     * どちらでも、もらえるポイントの計算そのものは同じ。 */
+     * 充当する … 選んだものを月額から差し引いて「実質のお支払い額」として出す
+     * 充当しない … 何も引かない。差し引く相手がいないので、
+     *   もらえるポイントは個別のチェックによらず全部を合算して案内する
+     *   （爆アゲもdカード特典も、実際にはもらえるため） */
     var pointApply = st.pointApply !== false;
+    var pointRows = [];
+    function addPointRow(name, used, earned) {
+      var v = pointApply ? used : earned;
+      if (v > 0) pointRows.push({ name: name, amount: v });
+    }
+    addPointRow("爆アゲ セレクション還元", ptBakuage, earnBakuage);
+    addPointRow("ポイ活プラン還元", ptPoikatsu, earnPoikatsu);
+    addPointRow("ポイ活ファミリー特典", ptFamily, earnFamily);
+    addPointRow("dカード還元特典", ptDcard, earnDcard);
+    var pointTotal = 0;
+    pointRows.forEach(function (x) { pointTotal += x.amount; });
     var pointUsed = pointApply ? pointTotal : 0;
 
     // 月額（恒久部分）
@@ -2974,6 +2986,9 @@
     var goldOn = isGoldCard(state.dCard);
     // 爆アゲ: 対象サービスを選んでいるときだけ出す
     var bakuOn = (r.bakuageRows || []).length > 0 || num(state.pointBakuage) > 0;
+    /* 充当しないときは、個別の「見積もりに含める」は効かない（何も引かないため）。
+     * 出しておくと誤解を生むので隠す。 */
+    var applyOn = state.pointApply !== false;
     // もらえるポイントの合計と、それを使った場合の実質月額
     var psum = $("pointSummary");
     if (psum) {
@@ -3006,7 +3021,7 @@
       if (offNow) bakuOff.textContent = currentPlan().name + " は爆アゲ セレクションの対象プランではありません（固定ポイントのものだけ加算されます）。";
     }
     $("bakuageReset").hidden = !bakuOn || num(state.pointBakuage) === (r.bakuageAutoPt || 0);
-    $("bakuageIncludeWrap").hidden = !bakuOn;
+    $("bakuageIncludeWrap").hidden = !bakuOn || !applyOn;
     if (bakuOn) {
       $("bakuageInclude").checked = state.bakuageInclude !== false;
       $("bakuageIncludeLabel").textContent = "爆アゲ セレクションの還元を見積もりに含める"
@@ -3014,7 +3029,7 @@
           ? "（いまは含めていません。もらえるポイントは " + num(state.pointBakuage).toLocaleString("ja-JP") + "pt/月）"
           : "（月額から " + num(state.pointBakuage).toLocaleString("ja-JP") + "円ぶん差し引いて案内します）");
     }
-    $("dcardAutoWrap").hidden = !goldOn;
+    $("dcardAutoWrap").hidden = !goldOn || !applyOn;
     $("dcardAutoHint").hidden = !goldOn;
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
     if (goldOn) {
