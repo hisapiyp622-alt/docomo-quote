@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.3.2";
+  var APP_VERSION = "1.3.3";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -714,8 +714,12 @@
     CLOUD.watchingStaffId = null;
     CLOUD.watchingSavedId = null;
     syncStatus("", "");
+    armIdle(false);
     var lo = $("logoutBtn"); if (lo) lo.hidden = true;
     var sb = $("staffBar"); if (sb) sb.hidden = true;
+    // 画面に残った見積書が印刷されないように消す
+    var sh1 = $("sheetBody"); if (sh1) sh1.innerHTML = "";
+    var sh2 = $("staffSheetBody"); if (sh2) sh2.innerHTML = "";
     showStaffGate(false);
     var si = $("loginStoreId"); if (si) si.value = "";
     var sp = $("loginPass"); if (sp) sp.value = "";
@@ -2399,6 +2403,9 @@
   }
 
   function recalc() {
+    // ログイン画面を出している間は帳票を作らない（裏側に内容が残らないように）
+    var ov = $("loginOverlay");
+    if (ov && !ov.hidden) return;
     syncDcardAuto();
     renderNetSvc();
     var r = calc();
