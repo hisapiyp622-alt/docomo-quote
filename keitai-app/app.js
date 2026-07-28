@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.1.0";
+  var APP_VERSION = "1.3.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -20,7 +20,11 @@
   var CFG_KEY = "kq-config-v1";
   var config;
   function defaultConfig() {
-    return { storeName: "", staff: [{ id: "s1", name: "担当1", code: "" }], activeStaffId: "s1" };
+    return {
+      storeName: "", staff: [{ id: "s1", name: "担当1", code: "" }], activeStaffId: "s1",
+      // 端末内で使う場合の店舗ログイン（Firebase未設定のときだけ使う）
+      lock: { storeId: "", hash: "", salt: "", algo: "" }
+    };
   }
   function loadConfig() {
     config = defaultConfig();
@@ -28,6 +32,7 @@
       var saved = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
       if (saved && saved.staff && saved.staff.length) config = Object.assign(defaultConfig(), saved);
     } catch (e) {}
+    if (!config.lock) config.lock = { storeId: "", hash: "", salt: "", algo: "" };
     config.staff.forEach(function (s2, i) {
       if (!s2.id) s2.id = "s" + (i + 1);
       if (typeof s2.code !== "string") s2.code = "";
@@ -47,6 +52,23 @@
     while (config.staff.some(function (s2) { return s2.id === "s" + n; })) n++;
     return "s" + n;
   }
+  // 店舗ログインの設定状態を画面に反映する
+  function renderLockConfig() {
+    var box = $("lockBox");
+    if (!box) return;
+    var on = lockEnabled();
+    var st = $("lockState");
+    if (st) {
+      st.textContent = on
+        ? "設定中です。アプリを開くと店舗ID「" + config.lock.storeId + "」のログインを求めます。"
+        : "未設定です。アプリを開くとログインなしで使えます。";
+      st.className = "hint" + (on ? " lock-on" : "");
+    }
+    var clr = $("lockClearBtn");
+    if (clr) clr.hidden = !on;
+    var idEl = $("lockStoreId");
+    if (idEl && document.activeElement !== idEl) idEl.value = config.lock.storeId || "";
+  }
   // 設定タブの店舗設定カードを描き直す
   function renderStoreConfig() {
     var nameEl = $("storeNameInput");
@@ -61,6 +83,135 @@
         + "</div>";
     }).join("");
   }
+
+  /* ---------- 保存した見積もり ----------
+   * 「いまの入力内容」とは別に、3パターン一式を名前を付けて残しておける。
+   * 担当者ごとに分かれ、クラウド利用時は stores/{uid}/saved/{担当ID} に同期する。 */
+  var SAVED_KEY = "kq-saved-v1";
+  var SAVED_MAX = 50;
+  var savedList = [];
+  function savedKey(staffId) { return SAVED_KEY + ":" + (staffId || activeStaff().id); }
+  function loadSaved() {
+    savedList = [];
+    try {
+      var a = JSON.parse(localStorage.getItem(savedKey()) || "null");
+      if (a && a.length) savedList = a;
+    } catch (e) {}
+  }
+  function persistSaved() {
+    try { localStorage.setItem(savedKey(), JSON.stringify(savedList)); } catch (e) {}
+    if (typeof pushSaved === "function") pushSaved();
+  }
+  function savedDefaultName() {
+    var d = new Date();
+    var mm = ("0" + (d.getMonth() + 1)).slice(-2), dd = ("0" + d.getDate()).slice(-2);
+    var nm = (state.custName || "").trim();
+    return (nm ? nm + " " : "") + (d.getFullYear() + "/" + mm + "/" + dd);
+  }
+  // いま開いている3パターン一式を保存する
+  function saveQuote(name) {
+    var r = calc();
+    var item = {
+      id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: String(name || "").trim().slice(0, 40) || savedDefaultName(),
+      custName: state.custName || "",
+      planName: state.planId ? r.plan.name : "",
+      monthly: r.segs[0].monthly,
+      initial: r.initialTotal,
+      savedAt: Date.now(),
+      data: JSON.parse(JSON.stringify(store))
+    };
+    savedList.unshift(item);
+    if (savedList.length > SAVED_MAX) savedList = savedList.slice(0, SAVED_MAX);
+    persistSaved();
+    renderSaved();
+    return item;
+  }
+  // 保存済みの見積もりを開く（いまの入力内容は置き換わる）
+  function loadSavedQuote(id) {
+    var it = savedList.filter(function (x) { return x.id === id; })[0];
+    if (!it || !it.data || !it.data.patterns) return false;
+    store.active = Math.min(Math.max(it.data.active | 0, 0), 2);
+    for (var i = 0; i < 3; i++) {
+      store.patterns[i] = Object.assign(defaultState(), it.data.patterns[i] || {});
+    }
+    state = store.patterns[store.active];
+    saveState();
+    syncFormFromState();
+    recalc();
+    return true;
+  }
+  function deleteSavedQuote(id) {
+    savedList = savedList.filter(function (x) { return x.id !== id; });
+    persistSaved();
+    renderSaved();
+  }
+  function savedWhen(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + ("0" + d.getDate()).slice(-2)
+      + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+  }
+  function renderSaved() {
+    var el = $("savedList");
+    if (!el) return;
+    if (!savedList.length) {
+      el.innerHTML = '<p class="hint">保存した見積もりはまだありません。</p>';
+      return;
+    }
+    el.innerHTML = savedList.map(function (it) {
+      return '<div class="saved-row">'
+        + '<div class="saved-main">'
+        + '<div class="saved-name">' + esc(it.name) + "</div>"
+        + '<div class="saved-sub">' + savedWhen(it.savedAt)
+        + (it.planName ? "　" + esc(it.planName) : "")
+        + "　月額 " + yen(it.monthly || 0)
+        + (it.initial ? "　初期費用 " + yen(it.initial) : "")
+        + "</div></div>"
+        + '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>'
+        + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
+        + "</div>";
+    }).join("");
+  }
+
+  /* 端末内モードの店舗ログイン
+   * パスワードはそのまま保存せず、店舗ごとの値（salt）を混ぜたハッシュだけを持つ。
+   * ただし端末を操作できる人には解析されうるため、店頭端末の簡易ロックと考えること。
+   * Firebaseを設定した場合は、こちらではなくFirebaseの認証を使う。 */
+  function lockSalt() {
+    if (window.crypto && window.crypto.getRandomValues) {
+      var a = new Uint8Array(16);
+      window.crypto.getRandomValues(a);
+      return Array.prototype.map.call(a, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+    }
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+  function lockAlgo() {
+    return (window.crypto && window.crypto.subtle && window.TextEncoder) ? "sha256" : "simple";
+  }
+  function lockHash(pass, salt, algo) {
+    var text = salt + ":" + pass;
+    if (algo !== "simple" && window.crypto && window.crypto.subtle && window.TextEncoder) {
+      return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
+        .then(function (buf) {
+          return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+            return ("0" + b.toString(16)).slice(-2);
+          }).join("");
+        })
+        .catch(function () { return simpleHash(text); });
+    }
+    return Promise.resolve(simpleHash(text));
+  }
+  // crypto.subtle が使えない環境（古い端末・http）向けの控え
+  function simpleHash(text) {
+    var h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (var i = 0; i < text.length; i++) {
+      h1 = (h1 ^ text.charCodeAt(i)) >>> 0;
+      h1 = (h1 * 0x01000193) >>> 0;
+      h2 = (h2 + text.charCodeAt(i) * (i + 7)) >>> 0;
+    }
+    return "s" + h1.toString(16) + h2.toString(16);
+  }
+  function lockEnabled() { return !!(config.lock && config.lock.hash); }
 
   /* ---------- マスタ読み込み ---------- */
   var MASTER;
@@ -279,6 +430,7 @@
     enabled: false, user: null, db: null, auth: null,
     suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
+    savedTimer: null, unsubSaved: null, watchingSavedId: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
   function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
@@ -342,18 +494,55 @@
     }, 800);
   }
 
+  function savedDoc(staffId) { return storeDoc().collection("saved").doc(staffId || activeStaff().id); }
+  function pushSaved() {
+    if (!cloudOn() || CLOUD.suppress) return;
+    var sid = activeStaff().id;
+    if (CLOUD.savedTimer) clearTimeout(CLOUD.savedTimer);
+    syncStatus("同期中…", "");
+    CLOUD.savedTimer = setTimeout(function () {
+      CLOUD.savedTimer = null;
+      if (!cloudOn()) return;
+      // お客様名（個人情報）はクラウドへ送らない
+      var list = JSON.parse(JSON.stringify(savedList));
+      list.forEach(function (it) {
+        it.custName = "";
+        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; });
+      });
+      savedDoc(sid).set(stamp({ list: JSON.stringify(list) })).then(cloudOk, cloudNg);
+    }, 1000);
+  }
+  function watchSaved() {
+    if (!cloudOn() || !config.activeStaffId) return;
+    var sid = activeStaff().id;
+    if (CLOUD.unsubSaved && CLOUD.watchingSavedId === sid) return;
+    if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
+    CLOUD.watchingSavedId = sid;
+    CLOUD.unsubSaved = savedDoc(sid).onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d || !d.list) return;
+      if (d.clientId === CLOUD.clientId) return;
+      if (CLOUD.savedTimer) return; // 送信待ちのローカル変更がある間は上書きしない
+      try {
+        savedList = JSON.parse(d.list) || [];
+        try { localStorage.setItem(savedKey(sid), JSON.stringify(savedList)); } catch (e) {}
+        renderSaved();
+      } catch (e) {}
+    }, function () {});
+  }
+
   function applyRemoteStore(d) {
     CLOUD.suppress = true;
+    var lostStaff = false;
     try {
       if (typeof d.storeName === "string") config.storeName = d.storeName;
       if (d.staff && d.staff.length) {
         config.staff = d.staff;
-        // 選択中の担当が消えていたら、担当者コードの入力からやり直す
+        // 選択中の担当が消えていた場合は、担当を選び直してもらう
+        // （料金マスタの取り込みはここで止めず、最後まで行う）
         if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
           config.activeStaffId = "";
-          saveConfig();
-          showStaffGate(true);
-          return;
+          lostStaff = true;
         }
       }
       saveConfig();
@@ -371,6 +560,11 @@
       syncFormFromState();
       recalc();
     } finally { CLOUD.suppress = false; }
+    // 担当が確定できない場合だけ選び直し（コード未設定の店舗は先頭の担当で続行）
+    if (lostStaff) {
+      if (anyStaffCode()) showStaffGate(true);
+      else enterStaff(config.staff[0]);
+    }
   }
   function applyRemoteQuote(d) {
     if (!d || !d.data) return;
@@ -424,10 +618,19 @@
   function showStaffGate(show) {
     var el = $("staffOverlay");
     if (el) el.hidden = !show;
-    if (show) {
-      var f = $("staffCode");
-      if (f) { f.value = ""; setTimeout(function () { f.focus(); }, 50); }
-      var e2 = $("staffErr"); if (e2) e2.hidden = true;
+    if (!show) return;
+    var f = $("staffCode");
+    if (f) { f.value = ""; setTimeout(function () { f.focus(); }, 50); }
+    var e2 = $("staffErr"); if (e2) e2.hidden = true;
+    // コードを設定していない担当者は、名前を押して入れるようにする
+    // （一部の担当者だけコードを付けた場合に、他の担当者が入れなくなるのを防ぐ）
+    var free = config.staff.filter(function (s) { return String(s.code || "").trim() === ""; });
+    var wrap = $("staffFreeWrap");
+    if (wrap) {
+      wrap.hidden = !free.length;
+      $("staffFreeList").innerHTML = free.map(function (s) {
+        return '<button class="btn-sub" type="button" data-staffpick="' + esc(s.id) + '">' + esc(s.name || "担当") + "</button>";
+      }).join("");
     }
   }
   // 担当者コードが1つも設定されていない場合は、コード入力を省いて先頭の担当で始める
@@ -439,11 +642,14 @@
     saveConfig();
     showStaffGate(false);
     loadState();
+    loadSaved();
+    renderSaved();
     state = store.patterns[store.active];
     syncFormFromState();
     renderStaffBar();
     recalc();
     watchQuote();
+    watchSaved();
   }
   function renderStaffBar() {
     var el = $("staffBar");
@@ -481,30 +687,120 @@
     storeDoc().get().then(function (snap) {
       var d = snap.exists ? snap.data() : null;
       if (d) applyRemoteStore(d);
-      if (config.activeStaffId && config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
-        showStaffGate(false);
-        renderStaffBar();
-        watchQuote();
-      } else if (!anyStaffCode()) {
-        enterStaff(config.staff[0]);
-      } else {
-        showStaffGate(true);
-      }
+      afterStoreLogin();
     }, function () {
-      // 取得できなくても端末内の設定で続行する
-      if (config.activeStaffId) { renderStaffBar(); watchQuote(); } else showStaffGate(true);
+      afterStoreLogin(); // 取得できなくても端末内の設定で続行する
     });
   }
   function onSignedOut() {
     CLOUD.user = null;
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
     CLOUD.watchingStaffId = null;
+    CLOUD.watchingSavedId = null;
     syncStatus("", "");
     var lo = $("logoutBtn"); if (lo) lo.hidden = true;
     var sb = $("staffBar"); if (sb) sb.hidden = true;
     showStaffGate(false);
+    var si = $("loginStoreId"); if (si) si.value = "";
+    var sp = $("loginPass"); if (sp) sp.value = "";
     showLogin(true);
+  }
+
+  /* ---------- 自動ログアウト ----------
+   * 店頭の共有端末を開いたまま離席したときのために、
+   * 操作が1時間途切れたらログイン画面へ戻す。 */
+  var IDLE_MS = 60 * 60 * 1000;
+  var IDLE = { last: Date.now(), timer: null, armed: false };
+  function idleTouch() { IDLE.last = Date.now(); }
+  function idleCheck() {
+    if (!IDLE.armed) return;
+    if (Date.now() - IDLE.last < IDLE_MS) return;
+    doLogout(true);
+  }
+  function armIdle(on) {
+    IDLE.armed = !!on;
+    IDLE.last = Date.now();
+    if (IDLE.timer) { clearInterval(IDLE.timer); IDLE.timer = null; }
+    if (on) IDLE.timer = setInterval(idleCheck, 30000);
+  }
+  function initIdle() {
+    ["pointerdown", "keydown", "wheel", "touchstart"].forEach(function (ev) {
+      document.addEventListener(ev, idleTouch, { passive: true });
+    });
+    // 画面を閉じていた間の経過も見る（iPadのスリープ復帰など）
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) idleCheck();
+    });
+  }
+  // ログアウト（自動・手動の共通処理）
+  function doLogout(auto) {
+    clearActiveStaff();
+    armIdle(false);
+    // ロック画面のまま印刷されてもお客様情報が出ないよう、画面の内容を消す
+    var sb1 = $("sheetBody"); if (sb1) sb1.innerHTML = "";
+    var sb2 = $("staffSheetBody"); if (sb2) sb2.innerHTML = "";
+    showStaffGate(false);
+    var sb = $("staffBar"); if (sb) sb.hidden = true;
+    var si = $("loginStoreId"); if (si) si.value = "";
+    var sp = $("loginPass"); if (sp) sp.value = "";
+    var le = $("loginErr");
+    if (le) {
+      if (auto) { le.textContent = "1時間操作がなかったため、自動でログアウトしました。"; le.hidden = false; }
+      else le.hidden = true;
+    }
+    if (CLOUD.enabled && CLOUD.auth) { CLOUD.auth.signOut(); return; }
+    showLogin(true);
+  }
+
+  // 店舗ログインを通過したあとの共通処理（担当者コードへ進む）
+  function afterStoreLogin() {
+    showLogin(false);
+    var lo = $("logoutBtn");
+    if (lo) lo.hidden = !(lockEnabled() || cloudOn());
+    armIdle(lockEnabled() || cloudOn());
+    if (anyStaffCode()) showStaffGate(true);
+    else enterStaff(activeStaff());
+  }
+
+  // 店舗ログイン（端末内モード）
+  function initLocalLock() {
+    $("loginForm").addEventListener("submit", function (e) {
+      if (CLOUD.enabled) return; // Firebase設定済みのときはクラウド側の処理が受け持つ
+      e.preventDefault();
+      var err = $("loginErr");
+      err.hidden = true;
+      var id = String($("loginStoreId").value || "").trim();
+      var pass = $("loginPass").value;
+      // 設定したときと同じ方式で照合する（httpとhttpsで方式が変わるのを防ぐ）
+      if (config.lock.algo === "sha256" && lockAlgo() !== "sha256") {
+        err.textContent = "この環境ではログインを確認できません。設定したときと同じ方法（https）でお開きください。";
+        err.hidden = false;
+        return;
+      }
+      lockHash(pass, config.lock.salt, config.lock.algo).then(function (h) {
+        if (id !== config.lock.storeId || h !== config.lock.hash) {
+          err.textContent = "店舗IDまたはパスワードが正しくありません。";
+          err.hidden = false;
+          return;
+        }
+        $("loginPass").value = "";
+        afterStoreLogin();
+      });
+    });
+    var lo = $("logoutBtn");
+    if (lo) lo.addEventListener("click", function () { doLogout(false); });
+  }
+
+  // 担当を確定していない状態にする（購読も解除する）
+  function clearActiveStaff() {
+    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
+    CLOUD.watchingStaffId = null;
+    CLOUD.watchingSavedId = null;
+    config.activeStaffId = "";
+    saveConfig();
   }
 
   // 担当者コードの入力（クラウドを使わない端末でも動く）
@@ -530,27 +826,67 @@
         switchTab("master");
         return;
       }
-      config.activeStaffId = "";
-      saveConfig();
+      clearActiveStaff();
       showStaffGate(true);
+    });
+    // コードを設定していない担当者は名前を押して入る
+    var fl = $("staffFreeList");
+    if (fl) fl.addEventListener("click", function (e) {
+      var id = e.target.getAttribute && e.target.getAttribute("data-staffpick");
+      if (!id) return;
+      var hit = config.staff.filter(function (s) { return s.id === id; })[0];
+      if (hit) enterStaff(hit);
+    });
+    // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
+    var sc = $("staffToSetting");
+    if (sc) sc.addEventListener("click", function () {
+      showStaffGate(false);
+      if (!config.activeStaffId) enterStaff(config.staff[0]);
+      switchTab("master");
     });
   }
 
   function initCloud() {
     // 端末内だけで使う場合（Firebase未設定）はログイン画面を出さない
-    var configured = typeof KEITAI_FIREBASE !== "undefined" && KEITAI_FIREBASE.projectId
-      && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
+    var wantCloud = typeof KEITAI_FIREBASE !== "undefined" && !!KEITAI_FIREBASE.projectId;
+    var configured = wantCloud && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
+    // クラウドを使う設定なのに読み込めない（通信不可・CDN遮断など）→ 素通りさせない
+    if (wantCloud && !configured) {
+      showLogin(true);
+      var le0 = $("loginErr");
+      if (le0) {
+        le0.textContent = "サーバーに接続できないためログインできません。通信環境をご確認ください。";
+        le0.hidden = false;
+      }
+      var lb0 = $("loginBtn"); if (lb0) lb0.disabled = true;
+      return;
+    }
     if (!configured) {
+      // 端末内モード。店舗ログインを設定していればロック画面から始める
+      if (lockEnabled()) { showLogin(true); return; }
       showLogin(false);
-      if (anyStaffCode()) showStaffGate(true);
-      else renderStaffBar();
+      afterStoreLogin();
       return;
     }
     try {
       CLOUD.auth = firebase.auth();
       CLOUD.db = firebase.firestore();
-    } catch (e) { showLogin(false); return; }
+    } catch (e) {
+      // 端末内ロックを設定していればそちらで守る。無ければそのまま開く
+      if (lockEnabled()) { showLogin(true); return; }
+      showLogin(false);
+      afterStoreLogin();
+      return;
+    }
     CLOUD.enabled = true;
+    // クラウド利用時は店舗アカウントでログインするため、端末内ロックは使わない。
+    // 設定が残っていると解除できなくなるので、この時点で消しておく。
+    if (lockEnabled()) {
+      config.lock = { storeId: "", hash: "", salt: "", algo: "" };
+      saveConfig();
+    }
+    var lb = $("lockBox");
+    if (lb) lb.hidden = true;
 
     $("loginForm").addEventListener("submit", function (e) {
       e.preventDefault();
@@ -563,13 +899,6 @@
           err.hidden = false;
         })
         .then(function () { $("loginBtn").disabled = false; });
-    });
-    var lo = $("logoutBtn");
-    if (lo) lo.addEventListener("click", function () {
-      if (!CLOUD.auth) return;
-      config.activeStaffId = "";
-      saveConfig();
-      CLOUD.auth.signOut();
     });
     CLOUD.auth.onAuthStateChanged(function (u) {
       if (u) onSignedIn(u); else onSignedOut();
@@ -2077,6 +2406,7 @@
     if (name === "sheet") renderSheet();
     if (name === "staff") renderStaffSheet();
     if (name === "master") renderMasterTab();
+    if (name === "saved") { renderSaved(); $("saveQuoteName").placeholder = savedDefaultName(); }
     $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
   function switchPattern(i) {
@@ -2421,6 +2751,76 @@
         });
       });
     });
+    // 保存した見積もり
+    var saveBtn = $("saveQuoteBtn");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", function () {
+        var nm = $("saveQuoteName");
+        var it = saveQuote(nm.value);
+        nm.value = "";
+        var m = $("saveQuoteMsg");
+        m.textContent = "「" + it.name + "」を保存しました。";
+        m.hidden = false;
+        setTimeout(function () { m.hidden = true; }, 4000);
+      });
+    }
+    var savedEl = $("savedList");
+    if (savedEl) {
+      savedEl.addEventListener("click", function (e) {
+        var t = e.target;
+        var lid = t.getAttribute && t.getAttribute("data-savedload");
+        var did = t.getAttribute && t.getAttribute("data-saveddel");
+        if (lid) {
+          if (!confirm("保存した見積もりを開きます。いま入力中の内容は置き換わります。よろしいですか？")) return;
+          if (loadSavedQuote(lid)) switchTab("quote");
+        } else if (did) {
+          var it2 = savedList.filter(function (x) { return x.id === did; })[0];
+          if (!it2) return;
+          if (!confirm("「" + it2.name + "」を削除します。よろしいですか？")) return;
+          deleteSavedQuote(did);
+        }
+      });
+    }
+
+    // 店舗ログイン（端末内モード）の設定
+    var lockSave = $("lockSaveBtn");
+    if (lockSave) {
+      lockSave.addEventListener("click", function () {
+        var msg = $("lockMsg");
+        var id = String($("lockStoreId").value || "").trim();
+        var p1 = $("lockPass").value;
+        var p2 = $("lockPass2").value;
+        function say(t, ok) { msg.textContent = t; msg.className = "hint" + (ok ? " lock-on" : " lock-err"); msg.hidden = false; }
+        if (!id) return say("店舗IDを入力してください。", false);
+        if (!p1) return say("パスワードを入力してください。", false);
+        if (p1 !== p2) return say("パスワードが一致しません。", false);
+        var salt = lockSalt();
+        var algo = lockAlgo();
+        lockHash(p1, salt, algo).then(function (h) {
+          config.lock = { storeId: id, hash: h, salt: salt, algo: algo };
+          saveConfig();
+          $("lockPass").value = "";
+          $("lockPass2").value = "";
+          renderLockConfig();
+          var lo = $("logoutBtn"); if (lo) lo.hidden = false;
+          say("店舗ログインを設定しました。次にアプリを開いたときから有効になります。", true);
+        });
+      });
+    }
+    var lockClear = $("lockClearBtn");
+    if (lockClear) {
+      lockClear.addEventListener("click", function () {
+        config.lock = { storeId: "", hash: "", salt: "", algo: "" };
+        saveConfig();
+        renderLockConfig();
+        var lo = $("logoutBtn"); if (lo) lo.hidden = !cloudOn();
+        var msg = $("lockMsg");
+        msg.textContent = "店舗ログインを解除しました。";
+        msg.className = "hint";
+        msg.hidden = false;
+      });
+    }
+
     // 店舗設定（店舗名・担当者）
     var storeNameEl = $("storeNameInput");
     if (storeNameEl) {
@@ -2650,7 +3050,12 @@
   syncFormFromState();
   renderTplBar();
   recalc();
+  loadSaved();
+  renderSaved();
   renderStoreConfig();
+  renderLockConfig();
+  initIdle();
+  initLocalLock();
   initStaffGate();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
 })();
