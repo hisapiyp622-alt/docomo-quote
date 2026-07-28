@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.9.2";
+  var APP_VERSION = "1.10.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -901,6 +901,7 @@
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
+      pointApply: true,                  // true=月額から充当 / false=もらえるポイントとして案内
       pointBakuage: 0, pointBakuageAuto: 0,  // 爆アゲセレクションの還元（自動計算・編集可）
       bakuageInclude: true,              // 爆アゲの還元を見積もりに充当するか
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
@@ -2140,13 +2141,21 @@
     // 「見積もりに含める」を外したときは充当しない（もらえるポイントの案内だけに使う）
     var ptBakuage = st.bakuageInclude === false ? 0 : Math.max(0, num(st.pointBakuage));
     var pointRows = [];
-    if (ptBakuage > 0) pointRows.push({ name: "ポイント充当（爆アゲセレクション還元）", amount: ptBakuage });
-    if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
-    if (ptFamily > 0) pointRows.push({ name: "ポイント充当（ポイ活ファミリー特典）", amount: ptFamily });
-    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカード還元特典）", amount: ptDcard });
+    if (ptBakuage > 0) pointRows.push({ name: "爆アゲ セレクション還元", amount: ptBakuage });
+    if (ptPoikatsu > 0) pointRows.push({ name: "ポイ活プラン還元", amount: ptPoikatsu });
+    if (ptFamily > 0) pointRows.push({ name: "ポイ活ファミリー特典", amount: ptFamily });
+    if (ptDcard > 0) pointRows.push({ name: "dカード還元特典", amount: ptDcard });
+    var pointTotal = ptBakuage + ptPoikatsu + ptFamily + ptDcard;
+
+    /* ポイントの扱い。
+     * 充当する … 月額から差し引いて「実質のお支払い額」として出す（従来）
+     * 充当しない … 月額は引かず、「毎月もらえるポイント」と「使った場合の実質」を添える
+     * どちらでも、もらえるポイントの計算そのものは同じ。 */
+    var pointApply = st.pointApply !== false;
+    var pointUsed = pointApply ? pointTotal : 0;
 
     // 月額（恒久部分）
-    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptFamily - ptDcard - ptBakuage;
+    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - pointUsed;
 
     // --- 期間セグメント（端末・アクセサリ分割・期間限定項目の切れ目で分割） ---
     var boundarySet = {};
@@ -2204,6 +2213,7 @@
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
+      pointApply: pointApply, pointTotal: pointTotal,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
       bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt, bakuageTier: bakuTier,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
@@ -2731,6 +2741,7 @@
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptBakuage").value = state.pointBakuage || "";
+    $("pointApply").value = state.pointApply === false ? "0" : "1";
     $("ptDcard").value = state.pointDcard || "";
     $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
@@ -2819,6 +2830,19 @@
     var goldOn = isGoldCard(state.dCard);
     // 爆アゲ: 対象サービスを選んでいるときだけ出す
     var bakuOn = (r.bakuageRows || []).length > 0 || num(state.pointBakuage) > 0;
+    // もらえるポイントの合計と、それを使った場合の実質月額
+    var psum = $("pointSummary");
+    if (psum) {
+      var ptt = r.pointTotal || 0;
+      psum.hidden = ptt <= 0;
+      if (ptt > 0) {
+        var m0 = r.segs[0].monthly;
+        psum.innerHTML = r.pointApply
+          ? "毎月もらえるポイント <b>" + ptt.toLocaleString("ja-JP") + "pt</b> を差し引いた金額でご案内しています（月額 " + yen(m0) + "）。"
+          : "毎月もらえるポイント <b>" + ptt.toLocaleString("ja-JP") + "pt</b>。月額 " + yen(m0)
+            + " から差し引くと <b>実質 " + yen(Math.max(0, m0 - ptt)) + "/月</b> になります。";
+      }
+    }
     $("ptBakuageWrap").hidden = !bakuOn;
     $("bakuageHint").hidden = !bakuOn;
     if (bakuOn) {
@@ -3060,14 +3084,21 @@
 
     var secInit = h; h = "";
     // ポイント充当・メモ
-    h += "<h3>ポイント充当・その他</h3><table><tbody>";
+    h += "<h3>ポイント・その他</h3><table><tbody>";
     if (r.pointRows.length) {
-      r.pointRows.forEach(function (pt) { h += row(esc(pt.name), pt.amount.toLocaleString("ja-JP") + "pt/月"); });
+      r.pointRows.forEach(function (pt) {
+        h += row((r.pointApply ? "ポイント充当（" + esc(pt.name) + "）" : "もらえるポイント（" + esc(pt.name) + "）"),
+          pt.amount.toLocaleString("ja-JP") + "pt/月");
+      });
+      h += row("ポイントの扱い", r.pointApply ? "月額から充当してご案内" : "<b>充当せず</b>、もらえるポイントとしてご案内");
     } else {
-      h += row("ポイント充当", "なし");
+      h += row("ポイント", "なし");
     }
     h += row("毎月のお支払い目安", "<b>" + yen(r.segs[0].monthly) + "</b>"
       + (r.segs.length > 1 ? "（" + segLabel(r.segs[r.segs.length - 1]) + " " + yen(r.segs[r.segs.length - 1].monthly) + "）" : ""));
+    if (!r.pointApply && r.pointTotal > 0) {
+      h += row("ポイントを使った場合の実質", "<b>" + yen(Math.max(0, r.segs[0].monthly - r.pointTotal)) + "</b>/月");
+    }
     if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
     h += "</tbody></table>";
 
@@ -3165,9 +3196,11 @@
     r.campaignRows.forEach(function (c) {
       h += row(esc(c.name) + "（" + c.months + "か月間）", "−" + yen(c.amount), true);
     });
-    r.pointRows.forEach(function (p) {
-      h += row(esc(p.name) + "※", "−" + yen(p.amount), true);
-    });
+    if (r.pointApply) {
+      r.pointRows.forEach(function (p) {
+        h += row("ポイント充当（" + esc(p.name) + "）※", "−" + yen(p.amount), true);
+      });
+    }
     var netIncl = (r.netRows || []).filter(function (n) { return n.incl; });
     if (r.voice.id !== "none") {
       h += row(esc(r.voice.name) + esc(r.voiceNote)
@@ -3202,9 +3235,19 @@
     }
     h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
       + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
+    /* 充当しない場合は、月額はそのままにして、
+     * もらえるポイントと、それを使った場合の実質額を続けて出す。 */
+    if (!r.pointApply && r.pointTotal > 0) {
+      h += row("毎月もらえるdポイント（" + r.pointRows.map(function (p) { return esc(p.name); }).join("・") + "）※",
+        r.pointTotal.toLocaleString("ja-JP") + "pt/月", true);
+      h += '<tr class="total"><td>ポイントを使った場合の実質※</td><td class="amt">'
+        + yen(Math.max(0, seg0.monthly - r.pointTotal)) + "</td></tr>";
+    }
     h += "</tbody></table>";
     if (r.pointRows.length) {
-      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ ポイント充当はdポイント（期間・用途限定含む）を利用した場合の実質負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
+      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ '
+        + (r.pointApply ? "ポイント充当は" : "実質額は")
+        + 'dポイント（期間・用途限定含む）を利用した場合の負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
     }
     if (hasInstallment) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
@@ -4601,6 +4644,7 @@
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptPoikatsuFamily").addEventListener("input", function () { state.pointPoikatsuFamily = num(this.value); recalc(); });
     $("ptBakuage").addEventListener("input", function () { state.pointBakuage = num(this.value); recalc(); });
+    $("pointApply").addEventListener("change", function () { state.pointApply = this.value === "1"; recalc(); });
     $("bakuageInclude").addEventListener("change", function () { state.bakuageInclude = this.checked; recalc(); });
     $("bakuageReset").addEventListener("click", function () {
       state.pointBakuage = calcFor(state).bakuageAutoPt;
