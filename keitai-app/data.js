@@ -472,16 +472,6 @@ const DEFAULT_DATA = {
       "own": true
     },
     {
-      "id": "op_photocube256",
-      "name": "photocube 256GB",
-      "price": 31130,
-      "category": "バックアップ",
-      "note": "買い切り（一括）",
-      "once": true,
-      "pay": "store",
-      "own": true
-    },
-    {
       "id": "ag_secpack",
       "name": "あんしんセキュリティパック",
       "price": 1650,
@@ -826,6 +816,14 @@ const DEFAULT_DATA = {
       "id": "acc_1784460083417",
       "name": "ハルトコーティング(片面)",
       "price": 4400,
+      "own": true
+    },
+    {
+      "id": "acc_1785222792120",
+      "name": "photocube 256GB",
+      "price": 31130,
+      "category": "バックアップ",
+      "defaultPay": "b36",
       "own": true
     }
   ]
