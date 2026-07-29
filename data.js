@@ -763,28 +763,32 @@ const DEFAULT_DATA = {
       "name": "無料データ移行",
       "price": 0,
       "pay": "store",
-      "own": true
+      "own": true,
+      "dataMove": true
     },
     {
       "id": "fi_1785221683603",
       "name": "初期設定・データ移行サポート",
       "price": 2200,
       "own": false,
-      "pay": "bill"
+      "pay": "bill",
+      "dataMove": true
     },
     {
       "id": "fi_1785221704936",
       "name": "初期設定・データ移行サポート(持ち込み)",
       "price": 3300,
       "own": false,
-      "pay": "bill"
+      "pay": "bill",
+      "dataMove": true
     },
     {
       "id": "fi_1785221719101",
       "name": "あんしん店頭サポート",
       "price": 3300,
       "own": false,
-      "pay": "bill"
+      "pay": "bill",
+      "dataMove": true
     }
   ],
   "kaedoki": {
@@ -890,5 +894,66 @@ const DEFAULT_DATA = {
       "defaultPay": "b36",
       "own": true
     }
-  ]
+  ],
+  "energyCompanies": {
+    "denki": [
+      {
+        "id": "kepco",
+        "name": "関西電力",
+        "tel": "0800-777-8810"
+      },
+      {
+        "id": "osakagas",
+        "name": "大阪ガスのでんき",
+        "tel": "0120-000-555"
+      },
+      {
+        "id": "au",
+        "name": "auでんき",
+        "tel": "0120-925-881"
+      },
+      {
+        "id": "softbank",
+        "name": "SoftBankでんき",
+        "tel": "0800-170-3710"
+      },
+      {
+        "id": "jcom",
+        "name": "J:COM電力",
+        "tel": ""
+      },
+      {
+        "id": "eo",
+        "name": "eo電気",
+        "tel": ""
+      },
+      {
+        "id": "coop",
+        "name": "コープでんき",
+        "tel": ""
+      },
+      {
+        "id": "stoene",
+        "name": "ストエネでんき",
+        "tel": ""
+      }
+    ],
+    "gas": [
+      {
+        "id": "osakagas",
+        "name": "大阪ガス",
+        "tel": "0120-099-209"
+      },
+      {
+        "id": "kepco",
+        "name": "関電ガス",
+        "tel": "0800-777-7109"
+      },
+      {
+        "id": "jcom",
+        "name": "J:COMガス",
+        "tel": ""
+      }
+    ]
+  }
 };

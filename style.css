@@ -676,6 +676,15 @@ body.sorting .sort-chip{cursor:grabbing}
 .log-entry ul{margin:3px 0 0;padding-left:17px}
 .log-entry li{font-size:11.5px;line-height:1.6;color:var(--muted)}
 
+/* でんき・ガスの現在の会社 */
+.energy-tel{flex-basis:100%;margin-top:2px}
+.energy-tel b{color:var(--red);font-size:13px}
+.tel-none{color:var(--muted)}
+
+/* バックアップ */
+.file-btn{display:inline-block;cursor:pointer}
+.backup-warn{color:var(--red);font-weight:600}
+
 /* マスタ設定: 爆アゲの還元率 */
 .baku-flag input[type="number"]{
   width:44px;padding:2px 3px;margin:0 2px;border:1px solid var(--line);

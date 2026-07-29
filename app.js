@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.28-73";
+  var APP_VERSION = "2026.07.29-74";
   var MASTER_KEY = "dq-master-v3"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "dq-state-v3";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -320,6 +320,7 @@
     price: "の金額", note: "の説明", category: "の置き場所",
     carrier: "のdカードGOLD10%対象", own: "の店舗独自",
     pay: "の支払い先", defaultPay: "の支払い方法（初期値）",
+    dataMove: "の「データ移行」の印",
     bakuage: "の爆アゲ率（MAX系）", bakuage2: "の爆アゲ率（その他）",
     bakuageFixed: "の爆アゲ固定pt",
     priceChoices: "の金額の選択肢", priceLabels: "の選択肢の名前",
@@ -562,6 +563,150 @@
     el.hidden = !t;
   }
 
+  /* ---------- バックアップ ----------
+   * 店舗のデータ（店舗情報・担当者・料金マスタ・マスタ履歴・保存した見積もり・
+   * テンプレート）を1つのファイルにまとめて書き出し、読み込みで戻せるようにする。
+   *
+   * クラウド同期は「いまの状態を写す」もので、間違えて消した・壊した場合の
+   * 備えにはならない。誤操作からの復旧と、店舗が自分のデータを持ち出せることの
+   * 両方をこれで担保する。
+   *
+   * お客様名は既定で含めない。料金設定を残すのが主目的で、
+   * 個人情報を持ち出す必要が無いため。必要なときだけチェックで含める。 */
+  var BACKUP_KIND = "keitai-quote-backup";
+  function readJson(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
+  }
+  function buildBackup(withCust) {
+    var saved = {}, tpl = {};
+    (config.staff || []).forEach(function (s) {
+      var sv = readJson(SAVED_KEY + ":" + s.id);
+      if (sv && sv.length) {
+        if (!withCust) {
+          sv = JSON.parse(JSON.stringify(sv));
+          sv.forEach(function (it) {
+            it.custName = "";
+            if (it.data && it.data.patterns) {
+              it.data.patterns.forEach(function (pt) { pt.custName = ""; });
+            }
+          });
+        }
+        saved[s.id] = sv;
+      }
+      var tp = readJson(TPL_KEY + ":" + s.id);
+      if (tp && tp.length) tpl[s.id] = tp;
+    });
+    return {
+      kind: BACKUP_KIND,
+      version: 1,
+      at: nowStamp(),
+      appVersion: APP_VERSION,
+      storeName: config.storeName || "",
+      withCustomerName: !!withCust,
+      config: config,
+      master: MASTER,
+      history: histList,
+      saved: saved,
+      templates: tpl
+    };
+  }
+  function backupFileName() {
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    var store = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
+    return "見積もりバックアップ_" + store + "_"
+      + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + ".json";
+  }
+  function doBackup() {
+    var withCust = !!($("bkWithCust") && $("bkWithCust").checked);
+    var json = JSON.stringify(buildBackup(withCust), null, 2);
+    try {
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = backupFileName();
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      backupMsg("バックアップを保存しました（" + backupFileName() + "）。安全な場所に保管してください。");
+    } catch (e) {
+      backupMsg("保存できませんでした。お使いのブラウザがファイルの保存に対応していない可能性があります。");
+    }
+  }
+  function backupMsg(t, warn) {
+    var el = $("backupMsg");
+    if (!el) return;
+    el.textContent = t || "";
+    el.hidden = !t;
+    el.className = "hint" + (warn ? " backup-warn" : "");
+  }
+  /* 読み込んだ内容で置き換える。戻す前の内容はマスタ履歴に残す。 */
+  function restoreBackup(d) {
+    if (!d || d.kind !== BACKUP_KIND) {
+      backupMsg("このファイルはバックアップではないようです。", true);
+      return;
+    }
+    if (!d.master || !d.master.plans) {
+      backupMsg("バックアップの中身が読み取れませんでした。", true);
+      return;
+    }
+    var msg = "バックアップを読み込みます。\n\n"
+      + "作成日時: " + (d.at || "不明") + "\n"
+      + "店舗: " + (d.storeName || "（未設定）") + "\n"
+      + "お客様名: " + (d.withCustomerName ? "含む" : "含まない") + "\n\n"
+      + "いまの内容はすべて置き換わります。よろしいですか？";
+    if (!window.confirm(msg)) return;
+
+    histSettle();
+    /* 戻す前の内容は、復元後の履歴の先頭に置く。
+     * 先に histAdd してしまうと、直後に履歴ごと上書きされて消えてしまう。 */
+    var backEntry = {
+      id: "h" + Date.now() + Math.random().toString(36).slice(2, 6),
+      at: nowStamp(), by: histEditor(),
+      label: "バックアップを読み込む前の内容", auto: true,
+      data: JSON.stringify(MASTER)
+    };
+    try {
+      if (d.config) localStorage.setItem(CFG_KEY, JSON.stringify(d.config));
+      localStorage.setItem(MASTER_KEY, JSON.stringify(d.master));
+      var hs = (d.history && d.history.length) ? d.history.slice(0, HIST_MAX - 1) : [];
+      hs.unshift(backEntry);
+      localStorage.setItem(HIST_KEY, JSON.stringify(hs));
+      Object.keys(d.saved || {}).forEach(function (id) {
+        localStorage.setItem(SAVED_KEY + ":" + id, JSON.stringify(d.saved[id]));
+      });
+      Object.keys(d.templates || {}).forEach(function (id) {
+        localStorage.setItem(TPL_KEY + ":" + id, JSON.stringify(d.templates[id]));
+      });
+    } catch (e) {
+      backupMsg("読み込みに失敗しました。端末の空き容量をご確認ください。", true);
+      return;
+    }
+    // 反映漏れが出ないよう、読み直して立ち上げ直す
+    window.alert("バックアップを読み込みました。画面を読み込み直します。");
+    location.reload();
+  }
+  function initBackup() {
+    var b = $("backupBtn");
+    if (b) b.addEventListener("click", doBackup);
+    var f = $("restoreFile");
+    if (f) f.addEventListener("change", function () {
+      var file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        var d = null;
+        try { d = JSON.parse(String(fr.result)); } catch (e) {}
+        restoreBackup(d);
+      };
+      fr.onerror = function () { backupMsg("ファイルを読めませんでした。", true); };
+      fr.readAsText(file);
+    });
+  }
+
   /* ---------- マスタ読み込み ---------- */
   var MASTER;
   function upgradeV2(m) {
@@ -725,6 +870,23 @@
       if (!pl.discounts) pl.discounts = {};
       if (pl.group !== "current" && pl.group !== "legacy") pl.group = "current";
     });
+    // でんき・ガスの「現在の会社」と連絡先（初期データから補完）
+    if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
+    ["denki", "gas"].forEach(function (k) {
+      if (!MASTER.energyCompanies[k] || !MASTER.energyCompanies[k].length) {
+        MASTER.energyCompanies[k] = JSON.parse(JSON.stringify(
+          (DEFAULT_DATA.energyCompanies && DEFAULT_DATA.energyCompanies[k]) || []));
+      }
+    });
+    /* 引き継ぎシートの「データ移行」に出す項目の印を初期データから補完する。
+     * 初期データに無い項目（店舗が自分で足したもの）は名前から推定しておく。 */
+    var defDM = {};
+    (DEFAULT_DATA.feeItems || []).forEach(function (f) { defDM[f.id] = !!f.dataMove; });
+    MASTER.feeItems.forEach(function (f) {
+      if (typeof f.dataMove !== "undefined") return;
+      f.dataMove = (f.id in defDM) ? defDM[f.id]
+        : /データ移行|店頭サポート/.test(f.name || "");
+    });
     // 初期データに後から増えた項目を保存済みマスタへ追記（ユーザーが削除済みのものは復活させない）
     if (!MASTER.removedIds) MASTER.removedIds = [];
     (DEFAULT_DATA.options || []).forEach(function (d) {
@@ -771,6 +933,7 @@
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
+      pointApply: true,                  // true=月額から充当 / false=もらえるポイントとして案内
       pointBakuage: 0, pointBakuageAuto: 0,  // 爆アゲセレクションの還元（自動計算・編集可）
       bakuageInclude: true,              // 爆アゲの還元を見積もりに充当するか
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
@@ -786,6 +949,7 @@
       custName: "", shopName: "", staffName: "", shopTel: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
+      todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
       // 店頭お支払い（頭金・付属品など）の支払方法
@@ -1617,6 +1781,12 @@
     return MASTER.fees.jimu_kishu;
   }
   var CUR_INST_LABEL = "現在の分割支払金（継続中）";
+  /* 爆アゲ セレクションの還元は税抜価格が基準。
+   * マスタには税込で登録するため、消費税分を割り戻して使う。 */
+  var TAX_RATE = 0.1;
+  function bakuageExTax(taxIncluded) {
+    return Math.round(num(taxIncluded) / (1 + TAX_RATE));
+  }
   // ドコモ MAX／ドコモ ポイ活 MAX の「選べる特典」
   // 対象4サービスから毎月2つまで追加料金なし。3つ目以降は通常料金
   var MAX_BONUS_IDS = ["bk_lemino", "bk_danime", "dazn", "nba"];
@@ -1719,6 +1889,22 @@
   };
   // 割引対象を最大3つ・合計9%までに制限する料金メニュー（PDF ※2）
   var GAS_DISC_CAPPED = { smart: true, house: true, yukadan: true, myhome: true };
+  /* でんき・ガスの「現在ご契約中の会社」。
+   * 解約のご連絡先をその場で出せるようにするためのもの。
+   * 会社と電話番号はマスタ設定で編集できる（番号は変わるため）。 */
+  function energyList(kind) {
+    return (MASTER.energyCompanies && MASTER.energyCompanies[kind]) || [];
+  }
+  function energyTypePicked(kind) {
+    return kind === "gas" ? state.todoGasType : state.todoDenkiType;
+  }
+  function energyPicked(kind) {
+    // プランを選んでいないときは、現在の会社も無いものとして扱う
+    if (!energyTypePicked(kind)) return null;
+    var id = kind === "gas" ? state.todoGasNow : state.todoDenkiNow;
+    if (!id) return null;
+    return energyList(kind).filter(function (c) { return c.id === id; })[0] || null;
+  }
   function gasDiscountList() { return GAS_DISCOUNT[state.todoGasType] || []; }
   function gasDiscountPicked() {
     var picked = state.todoGasDiscount || {};
@@ -1954,7 +2140,7 @@
       if (bonusFree[o.id]) return;      // 0円のものは支払いが無いため還元されない
       var fixed = num(o.bakuageFixed);
       var pr = optPrice(o, st);
-      var pt = 0, label = "";
+      var pt = 0, label = "", exTax = 0;
       if (fixed > 0) {
         // 固定ポイントはプランの区分によらず進呈するもの
         pt = fixed;
@@ -1962,11 +2148,16 @@
       } else if (bakuTier) {
         var rate = num(bakuTier === "max" ? o.bakuage : o.bakuage2);
         if (!rate) return;
-        pt = Math.floor(pr * rate / 100);
+        /* 還元は税抜価格が基準で、端数は切り上げ。
+         * 出典: https://ssw.web.docomo.ne.jp/bakuage/
+         * 「プランごとの税抜価格に還元率を乗じ小数切上で、還元ポイントを算出しています。」
+         * マスタの金額は税込なので、割り戻してから計算する。 */
+        exTax = bakuageExTax(pr);
+        pt = Math.ceil(exTax * rate / 100);
         label = rate + "%";
       }
       if (pt <= 0) return;
-      bakuageRows.push({ name: o.name, rate: label, price: pr, pt: pt });
+      bakuageRows.push({ name: o.name, rate: label, price: pr, exTax: exTax, pt: pt });
       bakuageAutoPt += pt;
     });
 
@@ -1974,21 +2165,41 @@
     // dカード還元は入力欄の値をそのまま使う（GOLD選択時は自動計算値が初期セットされるが編集可）
     // ポイ活プラン以外では、入力が残っていても充当しない
     var isPoikatsu = poikatsuPlan(plan.id);
-    var ptPoikatsu = isPoikatsu ? Math.max(0, num(st.pointPoikatsu)) : 0;
-    var ptFamily = isPoikatsu ? Math.max(0, num(st.pointPoikatsuFamily)) : 0;
-    var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false)
-      ? 0
-      : Math.max(0, num(st.pointDcard));
-    // 「見積もりに含める」を外したときは充当しない（もらえるポイントの案内だけに使う）
-    var ptBakuage = st.bakuageInclude === false ? 0 : Math.max(0, num(st.pointBakuage));
+
+    /* もらえるポイント（実額）。「見積もりに含める」のチェックとは関係なく、
+     * お客様が実際に受け取る分。 */
+    var earnPoikatsu = isPoikatsu ? Math.max(0, num(st.pointPoikatsu)) : 0;
+    var earnFamily = isPoikatsu ? Math.max(0, num(st.pointPoikatsuFamily)) : 0;
+    var earnBakuage = Math.max(0, num(st.pointBakuage));
+    var earnDcard = Math.max(0, num(st.pointDcard));
+
+    /* 月額から差し引く分。個別の「見積もりに含める」を外したものは引かない。 */
+    var ptPoikatsu = earnPoikatsu;
+    var ptFamily = earnFamily;
+    var ptBakuage = st.bakuageInclude === false ? 0 : earnBakuage;
+    var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false) ? 0 : earnDcard;
+
+    /* ポイントの扱い。
+     * 充当する … 選んだものを月額から差し引いて「実質のお支払い額」として出す
+     * 充当しない … 何も引かない。差し引く相手がいないので、
+     *   もらえるポイントは個別のチェックによらず全部を合算して案内する
+     *   （爆アゲもdカード特典も、実際にはもらえるため） */
+    var pointApply = st.pointApply !== false;
     var pointRows = [];
-    if (ptBakuage > 0) pointRows.push({ name: "ポイント充当（爆アゲセレクション還元）", amount: ptBakuage });
-    if (ptPoikatsu > 0) pointRows.push({ name: "ポイント充当（ポイ活プラン還元）", amount: ptPoikatsu });
-    if (ptFamily > 0) pointRows.push({ name: "ポイント充当（ポイ活ファミリー特典）", amount: ptFamily });
-    if (ptDcard > 0) pointRows.push({ name: "ポイント充当（dカード還元特典）", amount: ptDcard });
+    function addPointRow(name, used, earned) {
+      var v = pointApply ? used : earned;
+      if (v > 0) pointRows.push({ name: name, amount: v });
+    }
+    addPointRow("爆アゲ セレクション還元", ptBakuage, earnBakuage);
+    addPointRow("ポイ活プラン還元", ptPoikatsu, earnPoikatsu);
+    addPointRow("ポイ活ファミリー特典", ptFamily, earnFamily);
+    addPointRow("dカード還元特典", ptDcard, earnDcard);
+    var pointTotal = 0;
+    pointRows.forEach(function (x) { pointTotal += x.amount; });
+    var pointUsed = pointApply ? pointTotal : 0;
 
     // 月額（恒久部分）
-    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - ptPoikatsu - ptFamily - ptDcard - ptBakuage;
+    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - pointUsed;
 
     // --- 期間セグメント（端末・アクセサリ分割・期間限定項目の切れ目で分割） ---
     var boundarySet = {};
@@ -2046,6 +2257,7 @@
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
+      pointApply: pointApply, pointTotal: pointTotal,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
       bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt, bakuageTier: bakuTier,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
@@ -2562,17 +2774,20 @@
     $("usePointAmount").value = state.usePointAmount || "";
     $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
-    $("energyTypeWrap").hidden = !state.todoDenkiGas;
+    $("denkiTypeWrap").hidden = !state.todoDenkiGas;
+    $("gasTypeWrap").hidden = !state.todoDenkiGas;
     document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
     document.querySelectorAll("[data-denkitype]").forEach(function (cb) { cb.checked = state.todoDenkiType === cb.getAttribute("data-denkitype"); });
     document.querySelectorAll("[data-gastype]").forEach(function (cb) { cb.checked = state.todoGasType === cb.getAttribute("data-gastype"); });
     renderGasDiscounts();
+    renderEnergyNow();
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptBakuage").value = state.pointBakuage || "";
+    $("pointApply").value = state.pointApply === false ? "0" : "1";
     $("ptDcard").value = state.pointDcard || "";
     $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
@@ -2661,12 +2876,30 @@
     var goldOn = isGoldCard(state.dCard);
     // 爆アゲ: 対象サービスを選んでいるときだけ出す
     var bakuOn = (r.bakuageRows || []).length > 0 || num(state.pointBakuage) > 0;
+    /* 充当しないときは、個別の「見積もりに含める」は効かない（何も引かないため）。
+     * 出しておくと誤解を生むので隠す。 */
+    var applyOn = state.pointApply !== false;
+    // もらえるポイントの合計と、それを使った場合の実質月額
+    var psum = $("pointSummary");
+    if (psum) {
+      var ptt = r.pointTotal || 0;
+      psum.hidden = ptt <= 0;
+      if (ptt > 0) {
+        var m0 = r.segs[0].monthly;
+        psum.innerHTML = r.pointApply
+          ? "毎月もらえるポイント <b>" + ptt.toLocaleString("ja-JP") + "pt</b> を差し引いた金額でご案内しています（月額 " + yen(m0) + "）。"
+          : "毎月もらえるポイント <b>" + ptt.toLocaleString("ja-JP") + "pt</b>。月額 " + yen(m0)
+            + " から差し引くと <b>実質 " + yen(Math.max(0, m0 - ptt)) + "/月</b> になります。";
+      }
+    }
     $("ptBakuageWrap").hidden = !bakuOn;
     $("bakuageHint").hidden = !bakuOn;
     if (bakuOn) {
       $("bakuageHint").innerHTML = "内訳: "
         + (r.bakuageRows || []).map(function (x) {
-            return esc(x.name) + " " + esc(x.rate) + "（" + x.pt.toLocaleString("ja-JP") + "pt）";
+            return esc(x.name) + " " + esc(x.rate)
+              + (x.exTax ? "（税抜 " + x.exTax.toLocaleString("ja-JP") + "円 → " + x.pt.toLocaleString("ja-JP") + "pt）"
+                         : "（" + x.pt.toLocaleString("ja-JP") + "pt）");
           }).join("／")
         + "　" + (r.bakuageTier === "max" ? "率はドコモ MAX／ポイ活 MAX のもの"
             : r.bakuageTier ? "率はポイ活20・ahamo・eximo・ギガホのもの" : "")
@@ -2680,7 +2913,7 @@
       if (offNow) bakuOff.textContent = currentPlan().name + " は爆アゲ セレクションの対象プランではありません（固定ポイントのものだけ加算されます）。";
     }
     $("bakuageReset").hidden = !bakuOn || num(state.pointBakuage) === (r.bakuageAutoPt || 0);
-    $("bakuageIncludeWrap").hidden = !bakuOn;
+    $("bakuageIncludeWrap").hidden = !bakuOn || !applyOn;
     if (bakuOn) {
       $("bakuageInclude").checked = state.bakuageInclude !== false;
       $("bakuageIncludeLabel").textContent = "爆アゲ セレクションの還元を見積もりに含める"
@@ -2688,7 +2921,7 @@
           ? "（いまは含めていません。もらえるポイントは " + num(state.pointBakuage).toLocaleString("ja-JP") + "pt/月）"
           : "（月額から " + num(state.pointBakuage).toLocaleString("ja-JP") + "円ぶん差し引いて案内します）");
     }
-    $("dcardAutoWrap").hidden = !goldOn;
+    $("dcardAutoWrap").hidden = !goldOn || !applyOn;
     $("dcardAutoHint").hidden = !goldOn;
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
     if (goldOn) {
@@ -2701,6 +2934,33 @@
   }
 
   // ガスの割引オプション欄を料金メニューに合わせて描き直す
+  /* 現在の会社のチェックと、選んだ会社の連絡先 */
+  function renderEnergyNow() {
+    ["denki", "gas"].forEach(function (kind) {
+      var wrap = $(kind === "gas" ? "gasNowWrap" : "denkiNowWrap");
+      if (!wrap) return;
+      var list = energyList(kind);
+      if (!state.todoDenkiGas || !energyTypePicked(kind) || !list.length) {
+        wrap.hidden = true; wrap.innerHTML = ""; return;
+      }
+      wrap.hidden = false;
+      var cur = kind === "gas" ? state.todoGasNow : state.todoDenkiNow;
+      var h = '<span class="sub-label">' + (kind === "gas" ? "ガス" : "でんき") + "の現在の会社</span>";
+      h += list.map(function (c) {
+        return '<label class="check"><input type="checkbox" data-energynow="' + kind + ":" + esc(c.id) + '"'
+          + (cur === c.id ? " checked" : "") + "> " + esc(c.name) + "</label>";
+      }).join("");
+      var picked = energyPicked(kind);
+      if (picked) {
+        h += '<span class="sub-note energy-tel">' + esc(picked.name) + " の連絡先: "
+          + (picked.tel
+              ? '<b>' + esc(picked.tel) + "</b>"
+              : '<span class="tel-none">未登録（マスタ設定で登録してください）</span>')
+          + "</span>";
+      }
+      wrap.innerHTML = h;
+    });
+  }
   function renderGasDiscounts() {
     var wrap = $("gasDiscountWrap");
     var list = gasDiscountList();
@@ -2770,6 +3030,16 @@
       }
       apps.push("でんき・ガス申し込み" + (eg.length ? "（" + eg.join("・") + "）" : ""));
     }
+    if (state.todoDenkiGas) {
+      ["denki", "gas"].forEach(function (kind) {
+        var c = energyPicked(kind);
+        if (!c) return;
+        anyTodo = true;
+        h += row((kind === "gas" ? "ガス" : "でんき") + "の現在の会社",
+          "<b>" + esc(c.name) + "</b>"
+          + (c.tel ? "　解約のご連絡先: <b>" + esc(c.tel) + "</b>" : "　（連絡先は未登録）"));
+      });
+    }
     var gd = state.todoDenkiGas ? gasDiscountPicked() : [];
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
@@ -2779,8 +3049,10 @@
         return esc(d.name) + " " + d.rate + "%";
       }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
     }
+    /* データ移行にあたる初期費用。あんしん店頭サポートのように名前に
+     * 「データ移行」が入らないものもあるため、マスタ設定の印で判定する。 */
     var dataMove = (MASTER.feeItems || []).filter(function (f) {
-      return state.feeItems[f.id] && /データ移行/.test(f.name || "");
+      return state.feeItems[f.id] && f.dataMove;
     });
     anyTodo = true;
     h += row("データ移行", dataMove.length
@@ -2902,14 +3174,21 @@
 
     var secInit = h; h = "";
     // ポイント充当・メモ
-    h += "<h3>ポイント充当・その他</h3><table><tbody>";
+    h += "<h3>ポイント・その他</h3><table><tbody>";
     if (r.pointRows.length) {
-      r.pointRows.forEach(function (pt) { h += row(esc(pt.name), pt.amount.toLocaleString("ja-JP") + "pt/月"); });
+      r.pointRows.forEach(function (pt) {
+        h += row((r.pointApply ? "ポイント充当（" + esc(pt.name) + "）" : "もらえるポイント（" + esc(pt.name) + "）"),
+          pt.amount.toLocaleString("ja-JP") + "pt/月");
+      });
+      h += row("ポイントの扱い", r.pointApply ? "月額から充当してご案内" : "<b>充当せず</b>、もらえるポイントとしてご案内");
     } else {
-      h += row("ポイント充当", "なし");
+      h += row("ポイント", "なし");
     }
     h += row("毎月のお支払い目安", "<b>" + yen(r.segs[0].monthly) + "</b>"
       + (r.segs.length > 1 ? "（" + segLabel(r.segs[r.segs.length - 1]) + " " + yen(r.segs[r.segs.length - 1].monthly) + "）" : ""));
+    if (!r.pointApply && r.pointTotal > 0) {
+      h += row("ポイントを使った場合の実質", "<b>" + yen(Math.max(0, r.segs[0].monthly - r.pointTotal)) + "</b>/月");
+    }
     if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
     h += "</tbody></table>";
 
@@ -3007,9 +3286,11 @@
     r.campaignRows.forEach(function (c) {
       h += row(esc(c.name) + "（" + c.months + "か月間）", "−" + yen(c.amount), true);
     });
-    r.pointRows.forEach(function (p) {
-      h += row(esc(p.name) + "※", "−" + yen(p.amount), true);
-    });
+    if (r.pointApply) {
+      r.pointRows.forEach(function (p) {
+        h += row("ポイント充当（" + esc(p.name) + "）※", "−" + yen(p.amount), true);
+      });
+    }
     var netIncl = (r.netRows || []).filter(function (n) { return n.incl; });
     if (r.voice.id !== "none") {
       h += row(esc(r.voice.name) + esc(r.voiceNote)
@@ -3044,9 +3325,19 @@
     }
     h += '<tr class="total"><td>月額合計' + (lbl0 ? "（" + lbl0 + "）" : "")
       + '</td><td class="amt">' + yen(seg0.monthly) + "</td></tr>";
+    /* 充当しない場合は、月額はそのままにして、
+     * もらえるポイントと、それを使った場合の実質額を続けて出す。 */
+    if (!r.pointApply && r.pointTotal > 0) {
+      h += row("毎月もらえるdポイント（" + r.pointRows.map(function (p) { return esc(p.name); }).join("・") + "）※",
+        r.pointTotal.toLocaleString("ja-JP") + "pt/月", true);
+      h += '<tr class="total"><td>ポイントを使った場合の実質※</td><td class="amt">'
+        + yen(Math.max(0, seg0.monthly - r.pointTotal)) + "</td></tr>";
+    }
     h += "</tbody></table>";
     if (r.pointRows.length) {
-      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ ポイント充当はdポイント（期間・用途限定含む）を利用した場合の実質負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
+      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ '
+        + (r.pointApply ? "ポイント充当は" : "実質額は")
+        + 'dポイント（期間・用途限定含む）を利用した場合の負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
     }
     if (hasInstallment) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
@@ -3321,7 +3612,9 @@
       return '<select data-fi-pay="' + o.__i + '">'
         + '<option value="store"' + (o.pay !== "bill" ? " selected" : "") + ">店頭払い</option>"
         + '<option value="bill"' + (o.pay === "bill" ? " selected" : "") + ">翌月合算</option>"
-        + "</select>";
+        + "</select>"
+        + '<label class="own-flag" title="引き継ぎシートの「データ移行」の欄に出します">'
+        + '<input type="checkbox" data-fi-dm="' + o.__i + '"' + (o.dataMove ? " checked" : "") + ">データ移行</label>";
     }
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
@@ -3378,6 +3671,29 @@
         + "</select>";
     });
     h += '<div class="actions"><button class="btn-sub" data-add="accessories" type="button">＋ 商品を追加</button></div></div>';
+
+    // でんき・ガスの現在の会社と連絡先
+    h += '<div class="master-plan"><h3>でんき・ガスの現在の会社</h3>';
+    h += '<p class="hint">でんき・ガスをお申し込みのとき、<strong>いまご契約中の会社を選ぶと解約のご連絡先が出ます</strong>。'
+      + '電話番号は変わることがあるので、変わったらここで直してください。'
+      + '<strong>番号が空欄の会社は、お手元の番号を登録してお使いください。</strong></p>';
+    [["denki", "でんき"], ["gas", "ガス"]].forEach(function (kd) {
+      var key = kd[0];
+      var list = (MASTER.energyCompanies && MASTER.energyCompanies[key]) || [];
+      h += '<div class="plan-sec"><span class="plan-lbl">' + kd[1] + "</span>";
+      list.forEach(function (c, i) {
+        h += '<div class="adhoc-row">'
+          + '<button class="mv" data-en-up="' + key + ":" + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-en-down="' + key + ":" + i + '" type="button" aria-label="下へ"' + (i === list.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<input type="text" value="' + esc(c.name || "") + '" placeholder="会社名" data-en-name="' + key + ":" + i + '">'
+          + '<input type="tel" value="' + esc(c.tel || "") + '" placeholder="連絡先（例）0120-000-000" data-en-tel="' + key + ":" + i + '">'
+          + '<button class="del" data-en-del="' + key + ":" + i + '" type="button" aria-label="削除">×</button>'
+          + "</div>";
+      });
+      h += '<div class="actions"><button class="btn-sub" data-en-add="' + key + '" type="button">＋ 会社を追加</button></div>';
+      h += "</div>";
+    });
+    h += "</div>";
 
     // 料金マスタの履歴
     h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
@@ -4039,6 +4355,55 @@
     if (o.priceChoices.indexOf(num(o.price)) < 0) o.price = o.priceChoices[0];
   }
 
+  /* でんき・ガスの会社と連絡先の編集 */
+  function energyTouch(full) {
+    markEdited();
+    if (full) renderMasterTab();
+    renderEnergyNow();
+    renderStaffSheet();
+  }
+  function handleEnergyEvent(t, evType) {
+    if (!t || !t.getAttribute) return false;
+    function g(n) { return t.getAttribute("data-en-" + n); }
+    var v, parts, list;
+    function listOf(k) {
+      if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
+      if (!MASTER.energyCompanies[k]) MASTER.energyCompanies[k] = [];
+      return MASTER.energyCompanies[k];
+    }
+    if (evType === "input") {
+      if ((v = g("name")) != null) { parts = v.split(":"); listOf(parts[0])[+parts[1]].name = t.value; energyTouch(false); return true; }
+      if ((v = g("tel")) != null) { parts = v.split(":"); listOf(parts[0])[+parts[1]].tel = t.value; energyTouch(false); return true; }
+    }
+    if (evType !== "click") return false;
+    if ((v = g("add")) != null) {
+      listOf(v).push({ id: "en_" + Date.now(), name: "", tel: "" });
+      energyTouch(true); return true;
+    }
+    if ((v = g("del")) != null) {
+      parts = v.split(":");
+      list = listOf(parts[0]);
+      var c = list[+parts[1]];
+      if (!window.confirm("「" + (c.name || "この会社") + "」を削除しますか？")) return true;
+      store.patterns.forEach(function (pt) {
+        var k = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
+        if (pt[k] === c.id) pt[k] = "";
+      });
+      list.splice(+parts[1], 1);
+      energyTouch(true); return true;
+    }
+    var up = g("up"), dn = g("down");
+    if (up != null || dn != null) {
+      parts = (up != null ? up : dn).split(":");
+      list = listOf(parts[0]);
+      var i = +parts[1], j = up != null ? i - 1 : i + 1;
+      if (j < 0 || j >= list.length) return true;
+      var tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+      energyTouch(true); return true;
+    }
+    return false;
+  }
+
   /* ---------- 料金プランの編集 ----------
    * 新しいプランが出たときに、店舗がここから登録できるようにする。 */
   function newPlan() {
@@ -4274,6 +4639,8 @@
         list[+attr("pay")].defaultPay = t.value;
       } else if (evType === "change" && prefix === "fi" && attr("pay") != null) {
         list[+attr("pay")].pay = t.value;
+      } else if (evType === "change" && prefix === "fi" && attr("dm") != null) {
+        list[+attr("dm")].dataMove = t.checked;
       } else if (evType === "click" && attr("del") != null) {
         var o = list[+attr("del")];
         store.patterns.forEach(function (pt) { delete pt[def.stateKey][o.id]; });
@@ -4392,6 +4759,7 @@
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptPoikatsuFamily").addEventListener("input", function () { state.pointPoikatsuFamily = num(this.value); recalc(); });
     $("ptBakuage").addEventListener("input", function () { state.pointBakuage = num(this.value); recalc(); });
+    $("pointApply").addEventListener("change", function () { state.pointApply = this.value === "1"; recalc(); });
     $("bakuageInclude").addEventListener("change", function () { state.bakuageInclude = this.checked; recalc(); });
     $("bakuageReset").addEventListener("click", function () {
       state.pointBakuage = calcFor(state).bakuageAutoPt;
@@ -4577,11 +4945,30 @@
         state[id] = this.checked;
         if (id === "todoDcard") { $("dcardTypeWrap").hidden = !this.checked; if (!this.checked) state.todoDcardType = ""; }
         if (id === "todoDenkiGas") {
-          $("energyTypeWrap").hidden = !this.checked;
-          if (!this.checked) { state.todoDenkiType = ""; state.todoGasType = ""; state.todoGasDiscount = {}; }
+          $("denkiTypeWrap").hidden = !this.checked;
+          $("gasTypeWrap").hidden = !this.checked;
+          if (!this.checked) {
+            state.todoDenkiType = ""; state.todoGasType = ""; state.todoGasDiscount = {};
+            state.todoDenkiNow = ""; state.todoGasNow = "";
+          }
         }
         syncFormFromState();
         saveState(); renderStaffSheet();
+      });
+    });
+    // 現在の会社（同時に1社だけ・もう一度押すと解除）
+    ["denkiNowWrap", "gasNowWrap"].forEach(function (id) {
+      var enWrap = $(id);
+      if (!enWrap) return;
+      enWrap.addEventListener("change", function (e) {
+        var v = e.target.getAttribute && e.target.getAttribute("data-energynow");
+        if (!v) return;
+        var parts = v.split(":");
+        var key = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
+        state[key] = e.target.checked ? parts[1] : "";
+        renderEnergyNow();
+        saveState();
+        renderStaffSheet();
       });
     });
     // 種類の選択（同時に1つだけ・もう一度押すと解除）
@@ -4593,6 +4980,12 @@
             o.checked = state[pair[1]] === o.getAttribute(pair[0]);
           });
           if (pair[1] === "todoGasType") { state.todoGasDiscount = {}; renderGasDiscounts(); }
+          if (pair[1] === "todoDenkiType" || pair[1] === "todoGasType") {
+            // プランを外したら、その現在の会社の選択も外す
+            if (!state.todoDenkiType) state.todoDenkiNow = "";
+            if (!state.todoGasType) state.todoGasNow = "";
+            renderEnergyNow();
+          }
           saveState(); renderStaffSheet();
         });
       });
@@ -4845,6 +5238,7 @@
     $("masterBody").addEventListener("input", function (e) {
       var t = e.target;
       if (handlePlanEvent(t, "input")) return;
+      if (handleEnergyEvent(t, "input")) return;
       var path = t.getAttribute("data-mpath");
       if (path) {
         setPath(path, num(t.value));
@@ -4878,6 +5272,7 @@
     });
     $("masterBody").addEventListener("click", function (e) {
       if (handlePlanEvent(e.target, "click")) return;
+      if (handleEnergyEvent(e.target, "click")) return;
       var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");
       if (hr) {
         if (window.confirm("この時点の内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);
@@ -4990,6 +5385,7 @@
   initMasterGate();
   initAbout();
   initDocs();
+  initBackup();
   initStaffSelect();
   initTileSort();
   initTplHold();
