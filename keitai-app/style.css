@@ -523,6 +523,19 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 .sheet .sheet-sign b{font-size:12.5px}
 
+/* 初期設定 */
+.setup-box{max-width:440px}
+.setup-steps{display:flex;gap:6px;justify-content:center;margin:0 0 12px}
+.setup-steps span{width:28px;height:4px;border-radius:2px;background:var(--line)}
+.setup-steps span.on{background:var(--red)}
+.setup-actions{display:flex;gap:8px;margin-top:14px}
+.setup-actions .btn-main{flex:1}
+.setup-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.setup-row input{flex:1;min-width:0}
+.setup-row input[data-wizcode]{flex:0 0 88px}
+.setup-sum{margin:0 0 10px;padding-left:18px}
+.setup-sum li{font-size:13px;line-height:1.9}
+
 /* でんき・ガスの現在の会社 */
 .energy-tel{flex-basis:100%;margin-top:2px}
 .energy-tel b{color:var(--red);font-size:13px}

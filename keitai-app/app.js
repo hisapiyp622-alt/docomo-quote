@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.3";
+  var APP_VERSION = "1.14.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -552,6 +552,228 @@
     if (!el) return;
     el.textContent = t;
     el.hidden = !t;
+  }
+
+  /* ---------- 初期設定（初めて使うとき） ----------
+   * 新しい店舗が最初に開いたときに、店舗名・担当者・マスタ設定のパスワードを
+   * 順に聞く。マスタ設定の場所を知らないまま接客に入ってしまい、
+   * 見積書に店舗名が出ない・担当者が「担当1」のまま、という状態を防ぐ。
+   *
+   * すでに使っている店舗には出さない。判定は保存されている内容だけで行い、
+   * 別の端末を足したときにも出ないようにする（クラウドの設定を受け取ってから判定する）。 */
+  var WIZ_SKIP_KEY = "kq-setup-skipped";
+  var WIZ_LAST = 4;
+  var wizStep = 1;
+
+  function wizSkipped() {
+    try { return localStorage.getItem(WIZ_SKIP_KEY) === "1"; } catch (e) { return false; }
+  }
+  function wizMarkDone() {
+    try { localStorage.setItem(WIZ_SKIP_KEY, "1"); } catch (e) {}
+  }
+  /* まだ一度も設定していない店舗か。
+   * 店舗名が入っている、担当者を足している、コードを付けている——
+   * どれか1つでもあれば「設定済み」とみなす。 */
+  function wizNeeded() {
+    if (wizSkipped()) return false;
+    if (String(config.storeName || "").trim()) return false;
+    var list = config.staff || [];
+    if (list.length !== 1) return false;
+    var s = list[0];
+    if (String(s.code || "").trim()) return false;
+    var nm = String(s.name || "").trim();
+    return nm === "" || nm === "担当1";
+  }
+  function wizShow(show) {
+    var el = $("setupOverlay");
+    if (!el) return;
+    el.hidden = !show;
+    if (!show) return;
+    /* 初期値の「担当1」が入ったままだと、そのまま登録されて
+     * 見積書の担当者名が「担当1」になってしまう。自分の名前を書いてもらう。 */
+    if (wizStaffUntouched()) config.staff[0].name = "";
+    wizStep = 1;
+    wizRender();
+  }
+  // 担当者が初期状態のまま（1人・コードなし・既定の名前）か
+  function wizStaffUntouched() {
+    var list = config.staff || [];
+    if (list.length !== 1) return false;
+    if (String(list[0].code || "").trim()) return false;
+    var nm = String(list[0].name || "").trim();
+    return nm === "担当1" || nm === "";
+  }
+  function wizErr(t) {
+    var el = $("setupErr");
+    if (!el) return;
+    el.textContent = t || "";
+    el.hidden = !t;
+  }
+  var WIZ_TEXT = [
+    null,
+    { t: "店舗の情報", l: "見積書に印字されます。あとからマスタ設定で変えられます。" },
+    { t: "担当者の登録", l: "見積もりは担当者ごとに分かれて保存されます。" },
+    { t: "マスタ設定のパスワード", l: "料金を書き換えられる人を絞るための設定です。" },
+    { t: "準備ができました", l: "" }
+  ];
+  function wizRender() {
+    wizErr("");
+    var i;
+    var dots = "";
+    for (i = 1; i <= WIZ_LAST; i++) dots += '<span' + (i <= wizStep ? ' class="on"' : "") + "></span>";
+    $("setupSteps").innerHTML = dots;
+    $("setupTitle").textContent = WIZ_TEXT[wizStep].t;
+    var lead = $("setupLead");
+    lead.textContent = WIZ_TEXT[wizStep].l;
+    lead.hidden = !WIZ_TEXT[wizStep].l;
+    for (i = 1; i <= WIZ_LAST; i++) $("setupStep" + i).hidden = i !== wizStep;
+    $("setupBack").hidden = wizStep === 1;
+    $("setupNext").textContent = wizStep === WIZ_LAST ? "はじめる" : "次へ";
+    $("setupSkipWrap").hidden = wizStep === WIZ_LAST;
+    if (wizStep === 1) {
+      $("setupStoreName").value = config.storeName || "";
+      $("setupStoreTel").value = config.storeTel || "";
+      setTimeout(function () { $("setupStoreName").focus(); }, 60);
+    }
+    if (wizStep === 2) wizRenderStaff();
+    if (wizStep === 4) wizRenderSummary();
+  }
+  function wizRenderStaff() {
+    $("setupStaffList").innerHTML = (config.staff || []).map(function (s, i) {
+      return '<div class="setup-row">'
+        + '<input type="text" value="' + esc(s.name || "") + '" data-wizname="' + i + '" placeholder="担当者名">'
+        + '<input type="text" value="' + esc(s.code || "") + '" data-wizcode="' + i + '" placeholder="コード" inputmode="numeric">'
+        + (config.staff.length > 1 ? '<button class="del" data-wizdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
+        + "</div>";
+    }).join("");
+  }
+  function wizRenderSummary() {
+    var codes = (config.staff || []).filter(function (s) { return String(s.code || "").trim(); }).length;
+    var h = "<li>店舗名: <b>" + esc(config.storeName || "（未入力）") + "</b></li>";
+    h += "<li>電話番号: " + esc(config.storeTel || "（未入力）") + "</li>";
+    h += "<li>担当者: <b>" + config.staff.length + "名</b>"
+      + (codes ? "（うち " + codes + "名にコードを設定）" : "（コードなし）") + "</li>";
+    h += "<li>マスタ設定のパスワード: " + (adminLockEnabled() ? "<b>設定しました</b>" : "設定していません") + "</li>";
+    $("setupSummary").innerHTML = h;
+  }
+  /* 各段階の内容を config へ書き込む。問題があればメッセージを返す。 */
+  function wizCommit() {
+    if (wizStep === 1) {
+      var nm = String($("setupStoreName").value || "").trim();
+      if (!nm) return "店舗名を入力してください。見積書に印字されます。";
+      config.storeName = nm;
+      config.storeTel = String($("setupStoreTel").value || "").trim();
+      saveConfig();
+      renderStoreConfig();
+      applyStoreDefaults(true);
+      return "";
+    }
+    if (wizStep === 2) {
+      // 名前もコードも空の行は捨てる
+      var list = (config.staff || []).filter(function (s) {
+        return String(s.name || "").trim() || String(s.code || "").trim();
+      });
+      if (!list.length) return "担当者を1名以上登録してください。";
+      var blank = list.filter(function (s) { return !String(s.name || "").trim(); });
+      if (blank.length) return "担当者名を入力してください。";
+      var seen = {}, dup = false;
+      list.forEach(function (s) {
+        var c = String(s.code || "").trim();
+        if (!c) return;
+        if (seen[c]) dup = true;
+        seen[c] = 1;
+      });
+      if (dup) return "同じ担当者コードが複数あります。別の番号にしてください。";
+      config.staff = list;
+      if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
+        config.activeStaffId = config.staff[0].id;
+      }
+      saveConfig();
+      renderStoreConfig();
+      applyStoreDefaults(true);
+      return "";
+    }
+    if (wizStep === 3) {
+      var p1 = $("setupPass").value;
+      var p2 = $("setupPass2").value;
+      if (!p1 && !p2) return "";                       // 設定しないで進む
+      if (p1.length < 4) return "パスワードは4文字以上にしてください。";
+      if (p1 !== p2) return "パスワードが一致しません。";
+      var salt = lockSalt();
+      var algo = lockAlgo();
+      // 保存は非同期。完了してから次の段階へ進める
+      return lockHash(p1, salt, algo).then(function (h) {
+        config.adminLock = { hash: h, salt: salt, algo: algo };
+        saveConfig();
+        $("setupPass").value = "";
+        $("setupPass2").value = "";
+        renderAdminLock();
+        masterUnlocked = true;   // 決めた本人なので、このまま操作を続けられるようにする
+        return "";
+      });
+    }
+    return "";
+  }
+  function wizNext() {
+    var r = wizCommit();
+    if (r && typeof r.then === "function") {
+      r.then(function (msg) { wizAdvance(msg); });
+      return;
+    }
+    wizAdvance(r);
+  }
+  function wizAdvance(msg) {
+    if (msg) { wizErr(msg); return; }
+    if (wizStep >= WIZ_LAST) { wizFinish(); return; }
+    wizStep++;
+    wizRender();
+  }
+  function wizFinish() {
+    wizMarkDone();
+    wizShow(false);
+    if (anyStaffCode()) showStaffGate(true);
+    else enterStaff(activeStaff());
+  }
+  function initWizard() {
+    var nx = $("setupNext");
+    if (nx) nx.addEventListener("click", wizNext);
+    var bk = $("setupBack");
+    if (bk) bk.addEventListener("click", function () {
+      if (wizStep > 1) { wizStep--; wizRender(); }
+    });
+    var sk = $("setupSkip");
+    if (sk) sk.addEventListener("click", function () {
+      if (!window.confirm("初期設定をとばします。\n\nマスタ設定の「店舗設定」からいつでも設定できます。よろしいですか？")) return;
+      if (wizStaffUntouched()) config.staff[0].name = "担当1";   // 空にしたぶんを戻す
+      wizFinish();
+    });
+    var add = $("setupStaffAdd");
+    if (add) add.addEventListener("click", function () {
+      config.staff.push({ id: newStaffId(), name: "", code: "" });
+      wizRenderStaff();
+    });
+    var list = $("setupStaffList");
+    if (list) {
+      list.addEventListener("input", function (e) {
+        var t = e.target;
+        var n = t.getAttribute && t.getAttribute("data-wizname");
+        var c = t.getAttribute && t.getAttribute("data-wizcode");
+        if (n != null) config.staff[+n].name = t.value;
+        else if (c != null) config.staff[+c].code = t.value;
+      });
+      list.addEventListener("click", function (e) {
+        var d = e.target.getAttribute && e.target.getAttribute("data-wizdel");
+        if (d == null) return;
+        config.staff.splice(+d, 1);
+        wizRenderStaff();
+      });
+    }
+    // マスタ設定からやり直せるようにする
+    var again = $("setupAgainBtn");
+    if (again) again.addEventListener("click", function () {
+      switchTab("quote");
+      wizShow(true);
+    });
   }
 
   /* ---------- バックアップ ----------
@@ -1753,6 +1975,8 @@
     if (lo) lo.hidden = !(lockEnabled() || cloudOn());
     armIdle(lockEnabled() || cloudOn());
     if (takeHandoffFromIenaka()) { bootDone(); return; }
+    // まだ一度も設定していない店舗は、先に初期設定を出す
+    if (wizNeeded()) { wizShow(true); bootDone(); return; }
     if (anyStaffCode()) showStaffGate(true);
     else enterStaff(activeStaff());
     bootDone();
@@ -5609,6 +5833,7 @@
   initMasterGate();
   initAbout();
   initDocs();
+  initWizard();
   initBackup();
   initIenakaLink();
   initTileSort();
