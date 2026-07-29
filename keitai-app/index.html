@@ -455,6 +455,8 @@
       <div class="actions">
         <button class="btn-sub" id="addStaffBtn" type="button">＋ 担当者を追加</button>
       </div>
+      <div class="actions"><button class="btn-sub" id="setupAgainBtn" type="button">初期設定をやり直す</button></div>
+      <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
       <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
     </div>
     <div class="card">
@@ -509,6 +511,59 @@
     <button class="btn-main" id="loginBtn" type="submit">ログイン</button>
     <p class="login-lead"><button type="button" class="link-btn" id="aboutFromLogin">このアプリについて</button></p>
   </form>
+</div>
+
+<div class="login-overlay no-print" id="setupOverlay" hidden>
+  <div class="login-box setup-box">
+    <p class="setup-steps" id="setupSteps"></p>
+    <h2 id="setupTitle">初期設定</h2>
+    <p class="login-lead" id="setupLead" hidden></p>
+    <p class="login-err" id="setupErr" hidden></p>
+
+    <div class="setup-step" id="setupStep1" hidden>
+      <div class="field">
+        <label for="setupStoreName">店舗名</label>
+        <input type="text" id="setupStoreName" placeholder="例）ドコモショップ○○店">
+      </div>
+      <div class="field">
+        <label for="setupStoreTel">電話番号</label>
+        <input type="tel" id="setupStoreTel" placeholder="例）072-000-0000" inputmode="tel">
+      </div>
+      <p class="login-note">見積書の下端に、店舗名・電話番号・担当者名が入ります。電話番号は空欄でもかまいません。</p>
+    </div>
+
+    <div class="setup-step" id="setupStep2" hidden>
+      <div id="setupStaffList"></div>
+      <div class="actions"><button class="btn-sub" id="setupStaffAdd" type="button">＋ 担当者を追加</button></div>
+      <p class="login-note"><strong>コード</strong>を設定すると、アプリを開いたときにコードを聞き、その担当者の見積もりが開きます（数字4桁などを推奨）。
+        1つも設定しなければ、コードの入力は省略されます。あとから追加・変更できます。</p>
+    </div>
+
+    <div class="setup-step" id="setupStep3" hidden>
+      <div class="field">
+        <label for="setupPass">パスワード</label>
+        <input type="password" id="setupPass" autocomplete="new-password" placeholder="4文字以上">
+      </div>
+      <div class="field">
+        <label for="setupPass2">確認のためもう一度</label>
+        <input type="password" id="setupPass2" autocomplete="new-password">
+      </div>
+      <p class="login-note">料金マスタを書き換えられるのは、このパスワードを知っている人だけになります。
+        <strong>空欄のままでも進めます。</strong>その場合は、店舗IDとパスワードでマスタ設定を開きます。</p>
+    </div>
+
+    <div class="setup-step" id="setupStep4" hidden>
+      <ul class="setup-sum" id="setupSummary"></ul>
+      <p class="login-note"><strong>料金は初期値が入っています。</strong>お店の金額と違うところは、マスタ設定で直してからお使いください。
+        設定が済んだら、マスタ設定の「バックアップを保存」で控えを取っておくと安心です。</p>
+    </div>
+
+    <div class="setup-actions">
+      <button class="btn-sub" id="setupBack" type="button" hidden>戻る</button>
+      <button class="btn-main" id="setupNext" type="button">次へ</button>
+    </div>
+    <p class="login-lead" id="setupSkipWrap"><button type="button" class="link-btn" id="setupSkip">あとで設定する</button></p>
+  </div>
 </div>
 
 <div class="login-overlay no-print" id="staffOverlay" hidden>
