@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.14.0";
+  var APP_VERSION = "1.15.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -180,6 +180,7 @@
       store.patterns[i] = Object.assign(defaultState(), it.data.patterns[i] || {});
     }
     state = store.patterns[store.active];
+    applyIenaka(it.data.ienaka);
     saveState();
     syncFormFromState();
     recalc();
@@ -552,6 +553,77 @@
     if (!el) return;
     el.textContent = t;
     el.hidden = !t;
+  }
+
+  /* ---------- 光・home 5G（イエナカ） ----------
+   * 計算と入力画面は ienaka.js が持つ。ここでは入れ物と、見積書への合流を受け持つ。
+   * セット割はケータイ側の③割引で既に引いているため、光側では引かない（二重引きの防止）。 */
+  function initIenaka() {
+    if (typeof KQ_IENAKA === "undefined") return;
+    KQ_IENAKA.attach(store.ienaka, function () {
+      saveState();
+      renderIenakaWarn(calc());
+      if ($("tab-sheet").classList.contains("active")) renderSheet();
+    });
+    KQ_IENAKA.bind();
+    KQ_IENAKA.syncForm();
+    KQ_IENAKA.render();
+    var en = $("ieEnabled");
+    if (en) en.checked = !!store.ienaka.enabled;
+    var body = $("ieBody");
+    if (body) body.hidden = !store.ienaka.enabled;
+    var wrap = $("sheetScopeWrap");
+    if (wrap) wrap.addEventListener("change", function (e) {
+      if (e.target.name !== "sheetScope") return;
+      sheetScope = e.target.value;
+      renderSheet();
+    });
+  }
+  var sheetScope = "phone";      // 見積書に出す内容（phone / both）
+  /* 光を申し込むのにスマホ側でセット割を選んでいない、という付け忘れに気づけるようにする。
+   * 逆（セット割だけ選んで光を入れていない）は、ご家族の既契約という場合があるので出さない。 */
+  function renderIenakaWarn(r) {
+    var el = $("ieSetWarn");
+    if (!el) return;
+    var miss = ienakaOn() && !(r && r.dSet > 0);
+    el.hidden = !miss;
+    if (miss) {
+      el.textContent = "スマホ側で「ドコモ光／home 5G セット割」を選んでいません。"
+        + "対象のプランであれば、見積もりタブの③割引でチェックを入れてください。";
+    }
+  }
+  function ienakaOn() {
+    return typeof KQ_IENAKA !== "undefined" && KQ_IENAKA.isOn();
+  }
+  /* 見積書に足す光の要約。A4 2枚に収めるため、明細ではなく数行にとどめる。
+   * 光の明細が要るときは、イエナカ見積もり（単体）で別紙にする。 */
+  function ienakaSheetHtml(phoneMonthly, phoneInitial, setWari) {
+    var r = KQ_IENAKA.calc();
+    var s0 = r.segs[0], sL = r.segs[r.segs.length - 1];
+    function row(n, v) {
+      return "<tr><td>" + n + '</td><td class="amt">' + v + "</td></tr>";
+    }
+    var h = '<table class="sheet-hikari"><tbody>';
+    h += '<tr class="head"><td colspan="2">ドコモ光・home 5G</td></tr>';
+    h += row(esc(KQ_IENAKA.label()), yen(s0.monthly)
+      + (r.segs.length > 1 ? "（" + KQ_IENAKA.segLabel(s0) + "）" : ""));
+    if (r.segs.length > 1) {
+      h += row("　" + KQ_IENAKA.segLabel(sL) + "のお支払い", yen(sL.monthly));
+    }
+    if (r.initial > 0) h += row("　初期費用（事務手数料・工事費ほか）", yen(r.initial));
+    h += '<tr class="total"><td>世帯の月額合計（スマホ＋光）</td><td class="amt">'
+      + yen(phoneMonthly + s0.monthly) + "</td></tr>";
+    if (r.initial + phoneInitial > 0) {
+      h += '<tr class="total"><td>世帯の初期費用合計</td><td class="amt">'
+        + yen(phoneInitial + r.initial) + "</td></tr>";
+    }
+    h += "</tbody></table>";
+    h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">'
+      + (setWari > 0
+        ? "※ ドコモ光／home 5G セット割（" + yen(setWari) + "/月）は、上のスマホの月額から既に差し引いています。"
+        : "※ スマホ側で「ドコモ光／home 5G セット割」を選んでいません。対象の場合は③割引でご確認ください。")
+      + "光の内訳が必要な場合は別紙でご用意します。</p>";
+    return h;
   }
 
   /* ---------- 初期設定（初めて使うとき） ----------
@@ -1319,7 +1391,12 @@
       storePay: {}, usePoint: false, usePointAmount: 0,
     };
   }
-  var store = { active: 0, patterns: [defaultState(), defaultState(), defaultState()] };
+  /* 光・home 5G（イエナカ）は世帯に1本なので、パターンA/B/Cの外に置く。
+   * store ごと保存・同期されるため、保存した見積もりやテンプレートにも自然に付いてくる。 */
+  function newIenaka() {
+    return (typeof KQ_IENAKA !== "undefined" && KQ_IENAKA) ? KQ_IENAKA.defaultState() : {};
+  }
+  var store = { active: 0, patterns: [defaultState(), defaultState(), defaultState()], ienaka: newIenaka() };
   var state = store.patterns[0];
 
   function loadState() {
@@ -1375,6 +1452,23 @@
       });
     });
     state = store.patterns[store.active];
+    var savedIe = null;
+    try { savedIe = JSON.parse(localStorage.getItem(quoteKey()) || "null"); } catch (e2) {}
+    applyIenaka(savedIe && savedIe.ienaka);
+  }
+  /* 光の内容を差し替える。無い・壊れている場合は初期値に戻す。
+   * イエナカ側は store.ienaka の参照を握っているので、
+   * 入れ物は替えずに中身だけ入れ替える。 */
+  function applyIenaka(src) {
+    var ie = Object.assign(newIenaka(), src || {});
+    if (!store.ienaka) store.ienaka = {};
+    Object.keys(store.ienaka).forEach(function (k) { delete store.ienaka[k]; });
+    Object.keys(ie).forEach(function (k) { store.ienaka[k] = ie[k]; });
+    if (typeof KQ_IENAKA !== "undefined") { KQ_IENAKA.syncForm(); KQ_IENAKA.render(); }
+    var ieb = $("ieBody");
+    if (ieb) ieb.hidden = !store.ienaka.enabled;
+    var iec = $("ieEnabled");
+    if (iec) iec.checked = !!store.ienaka.enabled;
   }
   function saveState() {
     try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
@@ -1639,6 +1733,7 @@
       }
       store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
       state = store.patterns[store.active];
+      applyIenaka(incoming.ienaka);
       try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
       syncFormFromState();
       recalc();
@@ -3586,12 +3681,44 @@
     h += "</tbody></table>";
 
     var secPoint = h; h = "";
+    /* 光・home 5G。後工程がそのまま手続きできるよう、申込区分と工事まわりを残す。
+     * 世帯で1本なので、パターンを切り替えても同じ内容が出る。 */
+    if (ienakaOn()) {
+      var ir = KQ_IENAKA.calc();
+      h += "<h3>ドコモ光・home 5G</h3><table><tbody>";
+      h += row("商材", "<b>" + esc(KQ_IENAKA.label()) + "</b>");
+      h += row("月額", "<b>" + yen(ir.segs[0].monthly) + "</b>"
+        + (ir.segs.length > 1
+          ? "（" + KQ_IENAKA.segLabel(ir.segs[0]) + "）　"
+            + KQ_IENAKA.segLabel(ir.segs[ir.segs.length - 1]) + " "
+            + yen(ir.segs[ir.segs.length - 1].monthly)
+          : ""));
+      var ieOpts = ir.rows.slice(1).filter(function (x) { return x.amount >= 0; });
+      h += row("オプション", ieOpts.length
+        ? ieOpts.map(function (x) { return esc(x.name) + "（" + yen(x.amount) + "）"; }).join("　／　")
+        : "なし");
+      if (ir.initRows.length) {
+        h += row("初期費用", "<b>" + yen(ir.initial) + "</b>　"
+          + ir.initRows.map(function (x) { return esc(x.name) + " " + yen(x.amount); }).join("　／　"));
+      }
+      if (ir.kojiTotal > 0) {
+        h += row("工事費のお支払い", store.ienaka.kojiPay === "b24"
+          ? "<b>24回分割</b>（総額 " + yen(ir.kojiTotal) + "・月 " + yen(Math.floor(ir.kojiTotal / 24)) + "）"
+          : "<b>一括</b>（" + yen(ir.kojiTotal) + "）");
+      }
+      if (KQ_IENAKA.isHikari() && store.ienaka.provider) {
+        h += row("プロバイダ", esc(store.ienaka.provider)
+          + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）");
+      }
+      h += "</tbody></table>";
+    }
+    var secIenaka = h; h = "";
     // 機種購入があるときは、端末と初期費用（支払方法）を先に読めるよう前へ出す
     var hasDevice = state.payMethod !== "none" && (num(state.devicePrice) > 0 || state.deviceName);
     h = h0 + (hasDevice
       ? secDevice + secInit + secContract + secOpt
       : secContract + secOpt + secDevice + secInit)
-      + secPoint;
+      + secPoint + secIenaka;
     h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。アプリ版 ' + APP_VERSION + "</div>";
     $("staffSheetBody").innerHTML = h;
   }
@@ -3599,6 +3726,14 @@
   /* ---------- 見積書描画 ---------- */
   function renderSheet() {
     var r = calc();
+    // 光を含める設定のときだけ、見積書に出す内容の切替を見せる
+    var scopeWrap = $("sheetScopeWrap");
+    if (scopeWrap) {
+      scopeWrap.hidden = !ienakaOn();
+      if (!ienakaOn()) sheetScope = "phone";
+      var rb = scopeWrap.querySelector('input[value="' + sheetScope + '"]');
+      if (rb) rb.checked = true;
+    }
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
     var procLabel = procName(state.procType);
@@ -3734,6 +3869,10 @@
     }
     if (hasInstallment) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
+    }
+    // 光・home 5G を含める場合は、ここに世帯の合計を出す
+    if (sheetScope === "both" && ienakaOn()) {
+      h += ienakaSheetHtml(seg0.monthly, r.initialTotal || 0, r.dSet || 0);
     }
 
     // ---- 2ページ目: 本体分割金・初期費用（印刷時はここで改ページ） ----
@@ -4221,6 +4360,7 @@
     renderDeviceOff(r);
     renderSummary(r);
     renderPatternTabs();
+    renderIenakaWarn(r);
     saveState();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
     if ($("tab-staff").classList.contains("active")) renderStaffSheet();
@@ -5833,6 +5973,7 @@
   initMasterGate();
   initAbout();
   initDocs();
+  initIenaka();
   initWizard();
   initBackup();
   initIenakaLink();
