@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.0";
+  var APP_VERSION = "1.13.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1950,6 +1950,12 @@
     return MASTER.fees.jimu_kishu;
   }
   var CUR_INST_LABEL = "現在の分割支払金（継続中）";
+  /* 爆アゲ セレクションの還元は税抜価格が基準。
+   * マスタには税込で登録するため、消費税分を割り戻して使う。 */
+  var TAX_RATE = 0.1;
+  function bakuageExTax(taxIncluded) {
+    return Math.round(num(taxIncluded) / (1 + TAX_RATE));
+  }
   // ドコモ MAX／ドコモ ポイ活 MAX の「選べる特典」
   // 対象4サービスから毎月2つまで追加料金なし。3つ目以降は通常料金
   var MAX_BONUS_IDS = ["bk_lemino", "bk_danime", "dazn", "nba"];
@@ -2298,7 +2304,7 @@
       if (bonusFree[o.id]) return;      // 0円のものは支払いが無いため還元されない
       var fixed = num(o.bakuageFixed);
       var pr = optPrice(o, st);
-      var pt = 0, label = "";
+      var pt = 0, label = "", exTax = 0;
       if (fixed > 0) {
         // 固定ポイントはプランの区分によらず進呈するもの
         pt = fixed;
@@ -2306,11 +2312,16 @@
       } else if (bakuTier) {
         var rate = num(bakuTier === "max" ? o.bakuage : o.bakuage2);
         if (!rate) return;
-        pt = Math.floor(pr * rate / 100);
+        /* 還元は税抜価格が基準で、端数は切り上げ。
+         * 出典: https://ssw.web.docomo.ne.jp/bakuage/
+         * 「プランごとの税抜価格に還元率を乗じ小数切上で、還元ポイントを算出しています。」
+         * マスタの金額は税込なので、割り戻してから計算する。 */
+        exTax = bakuageExTax(pr);
+        pt = Math.ceil(exTax * rate / 100);
         label = rate + "%";
       }
       if (pt <= 0) return;
-      bakuageRows.push({ name: o.name, rate: label, price: pr, pt: pt });
+      bakuageRows.push({ name: o.name, rate: label, price: pr, exTax: exTax, pt: pt });
       bakuageAutoPt += pt;
     });
 
@@ -3051,7 +3062,9 @@
     if (bakuOn) {
       $("bakuageHint").innerHTML = "内訳: "
         + (r.bakuageRows || []).map(function (x) {
-            return esc(x.name) + " " + esc(x.rate) + "（" + x.pt.toLocaleString("ja-JP") + "pt）";
+            return esc(x.name) + " " + esc(x.rate)
+              + (x.exTax ? "（税抜 " + x.exTax.toLocaleString("ja-JP") + "円 → " + x.pt.toLocaleString("ja-JP") + "pt）"
+                         : "（" + x.pt.toLocaleString("ja-JP") + "pt）");
           }).join("／")
         + "　" + (r.bakuageTier === "max" ? "率はドコモ MAX／ポイ活 MAX のもの"
             : r.bakuageTier ? "率はポイ活20・ahamo・eximo・ギガホのもの" : "")
