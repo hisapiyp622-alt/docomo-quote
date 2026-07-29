@@ -600,6 +600,162 @@
   }
 
 
+
+  /* ---------- 光の見積書（単体の1枚） ----------
+   * 単体版（ienaka-app）の見積書と同じ内容。表題・お客様名・発行元・注意書きは
+   * ケータイ側が付けるので、ここでは中身だけを返す。
+   * セット割はケータイ側で実際に引いている金額を受け取る。 */
+  function sheetHtml(setWariFromPhone) {
+    var r = calc();
+    var h = "";
+    var seg0 = r.segs[0], segLast = r.segs[r.segs.length - 1];
+      h += '<div class="big-monthly">';
+      // 通常時のお支払い目安: 最初の期間と最後の期間を1枠にまとめて表示
+      // 目安は最終期間（31か月目以降など）の金額のみ表示。途中の変化は「お支払いの推移」表で確認
+      h += '<div class="bm-box"><div class="bm-label">通常時お支払い目安' + (segLast.from > 1 ? "（" + segLabel(segLast) + "）" : "") + '</div><div class="bm-value">' + yen(segLast.monthly) + "</div>"
+        + (r.deviceNote ? '<div class="bm-sub">' + esc(r.deviceNote) + "</div>" : "") + "</div>";
+      // 光セット割の合計を加味した実質価格（入力があるときだけ表示）
+      var setWari = Math.max(0, num(setWariFromPhone));
+      if (setWari > 0) {
+        h += '<div class="bm-box"><div class="bm-label">実質お支払い目安' + (segLast.from > 1 ? "（" + segLabel(segLast) + "）" : "") + '</div><div class="bm-value">' + yen(Math.max(0, segLast.monthly - setWari)) + "</div>"
+          + '<div class="bm-sub">ご家族スマホの光セット割 −' + yen(setWari) + "/月 を差引いた金額</div></div>";
+      }
+      h += '<div class="bm-box"><div class="bm-label">初期費用</div><div class="bm-value">' + yen(r.initial) + "</div></div>";
+      // dポイント進呈特典のまとめ
+      var ptRows = [];
+      if (num(state.dpoint) > 0) {
+        ptRows.push({ name: "ドコモ光お申込みdポイント進呈（利用開始4か月後の月末・期間用途限定）", pt: Math.round(num(state.dpoint)) });
+      }
+      if (r.tvOn && isHikari() && state.applyType !== "tenyo" && state.tvPoint !== false) {
+        ptRows.push({ name: "テレビオプション同時申込特典（転用は除く）", pt: 5000 });
+      }
+      // home 5G→ドコモ光 移行特典: 1ギガ（2年定期）のみ・20,000pt（公式・利用開始4か月後の月）
+      if (state.product === "hikari1g" && state.h5Mig) {
+        ptRows.push({ name: "「home 5G」→「ドコモ光」移行特典（1ギガ 2年定期のみ・利用開始4か月後の月）", pt: 20000 });
+      }
+      // 店舗独自特典のポイントはdポイントなので進呈特典と合算して表示
+      if (num(state.storePt) > 0) {
+        ptRows.push({ name: "店舗独自特典ポイント進呈", pt: Math.round(num(state.storePt)) });
+      }
+      if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
+        ptRows.push({ name: "新規工事料 実質0円特典（開通6か月後から24回に分けて進呈）", pt: r.koji });
+      }
+      var ptTotal = 0;
+      ptRows.forEach(function (x) { if (!x.monthly) ptTotal += x.pt; });
+      if (ptTotal > 0) {
+        h += '<div class="bm-box"><div class="bm-label">dポイント進呈 合計</div><div class="bm-value">' + ptTotal.toLocaleString("ja-JP") + 'pt</div><div class="bm-sub">進呈条件・時期は店頭でご確認ください</div></div>';
+      }
+      h += "</div>";
+
+      // お支払いの推移（横並び・1か月目は初期費用等を合算して表示）
+      var onsiteTotal = 0;
+      r.initRows.forEach(function (x) { if (x.name.indexOf("現地払い") >= 0) onsiteTotal += x.amount; });
+      var billInit = r.initial - onsiteTotal; // ドコモ請求される初期費用（事務手数料・登録料・一括工事費など）
+      if (r.segs.length > 1 || billInit > 0 || onsiteTotal > 0) {
+        var cols = [];
+        var subs1 = [];
+        if (billInit > 0) subs1.push("うち初期費用等 " + yen(billInit));
+        if (onsiteTotal > 0) subs1.push("ほかに現地徴収 " + yen(onsiteTotal));
+        cols.push({ label: "1か月目", amount: seg0.monthly + billInit, subs: subs1 });
+        r.segs.forEach(function (sg) {
+          var from = sg.from === 1 ? 2 : sg.from;
+          if (sg.to != null && sg.to < from) return; // 1か月目だけの区間は左の列で表現済み
+          var label = sg.to == null
+            ? from + "か月目以降"
+            : from + "〜" + sg.to + "か月目";
+          cols.push({ label: label, amount: sg.monthly, subs: [] });
+        });
+        h += "<h3>お支払いの推移" + (state.kojiFree && r.koji > 0 ? "（工事費相当ポイントを料金充当した場合）" : "") + "</h3>";
+        h += '<table class="trans-table"><tbody>';
+        h += "<tr>" + cols.map(function (c) { return "<th>" + c.label + "</th>"; }).join("") + "</tr>";
+        h += "<tr>" + cols.map(function (c) {
+          return '<td class="trans-amt">' + yen(c.amount)
+            + c.subs.map(function (s) { return '<div class="trans-sub">' + s + "</div>"; }).join("")
+            + "</td>";
+        }).join("") + "</tr>";
+        h += "</tbody></table>";
+      }
+
+      // 月額内訳は7か月目を含む期間（例: 7〜24か月目＝工事費分割とポイント充当が揃う代表期間）を基準に表示
+      var repSeg = seg0;
+      for (var si = 0; si < r.segs.length; si++) {
+        var sgi = r.segs[si];
+        if (sgi.from <= 7 && (sgi.to == null || 7 <= sgi.to)) { repSeg = sgi; break; }
+      }
+      var repLabeled = repSeg.to != null || repSeg.from > 1;
+      h += "<h3>月額内訳" + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + "</h3><table><tbody>";
+      // dカード還元充当の行は工事費相当ポイント充当の下（表の最後）に配置する
+      var dcardRow = null;
+      r.rows.forEach(function (x) {
+        if (x.name.indexOf("dカード") === 0) { dcardRow = x; return; }
+        h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+      });
+      r.timed.forEach(function (t) {
+        // この期間に有効な項目のみ表示（期間外の項目は推移表・注記で案内）
+        if (!(t.from <= repSeg.from && repSeg.from <= t.to)) return;
+        h += "<tr><td>" + esc(t.name) + '</td><td class="amt">' + yen(t.amount) + "</td></tr>";
+      });
+      if (dcardRow) {
+        h += "<tr><td>" + esc(dcardRow.name) + '</td><td class="amt">' + yen(dcardRow.amount) + "</td></tr>";
+      }
+      h += '<tr class="total"><td>月額合計' + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + '</td><td class="amt">' + yen(repSeg.monthly) + "</td></tr>";
+      h += "</tbody></table>";
+      if (state.kojiFree && r.koji > 0) {
+        h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP") + 'pt・期間用途限定）が開通6か月後から24回に分けて進呈されます。上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。進呈条件・時期は店頭でご確認ください。</p>';
+      }
+      if (r.tvRegRows && r.tvRegRows.some(function (x) { return x.name.indexOf("現地払い") >= 0; })) {
+        h += '<p class="memo">※ テレビ接続工事費は、工事当日にスカパーJSATへ直接お支払いください（ドコモからの請求には含まれません）。</p>';
+      }
+      if (is10g() && state.onecoin) {
+        h += '<p class="memo">※ ワンコインキャンペーン: 開通月〜6か月目まで基本料500円（開通当月は日割り）。さらに開通7か月後にルーターレンタル料6か月分相当のdポイント3,300pt（期間・用途限定）を一括進呈。1ギガからのプラン変更は対象外。</p>';
+      }
+
+      // 初期費用とdポイント進呈特典は左右2列に並べて縦の長さを圧縮（10Gなど項目が多くても1枚に収める）
+      var initHtml = "";
+      if (r.initRows.length) {
+        initHtml += "<h3>初期費用</h3><table><tbody>";
+        r.initRows.forEach(function (x) {
+          var label = esc(x.name) + (x.strike ? '　<s>' + yen(x.strike) + "</s>" : "");
+          initHtml += "<tr><td>" + label + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+        });
+        initHtml += '<tr class="total"><td>初期費用合計</td><td class="amt">' + yen(r.initial) + "</td></tr>";
+        initHtml += "</tbody></table>";
+      }
+      var ptHtml = "";
+      if (ptRows.length) {
+        ptHtml += "<h3>dポイント進呈特典</h3><table><tbody>";
+        ptRows.forEach(function (x) {
+          ptHtml += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + x.pt.toLocaleString("ja-JP") + (x.monthly ? "pt/月" : "pt") + "</td></tr>";
+        });
+        if (ptTotal > 0) {
+          ptHtml += '<tr class="total"><td>進呈ポイント合計（一括進呈分）</td><td class="amt">' + ptTotal.toLocaleString("ja-JP") + "pt</td></tr>";
+        }
+        ptHtml += "</tbody></table>";
+      }
+      if (initHtml && ptHtml) {
+        h += '<div class="sheet-cols"><div class="sheet-col">' + initHtml + '</div><div class="sheet-col">' + ptHtml + "</div></div>";
+      } else {
+        h += initHtml + ptHtml;
+      }
+      // 店舗独自特典（相対対応）: 現金キャッシュバックのみ別枠（ポイントはdポイント進呈特典に合算済み）
+      if (num(state.storeCash) > 0) {
+        h += "<h3>店舗独自特典</h3><table><tbody>";
+        h += '<tr><td>現金キャッシュバック</td><td class="amt">' + yen(num(state.storeCash)) + "</td></tr>";
+        h += "</tbody></table>";
+      }
+      if (state.dcard !== "none" && r.dcardPt > 0) {
+        h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + (state.dcard === "gold" ? "10" : "20") + '%）は毎月のお支払いへ自動充当した金額です。還元対象・上限はカード規約によります。</p>';
+      }
+
+      if (setWari > 0) {
+        h += '<p class="memo">※ ドコモ光／home 5G セット割 −' + yen(setWari)
+          + "/月 は、ご家族のスマホ料金から割引されます（この見積書の月額には含まれていません）。</p>";
+      } else {
+        h += '<p class="memo">※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（この見積書の月額には含まれていません）。</p>';
+      }
+    return h;
+  }
+
   /* ケータイ側から使うもの */
   window.KQ_IENAKA = {
     defaultState: defaultState,
@@ -616,6 +772,7 @@
     isOn: function () { return !!(state && state.enabled); },
     label: function () { return state ? PRODUCTS[state.product].name + productLabel() : ""; },
     isHikari: isHikari,
+    sheetHtml: sheetHtml,
     // 入れ物を差し替えずに中身だけ初期化する（ケータイ側の store.ienaka を指したまま）
     reset: function () {
       var d = defaultState();

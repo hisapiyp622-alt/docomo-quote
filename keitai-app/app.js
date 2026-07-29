@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.15.0";
+  var APP_VERSION = "1.15.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -597,32 +597,44 @@
   }
   /* 見積書に足す光の要約。A4 2枚に収めるため、明細ではなく数行にとどめる。
    * 光の明細が要るときは、イエナカ見積もり（単体）で別紙にする。 */
-  function ienakaSheetHtml(phoneMonthly, phoneInitial, setWari) {
+  /* 見積書に足す光の行。標準の月額だけを載せて、世帯の合計が分かるようにする。
+   * 工事費・初期費用・お支払いの推移といった中身は「光のみ（別紙）」で出す。 */
+  function ienakaSheetHtml(phoneMonthly, setWari) {
     var r = KQ_IENAKA.calc();
-    var s0 = r.segs[0], sL = r.segs[r.segs.length - 1];
-    function row(n, v) {
-      return "<tr><td>" + n + '</td><td class="amt">' + v + "</td></tr>";
-    }
+    var last = r.segs[r.segs.length - 1];
     var h = '<table class="sheet-hikari"><tbody>';
     h += '<tr class="head"><td colspan="2">ドコモ光・home 5G</td></tr>';
-    h += row(esc(KQ_IENAKA.label()), yen(s0.monthly)
-      + (r.segs.length > 1 ? "（" + KQ_IENAKA.segLabel(s0) + "）" : ""));
-    if (r.segs.length > 1) {
-      h += row("　" + KQ_IENAKA.segLabel(sL) + "のお支払い", yen(sL.monthly));
-    }
-    if (r.initial > 0) h += row("　初期費用（事務手数料・工事費ほか）", yen(r.initial));
+    h += "<tr><td>" + esc(KQ_IENAKA.label()) + '</td><td class="amt">'
+      + yen(last.monthly) + "</td></tr>";
     h += '<tr class="total"><td>世帯の月額合計（スマホ＋光）</td><td class="amt">'
-      + yen(phoneMonthly + s0.monthly) + "</td></tr>";
-    if (r.initial + phoneInitial > 0) {
-      h += '<tr class="total"><td>世帯の初期費用合計</td><td class="amt">'
-        + yen(phoneInitial + r.initial) + "</td></tr>";
-    }
+      + yen(phoneMonthly + last.monthly) + "</td></tr>";
     h += "</tbody></table>";
     h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">'
+      + "※ 光の月額は標準のお支払い額です。初期費用・工事費・お支払いの推移は<b>別紙のお見積書</b>でご案内します。"
       + (setWari > 0
-        ? "※ ドコモ光／home 5G セット割（" + yen(setWari) + "/月）は、上のスマホの月額から既に差し引いています。"
-        : "※ スマホ側で「ドコモ光／home 5G セット割」を選んでいません。対象の場合は③割引でご確認ください。")
-      + "光の内訳が必要な場合は別紙でご用意します。</p>";
+        ? "ドコモ光／home 5G セット割（" + yen(setWari) + "/月）は、上のスマホの月額から既に差し引いています。"
+        : "スマホ側で「ドコモ光／home 5G セット割」を選んでいません。対象の場合は③割引でご確認ください。")
+      + "</p>";
+    return h;
+  }
+  /* 光だけの見積書（別紙）。中身はイエナカ側が作り、表題と発行元はここで付ける。 */
+  function ienakaOnlySheet(setWari) {
+    var today = new Date();
+    var h = '<h2 class="sheet-title">お見積書（ドコモ光・home 5G）</h2>';
+    h += '<div class="sheet-meta"><span>作成日: ' + today.getFullYear() + "年"
+      + (today.getMonth() + 1) + "月" + today.getDate() + '日</span><span></span></div>';
+    if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
+    h += KQ_IENAKA.sheetHtml(setWari);
+    if (state.quoteMemo) h += '<p class="memo">※ ' + esc(state.quoteMemo) + "</p>";
+    var sign = [];
+    if (config.storeName) sign.push(esc(config.storeName));
+    if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
+    if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
+    if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
+    h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
+      + "提供エリア・設備状況によりご契約いただけない場合があります。詳細は店頭スタッフへご確認ください。"
+      + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
+      + "アプリ版 " + APP_VERSION + "</div>";
     return h;
   }
 
@@ -3734,6 +3746,11 @@
       var rb = scopeWrap.querySelector('input[value="' + sheetScope + '"]');
       if (rb) rb.checked = true;
     }
+    // 光だけの別紙は、スマホの見積書とは別の1枚として作る
+    if (sheetScope === "hikari" && ienakaOn()) {
+      $("sheetBody").innerHTML = ienakaOnlySheet(r.dSet || 0);
+      return;
+    }
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
     var procLabel = procName(state.procType);
@@ -3872,7 +3889,7 @@
     }
     // 光・home 5G を含める場合は、ここに世帯の合計を出す
     if (sheetScope === "both" && ienakaOn()) {
-      h += ienakaSheetHtml(seg0.monthly, r.initialTotal || 0, r.dSet || 0);
+      h += ienakaSheetHtml(seg0.monthly, r.dSet || 0);
     }
 
     // ---- 2ページ目: 本体分割金・初期費用（印刷時はここで改ページ） ----

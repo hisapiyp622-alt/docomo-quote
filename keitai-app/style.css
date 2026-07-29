@@ -307,6 +307,7 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   body.print-staff .sheet .disclaimer{font-size:8px;margin-top:4px;padding-top:3px}
   /* 表や見出しが中途半端な位置で分断されないようにする */
   .sheet table,.sheet .big-monthly,.sheet .bm-box{break-inside:avoid;page-break-inside:avoid}
+  .sheet .sheet-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;break-inside:avoid;page-break-inside:avoid}
   .sheet tr{break-inside:avoid;page-break-inside:avoid}
   .sheet h3{break-after:avoid;page-break-after:avoid}
 }
@@ -552,6 +553,9 @@ body.sorting .sort-chip{cursor:grabbing}
   background:#FAFAFB;border:1px solid var(--line);border-radius:8px;
 }
 .sheet-scope .lbl{font-size:12px;font-weight:700;color:var(--muted)}
+.sheet .sheet-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-items:start}
+.sheet .sheet-col{min-width:0}
+@media (max-width:700px){ .sheet .sheet-cols{display:block} }
 .sheet .sheet-hikari{margin-top:12px}
 .sheet .sheet-hikari tr.head td{font-weight:700;background:#F7F7F8;color:var(--red)}
 
