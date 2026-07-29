@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.11.1";
+  var APP_VERSION = "1.12.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -311,6 +311,7 @@
     price: "の金額", note: "の説明", category: "の置き場所",
     carrier: "のdカードGOLD10%対象", own: "の店舗独自",
     pay: "の支払い先", defaultPay: "の支払い方法（初期値）",
+    dataMove: "の「データ移行」の印",
     bakuage: "の爆アゲ率（MAX系）", bakuage2: "の爆アゲ率（その他）",
     bakuageFixed: "の爆アゲ固定pt",
     priceChoices: "の金額の選択肢", priceLabels: "の選択肢の名前",
@@ -715,7 +716,7 @@
     "bakuageTier", "poikatsuPt", "maxBonus", "voiceOverrides", "group"];
   var OPT_TAKE = ["price", "priceChoices", "priceLabels", "carrier",
     "bakuage", "bakuage2", "bakuageFixed", "note"];
-  var FEE_ITEM_TAKE = ["price", "pay", "note"];
+  var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove"];
   var CAMP_TAKE = ["months", "plans", "amountChoices", "note"];
 
   function takeFields(dst, src, keys) {
@@ -993,6 +994,15 @@
       if (!pl.tiers || !pl.tiers.length) pl.tiers = [{ label: "", price: 0 }];
       if (!pl.discounts) pl.discounts = {};
       if (pl.group !== "current" && pl.group !== "legacy") pl.group = "current";
+    });
+    /* 引き継ぎシートの「データ移行」に出す項目の印を初期データから補完する。
+     * 初期データに無い項目（店舗が自分で足したもの）は名前から推定しておく。 */
+    var defDM = {};
+    (DEFAULT_DATA.feeItems || []).forEach(function (f) { defDM[f.id] = !!f.dataMove; });
+    MASTER.feeItems.forEach(function (f) {
+      if (typeof f.dataMove !== "undefined") return;
+      f.dataMove = (f.id in defDM) ? defDM[f.id]
+        : /データ移行|店頭サポート/.test(f.name || "");
     });
     /* 料金表の版数。すでに使っている店舗は「いまの内容が最新」として扱い、
      * 次の改定から知らせる。 */
@@ -3120,8 +3130,10 @@
         return esc(d.name) + " " + d.rate + "%";
       }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
     }
+    /* データ移行にあたる初期費用。あんしん店頭サポートのように名前に
+     * 「データ移行」が入らないものもあるため、マスタ設定の印で判定する。 */
     var dataMove = (MASTER.feeItems || []).filter(function (f) {
-      return state.feeItems[f.id] && /データ移行/.test(f.name || "");
+      return state.feeItems[f.id] && f.dataMove;
     });
     anyTodo = true;
     h += row("データ移行", dataMove.length
@@ -3681,7 +3693,9 @@
       return '<select data-fi-pay="' + o.__i + '">'
         + '<option value="store"' + (o.pay !== "bill" ? " selected" : "") + ">店頭払い</option>"
         + '<option value="bill"' + (o.pay === "bill" ? " selected" : "") + ">翌月合算</option>"
-        + "</select>";
+        + "</select>"
+        + '<label class="own-flag" title="引き継ぎシートの「データ移行」の欄に出します">'
+        + '<input type="checkbox" data-fi-dm="' + o.__i + '"' + (o.dataMove ? " checked" : "") + ">データ移行</label>";
     }
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
@@ -4685,6 +4699,8 @@
         list[+attr("pay")].defaultPay = t.value;
       } else if (evType === "change" && prefix === "fi" && attr("pay") != null) {
         list[+attr("pay")].pay = t.value;
+      } else if (evType === "change" && prefix === "fi" && attr("dm") != null) {
+        list[+attr("dm")].dataMove = t.checked;
       } else if (evType === "click" && attr("del") != null) {
         var o = list[+attr("del")];
         store.patterns.forEach(function (pt) { delete pt[def.stateKey][o.id]; });

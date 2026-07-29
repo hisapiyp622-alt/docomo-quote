@@ -732,28 +732,32 @@ const DEFAULT_DATA = {
       "name": "無料データ移行",
       "price": 0,
       "pay": "store",
-      "own": true
+      "own": true,
+      "dataMove": true
     },
     {
       "id": "fi_1785221683603",
       "name": "初期設定・データ移行サポート",
       "price": 2200,
       "own": false,
-      "pay": "bill"
+      "pay": "bill",
+      "dataMove": true
     },
     {
       "id": "fi_1785221704936",
       "name": "初期設定・データ移行サポート(持ち込み)",
       "price": 3300,
       "own": false,
-      "pay": "bill"
+      "pay": "bill",
+      "dataMove": true
     },
     {
       "id": "fi_1785221719101",
       "name": "あんしん店頭サポート",
       "price": 3300,
       "own": false,
-      "pay": "bill"
+      "pay": "bill",
+      "dataMove": true
     }
   ],
   "kaedoki": {
