@@ -523,6 +523,38 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 .sheet .sheet-sign b{font-size:12.5px}
 
+/* イエナカ（光・home 5G）タブ */
+#tab-ienaka .step{
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:12px;
+}
+#tab-ienaka .step h2{font-size:15px;margin:0 0 10px;color:var(--red)}
+@media (min-width:900px){
+  #tab-ienaka .qcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  #tab-ienaka .qcol{min-width:0}
+}
+.ie-head{margin-bottom:12px}
+.ie-summary{font-weight:700;color:var(--red)}
+.ie-warn{font-weight:700;color:var(--red);background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;padding:6px 9px}
+.ienaka-opt{display:block;margin:6px 0}
+.ienaka-opt.sub{margin-left:24px;font-size:13px}
+.ienaka-opt .opt-price{color:var(--muted);font-size:12.5px}
+.koji-summary{
+  background:#FBF1F3;border:1px solid #E8C7CD;border-radius:6px;
+  padding:8px 10px;color:var(--ink);font-weight:400;line-height:1.7;
+}
+.koji-summary b{color:var(--red)}
+.koji-summary .ks-sub{margin-top:4px;font-weight:700;font-size:12px}
+.koji-summary .ks-item{font-size:12px;color:var(--muted);padding-left:4px}
+.sheet-scope{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;
+  margin-bottom:10px;padding:8px 12px;
+  background:#FAFAFB;border:1px solid var(--line);border-radius:8px;
+}
+.sheet-scope .lbl{font-size:12px;font-weight:700;color:var(--muted)}
+.sheet .sheet-hikari{margin-top:12px}
+.sheet .sheet-hikari tr.head td{font-weight:700;background:#F7F7F8;color:var(--red)}
+
 /* 初期設定 */
 .setup-box{max-width:440px}
 .setup-steps{display:flex;gap:6px;justify-content:center;margin:0 0 12px}
