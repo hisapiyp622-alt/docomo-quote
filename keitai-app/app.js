@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.12.0";
+  var APP_VERSION = "1.13.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -778,6 +778,17 @@
       takeFields(cur, dc, CAMP_TAKE);
     });
 
+    // でんき・ガスの会社は、増えたものだけ足す。店舗が直した番号は上書きしない
+    ["denki", "gas"].forEach(function (k) {
+      var src = (D.energyCompanies && D.energyCompanies[k]) || [];
+      if (!next.energyCompanies) next.energyCompanies = {};
+      if (!next.energyCompanies[k]) next.energyCompanies[k] = [];
+      src.forEach(function (c) {
+        if (next.energyCompanies[k].some(function (x) { return x.id === c.id; })) return;
+        if (removed.indexOf(c.id) >= 0) return;
+        next.energyCompanies[k].push(JSON.parse(JSON.stringify(c)));
+      });
+    });
     next.masterVersion = num(D.masterVersion);
     next.updated = D.updated;
     return next;
@@ -995,6 +1006,14 @@
       if (!pl.discounts) pl.discounts = {};
       if (pl.group !== "current" && pl.group !== "legacy") pl.group = "current";
     });
+    // でんき・ガスの「現在の会社」と連絡先（初期データから補完）
+    if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
+    ["denki", "gas"].forEach(function (k) {
+      if (!MASTER.energyCompanies[k] || !MASTER.energyCompanies[k].length) {
+        MASTER.energyCompanies[k] = JSON.parse(JSON.stringify(
+          (DEFAULT_DATA.energyCompanies && DEFAULT_DATA.energyCompanies[k]) || []));
+      }
+    });
     /* 引き継ぎシートの「データ移行」に出す項目の印を初期データから補完する。
      * 初期データに無い項目（店舗が自分で足したもの）は名前から推定しておく。 */
     var defDM = {};
@@ -1071,6 +1090,7 @@
       custName: "", shopName: "", staffName: "", shopTel: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
       procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
+      todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
       // 店頭お支払い（頭金・付属品など）の支払方法
@@ -2032,6 +2052,17 @@
   };
   // 割引対象を最大3つ・合計9%までに制限する料金メニュー（PDF ※2）
   var GAS_DISC_CAPPED = { smart: true, house: true, yukadan: true, myhome: true };
+  /* でんき・ガスの「現在ご契約中の会社」。
+   * 解約のご連絡先をその場で出せるようにするためのもの。
+   * 会社と電話番号はマスタ設定で編集できる（番号は変わるため）。 */
+  function energyList(kind) {
+    return (MASTER.energyCompanies && MASTER.energyCompanies[kind]) || [];
+  }
+  function energyPicked(kind) {
+    var id = kind === "gas" ? state.todoGasNow : state.todoDenkiNow;
+    if (!id) return null;
+    return energyList(kind).filter(function (c) { return c.id === id; })[0] || null;
+  }
   function gasDiscountList() { return GAS_DISCOUNT[state.todoGasType] || []; }
   function gasDiscountPicked() {
     var picked = state.todoGasDiscount || {};
@@ -2897,10 +2928,13 @@
     $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
     $("energyTypeWrap").hidden = !state.todoDenkiGas;
+    var enBox = $("energyNowBox");
+    if (enBox) enBox.hidden = !state.todoDenkiGas;
     document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
     document.querySelectorAll("[data-denkitype]").forEach(function (cb) { cb.checked = state.todoDenkiType === cb.getAttribute("data-denkitype"); });
     document.querySelectorAll("[data-gastype]").forEach(function (cb) { cb.checked = state.todoGasType === cb.getAttribute("data-gastype"); });
     renderGasDiscounts();
+    renderEnergyNow();
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
@@ -3052,6 +3086,31 @@
   }
 
   // ガスの割引オプション欄を料金メニューに合わせて描き直す
+  /* 現在の会社のチェックと、選んだ会社の連絡先 */
+  function renderEnergyNow() {
+    ["denki", "gas"].forEach(function (kind) {
+      var wrap = $(kind === "gas" ? "gasNowWrap" : "denkiNowWrap");
+      if (!wrap) return;
+      var list = energyList(kind);
+      if (!state.todoDenkiGas || !list.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+      wrap.hidden = false;
+      var cur = kind === "gas" ? state.todoGasNow : state.todoDenkiNow;
+      var h = '<span class="sub-label">' + (kind === "gas" ? "ガス" : "でんき") + "の現在の会社</span>";
+      h += list.map(function (c) {
+        return '<label class="check"><input type="checkbox" data-energynow="' + kind + ":" + esc(c.id) + '"'
+          + (cur === c.id ? " checked" : "") + "> " + esc(c.name) + "</label>";
+      }).join("");
+      var picked = energyPicked(kind);
+      if (picked) {
+        h += '<span class="sub-note energy-tel">' + esc(picked.name) + " の連絡先: "
+          + (picked.tel
+              ? '<b>' + esc(picked.tel) + "</b>"
+              : '<span class="tel-none">未登録（マスタ設定で登録してください）</span>')
+          + "</span>";
+      }
+      wrap.innerHTML = h;
+    });
+  }
   function renderGasDiscounts() {
     var wrap = $("gasDiscountWrap");
     var list = gasDiscountList();
@@ -3120,6 +3179,16 @@
         eg.push(GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA);
       }
       apps.push("でんき・ガス申し込み" + (eg.length ? "（" + eg.join("・") + "）" : ""));
+    }
+    if (state.todoDenkiGas) {
+      ["denki", "gas"].forEach(function (kind) {
+        var c = energyPicked(kind);
+        if (!c) return;
+        anyTodo = true;
+        h += row((kind === "gas" ? "ガス" : "でんき") + "の現在の会社",
+          "<b>" + esc(c.name) + "</b>"
+          + (c.tel ? "　解約のご連絡先: <b>" + esc(c.tel) + "</b>" : "　（連絡先は未登録）"));
+      });
     }
     var gd = state.todoDenkiGas ? gasDiscountPicked() : [];
     if (state.todoHikari) apps.push("光申し込み");
@@ -3752,6 +3821,29 @@
         + "</select>";
     });
     h += '<div class="actions"><button class="btn-sub" data-add="accessories" type="button">＋ 商品を追加</button></div></div>';
+
+    // でんき・ガスの現在の会社と連絡先
+    h += '<div class="master-plan"><h3>でんき・ガスの現在の会社</h3>';
+    h += '<p class="hint">でんき・ガスをお申し込みのとき、<strong>いまご契約中の会社を選ぶと解約のご連絡先が出ます</strong>。'
+      + '電話番号は変わることがあるので、変わったらここで直してください。'
+      + '<strong>番号が空欄の会社は、お手元の番号を登録してお使いください。</strong></p>';
+    [["denki", "でんき"], ["gas", "ガス"]].forEach(function (kd) {
+      var key = kd[0];
+      var list = (MASTER.energyCompanies && MASTER.energyCompanies[key]) || [];
+      h += '<div class="plan-sec"><span class="plan-lbl">' + kd[1] + "</span>";
+      list.forEach(function (c, i) {
+        h += '<div class="adhoc-row">'
+          + '<button class="mv" data-en-up="' + key + ":" + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-en-down="' + key + ":" + i + '" type="button" aria-label="下へ"' + (i === list.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<input type="text" value="' + esc(c.name || "") + '" placeholder="会社名" data-en-name="' + key + ":" + i + '">'
+          + '<input type="tel" value="' + esc(c.tel || "") + '" placeholder="連絡先（例）0120-000-000" data-en-tel="' + key + ":" + i + '">'
+          + '<button class="del" data-en-del="' + key + ":" + i + '" type="button" aria-label="削除">×</button>'
+          + "</div>";
+      });
+      h += '<div class="actions"><button class="btn-sub" data-en-add="' + key + '" type="button">＋ 会社を追加</button></div>';
+      h += "</div>";
+    });
+    h += "</div>";
 
     // 料金マスタの履歴
     h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
@@ -4464,6 +4556,55 @@
     if (o.priceChoices.indexOf(num(o.price)) < 0) o.price = o.priceChoices[0];
   }
 
+  /* でんき・ガスの会社と連絡先の編集 */
+  function energyTouch(full) {
+    markEdited();
+    if (full) renderMasterTab();
+    renderEnergyNow();
+    renderStaffSheet();
+  }
+  function handleEnergyEvent(t, evType) {
+    if (!t || !t.getAttribute) return false;
+    function g(n) { return t.getAttribute("data-en-" + n); }
+    var v, parts, list;
+    function listOf(k) {
+      if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
+      if (!MASTER.energyCompanies[k]) MASTER.energyCompanies[k] = [];
+      return MASTER.energyCompanies[k];
+    }
+    if (evType === "input") {
+      if ((v = g("name")) != null) { parts = v.split(":"); listOf(parts[0])[+parts[1]].name = t.value; energyTouch(false); return true; }
+      if ((v = g("tel")) != null) { parts = v.split(":"); listOf(parts[0])[+parts[1]].tel = t.value; energyTouch(false); return true; }
+    }
+    if (evType !== "click") return false;
+    if ((v = g("add")) != null) {
+      listOf(v).push({ id: "en_" + Date.now(), name: "", tel: "" });
+      energyTouch(true); return true;
+    }
+    if ((v = g("del")) != null) {
+      parts = v.split(":");
+      list = listOf(parts[0]);
+      var c = list[+parts[1]];
+      if (!window.confirm("「" + (c.name || "この会社") + "」を削除しますか？")) return true;
+      store.patterns.forEach(function (pt) {
+        var k = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
+        if (pt[k] === c.id) pt[k] = "";
+      });
+      list.splice(+parts[1], 1);
+      energyTouch(true); return true;
+    }
+    var up = g("up"), dn = g("down");
+    if (up != null || dn != null) {
+      parts = (up != null ? up : dn).split(":");
+      list = listOf(parts[0]);
+      var i = +parts[1], j = up != null ? i - 1 : i + 1;
+      if (j < 0 || j >= list.length) return true;
+      var tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+      energyTouch(true); return true;
+    }
+    return false;
+  }
+
   /* ---------- 料金プランの編集 ----------
    * 新しいプランが出たときに、店舗がここから登録できるようにする。 */
   function newPlan() {
@@ -5012,6 +5153,18 @@
         saveState(); renderStaffSheet();
       });
     });
+    // 現在の会社（同時に1社だけ・もう一度押すと解除）
+    var enWrap = $("energyNowBox");
+    if (enWrap) enWrap.addEventListener("change", function (e) {
+      var v = e.target.getAttribute && e.target.getAttribute("data-energynow");
+      if (!v) return;
+      var parts = v.split(":");
+      var key = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
+      state[key] = e.target.checked ? parts[1] : "";
+      renderEnergyNow();
+      saveState();
+      renderStaffSheet();
+    });
     // 種類の選択（同時に1つだけ・もう一度押すと解除）
     [["data-dcardtype", "todoDcardType"], ["data-denkitype", "todoDenkiType"], ["data-gastype", "todoGasType"]].forEach(function (pair) {
       document.querySelectorAll("[" + pair[0] + "]").forEach(function (cb) {
@@ -5273,6 +5426,7 @@
     $("masterBody").addEventListener("input", function (e) {
       var t = e.target;
       if (handlePlanEvent(t, "input")) return;
+      if (handleEnergyEvent(t, "input")) return;
       var path = t.getAttribute("data-mpath");
       if (path) {
         setPath(path, num(t.value));
@@ -5306,6 +5460,7 @@
     });
     $("masterBody").addEventListener("click", function (e) {
       if (handlePlanEvent(e.target, "click")) return;
+      if (handleEnergyEvent(e.target, "click")) return;
       var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");
       if (hr) {
         if (window.confirm("この時点の内容に戻しますか？\nいまの内容も履歴に残るので、あとから戻せます。")) histRestore(hr);

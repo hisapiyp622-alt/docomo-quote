@@ -843,5 +843,66 @@ const DEFAULT_DATA = {
       "name": "ACアダプタ",
       "price": 2420
     }
-  ]
+  ],
+  "energyCompanies": {
+    "denki": [
+      {
+        "id": "kepco",
+        "name": "関西電力",
+        "tel": "0800-777-8810"
+      },
+      {
+        "id": "osakagas",
+        "name": "大阪ガスのでんき",
+        "tel": "0120-000-555"
+      },
+      {
+        "id": "au",
+        "name": "auでんき",
+        "tel": "0120-925-881"
+      },
+      {
+        "id": "softbank",
+        "name": "SoftBankでんき",
+        "tel": "0800-170-3710"
+      },
+      {
+        "id": "jcom",
+        "name": "J:COM電力",
+        "tel": ""
+      },
+      {
+        "id": "eo",
+        "name": "eo電気",
+        "tel": ""
+      },
+      {
+        "id": "coop",
+        "name": "コープでんき",
+        "tel": ""
+      },
+      {
+        "id": "stoene",
+        "name": "ストエネでんき",
+        "tel": ""
+      }
+    ],
+    "gas": [
+      {
+        "id": "osakagas",
+        "name": "大阪ガス",
+        "tel": "0120-099-209"
+      },
+      {
+        "id": "kepco",
+        "name": "関電ガス",
+        "tel": "0800-777-7109"
+      },
+      {
+        "id": "jcom",
+        "name": "J:COMガス",
+        "tel": ""
+      }
+    ]
+  }
 };
