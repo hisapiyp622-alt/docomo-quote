@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.13.1";
+  var APP_VERSION = "1.13.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2064,7 +2064,12 @@
   function energyList(kind) {
     return (MASTER.energyCompanies && MASTER.energyCompanies[kind]) || [];
   }
+  function energyTypePicked(kind) {
+    return kind === "gas" ? state.todoGasType : state.todoDenkiType;
+  }
   function energyPicked(kind) {
+    // プランを選んでいないときは、現在の会社も無いものとして扱う
+    if (!energyTypePicked(kind)) return null;
     var id = kind === "gas" ? state.todoGasNow : state.todoDenkiNow;
     if (!id) return null;
     return energyList(kind).filter(function (c) { return c.id === id; })[0] || null;
@@ -2938,9 +2943,8 @@
     $("usePointAmount").value = state.usePointAmount || "";
     $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
-    $("energyTypeWrap").hidden = !state.todoDenkiGas;
-    var enBox = $("energyNowBox");
-    if (enBox) enBox.hidden = !state.todoDenkiGas;
+    $("denkiTypeWrap").hidden = !state.todoDenkiGas;
+    $("gasTypeWrap").hidden = !state.todoDenkiGas;
     document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
     document.querySelectorAll("[data-denkitype]").forEach(function (cb) { cb.checked = state.todoDenkiType === cb.getAttribute("data-denkitype"); });
     document.querySelectorAll("[data-gastype]").forEach(function (cb) { cb.checked = state.todoGasType === cb.getAttribute("data-gastype"); });
@@ -3105,7 +3109,9 @@
       var wrap = $(kind === "gas" ? "gasNowWrap" : "denkiNowWrap");
       if (!wrap) return;
       var list = energyList(kind);
-      if (!state.todoDenkiGas || !list.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+      if (!state.todoDenkiGas || !energyTypePicked(kind) || !list.length) {
+        wrap.hidden = true; wrap.innerHTML = ""; return;
+      }
       wrap.hidden = false;
       var cur = kind === "gas" ? state.todoGasNow : state.todoDenkiNow;
       var h = '<span class="sub-label">' + (kind === "gas" ? "ガス" : "でんき") + "の現在の会社</span>";
@@ -5159,24 +5165,31 @@
         state[id] = this.checked;
         if (id === "todoDcard") { $("dcardTypeWrap").hidden = !this.checked; if (!this.checked) state.todoDcardType = ""; }
         if (id === "todoDenkiGas") {
-          $("energyTypeWrap").hidden = !this.checked;
-          if (!this.checked) { state.todoDenkiType = ""; state.todoGasType = ""; state.todoGasDiscount = {}; }
+          $("denkiTypeWrap").hidden = !this.checked;
+          $("gasTypeWrap").hidden = !this.checked;
+          if (!this.checked) {
+            state.todoDenkiType = ""; state.todoGasType = ""; state.todoGasDiscount = {};
+            state.todoDenkiNow = ""; state.todoGasNow = "";
+          }
         }
         syncFormFromState();
         saveState(); renderStaffSheet();
       });
     });
     // 現在の会社（同時に1社だけ・もう一度押すと解除）
-    var enWrap = $("energyNowBox");
-    if (enWrap) enWrap.addEventListener("change", function (e) {
-      var v = e.target.getAttribute && e.target.getAttribute("data-energynow");
-      if (!v) return;
-      var parts = v.split(":");
-      var key = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
-      state[key] = e.target.checked ? parts[1] : "";
-      renderEnergyNow();
-      saveState();
-      renderStaffSheet();
+    ["denkiNowWrap", "gasNowWrap"].forEach(function (id) {
+      var enWrap = $(id);
+      if (!enWrap) return;
+      enWrap.addEventListener("change", function (e) {
+        var v = e.target.getAttribute && e.target.getAttribute("data-energynow");
+        if (!v) return;
+        var parts = v.split(":");
+        var key = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
+        state[key] = e.target.checked ? parts[1] : "";
+        renderEnergyNow();
+        saveState();
+        renderStaffSheet();
+      });
     });
     // 種類の選択（同時に1つだけ・もう一度押すと解除）
     [["data-dcardtype", "todoDcardType"], ["data-denkitype", "todoDenkiType"], ["data-gastype", "todoGasType"]].forEach(function (pair) {
@@ -5187,6 +5200,12 @@
             o.checked = state[pair[1]] === o.getAttribute(pair[0]);
           });
           if (pair[1] === "todoGasType") { state.todoGasDiscount = {}; renderGasDiscounts(); }
+          if (pair[1] === "todoDenkiType" || pair[1] === "todoGasType") {
+            // プランを外したら、その現在の会社の選択も外す
+            if (!state.todoDenkiType) state.todoDenkiNow = "";
+            if (!state.todoGasType) state.todoGasNow = "";
+            renderEnergyNow();
+          }
           saveState(); renderStaffSheet();
         });
       });
