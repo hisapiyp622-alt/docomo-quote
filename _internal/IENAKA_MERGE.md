@@ -22,6 +22,34 @@
 - **単体版の廃止** … 統合版が固まるまで残す
 - 社内版への反映 … 指示を受けてから
 
+## 統合で実際に起きたこと（2026-07-30 追記・次の統合のための教訓）
+
+実装（1.15.0〜1.15.1）で計画から変わった点・つまずいた点の記録です。
+**奪還ツールなど、次に何かを統合するときは必ずここを読んでください。**
+
+1. **idのリネームは「全部」だった。** `ienaka-app` の画面idと `data-` 属性は
+   ひとつ残らず `ie` 接頭辞へ付け替えた。途中でうっかり残した
+   `$("clearQuote")`（ケータイ側の同名ボタンを握って state を差し替えた）、
+   `bindExtras("extraMonthlyList")`（接頭辞なしのid）が実害を出している。
+   **最初から接頭辞付きで作っていれば発生しなかった作業。**
+2. **公開APIの最終形**（計画時の案から変更）:
+   ```js
+   window.KQ_IENAKA = { defaultState, attach(st, cb), bind, syncForm,
+     applyDefaults, calc, render, segLabel, isOn(), label(), isHikari,
+     routerRental(), sheetHtml(setWariFromPhone), reset() };
+   ```
+   `attach()` で外から状態を渡す形にしたことで、保存・同期から切り離せた。
+3. **復元の3経路を1つ漏らした。** `loadState()` には通したが、
+   保存した見積もりを開く `loadSavedQuote()` と端末間同期の
+   `applyRemoteQuote()` に通し忘れ、後から `applyIenaka()` に共通化して直した。
+4. **入れ物（オブジェクト）は差し替えず、中身だけ入れ替える。**
+   モジュール側が `store.ienaka` の参照を握っているため、
+   `store.ienaka = {...}` と差し替えると画面が古い入れ物を見続ける。
+   `applyIenaka()` はキーを全部消してから入れ直す形にしてある。
+5. **`attach()` 前に `syncForm()` が呼ばれて落ちた。**
+   `if (!state) return;` のガードを `syncForm` / `applyDefaults` / `renderOpts`
+   に入れて解決。モジュールの公開関数には最初からガードを入れること。
+
 ## 方針
 
 **イエナカをケータイ製品版の「タブ」として取り込み、イエナカの入力内容を
@@ -41,6 +69,7 @@
    `ienaka-app/app.js` から**計算と画面描画だけ**を移植し、別のIIFEにして公開する。
 
    ```js
+   // 計画時の案。実装した最終形は上の「統合で実際に起きたこと」を参照
    window.KQ_IENAKA = { defaultState, calc, bindEvents, syncForm, sheetRows, IENAKA_OPTS };
    ```
 
