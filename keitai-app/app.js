@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.26.0";
+  var APP_VERSION = "1.27.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3731,6 +3731,10 @@
       b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
     }[state.payMethod] || "";
     function row(k, v) { return '<tr><td style="width:38%">' + k + "</td><td>" + v + "</td></tr>"; }
+    // ドコモ光か（ahamo光・home 5G は別の扱いになる）
+    function isDocomoHikari(ie) {
+      return ie.product === "hikari1g" || ie.product === "hikari10g";
+    }
     /* 1ギガの無線ルーターの申し込み先。プロバイダごとに違う。 */
     var ROUTER_QR = {
       "OCN インターネット": "router1gOcn",
@@ -3742,7 +3746,8 @@
      * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。
      *
      * 出す条件
-     *   toss         … 光のとき（工事日を確定させるのに毎回入力が要る）
+     *   toss         … ドコモ光のとき（工事日を確定させるのに毎回入力が要る）
+     *                    ahamo光は取り扱いが違うため出さない
      *   router1g:*   … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
      *   ocnRouter10g … ドコモ光10ギガでルーターを買っていただくとき
      *
@@ -3752,7 +3757,9 @@
       if (typeof KEITAI_QR === "undefined") return "";
       var ie = store.ienaka || {};
       var keys = [];
-      if (ieOn ? KQ_IENAKA.isHikari() : state.todoHikari) keys.push("toss");
+      /* 「光・5G」の入力がまだ無いときは、どの商材か分からないので出しておく
+       * （手続き内容で光にチェックがあるとき）。 */
+      if (ieOn ? isDocomoHikari(ie) : state.todoHikari) keys.push("toss");
       if (ieOn) {
         if (ie.product === "hikari1g" && KQ_IENAKA.routerRental() === "ari"
           && ROUTER_QR[ie.provider]) {
