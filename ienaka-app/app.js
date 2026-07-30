@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.1.2";
+  var APP_VERSION = "2.2.0";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -28,7 +28,7 @@
       name: "ahamo光 10ギガ",
       monthly: { ht: { A: 5610, B: 5610 }, ms: { A: 5610, B: 5610 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
-      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。"
+      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。ルーターはレンタル550円/月または持込。"
     },
     home5g: {
       name: "home 5G",
@@ -38,6 +38,30 @@
     }
   };
   function is10g() { return state.product === "hikari10g" || state.product === "ahamo10g"; }
+  /* 10Gルーターを買っていただくのはドコモ光 10ギガだけ。
+   * ahamo光はプロバイダ一体型で、対応ルーターは月額レンタルか持込になる。 */
+  function canBuy10gRouter() { return state.product === "hikari10g"; }
+  /* 10ギガの対応ルーターは、プロバイダによって取り扱いが違う。
+   * @nifty … 優待価格の分割購入。バッファロー WSR6500BE6P-10G を
+   *          月額418円（税込）×48回＝総額20,064円（税込）。
+   *          ニフティで購入する場合、ドコモの「10Gbps対応無線LANルーター」
+   *          （月額550円）の契約は不要。
+   *          ※ページの「380円/月・総額18,240円」は税抜表示。
+   *            この見積もりは全体を税込で作っているため税込額を既定にしている。
+   *          出典: https://setsuzoku.nifty.com/docomo/option/router_purchase/
+   *                （2026-07-30 確認）
+   * それ以外 … 一括購入の想定。 */
+  var ROUTER10G = {
+    "@nifty": { price: 20064, pay: "b48" }
+  };
+  var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
+  function router10gDefault() { return ROUTER10G[state.provider] || ROUTER10G_DEFAULT; }
+  // プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す
+  function applyRouter10gDefault() {
+    var d = router10gDefault();
+    state.router10gPrice = d.price;
+    state.router10gPay = d.pay;
+  }
   function isHikari() { return state.product !== "home5g"; }
   /* 月額オプション（チェック式・金額は見積もりごとに編集可）
    * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
@@ -49,9 +73,23 @@
     { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "skyp", name: "映像サービス", price: 0, sumOf: "needsVideo", for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 映像サービスの内訳（「映像サービス」にチェックしたときだけ表示）。金額は見積もりごとに変更可。
+     * 社内版（ienaka/ienaka.js）から移植。これまで見出し1行・0円のままで、
+     * チェックしても月額に乗らない誤りがあった。 */
+    { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン（チューナーレンタル込み）", price: 3850, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsHikariHajime", name: "ひかりTV初めて割（2年間）", price: -1100, timedMonths: 24, needsVideo: true, needsHikariTv: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBase", name: "スカパー！基本料", price: 429, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBasic", name: "スカパー！基本プラン", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSelect5", name: "スカパー！セレクト5", price: 1980, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSelect10", name: "スカパー！セレクト10", price: 2860, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g", "hikari10g"] },
-    { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g", "ahamo10g"] },
+    /* ahamo光はプロバイダ一体型で、OCNバーチャルコネクト対応ルーターが要る。
+     * ドコモからの月額レンタルか、お客様の持込になる（優待購入の取り扱いは無い）。
+     * 1ギガ330円／10ギガ550円。
+     * 出典: https://www.docomo.ne.jp/internet/ahamo_hikari/10g_plan/ （2026-07-30 確認） */
+    { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g"] },
+    { id: "ahamoRouter10g", name: "ルーターレンタル（10ギガ・OCNバーチャルコネクト対応）", price: 550, for: ["ahamo10g"] },
     { id: "apHome", name: "あんしんパック ホーム（デジタル機器補償＋ネットトータルサポート＋ネットワークセキュリティ）", price: 968, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
     { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
@@ -75,7 +113,7 @@
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
-      router10g: true, router10gPrice: 6780,
+      router10g: true, router10gPrice: 6780, router10gPay: "once",
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
     };
@@ -104,6 +142,16 @@
   function staffLabel() { return (activeStaff().name || "").trim(); }
   function quoteKey(staffId) { return KEY + ":" + (staffId || activeStaff().id); }
 
+  /* 古い形の保存データを、いまの形へ引き継ぐ。
+   * 起動時と端末間同期の両方から呼ぶこと。 */
+  function migrateState(st) {
+    /* ahamo光のルーターレンタルを1ギガと10ギガで分けた（2026-07-30）。
+     * 10ギガは月額550円のため、以前の見積もりを新しい項目へ移す。 */
+    if (st.product === "ahamo10g" && st.opts && st.opts.ahamoRouter && !st.opts.ahamoRouter10g) {
+      st.opts.ahamoRouter10g = true;
+      delete st.opts.ahamoRouter;
+    }
+  }
   function loadState() {
     var st = defaultState();
     try {
@@ -113,6 +161,7 @@
       var saved = JSON.parse(raw || "null");
       if (saved) {
         st = Object.assign(defaultState(), saved);
+        migrateState(st);
         // エリア対応前の保存データ: 旧既定値(10,000pt)のままなら新しいエリア別既定値へ更新
         if (saved.region == null && (num(st.dpoint) === 10000 || !num(st.dpoint))) {
           st.dpoint = dpointDefaultFor(st.product, st.applyType);
@@ -141,8 +190,31 @@
     } else {
       state.baseMonthly = p.monthly[state.housing][state.ptype];
       state.kojiFee = p.koji[state.housing];
+      if (canBuy10gRouter()) applyRouter10gDefault();
     }
     state.jimuFee = p.jimu;
+  }
+
+  // 見出しオプション（映像サービスなど）に紐づく、選択中の内訳の合計月額
+  function groupTotal(parent) {
+    var t = 0;
+    IENAKA_OPTS.forEach(function (c) {
+      if (!c[parent.sumOf] || !state.opts[c.id]) return;
+      if (c.for.indexOf(state.product) < 0) return;
+      if (c.needsHikariTv && !state.opts.vsHikariTv) return;
+      t += state.optPrices[c.id] != null ? num(state.optPrices[c.id]) : c.price;
+    });
+    return t;
+  }
+  // 見出しの合計表示だけを更新する（内訳の金額を編集した直後に使う）
+  function updateGroupTotals() {
+    IENAKA_OPTS.forEach(function (o) {
+      if (!o.sumOf || !state.opts[o.id]) return;
+      var cb = document.querySelector('#ienakaOptList input[data-opt="' + o.id + '"]');
+      if (!cb) return;
+      var span = cb.parentElement.querySelector(".opt-price");
+      if (span) span.textContent = "合計 " + yen(groupTotal(o)) + "/月";
+    });
   }
 
   /* ---------- 計算 ---------- */
@@ -150,12 +222,18 @@
     var p = PRODUCTS[state.product];
     var rows = [{ name: p.name + productLabel(), amount: num(state.baseMonthly) }];
     var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var optTimed = []; // 期間限定のオプション割引（あとで月額の推移へ反映）
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       if (o.needsPhone && !phoneOn) return; // 光電話の付加サービスは光電話利用時のみ
+      if (o.needsVideo && !state.opts.skyp) return; // 映像サービスの内訳は映像サービス利用時のみ
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
       if (!state.opts[o.id]) return;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
-      rows.push({ name: o.name, amount: pr });
+      if (o.timedMonths) { optTimed.push({ name: o.name, amount: pr, from: 1, to: o.timedMonths }); return; }
+      if (o.sumOf) return; // 見出し行。金額は内訳側で計上する
+      // 映像サービス（ひかりTV・スカパー）はドコモ光の利用料金ではないため、dカード還元の対象外
+      rows.push({ name: o.name, amount: pr, noDcard: !!(o.needsVideo || o.needsHikariTv) });
     });
     state.extraMonthly.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -164,7 +242,7 @@
 
     // dカードGOLD/PLATINUM還元: 利用料金1,100円（税込）ごとに100pt（GOLD 10%）/ 200pt（PLATINUM 20%）
     var dcardEligible = 0;
-    rows.forEach(function (x) { if (x.amount > 0) dcardEligible += x.amount; });
+    rows.forEach(function (x) { if (x.amount > 0 && !x.noDcard) dcardEligible += x.amount; });
     var dcardRate = state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
     var dcardPt = state.dcard === "none" ? 0 : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
@@ -175,6 +253,7 @@
 
     // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
     var timed = [], deviceNote = "";
+    optTimed.forEach(function (t) { timed.push(t); });
 
     // 10ギガ ワンコインキャンペーン: 開通〜最大6か月目まで基本料500円（税込）
     var onecoinOn = is10g() && state.onecoin && num(state.baseMonthly) > 500;
@@ -249,6 +328,12 @@
        *       https://www.docomo.ne.jp/info/notice/page/260423_00.html （2026-07-30 確認） */
       timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });
     }
+    // 10Gルーターの分割購入（48回）。一括のときは下の初期費用へ回す
+    var r10g = canBuy10gRouter() && state.router10g ? num(state.router10gPrice) : 0;
+    var r10gSplit = r10g > 0 && state.router10gPay === "b48";
+    if (r10gSplit) {
+      timed.push({ name: "10Gルーター 分割（48回・総額" + yen(r10g) + "）", amount: Math.floor(r10g / 48), from: 1, to: 48 });
+    }
 
     // 期間セグメント（変化点ごとの月額）
     var permanent = 0;
@@ -275,8 +360,9 @@
     // 視聴サービス登録料は手数料のため常に一括で初期費用へ
     tvRegRows.forEach(function (x) { initRows.push(x); });
     // 10Gルーター購入費用（10ギガ選択時・チェック式）
-    if (is10g() && state.router10g && num(state.router10gPrice) > 0) {
-      initRows.push({ name: "10Gルーター購入費用", amount: num(state.router10gPrice) });
+    // 10Gルーター購入費用（分割のときは月額に入っている）
+    if (r10g > 0 && !r10gSplit) {
+      initRows.push({ name: "10Gルーター購入費用", amount: r10g });
     }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
@@ -323,9 +409,15 @@
       if (o.for.indexOf(state.product) < 0) return;
       var shinki = state.applyType === "shinki" && state.product !== "home5g";
       if (o.needsPhone && !(state.opts.denwa || state.opts.denwaBV)) return; // 光電話チェック時のみ表示
+      if (o.needsVideo && !state.opts.skyp) return; // 映像サービスチェック時のみ表示
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
       var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
-      h += '<label class="check ienaka-opt' + (o.needsPhone ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
-        + esc(o.name) + ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>'
+      // 見出し行は金額の入力欄を持たず、選んだ内訳の合計を出す
+      var priceHtml = o.sumOf
+        ? (state.opts[o.id] ? ' <span class="opt-price">合計 ' + yen(groupTotal(o)) + "/月</span>" : "")
+        : ' <span class="opt-price"><input type="number" data-optprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>';
+      h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-opt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
+        + esc(o.name) + priceHtml
         + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
       // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
@@ -417,10 +509,26 @@
     $("dpointField").hidden = !isHikari();
     $("dpointHint").hidden = !isHikari();
     $("dcard").value = state.dcard || "none";
-    $("router10gWrap").hidden = !is10g();
+    var r10gOn = canBuy10gRouter() && state.router10g !== false;
+    $("router10gWrap").hidden = !canBuy10gRouter();
     $("router10g").checked = state.router10g !== false;
-    $("router10gPriceField").hidden = !is10g() || state.router10g === false;
+    $("router10gPriceField").hidden = !r10gOn;
     $("router10gPrice").value = state.router10gPrice || "";
+    $("router10gPayField").hidden = !r10gOn;
+    $("router10gPay").value = state.router10gPay || "once";
+    var r10gHint2 = $("router10gHint");
+    r10gHint2.hidden = !r10gOn;
+    if (r10gOn) {
+      var rp10s = num(state.router10gPrice);
+      r10gHint2.innerHTML = (state.provider === "@nifty"
+        ? "@nifty の優待価格（バッファロー WSR6500BE6P-10G）。<strong>税込20,064円</strong>"
+          + "（ページの「18,240円」は税抜）。ニフティで購入する場合、ドコモの"
+          + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
+        : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
+        + (state.router10gPay === "b48" && rp10s > 0
+          ? "　48回分割で <strong>" + yen(Math.floor(rp10s / 48)) + "/月</strong>（総額 " + yen(rp10s) + "）"
+          : "");
+    }
     $("custName").value = state.custName;
     $("quoteMemo").value = state.quoteMemo;
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
@@ -547,6 +655,7 @@
       // お客様名は同期しないため、この端末で入力済みの名前を保持する
       if (incoming && !incoming.custName && state.custName) incoming.custName = state.custName;
       state = Object.assign(defaultState(), incoming);
+      migrateState(state);
       try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {}
       syncForm();
       recalc();
@@ -670,8 +779,11 @@
       // その他費用（請求外・購入品）
       var others = [];
       onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
-      if (is10g() && state.router10g && num(state.router10gPrice) > 0) {
-        others.push("10Gルーター購入費用 " + yen(num(state.router10gPrice)));
+      if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
+        var rp10 = num(state.router10gPrice);
+        others.push(state.router10gPay === "b48"
+          ? "10Gルーター 48回分割 " + yen(Math.floor(rp10 / 48)) + "/月（総額 " + yen(rp10) + "）"
+          : "10Gルーター購入費用 " + yen(rp10));
       }
       if (others.length) {
         kh += '<div class="ks-sub">その他費用）</div>';
@@ -917,6 +1029,9 @@
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
       if (o.needsPhone && !phoneOn) return;
+      if (o.needsVideo && !state.opts.skyp) return;
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return;
+      if (o.sumOf) return; // 見出し行は内訳で表現する
       if (!state.opts[o.id]) return;
       anyOpt = true;
       var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
@@ -947,7 +1062,11 @@
       h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
     }
     r.tvRegRows.forEach(function (x) { h += row(esc(x.name), yen(x.amount)); });
-    if (is10g() && state.router10g && num(state.router10gPrice) > 0) h += row("10Gルーター購入", yen(num(state.router10gPrice)));
+    if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
+      h += row("10Gルーター購入", state.router10gPay === "b48"
+        ? yen(Math.floor(num(state.router10gPrice) / 48)) + "/月 × 48回（総額 " + yen(num(state.router10gPrice)) + "）"
+        : yen(num(state.router10gPrice)));
+    }
     state.extraInitial.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
       h += row(esc(a.name || "追加項目"), yen(num(a.amount)));
@@ -1007,7 +1126,12 @@
   });
   $("housing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
   $("ptype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
-  $("provider").addEventListener("change", function () { state.provider = this.value; syncForm(); recalc(); });
+  $("provider").addEventListener("change", function () {
+    state.provider = this.value;
+    // 10ギガの対応ルーターはプロバイダで変わるため、価格と払い方を入れ直す
+    if (canBuy10gRouter()) applyRouter10gDefault();
+    syncForm(); recalc();
+  });
   $("providerType").addEventListener("change", function () { state.providerType = this.value; recalc(); });
   $("routerRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
@@ -1047,7 +1171,8 @@
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
   $("router10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
-  $("router10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); recalc(); });
+  $("router10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); syncForm(); recalc(); });
+  $("router10gPay").addEventListener("change", function () { state.router10gPay = this.value; syncForm(); recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
@@ -1097,7 +1222,11 @@
   });
   $("ienakaOptList").addEventListener("input", function (e) {
     var id = e.target.getAttribute("data-optprice");
-    if (id) { state.optPrices[id] = num(e.target.value); recalc(); }
+    if (!id) return;
+    state.optPrices[id] = num(e.target.value);
+    recalc();
+    var od = IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
+    if (od && (od.needsVideo || od.needsHikariTv)) updateGroupTotals();
   });
   function bindExtras(listId) {
     $(listId).addEventListener("input", function (e) {

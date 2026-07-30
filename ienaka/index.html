@@ -130,6 +130,14 @@
         <label for="router10gPrice">ルーター価格</label>
         <input type="number" id="router10gPrice" inputmode="numeric" min="0"> 円
       </div>
+      <div class="field" id="router10gPayField" hidden>
+        <label for="router10gPay">ルーターのお支払い</label>
+        <select id="router10gPay">
+          <option value="once">一括（初期費用）</option>
+          <option value="b48">48回分割（月額に加算）</option>
+        </select>
+      </div>
+      <p class="hint" id="router10gHint" hidden></p>
       <div class="hint koji-summary" id="kojiSummary" hidden></div>
       <p class="hint" id="kojiHint">契約事務手数料（4,950円）と工事費は商材・申込区分から自動判定して下のまとめに表示します（新規=28,600円＋オプション工事料／転用・事業者変更=0円）。テレビ視聴サービス登録料（3,080円）は手数料のため分割対象外で常に一括です。特殊なケースは「追加項目」で調整してください。</p>
       <div class="adhoc-list" id="extraInitialList"></div>
