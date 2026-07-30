@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.18.0";
+  var APP_VERSION = "1.18.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3357,9 +3357,17 @@
     document.querySelectorAll("[data-storepay]").forEach(function (cb) {
       cb.checked = !!(state.storePay || {})[cb.getAttribute("data-storepay")];
     });
-    $("usePoint").checked = !!state.usePoint;
-    $("usePointField").hidden = !state.usePoint;
-    $("usePointAmount").value = state.usePointAmount || "";
+    /* dポイント利用は⑤端末代金と⑦初期費用の両方から操作できる。
+     * 充当先が店頭頭金（⑤で決める金額）なので、端末代金を入れながら
+     * その場で決められるようにしてある。設定はひとつを共有する。 */
+    ["", "dev"].forEach(function (pre) {
+      var chk = $(pre ? "devUsePoint" : "usePoint");
+      var fld = $(pre ? "devUsePointField" : "usePointField");
+      var amt = $(pre ? "devUsePointAmount" : "usePointAmount");
+      if (chk) chk.checked = !!state.usePoint;
+      if (fld) fld.hidden = !state.usePoint;
+      if (amt && document.activeElement !== amt) amt.value = state.usePointAmount || "";
+    });
     renderPointUse();
     $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
@@ -3389,10 +3397,13 @@
   /* dポイントを頭金へ充当した結果を、入力欄の下に出す。
    * 頭金より多く入れたときに、余りがあることが分かるようにするため。 */
   function renderPointUse(r) {
-    var el = $("usePointHint");
-    if (!el) return;
+    var els = [$("usePointHint"), $("devUsePointHint")].filter(Boolean);
+    if (!els.length) return;
     var d = (r || calcFor(state)).device;
-    if (!state.usePoint || !d.pointUse) { el.hidden = true; return; }
+    if (!state.usePoint || !d.pointUse) {
+      els.forEach(function (e) { e.hidden = true; });
+      return;
+    }
     var t;
     if (d.atamaPoint > 0) {
       t = "店頭頭金 " + yen(d.atamaBeforePoint) + " に "
@@ -3405,8 +3416,7 @@
       t = "充当できる店頭頭金がありません。"
         + d.pointUse.toLocaleString("ja-JP") + "pt は<strong>この見積もりに反映していません</strong>（レジでのご案内になります）。";
     }
-    el.innerHTML = t;
-    el.hidden = false;
+    els.forEach(function (e) { e.innerHTML = t; e.hidden = false; });
   }
   // 機種名・機種代金が入っているのに見積もりへ反映されないケースを検出する
   // 値引きを入れたときに、いくらになったのかを入力欄の下に出す
@@ -6012,14 +6022,21 @@
         saveState(); renderStaffSheet();
       });
     });
-    $("usePoint").addEventListener("change", function () {
-      state.usePoint = this.checked;
-      $("usePointField").hidden = !this.checked;
-      recalc();
-      saveState(); renderStaffSheet();
+    ["usePoint", "devUsePoint"].forEach(function (id) {
+      $(id).addEventListener("change", function () {
+        state.usePoint = this.checked;
+        syncFormFromState();
+        recalc();
+        renderStaffSheet();
+      });
     });
-    $("usePointAmount").addEventListener("input", function () {
-      state.usePointAmount = num(this.value); recalc();
+    ["usePointAmount", "devUsePointAmount"].forEach(function (id) {
+      $(id).addEventListener("input", function () {
+        state.usePointAmount = num(this.value);
+        var other = $(id === "usePointAmount" ? "devUsePointAmount" : "usePointAmount");
+        if (other) other.value = this.value;
+        recalc();
+      });
     });
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.addEventListener("change", function () {
