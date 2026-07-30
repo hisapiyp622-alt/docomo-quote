@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.24.0";
+  var APP_VERSION = "1.25.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3725,18 +3725,40 @@
       b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
     }[state.payMethod] || "";
     function row(k, v) { return '<tr><td style="width:38%">' + k + "</td><td>" + v + "</td></tr>"; }
-    /* ドコモ光の受付チャット窓口。登録スタッフがその場で読み取れるよう、
+    /* 手続きに要るページのQR。登録スタッフがその場で読み取れるよう、
      * 引き継ぎシートに置く。図形は qr.js に持っているので、
-     * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。 */
-    function chatQrRow() {
-      var q = (typeof KEITAI_QR !== "undefined" && KEITAI_QR.hikari) || null;
-      if (!q) return "";
-      return row("チャット窓口",
-        '<span style="display:inline-flex;align-items:center;gap:10px">'
-        + '<a href="' + esc(q.url) + '" target="_blank" rel="noopener"'
-        + ' style="width:30mm;height:30mm;flex:0 0 auto;display:block;border:1px solid var(--line)">'
-        + q.svg + "</a>"
-        + "<span>スマホで読み取るとチャットが開きます</span></span>");
+     * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。
+     *
+     * 出す条件
+     *   toss         … 光のとき（工事日を決める）
+     *   ocnRouter1g  … 1ギガ・OCN・ルーターレンタルありのとき（申し込みが要る）
+     *   ocnRouter10g … 10ギガでルーターを買っていただくとき（10ギガはレンタルが無い） */
+    function qrRowHtml(ieOn) {
+      if (typeof KEITAI_QR === "undefined") return "";
+      var ie = store.ienaka || {};
+      var keys = [];
+      if (ieOn ? KQ_IENAKA.isHikari() : state.todoHikari) keys.push("toss");
+      if (ieOn) {
+        if (ie.product === "hikari1g" && ie.provider === "OCN インターネット"
+          && KQ_IENAKA.routerRental() === "ari") {
+          keys.push("ocnRouter1g");
+        }
+        if ((ie.product === "hikari10g" || ie.product === "ahamo10g")
+          && ie.router10g && num(ie.router10gPrice) > 0) {
+          keys.push("ocnRouter10g");
+        }
+      }
+      var cards = keys.map(function (k) {
+        var q = KEITAI_QR[k];
+        if (!q) return "";
+        return '<span style="display:inline-block;vertical-align:top;text-align:center;margin-right:12px">'
+          + '<a href="' + esc(q.url) + '" target="_blank" rel="noopener"'
+          + ' style="width:28mm;height:28mm;display:block;border:1px solid var(--line)">'
+          + q.svg + "</a>"
+          + '<span style="display:block;width:28mm;margin-top:2px;font-size:.8em;line-height:1.25">'
+          + esc(q.label) + "</span></span>";
+      }).join("");
+      return cards ? row("QR（スマホで読み取り）", cards) : "";
     }
     /* 光・でんき・ガスは住所での登録が要るため、それぞれの欄に郵便番号を出す。
      * 登録する画面を開いたまま見られるよう、探しに戻らなくていい場所に置く。 */
@@ -4015,8 +4037,7 @@
     }
     if (ieOn || state.todoHikari) {
       h += zipRow();
-      // home 5G はこの窓口の取り扱いではないため、光のときだけQRを出す
-      if (ieOn ? KQ_IENAKA.isHikari() : state.todoHikari) h += chatQrRow();
+      h += qrRowHtml(ieOn);
       h += "</tbody></table>";
     }
     var secIenaka = h; h = "";
