@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.1.1";
+  var APP_VERSION = "2.1.2";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -10,13 +10,13 @@
       name: "ドコモ光 1ギガ",
       monthly: { ht: { A: 5720, B: 5940 }, ms: { A: 4400, B: 4620 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 },
-      note: "2年定期契約・税込。タイプBはタイプA＋220円。新規工事料28,600円（実質0円特典あり・進呈条件は要確認）。"
+      note: "2年定期契約・税込。タイプBはタイプA＋220円。新規工事料28,600円（実質0円特典あり・エントリー不要）。"
     },
     hikari10g: {
       name: "ドコモ光 10ギガ",
       monthly: { ht: { A: 6380, B: 6600 }, ms: { A: 6380, B: 6600 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 },
-      note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。新規工事料28,600円（実質0円特典あり）。"
+      note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。新規工事料28,600円（実質0円特典あり・エントリー不要）。"
     },
     ahamo1g: {
       name: "ahamo光 1ギガ",
@@ -242,7 +242,12 @@
       timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: Math.floor(kojiTotal / 24), from: 1, to: 24 });
     }
     if (koji > 0 && state.kojiFree) {
-      timed.push({ name: "工事費相当ポイント充当（開通6か月後から24回進呈）", amount: -kojiPt, from: 7, to: 30 });
+      /* 進呈は「ご利用開始月の7か月後の月から24か月間分割」（＝8か月目〜31か月目）。
+       * 2026年6月1日以降のお申込み分から、それまでの「1か月後の月から」より6か月遅くなった。
+       * エントリーは不要で、条件を満たせば自動で対象になる。
+       * 出典: https://www.docomo.ne.jp/campaign_event/hikari_shinkikojiryo_free/
+       *       https://www.docomo.ne.jp/info/notice/page/260423_00.html （2026-07-30 確認） */
+      timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });
     }
 
     // 期間セグメント（変化点ごとの月額）
@@ -687,7 +692,9 @@
     var kp = $("kojiPointInfo");
     if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
       kp.hidden = false;
-      kp.textContent = "工事費 実質0円特典: " + r.koji.toLocaleString("ja-JP") + "pt（期間・用途限定）を開通6か月後から24回に分けて進呈。料金充当した場合の月額推移は見積書に表示されます。";
+      kp.textContent = "工事費 実質0円特典: " + r.koji.toLocaleString("ja-JP")
+        + "pt（期間・用途限定）を、ご利用開始月の7か月後の月から24か月間に分けて進呈。"
+        + "エントリーは不要です（条件を満たせば自動で対象）。料金充当した場合の月額推移は見積書に表示されます。";
     } else { kp.hidden = true; }
     // dカードGOLD/PLATINUM還元
     var dcOn = state.dcard !== "none";
@@ -747,7 +754,7 @@
       ptRows.push({ name: "店舗独自特典ポイント進呈", pt: Math.round(num(state.storePt)) });
     }
     if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
-      ptRows.push({ name: "新規工事料 実質0円特典（開通6か月後から24回に分けて進呈）", pt: r.koji });
+      ptRows.push({ name: "新規工事料 実質0円特典（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）", pt: r.koji });
     }
     var ptTotal = 0;
     ptRows.forEach(function (x) { if (!x.monthly) ptTotal += x.pt; });
@@ -789,7 +796,7 @@
     var repSeg = seg0;
     for (var si = 0; si < r.segs.length; si++) {
       var sgi = r.segs[si];
-      if (sgi.from <= 7 && (sgi.to == null || 7 <= sgi.to)) { repSeg = sgi; break; }
+      if (sgi.from <= 8 && (sgi.to == null || 8 <= sgi.to)) { repSeg = sgi; break; }
     }
     var repLabeled = repSeg.to != null || repSeg.from > 1;
     h += "<h3>月額内訳" + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + "</h3><table><tbody>";
@@ -810,7 +817,11 @@
     h += '<tr class="total"><td>月額合計' + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + '</td><td class="amt">' + yen(repSeg.monthly) + "</td></tr>";
     h += "</tbody></table>";
     if (state.kojiFree && r.koji > 0) {
-      h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP") + 'pt・期間用途限定）が開通6か月後から24回に分けて進呈されます。上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。進呈条件・時期は店頭でご確認ください。</p>';
+      h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP")
+        + 'pt・期間用途限定）が、ご利用開始月の<b>7か月後の月から24か月間</b>に分けて進呈されます。'
+        + '<b>エントリーのお手続きは不要です</b>（条件を満たせば自動で対象）。'
+        + '進呈されるdポイントの有効期限は、進呈月を含む6か月です。'
+        + '上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。</p>';
     }
     if (r.tvRegRows && r.tvRegRows.some(function (x) { return x.name.indexOf("現地払い") >= 0; })) {
       h += '<p class="memo">※ テレビ接続工事費は、工事当日にスカパーJSATへ直接お支払いください（ドコモからの請求には含まれません）。</p>';
@@ -931,7 +942,7 @@
       h += row("工事費合計", yen(r.kojiTotal) + "（" + (state.kojiPay === "b24" ? "分割24回 " + yen(Math.floor(r.kojiTotal / 24)) + "/月" : "一括払い") + "）");
       if (r.koji > 0) h += row("　内訳: 回線 新規工事料", yen(r.koji));
       r.optKojiRows.forEach(function (x) { h += row("　内訳: " + esc(x.name), yen(x.amount)); });
-      if (r.koji > 0) h += row("工事費 実質0円特典", state.kojiFree ? "適用（開通6か月後から24回進呈・要エントリー確認）" : "適用なし");
+      if (r.koji > 0) h += row("工事費 実質0円特典", state.kojiFree ? "適用（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）" : "適用なし");
     } else if (isHikari()) {
       h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
     }
