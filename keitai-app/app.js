@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.28.0";
+  var APP_VERSION = "1.29.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -179,7 +179,7 @@
     store.active = Math.min(Math.max(it.data.active | 0, 0), 2);
     for (var i = 0; i < 3; i++) {
       store.patterns[i] = Object.assign(defaultState(), it.data.patterns[i] || {});
-      migrateEnergyTodo(store.patterns[i]);
+      migratePattern(store.patterns[i]);
     }
     state = store.patterns[store.active];
     applyIenaka(it.data.ienaka);
@@ -1454,48 +1454,7 @@
         for (var j = 0; j < 3; j++) store.patterns[j] = defaultState();
       }
     } catch (e) {}
-    // カエドキ: 旧「残価」入力から「23回分の総額（頭金込み）」へ移行
-    store.patterns.forEach(function (pt) {
-      if (!pt.kaedoki23 && pt.zanka) {
-        pt.kaedoki23 = Math.max(0, num(pt.devicePrice) - num(pt.zanka));
-      }
-      delete pt.zanka;
-    });
-    // 旧・代理店サービスのチェック状態をオプションへ統合（全パターン共通）
-    store.patterns.forEach(function (pt) {
-      if (!pt.optionKubun) pt.optionKubun = {};
-      migrateEnergyTodo(pt);
-      /* 「キャンペーン値引き」を「手値引き」と「ダイレクト割」に分けた（2026-07-30）。
-       * 以前の入力はドコモ側の施策を指していたため、ダイレクト割として引き継ぐ。 */
-      if (pt.campaignOff && !pt.directOff && !pt.tebikiOff) pt.directOff = pt.campaignOff;
-      delete pt.campaignOff;
-      if (!pt.procTodo || !Object.keys(pt.procTodo).length) {
-        pt.procTodo = {};
-        if (pt.procType) pt.procTodo[pt.procType === "plan_only" ? "plan" : pt.procType] = true;
-      }
-      if (pt.agencyOptions) {
-        Object.keys(pt.agencyOptions).forEach(function (k) {
-          if (pt.agencyOptions[k]) pt.options[k] = true;
-        });
-        delete pt.agencyOptions;
-      }
-      // 初期費用の定番項目へ移動したもののチェックを引き継ぐ
-      Object.keys(pt.options).forEach(function (k) {
-        if (pt.options[k] && MASTER.feeItems.some(function (f) { return f.id === k; })) {
-          pt.feeItems[k] = true;
-          delete pt.options[k];
-        }
-      });
-      // NETFLIX 旧3項目のチェックを統合後の1項目＋料金選択へ引き継ぐ
-      var nfMap = { op_1784430991714: 890, op_1784431033021: 1590, op_1784431044456: 2290 };
-      Object.keys(nfMap).forEach(function (k) {
-        if (pt.options[k]) {
-          pt.options.netflix = true;
-          pt.optionPrices.netflix = nfMap[k];
-        }
-        delete pt.options[k];
-      });
-    });
+    store.patterns.forEach(migratePattern);
     state = store.patterns[store.active];
     var savedIe = null;
     try { savedIe = JSON.parse(localStorage.getItem(quoteKey()) || "null"); } catch (e2) {}
@@ -1540,6 +1499,51 @@
       }
     }
     delete pt.todoDenkiGas;
+  }
+  /* 古い形の見積もりを、いまの形へ引き継ぐ。
+   * 起動時・保存済みを開くとき・端末間同期・テンプレ適用の
+   * すべての復元経路から呼ぶこと。1か所でも漏れると、
+   * 古い見積もりを開いたときだけ値引きなどが消える（実際に起きた）。 */
+  function migratePattern(pt) {
+    if (!pt) return;
+    // カエドキ: 旧「残価」入力から「23回分の総額（頭金込み）」へ移行
+    if (!pt.kaedoki23 && pt.zanka) {
+      pt.kaedoki23 = Math.max(0, num(pt.devicePrice) - num(pt.zanka));
+    }
+    delete pt.zanka;
+    if (!pt.optionKubun) pt.optionKubun = {};
+    migrateEnergyTodo(pt);
+    /* 「キャンペーン値引き」を「手値引き」と「ダイレクト割」に分けた（2026-07-30）。
+     * 以前の入力はドコモ側の施策を指していたため、ダイレクト割として引き継ぐ。 */
+    if (pt.campaignOff && !pt.directOff && !pt.tebikiOff) pt.directOff = pt.campaignOff;
+    delete pt.campaignOff;
+    if (!pt.procTodo || !Object.keys(pt.procTodo).length) {
+      pt.procTodo = {};
+      if (pt.procType) pt.procTodo[pt.procType === "plan_only" ? "plan" : pt.procType] = true;
+    }
+    // 旧・代理店サービスのチェック状態をオプションへ統合
+    if (pt.agencyOptions) {
+      Object.keys(pt.agencyOptions).forEach(function (k) {
+        if (pt.agencyOptions[k]) pt.options[k] = true;
+      });
+      delete pt.agencyOptions;
+    }
+    // 初期費用の定番項目へ移動したもののチェックを引き継ぐ
+    Object.keys(pt.options).forEach(function (k) {
+      if (pt.options[k] && MASTER.feeItems.some(function (f) { return f.id === k; })) {
+        pt.feeItems[k] = true;
+        delete pt.options[k];
+      }
+    });
+    // NETFLIX 旧3項目のチェックを統合後の1項目＋料金選択へ引き継ぐ
+    var nfMap = { op_1784430991714: 890, op_1784431033021: 1590, op_1784431044456: 2290 };
+    Object.keys(nfMap).forEach(function (k) {
+      if (pt.options[k]) {
+        pt.options.netflix = true;
+        pt.optionPrices.netflix = nfMap[k];
+      }
+      delete pt.options[k];
+    });
   }
   function saveState() {
     try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
@@ -1801,7 +1805,7 @@
         var pt = incoming.patterns[i] || {};
         if (!pt.custName && mine) pt.custName = mine;
         store.patterns[i] = Object.assign(defaultState(), pt);
-        migrateEnergyTodo(store.patterns[i]);
+        migratePattern(store.patterns[i]);
       }
       store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
       state = store.patterns[store.active];
@@ -1939,6 +1943,9 @@
       store.patterns[i].shopTel = tel;
     }
     state = store.patterns[0];
+    /* 光は世帯で1本のためパターンの外（store.ienaka）にある。
+     * ここで消さないと、前のお客様の光の内容が次のお客様に残る。 */
+    applyIenaka(null);
     // クラウド利用時はこの内容が送信される。購読を始めた直後に
     // 前の内容で上書きされないよう、watchQuote より先に呼ぶ
     saveState();
@@ -2402,7 +2409,8 @@
       pack: rows.length === 1 && rows[0].name === NET_PACK_NAME };
   }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
-  function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu"; }
+  // MNPも新規契約なので、事務手数料（jimu_mnp）と頭金の自動判定の対象
+  function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu" || proc === "mnp"; }
   // 手続き種別の表示名（未選択のときは空欄と分かる表記にする）
   var PROC_NAME = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更" };
   function procName(v) { return PROC_NAME[v] || "未選択"; }
@@ -2494,11 +2502,21 @@
     for (var i = 0; i < PROC_ORDER.length; i++) if (t[PROC_ORDER[i][0]]) return PROC_ORDER[i][1];
     return state.procType;
   }
-  // 手続き種別を切り替え、頭金・事務手数料の自動判定もあわせて行う
+  /* 手続き種別を切り替え、頭金・事務手数料の自動判定もあわせて行う。
+   * 手で直した金額は消さない。前の種別の自動値のままのときだけ、
+   * 新しい自動値へ入れ替える（手続き内容のチェックを変えるたびに
+   * 呼ばれるので、無条件に上書きすると手入力が黙って消える）。 */
   function applyProcType(v) {
+    var prev = state.procType;
+    var prevJimu = autoFeeProc(prev) ? jimuFeeFor(prev) : 0;
+    var prevAtama = autoFeeProc(prev) ? MASTER.fees.atamakin_default : 0;
     state.procType = v;
-    state.jimuFee = autoFeeProc(v) ? jimuFeeFor(v) : 0;
-    state.atamakin = autoFeeProc(v) ? MASTER.fees.atamakin_default : 0;
+    if (num(state.jimuFee) === num(prevJimu)) {
+      state.jimuFee = autoFeeProc(v) ? jimuFeeFor(v) : 0;
+    }
+    if (num(state.atamakin) === num(prevAtama)) {
+      state.atamakin = autoFeeProc(v) ? MASTER.fees.atamakin_default : 0;
+    }
     $("procType").value = v;
     $("jimuFee").value = state.jimuFee;
     $("atamakin").value = state.atamakin;
@@ -2626,6 +2644,10 @@
     device.atamaList = atamaInput;
     device.atama = deviceAtama;
     device.atamaOff = atamaInput - deviceAtama;
+    /* 分割・残価から引ききれなかった値引き。ダイレクト割は頭金に当てないため、
+     * 頭金が大きいと引き先が無くなることがある。0より大きいときは
+     * 「値引き後の端末代金」と実際のお支払い合計が食い違うので、警告を出す。 */
+    device.offLeft = 0;
 
     /* dポイント利用（1pt = 1円）。
      * 値引きと同じく、店頭でのお支払いが軽くなるよう
@@ -2658,6 +2680,7 @@
       // ②残った値引きを分割する分から引く
       var pBase = Math.max(0, deviceList - atamaInput);
       var p = Math.max(0, pBase - off);
+      device.offLeft = Math.max(0, off - pBase);
       // 頭金で引ききれなかったポイントも、続けて分割する分から引く
       device.pointSplit = Math.min(ptLeft, p);
       p -= device.pointSplit;
@@ -2682,6 +2705,7 @@
       // ③残価から引く
       var zBase = Math.max(0, deviceList - t23In);
       var z = Math.max(0, zBase - off);
+      device.offLeft = Math.max(0, off - zBase);
       // それでも余ったポイントは残価から引く
       device.pointZanka = Math.min(ptLeft, z);
       z -= device.pointZanka;
@@ -2793,7 +2817,10 @@
     var ptPoikatsu = earnPoikatsu;
     var ptFamily = earnFamily;
     var ptBakuage = st.bakuageInclude === false ? 0 : earnBakuage;
-    var ptDcard = (isGoldCard(st.dCard) && st.dcardGoldAuto === false) ? 0 : earnDcard;
+    /* 「見積もりに含める」を外していたら、カードの種類によらず引かない。
+     * GOLD系から通常カードへ切り替えたとき、手入力の値が
+     * チェックボックスごと消えて引かれ続ける事故があった。 */
+    var ptDcard = st.dcardGoldAuto === false ? 0 : earnDcard;
 
     /* ポイントの扱い。
      * 充当する … 選んだものを月額から差し引いて「実質のお支払い額」として出す
@@ -2814,8 +2841,15 @@
     pointRows.forEach(function (x) { pointTotal += x.amount; });
     var pointUsed = pointApply ? pointTotal : 0;
 
+    /* 充当できるのは、プラン・オプションなどの恒久部分が0円になるまで。
+     * 超えて引くと、見積書が「小計0円＋分割◯円＝月額合計0円」のような
+     * 破綻した表になる。引ききれない分は反映せず、注記で案内する。 */
+    var monthlyBeforePoint = planMonthly + voicePrice + optTotal + adhocPerm;
+    var pointOver = Math.max(0, pointUsed - Math.max(0, monthlyBeforePoint));
+    pointUsed -= pointOver;
+
     // 月額（恒久部分）
-    var baseMonthly = planMonthly + voicePrice + optTotal + adhocPerm - pointUsed;
+    var baseMonthly = monthlyBeforePoint - pointUsed;
 
     // --- 期間セグメント（端末・アクセサリ分割・期間限定項目の切れ目で分割） ---
     var boundarySet = {};
@@ -2879,7 +2913,7 @@
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
-      pointApply: pointApply, pointTotal: pointTotal,
+      pointApply: pointApply, pointTotal: pointTotal, pointOver: pointOver,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
       bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt, bakuageTier: bakuTier,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
@@ -2944,6 +2978,7 @@
     if (!t) { tplMsg("テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください"); return; }
     var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
+    migratePattern(store.patterns[store.active]);
     state = store.patterns[store.active];
     syncFormFromState();
     recalc();
@@ -3525,6 +3560,10 @@
     }
     if (state.payMethod === "kaedoki" && p > 0) {
       var t = num(state.kaedoki23);
+      if (t <= 0) {
+        return "支払い方法がカエドキですが「23回分の総額（頭金込み）」が未入力です。"
+          + "未入力のままだと端末代金の全額が残価になり、頭金も二重に数えられて、正しい見積もりになりません。";
+      }
       if (t > p) {
         return "23回分の総額（" + yen(t) + "）が端末代金総額（" + yen(p) + "）を超えています。"
           + "23回分の総額は、端末代金総額のうち残価を除いた金額（頭金込み）を入力してください。";
@@ -3533,6 +3572,13 @@
         return "23回分の総額（" + yen(t) + "）が店頭頭金（" + yen(num(state.atamakin)) + "）を下回っています。"
           + "23回分の総額には頭金を含めた金額を入力してください。";
       }
+    }
+    // 値引きの引き先が無い（頭金が大きい×ダイレクト割が大きい等）
+    var dvOff = calcFor(state).device;
+    if (dvOff.offLeft > 0) {
+      return "値引きのうち " + yen(dvOff.offLeft) + " が分割金・残価から引ききれていません。"
+        + "このままだと「値引き後の端末代金」と実際のお支払い合計が合いません。"
+        + "ダイレクト割は頭金からは引かないため、頭金を減らすか、値引きの配分をご確認ください。";
     }
     var at = Math.max(0, num(state.atamakin));
     if (state.payMethod !== "none" && state.payMethod !== "ikkatsu" && p > 0 && at >= p) {
@@ -3631,17 +3677,21 @@
           ? "（いまは含めていません。もらえるポイントは " + num(state.pointBakuage).toLocaleString("ja-JP") + "pt/月）"
           : "（月額から " + num(state.pointBakuage).toLocaleString("ja-JP") + "円ぶん差し引いて案内します）");
     }
-    $("dcardAutoWrap").hidden = !goldOn || !applyOn;
+    // 手入力の値が残っているあいだは、GOLD系でなくてもチェックを見せる（消すと外せなくなる）
+    var dcShow = goldOn || num(state.pointDcard) > 0;
+    $("dcardAutoWrap").hidden = !dcShow || !applyOn;
     $("dcardAutoHint").hidden = !goldOn;
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
-    if (goldOn) {
+    if (dcShow) {
       $("dcardAutoInclude").checked = state.dcardGoldAuto !== false;
       $("dcardAutoLabel").textContent = "dカード還元特典を見積もりに含める"
-        + (r.plan && r.plan.dcard10 === false
-          ? "（" + r.plan.name + "は利用料金還元の対象外プランのため自動計算0pt）"
-          : state.dcardGoldAuto === false
-            ? "（いまは含めていません。もらえるポイントは " + (r.dcardAutoPt || 0) + "pt/月）"
-            : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）");
+        + (!goldOn
+          ? "（手入力 " + num(state.pointDcard).toLocaleString("ja-JP") + "pt/月）"
+          : r.plan && r.plan.dcard10 === false
+            ? "（" + r.plan.name + "は利用料金還元の対象外プランのため自動計算0pt）"
+            : state.dcardGoldAuto === false
+              ? "（いまは含めていません。もらえるポイントは " + (r.dcardAutoPt || 0) + "pt/月）"
+              : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）");
     }
   }
 
@@ -3969,6 +4019,10 @@
           pt.amount.toLocaleString("ja-JP") + "pt/月");
       });
       h += row("ポイントの扱い", r.pointApply ? "月額から充当してご案内" : "<b>充当せず</b>、もらえるポイントとしてご案内");
+      if (r.pointApply && r.pointOver > 0) {
+        h += row("充当しきれない分", '<b style="color:var(--red)">'
+          + r.pointOver.toLocaleString("ja-JP") + "pt/月</b>　月額が0円になるため反映していません");
+      }
     } else {
       h += row("ポイント", "なし");
     }
@@ -4227,7 +4281,11 @@
     if (r.pointRows.length) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ '
         + (r.pointApply ? "ポイント充当は" : "実質額は")
-        + 'dポイント（期間・用途限定含む）を利用した場合の負担額の目安です。獲得ポイントはご利用状況により変動します。</p>';
+        + 'dポイント（期間・用途限定含む）を利用した場合の負担額の目安です。獲得ポイントはご利用状況により変動します。'
+        + (r.pointApply && r.pointOver > 0
+          ? "充当しきれない " + r.pointOver.toLocaleString("ja-JP") + "pt/月 は月額に反映していません。"
+          : "")
+        + "</p>";
     }
     if (hasInstallment) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
