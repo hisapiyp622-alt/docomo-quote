@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.23.0";
+  var APP_VERSION = "1.24.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3725,6 +3725,19 @@
       b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
     }[state.payMethod] || "";
     function row(k, v) { return '<tr><td style="width:38%">' + k + "</td><td>" + v + "</td></tr>"; }
+    /* ドコモ光の受付チャット窓口。登録スタッフがその場で読み取れるよう、
+     * 引き継ぎシートに置く。図形は qr.js に持っているので、
+     * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。 */
+    function chatQrRow() {
+      var q = (typeof KEITAI_QR !== "undefined" && KEITAI_QR.hikari) || null;
+      if (!q) return "";
+      return row("チャット窓口",
+        '<span style="display:inline-flex;align-items:center;gap:10px">'
+        + '<a href="' + esc(q.url) + '" target="_blank" rel="noopener"'
+        + ' style="width:30mm;height:30mm;flex:0 0 auto;display:block;border:1px solid var(--line)">'
+        + q.svg + "</a>"
+        + "<span>スマホで読み取るとチャットが開きます</span></span>");
+    }
     /* 光・でんき・ガスは住所での登録が要るため、それぞれの欄に郵便番号を出す。
      * 登録する画面を開いたまま見られるよう、探しに戻らなくていい場所に置く。 */
     function zipRow() {
@@ -4002,6 +4015,8 @@
     }
     if (ieOn || state.todoHikari) {
       h += zipRow();
+      // home 5G はこの窓口の取り扱いではないため、光のときだけQRを出す
+      if (ieOn ? KQ_IENAKA.isHikari() : state.todoHikari) h += chatQrRow();
       h += "</tbody></table>";
     }
     var secIenaka = h; h = "";
