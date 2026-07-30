@@ -244,8 +244,12 @@
         <input type="number" id="couponOff" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <div class="field">
-        <label for="campaignOff">キャンペーン値引き</label>
-        <input type="number" id="campaignOff" inputmode="numeric" placeholder="0" min="0"> 円
+        <label for="tebikiOff">手値引き</label>
+        <input type="number" id="tebikiOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="directOff">ダイレクト割</label>
+        <input type="number" id="directOff" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <p class="hint" id="deviceOffHint" hidden></p>
       <div class="field">
@@ -289,7 +293,8 @@
         <label for="usePointAmount">利用ポイント</label>
         <input type="number" id="usePointAmount" inputmode="numeric" min="0" placeholder="0"> pt
       </div>
-      <p class="hint">引き継ぎシートに記載されます。ポイント利用分は見積もりの金額からは差し引きません（レジでの充当分）。</p>
+      <p class="hint" id="usePointHint" hidden></p>
+      <p class="hint">利用ポイントは<strong>店頭頭金へ充当します</strong>（1pt = 1円）。頭金を超えた分は見積もりに反映せず、引き継ぎシートに残します。</p>
     </div>
 
     <div class="card c8">

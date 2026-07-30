@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.16.1";
+  var APP_VERSION = "1.17.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1391,7 +1391,7 @@
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
-      deviceName: "", devicePrice: 0, couponOff: 0, campaignOff: 0,
+      deviceName: "", devicePrice: 0, couponOff: 0, tebikiOff: 0, directOff: 0,
       payMethod: "none", kaedoki23: 0, kaedokiFee: 0,
       atamakin: 0, jimuFee: 0,
       adhocInitial: [],   // {name, amount} ±
@@ -1439,6 +1439,10 @@
     store.patterns.forEach(function (pt) {
       if (!pt.optionKubun) pt.optionKubun = {};
       migrateEnergyTodo(pt);
+      /* 「キャンペーン値引き」を「手値引き」と「ダイレクト割」に分けた（2026-07-30）。
+       * 以前の入力はドコモ側の施策を指していたため、ダイレクト割として引き継ぐ。 */
+      if (pt.campaignOff && !pt.directOff && !pt.tebikiOff) pt.directOff = pt.campaignOff;
+      delete pt.campaignOff;
       if (!pt.procTodo || !Object.keys(pt.procTodo).length) {
         pt.procTodo = {};
         if (pt.procType) pt.procTodo[pt.procType === "plan_only" ? "plan" : pt.procType] = true;
@@ -2569,8 +2573,10 @@
      * 「頭金 → 分割する分 → 残価」の順に引いていく。 */
     var deviceList = num(st.devicePrice);
     var devOffCoupon = Math.min(Math.max(0, num(st.couponOff)), deviceList);
-    var devOffCampaign = Math.min(Math.max(0, num(st.campaignOff)), Math.max(0, deviceList - devOffCoupon));
-    var devOffTotal = devOffCoupon + devOffCampaign;
+    var devOffTebiki = Math.min(Math.max(0, num(st.tebikiOff)), Math.max(0, deviceList - devOffCoupon));
+    var devOffDirect = Math.min(Math.max(0, num(st.directOff)),
+      Math.max(0, deviceList - devOffCoupon - devOffTebiki));
+    var devOffTotal = devOffCoupon + devOffTebiki + devOffDirect;
     var atamaInput = Math.max(0, Math.min(num(st.atamakin), deviceList));
     var off = devOffTotal;
     // ①頭金から引く
@@ -2579,7 +2585,8 @@
     var deviceTotal = Math.max(0, deviceList - devOffTotal);
     device.list = deviceList;
     device.offCoupon = devOffCoupon;
-    device.offCampaign = devOffCampaign;
+    device.offTebiki = devOffTebiki;
+    device.offDirect = devOffDirect;
     device.offTotal = devOffTotal;
     device.atamaList = atamaInput;
     device.atama = deviceAtama;
@@ -2624,6 +2631,17 @@
       }
     }
     device.total = deviceTotal;
+
+    /* dポイント利用を店頭頭金へ充当する（1pt = 1円）。
+     * 値引きを引いたあとの頭金から差し引く。
+     * 頭金を超えた分はここでは引かない。充当先は頭金だけと決めているため、
+     * 余った分は入力欄の下と引き継ぎシートに出して、レジで判断してもらう。 */
+    var ptUse = st.usePoint ? Math.max(0, num(st.usePointAmount)) : 0;
+    device.pointUse = ptUse;
+    device.atamaBeforePoint = device.atama;
+    device.atamaPoint = Math.min(ptUse, device.atama);
+    device.atama = device.atama - device.atamaPoint;
+    device.pointLeft = ptUse - device.atamaPoint;
 
     // アクセサリ（一括／分割）
     var accOnceRows = [], accMonthlyRows = [], accFirstExtra = 0;
@@ -2768,8 +2786,11 @@
     if (initialDevice > 0) {
       // 一括購入時は頭金も総額に含まれているため、「店頭頭金」の行は出さず1行で表示
       initialRows.push({ name: "機種代金（一括）", amount: initialDevice, where: "store" });
-    } else if (atama > 0) {
-      initialRows.push({ name: "店頭頭金", amount: atama, where: "store" });
+    } else if (device.atamaBeforePoint > 0) {
+      initialRows.push({ name: "店頭頭金", amount: device.atamaBeforePoint, where: "store" });
+      if (device.atamaPoint > 0) {
+        initialRows.push({ name: "dポイント充当", amount: -device.atamaPoint, where: "store" });
+      }
     }
     (MASTER.feeItems || []).forEach(function (f) {
       if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: f.pay === "bill" ? "bill" : "store" });
@@ -3284,7 +3305,8 @@
     $("deviceName").value = state.deviceName;
     $("devicePrice").value = state.devicePrice || "";
     $("couponOff").value = state.couponOff || "";
-    $("campaignOff").value = state.campaignOff || "";
+    $("tebikiOff").value = state.tebikiOff || "";
+    $("directOff").value = state.directOff || "";
     $("payMethod").value = state.payMethod;
     $("kaedoki23").value = state.kaedoki23 || "";
     $("kaedokiFee").value = state.kaedokiFee || "";
@@ -3308,6 +3330,7 @@
     $("usePoint").checked = !!state.usePoint;
     $("usePointField").hidden = !state.usePoint;
     $("usePointAmount").value = state.usePointAmount || "";
+    renderPointUse();
     $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
     $("denkiTypeWrap").hidden = !state.todoDenki;
@@ -3333,13 +3356,40 @@
   }
 
   /* ---------- 端末入力の不整合チェック ---------- */
+  /* dポイントを頭金へ充当した結果を、入力欄の下に出す。
+   * 頭金より多く入れたときに、余りがあることが分かるようにするため。 */
+  function renderPointUse(r) {
+    var el = $("usePointHint");
+    if (!el) return;
+    var d = (r || calcFor(state)).device;
+    if (!state.usePoint || !d.pointUse) { el.hidden = true; return; }
+    var t;
+    if (d.atamaPoint > 0) {
+      t = "店頭頭金 " + yen(d.atamaBeforePoint) + " に "
+        + d.atamaPoint.toLocaleString("ja-JP") + "pt を充当 → <strong>" + yen(d.atama) + "</strong>";
+      if (d.pointLeft > 0) {
+        t += "。残り " + d.pointLeft.toLocaleString("ja-JP")
+          + "pt は<strong>この見積もりに反映していません</strong>（レジでのご案内になります）。";
+      }
+    } else {
+      t = "充当できる店頭頭金がありません。"
+        + d.pointUse.toLocaleString("ja-JP") + "pt は<strong>この見積もりに反映していません</strong>（レジでのご案内になります）。";
+    }
+    el.innerHTML = t;
+    el.hidden = false;
+  }
   // 機種名・機種代金が入っているのに見積もりへ反映されないケースを検出する
   // 値引きを入れたときに、いくらになったのかを入力欄の下に出す
   function renderDeviceOff(r) {
     var el = $("deviceOffHint");
     if (!el) return;
     if (!r || !r.device.offTotal) { el.hidden = true; return; }
+    var parts = [];
+    if (r.device.offCoupon > 0) parts.push("クーポン " + yen(r.device.offCoupon));
+    if (r.device.offTebiki > 0) parts.push("手値引き " + yen(r.device.offTebiki));
+    if (r.device.offDirect > 0) parts.push("ダイレクト割 " + yen(r.device.offDirect));
     var msg = "端末代金 " + yen(r.device.list) + " − 値引き " + yen(r.device.offTotal)
+      + (parts.length > 1 ? "（" + parts.join("＋") + "）" : "")
       + " = <strong>" + yen(r.device.total) + "</strong>";
     if (r.device.atamaOff > 0) {
       msg += "　値引きはまず頭金から引きます（頭金 " + yen(r.device.atamaList)
@@ -3700,9 +3750,11 @@
       if (state.deviceName || num(state.devicePrice) > 0 || r.device.offTotal > 0) {
         h += row("機種", "<b>" + esc(state.deviceName || "（機種名未入力）") + "</b>　" + yen(r.device.list));
         if (r.device.offCoupon > 0) h += row("　クーポン値引き", "−" + yen(r.device.offCoupon));
-        if (r.device.offCampaign > 0) h += row("　キャンペーン値引き", "−" + yen(r.device.offCampaign));
+        if (r.device.offTebiki > 0) h += row("　手値引き", "−" + yen(r.device.offTebiki));
+        if (r.device.offDirect > 0) h += row("　ダイレクト割", "−" + yen(r.device.offDirect));
         if (r.device.offTotal > 0) h += row("　<b>値引き後の端末代金</b>", "<b>" + yen(r.device.total) + "</b>"
-          + (r.device.atamaOff > 0 ? "　店頭頭金 " + yen(r.device.atamaList) + " → " + yen(r.device.atama) : ""));
+          + (r.device.atamaOff > 0
+            ? "　店頭頭金 " + yen(r.device.atamaList) + " → " + yen(r.device.atamaBeforePoint) : ""));
         h += row("お支払い方法", "<b>" + payLabel + "</b>"
           + (r.device.monthly > 0 ? "　" + yen(r.device.monthly) + "/月 × " + r.device.months + "回" : ""));
         if (r.device.kaedoki) {
@@ -3731,7 +3783,13 @@
       if ((state.storePay || {}).dbarai) pays.push("d払い");
       h += row("店頭お支払い方法", pays.length ? "<b>" + pays.join("　／　") + "</b>" : "（未選択）");
       h += row("dポイント利用", state.usePoint
-        ? '<b style="color:var(--red)">あり</b>' + (num(state.usePointAmount) > 0 ? "　" + num(state.usePointAmount).toLocaleString("ja-JP") + "pt" : "")
+        ? '<b style="color:var(--red)">あり</b>'
+          + (r.device.pointUse > 0 ? "　" + r.device.pointUse.toLocaleString("ja-JP") + "pt" : "")
+          + (r.device.atamaPoint > 0
+            ? "（うち店頭頭金へ " + r.device.atamaPoint.toLocaleString("ja-JP") + "pt 充当）" : "")
+          + (r.device.pointLeft > 0
+            ? '<span style="color:var(--red)">　残り ' + r.device.pointLeft.toLocaleString("ja-JP")
+              + "pt は見積もり未反映</span>" : "")
         : "なし");
       h += "</tbody></table>";
     }
@@ -3964,10 +4022,12 @@
       p2 += "<h3>端末代金の値引き</h3><table><tbody>";
       p2 += row((state.deviceName ? esc(state.deviceName) : "端末代金") + "　定価", yen(r.device.list), true);
       if (r.device.offCoupon > 0) p2 += row("クーポン値引き", "−" + yen(r.device.offCoupon), true);
-      if (r.device.offCampaign > 0) p2 += row("キャンペーン値引き", "−" + yen(r.device.offCampaign), true);
+      if (r.device.offTebiki > 0) p2 += row("手値引き", "−" + yen(r.device.offTebiki), true);
+      if (r.device.offDirect > 0) p2 += row("ダイレクト割", "−" + yen(r.device.offDirect), true);
       p2 += '<tr class="total"><td>値引き後の端末代金</td><td class="amt">' + yen(r.device.total) + "</td></tr>";
       if (r.device.atamaOff > 0) {
-        p2 += row("店頭頭金（値引き適用後）", yen(r.device.atamaList) + " → " + yen(r.device.atama), true);
+        p2 += row("店頭頭金（値引き適用後）",
+          yen(r.device.atamaList) + " → " + yen(r.device.atamaBeforePoint), true);
       }
       p2 += "</tbody></table>";
     }
@@ -4439,6 +4499,7 @@
     renderNetSvc();
     var r = calc();
     renderDeviceOff(r);
+    renderPointUse(r);
     renderSummary(r);
     renderPatternTabs();
     renderIenakaWarn(r);
@@ -5586,7 +5647,8 @@
     $("deviceName").addEventListener("input", function () { state.deviceName = this.value; saveState(); });
     $("devicePrice").addEventListener("input", function () { state.devicePrice = num(this.value); recalc(); });
     $("couponOff").addEventListener("input", function () { state.couponOff = num(this.value); recalc(); });
-    $("campaignOff").addEventListener("input", function () { state.campaignOff = num(this.value); recalc(); });
+    $("tebikiOff").addEventListener("input", function () { state.tebikiOff = num(this.value); recalc(); });
+    $("directOff").addEventListener("input", function () { state.directOff = num(this.value); recalc(); });
     $("payMethod").addEventListener("change", function () {
       state.payMethod = this.value;
       $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
@@ -5908,10 +5970,11 @@
     $("usePoint").addEventListener("change", function () {
       state.usePoint = this.checked;
       $("usePointField").hidden = !this.checked;
+      recalc();
       saveState(); renderStaffSheet();
     });
     $("usePointAmount").addEventListener("input", function () {
-      state.usePointAmount = num(this.value); saveState(); renderStaffSheet();
+      state.usePointAmount = num(this.value); recalc();
     });
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.addEventListener("change", function () {
