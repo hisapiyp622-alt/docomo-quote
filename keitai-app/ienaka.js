@@ -49,7 +49,7 @@
       name: "ahamo光 10ギガ",
       monthly: { ht: { A: 5610, B: 5610 }, ms: { A: 5610, B: 5610 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
-      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。"
+      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。ルーターはレンタル550円/月または持込。"
     },
     home5g: {
       name: "home 5G",
@@ -59,6 +59,9 @@
     }
   };
   function is10g() { return state.product === "hikari10g" || state.product === "ahamo10g"; }
+  /* 10Gルーターを買っていただくのはドコモ光 10ギガだけ。
+   * ahamo光はプロバイダ一体型で、対応ルーターは月額レンタルか持込になる。 */
+  function canBuy10gRouter() { return state.product === "hikari10g"; }
   /* 住居タイプ。マンションは設備の最大速度で 100M と 1G に分かれるが、
    * 料金はどちらも同じなので、料金表を引くときは "ms" にまとめる。
    * 100M かどうかは表示と引き継ぎシートのために持っておく。 */
@@ -77,7 +80,12 @@
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "skyp", name: "スカパー！等の映像サービス", price: 0, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g", "hikari10g"] },
-    { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g", "ahamo10g"] },
+    /* ahamo光はプロバイダ一体型で、OCNバーチャルコネクト対応ルーターが要る。
+     * ドコモからの月額レンタルか、お客様の持込になる（優待購入の取り扱いは無い）。
+     * 1ギガ330円／10ギガ550円。
+     * 出典: https://www.docomo.ne.jp/internet/ahamo_hikari/10g_plan/ （2026-07-30 確認） */
+    { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g"] },
+    { id: "ahamoRouter10g", name: "ルーターレンタル（10ギガ・OCNバーチャルコネクト対応）", price: 550, for: ["ahamo10g"] },
     { id: "apHome", name: "あんしんパック ホーム（デジタル機器補償＋ネットトータルサポート＋ネットワークセキュリティ）", price: 968, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
     { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
@@ -253,7 +261,7 @@
     // 視聴サービス登録料は手数料のため常に一括で初期費用へ
     tvRegRows.forEach(function (x) { initRows.push(x); });
     // 10Gルーター購入費用（10ギガ選択時・チェック式）
-    if (is10g() && state.router10g && num(state.router10gPrice) > 0) {
+    if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
       initRows.push({ name: "10Gルーター購入費用", amount: num(state.router10gPrice) });
     }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
@@ -412,9 +420,9 @@
     $("ieDpointField").hidden = !isHikari();
     $("ieDpointHint").hidden = !isHikari();
     $("ieDcard").value = state.dcard || "none";
-    $("ieRouter10gWrap").hidden = !is10g();
+    $("ieRouter10gWrap").hidden = !canBuy10gRouter();
     $("ieRouter10g").checked = state.router10g !== false;
-    $("ieRouter10gPriceField").hidden = !is10g() || state.router10g === false;
+    $("ieRouter10gPriceField").hidden = !canBuy10gRouter() || state.router10g === false;
     $("ieRouter10gPrice").value = state.router10gPrice || "";
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
     $("ieStoreCash").value = state.storeCash || "";
@@ -482,7 +490,7 @@
       // その他費用（請求外・購入品）
       var others = [];
       onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
-      if (is10g() && state.router10g && num(state.router10gPrice) > 0) {
+      if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
         others.push("10Gルーター購入費用 " + yen(num(state.router10gPrice)));
       }
       if (others.length) {
