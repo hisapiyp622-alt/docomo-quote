@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.21.0";
+  var APP_VERSION = "1.22.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2620,15 +2620,42 @@
     device.atamaList = atamaInput;
     device.atama = deviceAtama;
     device.atamaOff = atamaInput - deviceAtama;
+
+    /* dポイント利用（1pt = 1円）。
+     * 値引きと同じく、店頭でのお支払いが軽くなるよう
+     * 「頭金 → 分割する分 → 残価」の順に充当する。
+     * 一括払いは頭金の区別が無いため、店頭でお支払いいただく総額から充当する。 */
+    var ptUse = st.usePoint ? Math.max(0, num(st.usePointAmount)) : 0;
+    var ptLeft = ptUse;
+    device.pointUse = ptUse;
+    device.atamaBeforePoint = deviceAtama;
+    device.atamaPoint = 0;
+    device.pointIkkatsu = 0;
+    device.pointSplit = 0;
+    device.pointZanka = 0;
+    if (st.payMethod !== "ikkatsu") {
+      // ①頭金へ充当する
+      device.atamaPoint = Math.min(ptLeft, deviceAtama);
+      device.atama = deviceAtama - device.atamaPoint;
+      ptLeft -= device.atamaPoint;
+    }
+
     if (st.payMethod === "ikkatsu") {
       // 一括は頭金の区別が無いため、値引き後の総額をそのまま店頭でお支払い
       initialDevice = deviceTotal;
       device.atama = 0;
       device.atamaOff = 0;
+      device.atamaBeforePoint = 0;
+      device.pointIkkatsu = Math.min(ptLeft, initialDevice);
+      ptLeft -= device.pointIkkatsu;
     } else if (/^b\d+$/.test(st.payMethod)) {
       // ②残った値引きを分割する分から引く
       var pBase = Math.max(0, deviceList - atamaInput);
       var p = Math.max(0, pBase - off);
+      // 頭金で引ききれなかったポイントも、続けて分割する分から引く
+      device.pointSplit = Math.min(ptLeft, p);
+      p -= device.pointSplit;
+      ptLeft -= device.pointSplit;
       var n = parseInt(st.payMethod.slice(1), 10);
       if (p > 0) {
         device.monthly = Math.floor(p / n);
@@ -2642,10 +2669,19 @@
       var split23Base = Math.max(0, t23In - atamaInput);
       var split23 = Math.max(0, split23Base - off);
       off = Math.max(0, off - split23Base);
+      // 頭金で引ききれなかったポイントも、続けて23回分から引く
+      device.pointSplit = Math.min(ptLeft, split23);
+      split23 -= device.pointSplit;
+      ptLeft -= device.pointSplit;
       // ③残価から引く
       var zBase = Math.max(0, deviceList - t23In);
       var z = Math.max(0, zBase - off);
-      var t23 = deviceAtama + split23;   // 値引き後の「23回分の総額（頭金込み）」
+      // それでも余ったポイントは残価から引く
+      device.pointZanka = Math.min(ptLeft, z);
+      z -= device.pointZanka;
+      ptLeft -= device.pointZanka;
+      // ポイント充当後の「23回分の総額（頭金込み）」
+      var t23 = device.atama + split23;
       if (deviceTotal > 0) {
         device.kaedoki = true;
         device.monthly = Math.floor(split23 / 23);
@@ -2660,17 +2696,8 @@
       }
     }
     device.total = deviceTotal;
-
-    /* dポイント利用を店頭頭金へ充当する（1pt = 1円）。
-     * 値引きを引いたあとの頭金から差し引く。
-     * 頭金を超えた分はここでは引かない。充当先は頭金だけと決めているため、
-     * 余った分は入力欄の下と引き継ぎシートに出して、レジで判断してもらう。 */
-    var ptUse = st.usePoint ? Math.max(0, num(st.usePointAmount)) : 0;
-    device.pointUse = ptUse;
-    device.atamaBeforePoint = device.atama;
-    device.atamaPoint = Math.min(ptUse, device.atama);
-    device.atama = device.atama - device.atamaPoint;
-    device.pointLeft = ptUse - device.atamaPoint;
+    // 充当しきれなかったポイント（お支払いより多く入れたとき）
+    device.pointLeft = ptLeft;
 
     // アクセサリ（一括／分割）
     var accOnceRows = [], accMonthlyRows = [], accFirstExtra = 0;
@@ -2815,6 +2842,9 @@
     if (initialDevice > 0) {
       // 一括購入時は頭金も総額に含まれているため、「店頭頭金」の行は出さず1行で表示
       initialRows.push({ name: "機種代金（一括）", amount: initialDevice, where: "store" });
+      if (device.pointIkkatsu > 0) {
+        initialRows.push({ name: "dポイント充当", amount: -device.pointIkkatsu, where: "store" });
+      }
     } else if (device.atamaBeforePoint > 0) {
       initialRows.push({ name: "店頭頭金", amount: device.atamaBeforePoint, where: "store" });
       if (device.atamaPoint > 0) {
@@ -3418,8 +3448,23 @@
   }
 
   /* ---------- 端末入力の不整合チェック ---------- */
-  /* dポイントを頭金へ充当した結果を、入力欄の下に出す。
-   * 頭金より多く入れたときに、余りがあることが分かるようにするため。 */
+  /* dポイントをどこへいくら充当したかの内訳。
+   * 入力欄の案内・見積書・引き継ぎシートで同じ並びを使う。 */
+  function pointUseParts(d) {
+    var a = [];
+    if (d.atamaPoint > 0) a.push({ name: "店頭頭金", pt: d.atamaPoint });
+    if (d.pointIkkatsu > 0) a.push({ name: "機種代金（一括）", pt: d.pointIkkatsu });
+    if (d.pointSplit > 0) a.push({ name: d.kaedoki ? "23回分の分割支払金" : "分割支払金", pt: d.pointSplit });
+    if (d.pointZanka > 0) a.push({ name: "残価", pt: d.pointZanka });
+    return a;
+  }
+  function pointUseText(d) {
+    return pointUseParts(d).map(function (x) {
+      return x.name + "へ " + x.pt.toLocaleString("ja-JP") + "pt";
+    }).join("／");
+  }
+  /* dポイントを充当した結果を、入力欄の下に出す。
+   * 入れた分をどこから引いたのか、余りがあるのかが分かるようにするため。 */
   function renderPointUse(r) {
     var els = [$("usePointHint"), $("devUsePointHint")].filter(Boolean);
     if (!els.length) return;
@@ -3428,17 +3473,15 @@
       els.forEach(function (e) { e.hidden = true; });
       return;
     }
-    var t;
-    if (d.atamaPoint > 0) {
-      t = "店頭頭金 " + yen(d.atamaBeforePoint) + " に "
-        + d.atamaPoint.toLocaleString("ja-JP") + "pt を充当 → <strong>" + yen(d.atama) + "</strong>";
-      if (d.pointLeft > 0) {
-        t += "。残り " + d.pointLeft.toLocaleString("ja-JP")
-          + "pt は<strong>この見積もりに反映していません</strong>（レジでのご案内になります）。";
-      }
+    var inner = pointUseText(d);
+    var t = inner
+      ? d.pointUse.toLocaleString("ja-JP") + "pt のうち <strong>" + inner + "</strong> を充当しました"
+      : "充当できるお支払いがありません";
+    if (d.pointLeft > 0) {
+      t += "。残り " + d.pointLeft.toLocaleString("ja-JP")
+        + "pt は<strong>充当先がないため反映していません</strong>（レジでのご案内になります）。";
     } else {
-      t = "充当できる店頭頭金がありません。"
-        + d.pointUse.toLocaleString("ja-JP") + "pt は<strong>この見積もりに反映していません</strong>（レジでのご案内になります）。";
+      t += "。";
     }
     els.forEach(function (e) { e.innerHTML = t; e.hidden = false; });
   }
@@ -3507,7 +3550,14 @@
     var k2 = $("kaedoki23Hint");
     if (state.payMethod === "kaedoki") {
       k2.hidden = false;
-      k2.textContent = "端末代金総額 " + yen(r.device.total || 0) + " のうち、はじめの23回で "
+      // ポイントを充当したときは、充当後の金額で読めるように添える
+      var ptK2 = r.device.atamaPoint + r.device.pointSplit + r.device.pointZanka;
+      k2.textContent = "端末代金総額 " + yen(r.device.total || 0)
+        + (ptK2 > 0
+          ? "（dポイント " + ptK2.toLocaleString("ja-JP") + "pt 充当後 "
+            + yen(Math.max(0, (r.device.total || 0) - ptK2)) + "）"
+          : "")
+        + " のうち、はじめの23回で "
         + yen(r.device.total23 || 0) + "（店頭頭金 " + yen(r.device.atama || 0) + " を含む）をお支払い。"
         + "残りの " + yen(r.device.zanka || 0) + " が残価（24回目支払分）になります。";
     } else { k2.hidden = true; }
@@ -3675,6 +3725,13 @@
       b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
     }[state.payMethod] || "";
     function row(k, v) { return '<tr><td style="width:38%">' + k + "</td><td>" + v + "</td></tr>"; }
+    /* 光・でんき・ガスは住所での登録が要るため、それぞれの欄に郵便番号を出す。
+     * 登録する画面を開いたまま見られるよう、探しに戻らなくていい場所に置く。 */
+    function zipRow() {
+      return row("郵便番号", state.custZip
+        ? '<b style="color:var(--red)">' + esc(state.custZip) + "</b>"
+        : '<b style="color:var(--red)">未記入</b>　※ ご登録に必要です');
+    }
 
     var h = "";
     h += '<h2 class="sheet-title">登録スタッフ引き継ぎシート</h2>';
@@ -3706,13 +3763,6 @@
     if (state.todoGas) apps.push("ガス申し込み");
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
-    // 光・でんき・ガスは住所での登録が要るため、郵便番号を必ず出す
-    if (needsZip()) {
-      anyTodo = true;
-      h += row("郵便番号", state.custZip
-        ? '<b style="color:var(--red)">' + esc(state.custZip) + "</b>"
-        : '<b style="color:var(--red)">未記入</b>　※ 光・でんき・ガスの登録に必要です');
-    }
     /* データ移行にあたる初期費用。あんしん店頭サポートのように名前に
      * 「データ移行」が入らないものもあるため、マスタ設定の印で判定する。 */
     var dataMove = (MASTER.feeItems || []).filter(function (f) {
@@ -3835,11 +3885,11 @@
       if ((state.storePay || {}).card) pays.push("カード");
       if ((state.storePay || {}).dbarai) pays.push("d払い");
       h += row("店頭お支払い方法", pays.length ? "<b>" + pays.join("　／　") + "</b>" : "（未選択）");
+      var ptInnerS = pointUseText(r.device);
       h += row("dポイント利用", state.usePoint
         ? '<b style="color:var(--red)">あり</b>'
           + (r.device.pointUse > 0 ? "　" + r.device.pointUse.toLocaleString("ja-JP") + "pt" : "")
-          + (r.device.atamaPoint > 0
-            ? "（うち店頭頭金へ " + r.device.atamaPoint.toLocaleString("ja-JP") + "pt 充当）" : "")
+          + (ptInnerS ? "（" + ptInnerS + " 充当）" : "")
           + (r.device.pointLeft > 0
             ? '<span style="color:var(--red)">　残り ' + r.device.pointLeft.toLocaleString("ja-JP")
               + "pt は見積もり未反映</span>" : "")
@@ -3903,14 +3953,18 @@
             + (gc.tel ? "　連絡先: <b>" + esc(gc.tel) + "</b>" : "　（連絡先は未登録）"));
         }
       }
+      h += zipRow();
       h += "</tbody></table>";
     }
     var secEnergy = h; h = "";
     /* 光・home 5G。後工程がそのまま手続きできるよう、申込区分と工事まわりを残す。
      * 世帯で1本なので、パターンを切り替えても同じ内容が出る。 */
-    if (ienakaOn()) {
-      var ir = KQ_IENAKA.calc();
+    var ieOn = ienakaOn();
+    if (ieOn || state.todoHikari) {
       h += "<h3>ドコモ光・home 5G</h3><table><tbody>";
+    }
+    if (ieOn) {
+      var ir = KQ_IENAKA.calc();
       h += row("商材", "<b>" + esc(KQ_IENAKA.label()) + "</b>");
       h += row("月額", "<b>" + yen(ir.segs[0].monthly) + "</b>"
         + (ir.segs.length > 1
@@ -3935,6 +3989,12 @@
         h += row("プロバイダ", esc(store.ienaka.provider)
           + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）");
       }
+    } else if (state.todoHikari) {
+      // 手続き内容で光にチェックはあるが、「光・5G」の入力がまだ無いとき
+      h += row("お申し込み", '<b style="color:var(--red)">光申し込み</b>　※「光・5G」の入力はありません');
+    }
+    if (ieOn || state.todoHikari) {
+      h += zipRow();
       h += "</tbody></table>";
     }
     var secIenaka = h; h = "";
@@ -4150,6 +4210,10 @@
     if (r.device.kaedoki) {
       p2 += "<h3>いつでもカエドキプログラム</h3><table><tbody>";
       p2 += row("端末代金総額", yen(r.device.total || 0), true);
+      /* 「総額 − ポイント充当 ＝ 23回分の総額 ＋ 残価」で読めるよう、充当分を1行で見せる
+       * （23回分の総額には頭金が含まれている）。 */
+      var ptKae = r.device.atamaPoint + r.device.pointSplit + r.device.pointZanka;
+      if (ptKae > 0) p2 += row("dポイント充当", "−" + yen(ptKae), true);
       if (r.device.atama > 0) p2 += row("店頭頭金（総額のうち店頭でお支払い）", yen(r.device.atama), true);
       p2 += row("23回分の総額（頭金込み）", yen(r.device.total23 || 0), true);
       p2 += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
@@ -4157,6 +4221,18 @@
       if (r.device.kaedokiFee > 0) p2 += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
       p2 += row("23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0), true);
       p2 += "</tbody></table>";
+    }
+
+    // dポイントの充当先。金額はすでに反映済みなので、内訳だけを添える
+    if (r.device.pointUse > 0) {
+      var ptInner = pointUseText(r.device);
+      if (ptInner) {
+        p2 += '<p class="memo">※ dポイント ' + r.device.pointUse.toLocaleString("ja-JP")
+          + "pt のうち " + ptInner + " を充当しています（1pt = 1円）。"
+          + (r.device.pointLeft > 0
+            ? "残り " + r.device.pointLeft.toLocaleString("ja-JP") + "pt は充当していません。" : "")
+          + "</p>";
+      }
     }
 
     // 初期費用（店頭お支払い／翌月合算払い）
