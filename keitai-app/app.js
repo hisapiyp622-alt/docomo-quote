@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.27.0";
+  var APP_VERSION = "1.28.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3735,11 +3735,16 @@
     function isDocomoHikari(ie) {
       return ie.product === "hikari1g" || ie.product === "hikari10g";
     }
-    /* 1ギガの無線ルーターの申し込み先。プロバイダごとに違う。 */
+    /* 無線ルーターの申し込み先。プロバイダごとに違う。 */
     var ROUTER_QR = {
       "OCN インターネット": "router1gOcn",
       "@nifty": "router1gNifty",
       "andline": "router1gAndline"
+    };
+    // 10ギガはレンタルが無く、ルーターを買っていただく
+    var ROUTER10G_QR = {
+      "OCN インターネット": "router10gOcn",
+      "@nifty": "router10gNifty"
     };
     /* 手続きに要るページのQR。登録スタッフがその場で読み取れるよう、
      * 引き継ぎシートに置く。図形は qr.js に持っているので、
@@ -3749,7 +3754,7 @@
      *   toss         … ドコモ光のとき（工事日を確定させるのに毎回入力が要る）
      *                    ahamo光は取り扱いが違うため出さない
      *   router1g:*   … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
-     *   ocnRouter10g … ドコモ光10ギガでルーターを買っていただくとき
+     *   router10g:*  … ドコモ光10ギガでルーターを買っていただくとき（プロバイダごと）
      *
      * GMOとくとくBBは、IDとパスワードが届いてからお客様ご自身でお申し込みいただく
      * ため、QRは出さずに引き継ぎシートへその旨を出す（ROUTER_QR に入れない）。 */
@@ -3766,8 +3771,9 @@
           keys.push(ROUTER_QR[ie.provider]);
         }
         // ahamo光はプロバイダ一体型で、ルーターの優待購入の取り扱いが無い
-        if (ie.product === "hikari10g" && ie.router10g && num(ie.router10gPrice) > 0) {
-          keys.push("ocnRouter10g");
+        if (ie.product === "hikari10g" && ie.router10g && num(ie.router10gPrice) > 0
+          && ROUTER10G_QR[ie.provider]) {
+          keys.push(ROUTER10G_QR[ie.provider]);
         }
       }
       var cards = keys.map(function (k) {
