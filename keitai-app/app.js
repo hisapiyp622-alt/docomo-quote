@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.29.0";
+  var APP_VERSION = "1.30.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2409,8 +2409,11 @@
       pack: rows.length === 1 && rows[0].name === NET_PACK_NAME };
   }
   // 頭金・事務手数料を自動で入れるのは新規契約・機種変更のときだけ（未選択は0円）
-  // MNPも新規契約なので、事務手数料（jimu_mnp）と頭金の自動判定の対象
+  // MNPも新規契約なので、事務手数料（jimu_mnp）は自動判定の対象
   function autoFeeProc(proc) { return proc === "shinki" || proc === "kishu" || proc === "mnp"; }
+  /* 頭金の自動判定はMNPを含めない。MNPはSIMのみや頭金なし機種の
+   * ご案内が多いため、基本なし（2026-07-30 安藤さん）。必要なときは手入力。 */
+  function autoAtamaProc(proc) { return proc === "shinki" || proc === "kishu"; }
   // 手続き種別の表示名（未選択のときは空欄と分かる表記にする）
   var PROC_NAME = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan_only: "プラン変更" };
   function procName(v) { return PROC_NAME[v] || "未選択"; }
@@ -2509,13 +2512,13 @@
   function applyProcType(v) {
     var prev = state.procType;
     var prevJimu = autoFeeProc(prev) ? jimuFeeFor(prev) : 0;
-    var prevAtama = autoFeeProc(prev) ? MASTER.fees.atamakin_default : 0;
+    var prevAtama = autoAtamaProc(prev) ? MASTER.fees.atamakin_default : 0;
     state.procType = v;
     if (num(state.jimuFee) === num(prevJimu)) {
       state.jimuFee = autoFeeProc(v) ? jimuFeeFor(v) : 0;
     }
     if (num(state.atamakin) === num(prevAtama)) {
-      state.atamakin = autoFeeProc(v) ? MASTER.fees.atamakin_default : 0;
+      state.atamakin = autoAtamaProc(v) ? MASTER.fees.atamakin_default : 0;
     }
     $("procType").value = v;
     $("jimuFee").value = state.jimuFee;
