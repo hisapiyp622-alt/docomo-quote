@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.19.1";
+  var APP_VERSION = "1.20.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -565,6 +565,9 @@
     KQ_IENAKA.attach(store.ienaka, function () {
       saveState();
       renderIenakaWarn(calc());
+      var zipOn = needsZip();
+      $("custZipField").hidden = !zipOn;
+      $("custZipHint").hidden = !zipOn;
       if ($("tab-sheet").classList.contains("active")) renderSheet();
     });
     KQ_IENAKA.bind();
@@ -586,6 +589,10 @@
    *   both   … スマホ＋光の世帯合計（2枚）
    *   hikari … スマホの見積書はそのままに、光の明細を3枚目の別紙として付ける（3枚）
    *              光の基本料はスマホの月額に含めない（請求が分かれるため） */
+  /* 郵便番号が要る受付か（光・でんき・ガスは住所での登録が要る） */
+  function needsZip() {
+    return !!(state.todoHikari || state.todoDenki || state.todoGas || ienakaOn());
+  }
   var sheetScope = "phone";
   /* 光を申し込むのにスマホ側でセット割を選んでいない、という付け忘れに気づけるようにする。
    * 逆（セット割だけ選んで光を入れていない）は、ご家族の既契約という場合があるので出さない。 */
@@ -891,7 +898,7 @@
           sv.forEach(function (it) {
             it.custName = "";
             if (it.data && it.data.patterns) {
-              it.data.patterns.forEach(function (pt) { pt.custName = ""; });
+              it.data.patterns.forEach(function (pt) { pt.custName = ""; pt.custZip = ""; });
             }
           });
         }
@@ -1414,6 +1421,10 @@
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
+      /* 郵便番号。光・でんき・ガスは住所での登録が要るため、
+       * 引き継ぎシートに載せて登録スタッフへ渡す。
+       * お客様の住所にあたるので、お客様名と同じくクラウドへは送らない。 */
+      custZip: "",
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
       // データ移行の項目だけ、支払い先をこの見積もりで変えられる（未指定はマスタの設定）
@@ -1592,11 +1603,11 @@
         .then(cloudOk, cloudNg);
     }, 1200);
   }
-  // 送信用の見積もりデータ。お客様名（個人情報）はクラウドへ送らない
+  // 送信用の見積もりデータ。お客様名・郵便番号（個人情報）はクラウドへ送らない
   function quotePayload() {
     try {
       var s = JSON.parse(JSON.stringify(store));
-      (s.patterns || []).forEach(function (pt) { pt.custName = ""; });
+      (s.patterns || []).forEach(function (pt) { pt.custName = ""; pt.custZip = ""; });
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
@@ -1683,11 +1694,11 @@
     CLOUD.savedTimer = setTimeout(function () {
       CLOUD.savedTimer = null;
       if (!cloudOn()) return;
-      // お客様名（個人情報）はクラウドへ送らない
+      // お客様名・郵便番号（個人情報）はクラウドへ送らない
       var list = JSON.parse(JSON.stringify(savedList));
       list.forEach(function (it) {
         it.custName = "";
-        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; });
+        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; pt.custZip = ""; });
       });
       savedDoc(sid).set(stamp({ list: JSON.stringify(list) })).then(cloudOk, cloudNg);
     }, 1000);
@@ -1715,6 +1726,7 @@
           var op = (old.data && old.data.patterns) || [];
           ((x.data && x.data.patterns) || []).forEach(function (pt, i) {
             if (!pt.custName && op[i] && op[i].custName) pt.custName = op[i].custName;
+            if (!pt.custZip && op[i] && op[i].custZip) pt.custZip = op[i].custZip;
           });
         });
         savedList = incoming;
@@ -1782,6 +1794,8 @@
         var mine = (store.patterns[i] || {}).custName;
         var pt = incoming.patterns[i] || {};
         if (!pt.custName && mine) pt.custName = mine;
+        var myZip = (store.patterns[i] || {}).custZip;
+        if (!pt.custZip && myZip) pt.custZip = myZip;
         store.patterns[i] = Object.assign(defaultState(), pt);
         migrateEnergyTodo(store.patterns[i]);
       }
@@ -3375,6 +3389,10 @@
     });
     renderPointUse();
     $("todoOther").value = state.todoOther || "";
+    var zipOn = needsZip();
+    $("custZipField").hidden = !zipOn;
+    $("custZipHint").hidden = !zipOn;
+    if (document.activeElement !== $("custZip")) $("custZip").value = state.custZip || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
     $("denkiTypeWrap").hidden = !state.todoDenki;
     $("gasTypeWrap").hidden = !state.todoGas;
@@ -3684,6 +3702,13 @@
     if (state.todoGas) apps.push("ガス申し込み");
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
+    // 光・でんき・ガスは住所での登録が要るため、郵便番号を必ず出す
+    if (needsZip()) {
+      anyTodo = true;
+      h += row("郵便番号", state.custZip
+        ? '<b style="color:var(--red)">' + esc(state.custZip) + "</b>"
+        : '<b style="color:var(--red)">未記入</b>　※ 光・でんき・ガスの登録に必要です');
+    }
     /* データ移行にあたる初期費用。あんしん店頭サポートのように名前に
      * 「データ移行」が入らないものもあるため、マスタ設定の印で判定する。 */
     var dataMove = (MASTER.feeItems || []).filter(function (f) {
@@ -5752,6 +5777,9 @@
     });
     $("todoOther").addEventListener("input", function () {
       state.todoOther = this.value; saveState(); renderStaffSheet();
+    });
+    $("custZip").addEventListener("input", function () {
+      state.custZip = this.value; saveState(); renderStaffSheet();
     });
     ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () {
