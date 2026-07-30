@@ -62,6 +62,29 @@
   /* 10Gルーターを買っていただくのはドコモ光 10ギガだけ。
    * ahamo光はプロバイダ一体型で、対応ルーターは月額レンタルか持込になる。 */
   function canBuy10gRouter() { return state.product === "hikari10g"; }
+  /* 10ギガの対応ルーターは、プロバイダによって取り扱いが違う。
+   *
+   * @nifty … 優待価格の分割購入。バッファロー WSR6500BE6P-10G を
+   *          月額418円（税込）×48回＝総額20,064円（税込）。
+   *          ニフティで購入する場合、ドコモの「10Gbps対応無線LANルーター」
+   *          （月額550円）の契約は不要。
+   *          ※ページの「380円/月・総額18,240円」は税抜表示。
+   *            この見積もりは全体を税込で作っているため税込額を既定にしている。
+   *          出典: https://setsuzoku.nifty.com/docomo/option/router_purchase/
+   *                （2026-07-30 確認）
+   * それ以外 … 一括購入の想定。 */
+  var ROUTER10G = {
+    "@nifty": { price: 20064, pay: "b48" }
+  };
+  var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
+  function router10gDefault() { return ROUTER10G[state.provider] || ROUTER10G_DEFAULT; }
+  /* プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す。
+   * 手で直した金額は、そのプロバイダの中で入力しているあいだは残る。 */
+  function applyRouter10gDefault() {
+    var d = router10gDefault();
+    state.router10gPrice = d.price;
+    state.router10gPay = d.pay;
+  }
   /* 住居タイプ。マンションは設備の最大速度で 100M と 1G に分かれるが、
    * 料金はどちらも同じなので、料金表を引くときは "ms" にまとめる。
    * 100M かどうかは表示と引き継ぎシートのために持っておく。 */
@@ -109,7 +132,7 @@
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
-      router10g: true, router10gPrice: 6780,
+      router10g: true, router10gPrice: 6780, router10gPay: "once",
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       enabled: false   // この見積もりに光・home 5G を含めるか（見積書に出すかどうか）
@@ -126,6 +149,7 @@
     } else {
       state.baseMonthly = p.monthly[hKey()][state.ptype];
       state.kojiFee = p.koji[hKey()];
+      if (canBuy10gRouter()) applyRouter10gDefault();
     }
     state.jimuFee = p.jimu;
   }
@@ -235,6 +259,12 @@
     if (koji > 0 && state.kojiFree) {
       timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });
     }
+    // 10Gルーターの分割購入（48回）。一括のときは下の初期費用へ回す
+    var r10g = canBuy10gRouter() && state.router10g ? num(state.router10gPrice) : 0;
+    var r10gSplit = r10g > 0 && state.router10gPay === "b48";
+    if (r10gSplit) {
+      timed.push({ name: "10Gルーター 分割（48回・総額" + yen(r10g) + "）", amount: Math.floor(r10g / 48), from: 1, to: 48 });
+    }
 
     // 期間セグメント（変化点ごとの月額）
     var permanent = 0;
@@ -260,9 +290,9 @@
     }
     // 視聴サービス登録料は手数料のため常に一括で初期費用へ
     tvRegRows.forEach(function (x) { initRows.push(x); });
-    // 10Gルーター購入費用（10ギガ選択時・チェック式）
-    if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
-      initRows.push({ name: "10Gルーター購入費用", amount: num(state.router10gPrice) });
+    // 10Gルーター購入費用（10ギガ選択時・チェック式）。分割のときは月額に入っている
+    if (r10g > 0 && !r10gSplit) {
+      initRows.push({ name: "10Gルーター購入費用", amount: r10g });
     }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
@@ -422,8 +452,24 @@
     $("ieDcard").value = state.dcard || "none";
     $("ieRouter10gWrap").hidden = !canBuy10gRouter();
     $("ieRouter10g").checked = state.router10g !== false;
-    $("ieRouter10gPriceField").hidden = !canBuy10gRouter() || state.router10g === false;
+    var r10gOn = canBuy10gRouter() && state.router10g !== false;
+    $("ieRouter10gPriceField").hidden = !r10gOn;
     $("ieRouter10gPrice").value = state.router10gPrice || "";
+    $("ieRouter10gPayField").hidden = !r10gOn;
+    $("ieRouter10gPay").value = state.router10gPay || "once";
+    var r10gHint = $("ieRouter10gHint");
+    r10gHint.hidden = !r10gOn;
+    if (r10gOn) {
+      var rp10 = num(state.router10gPrice);
+      r10gHint.innerHTML = (state.provider === "@nifty"
+        ? "@nifty の優待価格（バッファロー WSR6500BE6P-10G）。<strong>税込20,064円</strong>"
+          + "（ページの「18,240円」は税抜）。ニフティで購入する場合、ドコモの"
+          + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
+        : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
+        + (state.router10gPay === "b48" && rp10 > 0
+          ? "　48回分割で <strong>" + yen(Math.floor(rp10 / 48)) + "/月</strong>（総額 " + yen(rp10) + "）"
+          : "");
+    }
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
     $("ieStoreCash").value = state.storeCash || "";
     $("ieStorePt").value = state.storePt || "";
@@ -491,7 +537,10 @@
       var others = [];
       onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
       if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
-        others.push("10Gルーター購入費用 " + yen(num(state.router10gPrice)));
+        var rp = num(state.router10gPrice);
+        others.push(state.router10gPay === "b48"
+          ? "10Gルーター 48回分割 " + yen(Math.floor(rp / 48)) + "/月（総額 " + yen(rp) + "）"
+          : "10Gルーター購入費用 " + yen(rp));
       }
       if (others.length) {
         kh += '<div class="ks-sub">その他費用）</div>';
@@ -541,7 +590,12 @@
     });
     $("ieHousing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
     $("iePtype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
-    $("ieProvider").addEventListener("change", function () { state.provider = this.value; syncForm(); recalc(); });
+    $("ieProvider").addEventListener("change", function () {
+      state.provider = this.value;
+      // 10ギガの対応ルーターはプロバイダで変わるため、価格と払い方を入れ直す
+      if (canBuy10gRouter()) applyRouter10gDefault();
+      syncForm(); recalc();
+    });
     $("ieProviderType").addEventListener("change", function () { state.providerType = this.value; recalc(); });
     $("ieRouterRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
     $("ieBaseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
@@ -580,7 +634,8 @@
     $("ieDcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
     $("ieDcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
     $("ieRouter10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
-    $("ieRouter10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); recalc(); });
+    $("ieRouter10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); syncForm(); recalc(); });
+    $("ieRouter10gPay").addEventListener("change", function () { state.router10gPay = this.value; syncForm(); recalc(); });
     $("ieKojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
     $("ieDpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
     $("ieOnecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
