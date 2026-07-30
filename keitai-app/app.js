@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.20.0";
+  var APP_VERSION = "1.21.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -898,7 +898,7 @@
           sv.forEach(function (it) {
             it.custName = "";
             if (it.data && it.data.patterns) {
-              it.data.patterns.forEach(function (pt) { pt.custName = ""; pt.custZip = ""; });
+              it.data.patterns.forEach(function (pt) { pt.custName = ""; });
             }
           });
         }
@@ -1423,7 +1423,8 @@
       todoOther: "",      // 引き継ぎシートの自由記入
       /* 郵便番号。光・でんき・ガスは住所での登録が要るため、
        * 引き継ぎシートに載せて登録スタッフへ渡す。
-       * お客様の住所にあたるので、お客様名と同じくクラウドへは送らない。 */
+       * 受付の端末とレジの端末で見る必要があるので、こちらは同期する
+       * （番号だけでは個人を特定できないため。お客様名は引き続き同期しない）。 */
       custZip: "",
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
@@ -1603,11 +1604,11 @@
         .then(cloudOk, cloudNg);
     }, 1200);
   }
-  // 送信用の見積もりデータ。お客様名・郵便番号（個人情報）はクラウドへ送らない
+  // 送信用の見積もりデータ。お客様名（個人情報）はクラウドへ送らない
   function quotePayload() {
     try {
       var s = JSON.parse(JSON.stringify(store));
-      (s.patterns || []).forEach(function (pt) { pt.custName = ""; pt.custZip = ""; });
+      (s.patterns || []).forEach(function (pt) { pt.custName = ""; });
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
@@ -1694,11 +1695,11 @@
     CLOUD.savedTimer = setTimeout(function () {
       CLOUD.savedTimer = null;
       if (!cloudOn()) return;
-      // お客様名・郵便番号（個人情報）はクラウドへ送らない
+      // お客様名（個人情報）はクラウドへ送らない
       var list = JSON.parse(JSON.stringify(savedList));
       list.forEach(function (it) {
         it.custName = "";
-        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; pt.custZip = ""; });
+        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; });
       });
       savedDoc(sid).set(stamp({ list: JSON.stringify(list) })).then(cloudOk, cloudNg);
     }, 1000);
@@ -1726,7 +1727,6 @@
           var op = (old.data && old.data.patterns) || [];
           ((x.data && x.data.patterns) || []).forEach(function (pt, i) {
             if (!pt.custName && op[i] && op[i].custName) pt.custName = op[i].custName;
-            if (!pt.custZip && op[i] && op[i].custZip) pt.custZip = op[i].custZip;
           });
         });
         savedList = incoming;
@@ -1794,8 +1794,6 @@
         var mine = (store.patterns[i] || {}).custName;
         var pt = incoming.patterns[i] || {};
         if (!pt.custName && mine) pt.custName = mine;
-        var myZip = (store.patterns[i] || {}).custZip;
-        if (!pt.custZip && myZip) pt.custZip = myZip;
         store.patterns[i] = Object.assign(defaultState(), pt);
         migrateEnergyTodo(store.patterns[i]);
       }
@@ -2596,9 +2594,10 @@
     // 端末
     var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
     var initialDevice = 0;
-    /* 端末代金総額（頭金を含む）から、クーポン・キャンペーンの値引きを引く。
-     * 値引きは店頭でのお支払いが軽くなるよう、
-     * 「頭金 → 分割する分 → 残価」の順に引いていく。 */
+    /* 端末代金総額（頭金を含む）から値引きを引く。
+     * クーポン値引きと店舗独自キャンペーンは、店頭でのお支払いが軽くなるよう
+     * 「頭金 → 分割する分 → 残価」の順に引く。
+     * ダイレクト割は頭金からは引かず、分割する分（あふれたら残価）から引く。 */
     var deviceList = num(st.devicePrice);
     var devOffCoupon = Math.min(Math.max(0, num(st.couponOff)), deviceList);
     var devOffTebiki = Math.min(Math.max(0, num(st.tebikiOff)), Math.max(0, deviceList - devOffCoupon));
@@ -2606,10 +2605,12 @@
       Math.max(0, deviceList - devOffCoupon - devOffTebiki));
     var devOffTotal = devOffCoupon + devOffTebiki + devOffDirect;
     var atamaInput = Math.max(0, Math.min(num(st.atamakin), deviceList));
-    var off = devOffTotal;
-    // ①頭金から引く
-    var deviceAtama = Math.max(0, atamaInput - off);
-    off = Math.max(0, off - atamaInput);
+    // ①頭金から引く（クーポン・店舗独自キャンペーンだけ）
+    var offAtama = devOffCoupon + devOffTebiki;
+    var deviceAtama = Math.max(0, atamaInput - offAtama);
+    /* 分割する分へ回す値引き。
+     * 頭金で引ききれなかった分と、ダイレクト割（はじめから頭金には当てない）。 */
+    var off = Math.max(0, offAtama - atamaInput) + devOffDirect;
     var deviceTotal = Math.max(0, deviceList - devOffTotal);
     device.list = deviceList;
     device.offCoupon = devOffCoupon;
@@ -3449,16 +3450,19 @@
     if (!r || !r.device.offTotal) { el.hidden = true; return; }
     var parts = [];
     if (r.device.offCoupon > 0) parts.push("クーポン " + yen(r.device.offCoupon));
-    if (r.device.offTebiki > 0) parts.push("手値引き " + yen(r.device.offTebiki));
+    if (r.device.offTebiki > 0) parts.push("店舗独自キャンペーン " + yen(r.device.offTebiki));
     if (r.device.offDirect > 0) parts.push("ダイレクト割 " + yen(r.device.offDirect));
     var msg = "端末代金 " + yen(r.device.list) + " − 値引き " + yen(r.device.offTotal)
       + (parts.length > 1 ? "（" + parts.join("＋") + "）" : "")
       + " = <strong>" + yen(r.device.total) + "</strong>";
     if (r.device.atamaOff > 0) {
-      msg += "　値引きはまず頭金から引きます（頭金 " + yen(r.device.atamaList)
+      msg += "　クーポン・店舗独自キャンペーンはまず頭金から引きます（頭金 " + yen(r.device.atamaList)
         + " → <strong>" + yen(r.device.atama) + "</strong>）。";
     } else {
-      msg += "　値引きは頭金 → 分割 → 残価の順に引きます。";
+      msg += "　クーポン・店舗独自キャンペーンは 頭金 → 分割 → 残価 の順に引きます。";
+    }
+    if (r.device.offDirect > 0) {
+      msg += "<strong>ダイレクト割は頭金からは引かず、分割金から引きます。</strong>";
     }
     el.innerHTML = msg;
     el.hidden = false;
@@ -3796,8 +3800,11 @@
       if (state.deviceName || num(state.devicePrice) > 0 || r.device.offTotal > 0) {
         h += row("機種", "<b>" + esc(state.deviceName || "（機種名未入力）") + "</b>　" + yen(r.device.list));
         if (r.device.offCoupon > 0) h += row("　クーポン値引き", "−" + yen(r.device.offCoupon));
+        // 引き継ぎシートは店内の呼び方に合わせる（お客様向けは「店舗独自キャンペーン」）
         if (r.device.offTebiki > 0) h += row("　手値引き", "−" + yen(r.device.offTebiki));
-        if (r.device.offDirect > 0) h += row("　ダイレクト割", "−" + yen(r.device.offDirect));
+        if (r.device.offDirect > 0) {
+          h += row("　ダイレクト割", "−" + yen(r.device.offDirect) + "　<b>分割金から差引</b>");
+        }
         if (r.device.offTotal > 0) h += row("　<b>値引き後の端末代金</b>", "<b>" + yen(r.device.total) + "</b>"
           + (r.device.atamaOff > 0
             ? "　店頭頭金 " + yen(r.device.atamaList) + " → " + yen(r.device.atamaBeforePoint) : ""));
@@ -4112,7 +4119,7 @@
       p2 += "<h3>端末代金の値引き</h3><table><tbody>";
       p2 += row((state.deviceName ? esc(state.deviceName) : "端末代金") + "　定価", yen(r.device.list), true);
       if (r.device.offCoupon > 0) p2 += row("クーポン値引き", "−" + yen(r.device.offCoupon), true);
-      if (r.device.offTebiki > 0) p2 += row("手値引き", "−" + yen(r.device.offTebiki), true);
+      if (r.device.offTebiki > 0) p2 += row("店舗独自キャンペーン", "−" + yen(r.device.offTebiki), true);
       if (r.device.offDirect > 0) p2 += row("ダイレクト割", "−" + yen(r.device.offDirect), true);
       p2 += '<tr class="total"><td>値引き後の端末代金</td><td class="amt">' + yen(r.device.total) + "</td></tr>";
       if (r.device.atamaOff > 0) {
