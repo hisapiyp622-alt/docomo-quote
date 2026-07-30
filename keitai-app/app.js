@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.17.0";
+  var APP_VERSION = "1.17.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2430,7 +2430,7 @@
   var GAS_ECO_LABEL = { std: "スタンダードプラン", eco: "エコジョーズプラン" };
   function gasEcoNeeded() { return !!GAS_ECO_TYPES[state.todoGasType]; }
   /* でんき・ガスの「現在ご契約中の会社」。
-   * 解約のご連絡先をその場で出せるようにするためのもの。
+   * ご連絡先をその場で出せるようにするためのもの。
    * 会社と電話番号はマスタ設定で編集できる（番号は変わるため）。 */
   function energyList(kind) {
     return (MASTER.energyCompanies && MASTER.energyCompanies[kind]) || [];
@@ -3651,7 +3651,7 @@
         anyTodo = true;
         h += row((kind === "gas" ? "ガス" : "でんき") + "の現在の会社",
           "<b>" + esc(c.name) + "</b>"
-          + (c.tel ? "　解約のご連絡先: <b>" + esc(c.tel) + "</b>" : "　（連絡先は未登録）"));
+          + (c.tel ? "　連絡先: <b>" + esc(c.tel) + "</b>" : "　（連絡先は未登録）"));
       });
     }
     var gd = state.todoGas ? gasDiscountPicked() : [];
@@ -4347,7 +4347,7 @@
 
     // でんき・ガスの現在の会社と連絡先
     h += '<div class="master-plan"><h3>でんき・ガスの現在の会社</h3>';
-    h += '<p class="hint">でんき・ガスをお申し込みのとき、<strong>いまご契約中の会社を選ぶと解約のご連絡先が出ます</strong>。'
+    h += '<p class="hint">でんき・ガスをお申し込みのとき、<strong>いまご契約中の会社を選ぶとご連絡先が出ます</strong>。'
       + '電話番号は変わることがあるので、変わったらここで直してください。'
       + '<strong>番号が空欄の会社は、お手元の番号を登録してお使いください。</strong></p>';
     [["denki", "でんき"], ["gas", "ガス"]].forEach(function (kd) {
