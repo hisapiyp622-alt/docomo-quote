@@ -286,7 +286,7 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   .sheet .disclaimer{font-size:9px;margin-top:8px;padding-top:5px;line-height:1.5}
   .sheet .warnbox{font-size:11px;padding:6px 8px}
   /* 2ページ目（本体分割金・初期費用）はここで必ず改ページ */
-  .sheet .sheet-page2{break-before:page;page-break-before:always}
+  .sheet .sheet-page2,.sheet .sheet-page3{break-before:page;page-break-before:always}
   .sheet .page2-head{
     display:flex;justify-content:space-between;align-items:baseline;gap:8px;
     font-size:12px;font-weight:700;color:var(--ink);

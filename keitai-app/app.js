@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.18.1";
+  var APP_VERSION = "1.19.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -581,7 +581,11 @@
       renderSheet();
     });
   }
-  var sheetScope = "phone";      // 見積書に出す内容（phone / both）
+  /* 見積書に出す内容。
+   *   phone  … スマホのみ（2枚）
+   *   both   … スマホ＋光の世帯合計（2枚）
+   *   hikari … 上に加えて、光の明細を3枚目の別紙として付ける（3枚） */
+  var sheetScope = "phone";
   /* 光を申し込むのにスマホ側でセット割を選んでいない、という付け忘れに気づけるようにする。
    * 逆（セット割だけ選んで光を入れていない）は、ご家族の既契約という場合があるので出さない。 */
   function renderIenakaWarn(r) {
@@ -3672,39 +3676,13 @@
     if (state.todoDcard) {
       apps.push("dカード申し込み" + (state.todoDcardType ? "（" + DCARD_TYPE[state.todoDcardType] + "）" : ""));
     }
-    if (state.todoDenki) {
-      apps.push("でんき申し込み"
-        + (state.todoDenkiType ? "（" + DENKI_TYPE[state.todoDenkiType] + "）" : ""));
-    }
-    if (state.todoGas) {
-      // 旧データ（料金メニュー未対応）はエリア名だけを表示する
-      var gname = state.todoGasType
-        ? (GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA)
-        : "";
-      if (gname && state.todoGasEco && gasEcoNeeded()) {
-        gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
-      }
-      apps.push("ガス申し込み" + (gname ? "（" + gname + "）" : ""));
-    }
-    if (state.todoDenki || state.todoGas) {
-      ["denki", "gas"].forEach(function (kind) {
-        var c = energyPicked(kind);
-        if (!c) return;
-        anyTodo = true;
-        h += row((kind === "gas" ? "ガス" : "でんき") + "の現在の会社",
-          "<b>" + esc(c.name) + "</b>"
-          + (c.tel ? "　連絡先: <b>" + esc(c.tel) + "</b>" : "　（連絡先は未登録）"));
-      });
-    }
-    var gd = state.todoGas ? gasDiscountPicked() : [];
+    /* でんき・ガスの中身（料金メニュー・割引オプション・現在の会社）は、
+     * 下の「ドコモでんき・ドコモガス」の欄にまとめて出す。
+     * ここでは何を同時に申し込むかだけを並べる。 */
+    if (state.todoDenki) apps.push("でんき申し込み");
+    if (state.todoGas) apps.push("ガス申し込み");
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
-    if (gd.length) {
-      anyTodo = true;
-      h += row("ガスの割引オプション", "<b>" + gd.map(function (d) {
-        return esc(d.name) + " " + d.rate + "%";
-      }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
-    }
     /* データ移行にあたる初期費用。あんしん店頭サポートのように名前に
      * 「データ移行」が入らないものもあるため、マスタ設定の印で判定する。 */
     var dataMove = (MASTER.feeItems || []).filter(function (f) {
@@ -3857,6 +3835,44 @@
     h += "</tbody></table>";
 
     var secPoint = h; h = "";
+    /* ドコモでんき・ドコモガス。
+     * 後工程がそのまま手続きできるよう、プラン（料金メニュー）・割引オプション・
+     * いまご契約中の会社を1か所にまとめる。光の欄のすぐ上に置く。 */
+    if (state.todoDenki || state.todoGas) {
+      h += "<h3>ドコモでんき・ドコモガス</h3><table><tbody>";
+      if (state.todoDenki) {
+        h += row("でんき　プラン", state.todoDenkiType
+          ? "<b>" + DENKI_TYPE[state.todoDenkiType] + "</b>" : "<b>未選択</b>");
+        var dc = energyPicked("denki");
+        if (dc) {
+          h += row("でんき　現在の会社", "<b>" + esc(dc.name) + "</b>"
+            + (dc.tel ? "　連絡先: <b>" + esc(dc.tel) + "</b>" : "　（連絡先は未登録）"));
+        }
+      }
+      if (state.todoGas) {
+        // 旧データ（料金メニュー未対応）はエリア名だけを表示する
+        var gname = state.todoGasType
+          ? (GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA)
+          : "";
+        if (gname && state.todoGasEco && gasEcoNeeded()) {
+          gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
+        }
+        h += row("ガス　プラン", gname ? "<b>" + esc(gname) + "</b>" : "<b>未選択</b>");
+        var gd2 = gasDiscountPicked();
+        if (gd2.length) {
+          h += row("ガス　割引オプション", "<b>" + gd2.map(function (d) {
+            return esc(d.name) + " " + d.rate + "%";
+          }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
+        }
+        var gc = energyPicked("gas");
+        if (gc) {
+          h += row("ガス　現在の会社", "<b>" + esc(gc.name) + "</b>"
+            + (gc.tel ? "　連絡先: <b>" + esc(gc.tel) + "</b>" : "　（連絡先は未登録）"));
+        }
+      }
+      h += "</tbody></table>";
+    }
+    var secEnergy = h; h = "";
     /* 光・home 5G。後工程がそのまま手続きできるよう、申込区分と工事まわりを残す。
      * 世帯で1本なので、パターンを切り替えても同じ内容が出る。 */
     if (ienakaOn()) {
@@ -3894,7 +3910,7 @@
     h = h0 + (hasDevice
       ? secDevice + secInit + secContract + secOpt
       : secContract + secOpt + secDevice + secInit)
-      + secPoint + secIenaka;
+      + secPoint + secEnergy + secIenaka;
     h += '<div class="disclaimer">店舗内引き継ぎ用（お客様控えではありません）。アプリ版 ' + APP_VERSION + "</div>";
     $("staffSheetBody").innerHTML = h;
   }
@@ -3909,11 +3925,6 @@
       if (!ienakaOn()) sheetScope = "phone";
       var rb = scopeWrap.querySelector('input[value="' + sheetScope + '"]');
       if (rb) rb.checked = true;
-    }
-    // 光だけの別紙は、スマホの見積書とは別の1枚として作る
-    if (sheetScope === "hikari" && ienakaOn()) {
-      $("sheetBody").innerHTML = ienakaOnlySheet(r.dSet || 0);
-      return;
     }
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
@@ -4052,7 +4063,7 @@
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
     }
     // 光・home 5G を含める場合は、ここに世帯の合計を出す
-    if (sheetScope === "both" && ienakaOn()) {
+    if (sheetScope !== "phone" && ienakaOn()) {
       h += ienakaSheetHtml(seg0.monthly, r.dSet || 0);
     }
 
@@ -4170,6 +4181,14 @@
       + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。"
       + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
       + "料金データ基準日: " + esc(MASTER.updated) + "｜アプリ版 " + APP_VERSION + "</div>";
+
+    /* 光の明細は、スマホの見積書に続く3枚目としてお渡しする。
+     * 1ページ目には世帯の合計だけを出し、内訳はこちらで見ていただく。 */
+    if (sheetScope === "hikari" && ienakaOn()) {
+      h += '<div class="sheet-page3">'
+        + '<div class="page2-note no-print">――― 印刷時はここから3ページ目（光の別紙） ―――</div>'
+        + ienakaOnlySheet(r.dSet || 0) + "</div>";
+    }
 
     $("sheetBody").innerHTML = h;
 
