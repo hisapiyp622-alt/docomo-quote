@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.16.0";
+  var APP_VERSION = "1.16.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -152,6 +152,7 @@
     var plan = state.planId ? currentPlan().name : "";
     return (d.getFullYear() + "/" + mm + "/" + dd) + (plan ? " " + plan : "");
   }
+  var quickSaveTimer = null;
   // いま開いている3パターン一式を保存する
   function saveQuote(name) {
     var r = calc();
@@ -5668,6 +5669,27 @@
           saveState(); renderStaffSheet();
         });
       });
+    });
+    /* 見積もりページの一番下からも保存できるようにする。
+     * 入力を終えた場所でそのまま保存できるのが狙いなので、名前は日付とプラン名から
+     * 自動で付ける。名前を決めて保存したいときは「保存」タブを使う。
+     * ここに名前の入力欄を置かないのは、保存名が他の端末にも同期されるため。
+     * 急いでいるとお客様の氏名を入れてしまいやすい。 */
+    var quickSave = $("quickSaveBtn");
+    if (quickSave) quickSave.addEventListener("click", function () {
+      if (!state.planId && !window.confirm("料金プランを選んでいません。このまま保存しますか？")) return;
+      var it = saveQuote("");
+      var m = $("quickSaveMsg");
+      if (!m) return;
+      m.innerHTML = "「" + esc(it.name) + "」として保存しました。"
+        + '<button type="button" class="link-btn" id="quickSaveOpen">保存した見積もりを見る</button>';
+      m.hidden = false;
+      clearTimeout(quickSaveTimer);
+      quickSaveTimer = setTimeout(function () { m.hidden = true; }, 8000);
+    });
+    var qm = $("quickSaveMsg");
+    if (qm) qm.addEventListener("click", function (e) {
+      if (e.target && e.target.id === "quickSaveOpen") switchTab("saved");
     });
     // 保存した見積もり
     var saveBtn = $("saveQuoteBtn");

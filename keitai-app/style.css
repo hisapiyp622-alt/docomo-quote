@@ -572,6 +572,13 @@ body.sorting .sort-chip{cursor:grabbing}
 .setup-sum{margin:0 0 10px;padding-left:18px}
 .setup-sum li{font-size:13px;line-height:1.9}
 
+/* 見積もりページの下の保存 */
+.quick-save-msg{
+  margin-top:-4px;padding:7px 10px;border-radius:8px;
+  background:#FBF1F3;border:1px solid #E8C7CD;color:var(--ink);font-weight:700;
+}
+.quick-save-msg .link-btn{margin-left:8px;font-weight:400}
+
 /* ガスの区分（スタンダード／エコジョーズ） */
 .sub-checks .gas-eco-note{flex-basis:100%;margin-top:2px;color:var(--muted);font-weight:400}
 
