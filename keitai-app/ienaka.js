@@ -59,6 +59,11 @@
     }
   };
   function is10g() { return state.product === "hikari10g" || state.product === "ahamo10g"; }
+  /* 住居タイプ。マンションは設備の最大速度で 100M と 1G に分かれるが、
+   * 料金はどちらも同じなので、料金表を引くときは "ms" にまとめる。
+   * 100M かどうかは表示と引き継ぎシートのために持っておく。 */
+  var HOUSING_LABEL = { ht: "戸建", ms: "マンション", ms100: "マンション100M" };
+  function hKey() { return state.housing === "ms100" ? "ms" : state.housing; }
   function isHikari() { return state.product !== "home5g"; }
   /* 月額オプション（チェック式・金額は見積もりごとに編集可）
    * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
@@ -111,8 +116,8 @@
       state.baseMonthly = p.monthly;
       state.kojiFee = 0; state.kojiFree = false;
     } else {
-      state.baseMonthly = p.monthly[state.housing][state.ptype];
-      state.kojiFee = p.koji[state.housing];
+      state.baseMonthly = p.monthly[hKey()][state.ptype];
+      state.kojiFee = p.koji[hKey()];
     }
     state.jimuFee = p.jimu;
   }
@@ -177,7 +182,7 @@
     // 回線工事費: 申込区分から自動判定（新規=標準28,600円／転用・事業者変更=0円）
     var koji = 0;
     if (isHikari() && state.applyType === "shinki") {
-      koji = PRODUCTS[state.product].koji[state.housing];
+      koji = PRODUCTS[state.product].koji[hKey()];
     }
     // オプション工事料も新規のみ自動加算（転用・事業者変更は設備そのまま移行のため0円）
     var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneKoji = 0, phoneChecked = false;
@@ -283,7 +288,7 @@
   var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更" };
   function productLabel() {
     if (state.product === "home5g") return "";
-    var parts = [state.housing === "ht" ? "戸建" : "マンション"];
+    var parts = [HOUSING_LABEL[state.housing] || "戸建"];
     if (!PRODUCTS[state.product].noPtype) parts.push("タイプ" + state.ptype);
     parts.push(APPLY_LABEL[state.applyType] || "新規");
     return "（" + parts.join("・") + "）";
@@ -362,6 +367,18 @@
     if (!state) return;
     $("ieProduct").value = state.product;
     $("ieHousing").value = state.housing;
+    /* 100M の設備を選んだときの案内。月額はマンションと同じ。
+     * 10ギガは対応設備が要るので、組み合わせが合っていないことを知らせる。 */
+    var hn = $("ieHousingNote");
+    if (state.housing !== "ms100" || state.product === "home5g") {
+      hn.hidden = true;
+    } else {
+      hn.hidden = false;
+      hn.innerHTML = is10g()
+        ? '<strong style="color:var(--red)">⚠ 10ギガは10ギガ対応設備が必要です。</strong>'
+          + "100Mbpsの設備のままではお申し込みいただけません。設備をご確認ください。"
+        : "100Mbpsの設備（VDSL方式・LAN配線方式）です。<strong>月額はマンションと同じ</strong>です。";
+    }
     $("iePtype").value = state.ptype;
     $("ieBaseMonthly").value = state.baseMonthly || "";
     $("ieHikariFields").hidden = state.product === "home5g";
@@ -785,6 +802,12 @@
     segLabel: segLabel,
     isOn: function () { return !!(state && state.enabled); },
     label: function () { return state ? PRODUCTS[state.product].name + productLabel() : ""; },
+    /* プロバイダ無料無線ルーターのレンタル。1ギガだけの取り扱いなので、
+     * それ以外は空を返して引き継ぎシートにも出さない。 */
+    routerRental: function () {
+      if (!state || state.product !== "hikari1g") return "";
+      return state.routerRental === "nashi" ? "nashi" : "ari";
+    },
     isHikari: isHikari,
     sheetHtml: sheetHtml,
     // 入れ物を差し替えずに中身だけ初期化する（ケータイ側の store.ienaka を指したまま）

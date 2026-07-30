@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.22.0";
+  var APP_VERSION = "1.23.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3988,6 +3988,13 @@
       if (KQ_IENAKA.isHikari() && store.ienaka.provider) {
         h += row("プロバイダ", esc(store.ienaka.provider)
           + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）");
+      }
+      // 無料レンタルでも申し込みの手続きが要るため、あり/なしを必ず出す
+      var rr = KQ_IENAKA.routerRental();
+      if (rr) {
+        h += row("ルーターレンタル", rr === "ari"
+          ? '<b style="color:var(--red)">申込あり</b>　プロバイダの無料無線ルーター'
+          : "なし（お客様でご用意）");
       }
     } else if (state.todoHikari) {
       // 手続き内容で光にチェックはあるが、「光・5G」の入力がまだ無いとき
