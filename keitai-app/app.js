@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.17.1";
+  var APP_VERSION = "1.17.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1386,7 +1386,11 @@
       pointBakuage: 0, pointBakuageAuto: 0,  // 爆アゲセレクションの還元（自動計算・編集可）
       bakuageInclude: true,              // 爆アゲの還元を見積もりに充当するか
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
-      dcardGoldAuto: true,               // dカード還元特典を見積もりに含めるか（GOLD系選択時）
+      /* dカード還元特典を月額から充当するか（GOLD系を選んだとき）。
+       * 既定は充当しない。カードの利用状況で変わるうえ、進呈されるポイントであって
+       * 毎月の請求が自動で下がるものではないため、実質額を多めに見せないようにする。
+       * 充当してご案内するときは、⑧のチェックを入れる。 */
+      dcardGoldAuto: false,
       currentInst: 0, currentInstMonths: 0,  // 見直し前から支払い中の分割金（0=ずっと）
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
@@ -3516,7 +3520,9 @@
       $("dcardAutoLabel").textContent = "dカード還元特典を見積もりに含める"
         + (r.plan && r.plan.dcard10 === false
           ? "（" + r.plan.name + "は利用料金還元の対象外プランのため自動計算0pt）"
-          : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）");
+          : state.dcardGoldAuto === false
+            ? "（いまは含めていません。もらえるポイントは " + (r.dcardAutoPt || 0) + "pt/月）"
+            : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）");
     }
   }
 
