@@ -572,6 +572,9 @@ body.sorting .sort-chip{cursor:grabbing}
 .setup-sum{margin:0 0 10px;padding-left:18px}
 .setup-sum li{font-size:13px;line-height:1.9}
 
+/* ガスの区分（スタンダード／エコジョーズ） */
+.sub-checks .gas-eco-note{flex-basis:100%;margin-top:2px;color:var(--muted);font-weight:400}
+
 /* でんき・ガスの現在の会社 */
 .energy-tel{flex-basis:100%;margin-top:2px}
 .energy-tel b{color:var(--red);font-size:13px}

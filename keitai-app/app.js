@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.15.1";
+  var APP_VERSION = "1.16.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -178,6 +178,7 @@
     store.active = Math.min(Math.max(it.data.active | 0, 0), 2);
     for (var i = 0; i < 3; i++) {
       store.patterns[i] = Object.assign(defaultState(), it.data.patterns[i] || {});
+      migrateEnergyTodo(store.patterns[i]);
     }
     state = store.patterns[store.active];
     applyIenaka(it.data.ienaka);
@@ -1395,7 +1396,8 @@
       adhocInitial: [],   // {name, amount} ±
       custName: "", shopName: "", staffName: "", shopTel: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
-      procTodo: {}, todoDcard: false, todoDenkiGas: false, todoHikari: false,
+      procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
+      todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
@@ -1435,7 +1437,7 @@
     // 旧・代理店サービスのチェック状態をオプションへ統合（全パターン共通）
     store.patterns.forEach(function (pt) {
       if (!pt.optionKubun) pt.optionKubun = {};
-      if (pt.todoDenki || pt.todoGas) pt.todoDenkiGas = true;
+      migrateEnergyTodo(pt);
       if (!pt.procTodo || !Object.keys(pt.procTodo).length) {
         pt.procTodo = {};
         if (pt.procType) pt.procTodo[pt.procType === "plan_only" ? "plan" : pt.procType] = true;
@@ -1481,6 +1483,26 @@
     if (ieb) ieb.hidden = !store.ienaka.enabled;
     var iec = $("ieEnabled");
     if (iec) iec.checked = !!store.ienaka.enabled;
+  }
+  /* でんき・ガスのチェックの移り変わり
+   *   〜2026-07: todoDenki / todoGas（別々）
+   *   2026-07  : todoDenkiGas（1つにまとめていた時期）
+   *   2026-07-30〜: todoDenki / todoGas（また別々。料金メニューが増えたため）
+   * まとめていた時期のデータは、選ばれている料金メニューから振り分ける。
+   * どちらのメニューも未選択なら、判断できないので両方を立てる。
+   * 起動時のほか、保存した見積もりを開いたときと端末間同期で受け取ったときにも通す。 */
+  function migrateEnergyTodo(pt) {
+    if (!pt) return;
+    if (pt.todoDenkiGas && !pt.todoDenki && !pt.todoGas) {
+      if (pt.todoDenkiType || pt.todoGasType) {
+        pt.todoDenki = !!pt.todoDenkiType;
+        pt.todoGas = !!pt.todoGasType;
+      } else {
+        pt.todoDenki = true;
+        pt.todoGas = true;
+      }
+    }
+    delete pt.todoDenkiGas;
   }
   function saveState() {
     try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
@@ -1742,6 +1764,7 @@
         var pt = incoming.patterns[i] || {};
         if (!pt.custName && mine) pt.custName = mine;
         store.patterns[i] = Object.assign(defaultState(), pt);
+        migrateEnergyTodo(store.patterns[i]);
       }
       store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
       state = store.patterns[store.active];
@@ -2389,6 +2412,18 @@
   };
   // 割引対象を最大3つ・合計9%までに制限する料金メニュー（PDF ※2）
   var GAS_DISC_CAPPED = { smart: true, house: true, yukadan: true, myhome: true };
+  /* スタンダードプラン／エコジョーズプランに分かれる料金メニュー。
+   * 高効率給湯器「エコジョーズ」をお使いのお客さまはエコジョーズプラン、
+   * それ以外はスタンダードプランが適用される（単位料金が違う）。
+   * 出典: 大阪ガス GAS得プラン 各メニューのページ（2026-07-30 確認）
+   *   床暖料金       https://home.osakagas.co.jp/energy/gas/price/p_03.html
+   *   あっためトク料金 https://home.osakagas.co.jp/energy/gas/price/p_08/
+   *   ハウス空調料金  https://home.osakagas.co.jp/energy/gas/price/p_02/
+   * 他のメニュー（一般料金・一般料金S・まとめトク・スマート発電・家事トク・
+   * もっと割・マイホーム発電）にはこの区分が無いことも同ページで確認済み。 */
+  var GAS_ECO_TYPES = { attame: true, house: true, yukadan: true };
+  var GAS_ECO_LABEL = { std: "スタンダードプラン", eco: "エコジョーズプラン" };
+  function gasEcoNeeded() { return !!GAS_ECO_TYPES[state.todoGasType]; }
   /* でんき・ガスの「現在ご契約中の会社」。
    * 解約のご連絡先をその場で出せるようにするためのもの。
    * 会社と電話番号はマスタ設定で編集できる（番号は変わるため）。 */
@@ -3262,7 +3297,7 @@
     $("staffName").value = state.staffName;
     $("shopTel").value = state.shopTel || "";
     $("quoteMemo").value = state.quoteMemo;
-    ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
+    ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
     $("voiceChange").checked = !!state.voiceChange;
     renderNetSvc();
     $("planChange").checked = !!state.planChange;
@@ -3274,11 +3309,12 @@
     $("usePointAmount").value = state.usePointAmount || "";
     $("todoOther").value = state.todoOther || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
-    $("denkiTypeWrap").hidden = !state.todoDenkiGas;
-    $("gasTypeWrap").hidden = !state.todoDenkiGas;
+    $("denkiTypeWrap").hidden = !state.todoDenki;
+    $("gasTypeWrap").hidden = !state.todoGas;
     document.querySelectorAll("[data-dcardtype]").forEach(function (cb) { cb.checked = state.todoDcardType === cb.getAttribute("data-dcardtype"); });
     document.querySelectorAll("[data-denkitype]").forEach(function (cb) { cb.checked = state.todoDenkiType === cb.getAttribute("data-denkitype"); });
     document.querySelectorAll("[data-gastype]").forEach(function (cb) { cb.checked = state.todoGasType === cb.getAttribute("data-gastype"); });
+    renderGasEco();
     renderGasDiscounts();
     renderEnergyNow();
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
@@ -3440,7 +3476,8 @@
       var wrap = $(kind === "gas" ? "gasNowWrap" : "denkiNowWrap");
       if (!wrap) return;
       var list = energyList(kind);
-      if (!state.todoDenkiGas || !energyTypePicked(kind) || !list.length) {
+      var on = kind === "gas" ? state.todoGas : state.todoDenki;
+      if (!on || !energyTypePicked(kind) || !list.length) {
         wrap.hidden = true; wrap.innerHTML = ""; return;
       }
       wrap.hidden = false;
@@ -3461,10 +3498,31 @@
       wrap.innerHTML = h;
     });
   }
+  /* ガスの区分（スタンダード／エコジョーズ）。
+   * 対象の料金メニューを選んだときだけ出す。 */
+  function renderGasEco() {
+    var wrap = $("gasEcoWrap");
+    if (!wrap) return;
+    if (!state.todoGas || !gasEcoNeeded()) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+    wrap.hidden = false;
+    var h = '<span class="sub-label">' + esc(GAS_TYPE[state.todoGasType]) + "の区分</span>";
+    ["std", "eco"].forEach(function (k) {
+      h += '<label class="check"><input type="checkbox" data-gaseco="' + k + '"'
+        + (state.todoGasEco === k ? " checked" : "") + "> " + GAS_ECO_LABEL[k] + "</label>";
+    });
+    h += '<span class="sub-note' + (state.todoGasEco ? " gas-eco-note" : "") + '">'
+      + (state.todoGasEco
+        ? (state.todoGasEco === "eco"
+          ? "高効率給湯器「エコジョーズ」をお使いのお客さま向けの単位料金です。"
+          : "「エコジョーズ」以外のお客さま向けの単位料金です。")
+        : "エコジョーズの有無で単位料金が変わります。どちらかを選んでください。")
+      + "</span>";
+    wrap.innerHTML = h;
+  }
   function renderGasDiscounts() {
     var wrap = $("gasDiscountWrap");
     var list = gasDiscountList();
-    if (!state.todoDenkiGas || !list.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+    if (!state.todoGas || !list.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
     wrap.hidden = false;
     var picked = state.todoGasDiscount || {};
     var capped = GAS_DISC_CAPPED[state.todoGasType];
@@ -3521,16 +3579,21 @@
     if (state.todoDcard) {
       apps.push("dカード申し込み" + (state.todoDcardType ? "（" + DCARD_TYPE[state.todoDcardType] + "）" : ""));
     }
-    if (state.todoDenkiGas) {
-      var eg = [];
-      if (state.todoDenkiType) eg.push(DENKI_TYPE[state.todoDenkiType]);
-      if (state.todoGasType) {
-        // 旧データ（料金メニュー未対応）はエリア名だけを表示する
-        eg.push(GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA);
-      }
-      apps.push("でんき・ガス申し込み" + (eg.length ? "（" + eg.join("・") + "）" : ""));
+    if (state.todoDenki) {
+      apps.push("でんき申し込み"
+        + (state.todoDenkiType ? "（" + DENKI_TYPE[state.todoDenkiType] + "）" : ""));
     }
-    if (state.todoDenkiGas) {
+    if (state.todoGas) {
+      // 旧データ（料金メニュー未対応）はエリア名だけを表示する
+      var gname = state.todoGasType
+        ? (GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA)
+        : "";
+      if (gname && state.todoGasEco && gasEcoNeeded()) {
+        gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
+      }
+      apps.push("ガス申し込み" + (gname ? "（" + gname + "）" : ""));
+    }
+    if (state.todoDenki || state.todoGas) {
       ["denki", "gas"].forEach(function (kind) {
         var c = energyPicked(kind);
         if (!c) return;
@@ -3540,7 +3603,7 @@
           + (c.tel ? "　解約のご連絡先: <b>" + esc(c.tel) + "</b>" : "　（連絡先は未登録）"));
       });
     }
-    var gd = state.todoDenkiGas ? gasDiscountPicked() : [];
+    var gd = state.todoGas ? gasDiscountPicked() : [];
     if (state.todoHikari) apps.push("光申し込み");
     if (apps.length) { anyTodo = true; h += row("同時申し込み", "<b>" + apps.join("　／　") + "</b>"); }
     if (gd.length) {
@@ -5541,21 +5604,30 @@
     $("todoOther").addEventListener("input", function () {
       state.todoOther = this.value; saveState(); renderStaffSheet();
     });
-    ["todoDcard", "todoDenkiGas", "todoHikari"].forEach(function (id) {
+    ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () {
         state[id] = this.checked;
         if (id === "todoDcard") { $("dcardTypeWrap").hidden = !this.checked; if (!this.checked) state.todoDcardType = ""; }
-        if (id === "todoDenkiGas") {
-          $("denkiTypeWrap").hidden = !this.checked;
-          $("gasTypeWrap").hidden = !this.checked;
-          if (!this.checked) {
-            state.todoDenkiType = ""; state.todoGasType = ""; state.todoGasDiscount = {};
-            state.todoDenkiNow = ""; state.todoGasNow = "";
-          }
+        if (id === "todoDenki" && !this.checked) {
+          state.todoDenkiType = ""; state.todoDenkiNow = "";
+        }
+        if (id === "todoGas" && !this.checked) {
+          state.todoGasType = ""; state.todoGasDiscount = {};
+          state.todoGasNow = ""; state.todoGasEco = "";
         }
         syncFormFromState();
         saveState(); renderStaffSheet();
       });
+    });
+    // ガスの区分（同時に1つだけ・もう一度押すと解除）
+    var geWrap = $("gasEcoWrap");
+    if (geWrap) geWrap.addEventListener("change", function (e) {
+      var v = e.target.getAttribute && e.target.getAttribute("data-gaseco");
+      if (!v) return;
+      state.todoGasEco = e.target.checked ? v : "";
+      renderGasEco();
+      saveState();
+      renderStaffSheet();
     });
     // 現在の会社（同時に1社だけ・もう一度押すと解除）
     ["denkiNowWrap", "gasNowWrap"].forEach(function (id) {
@@ -5580,7 +5652,13 @@
           document.querySelectorAll("[" + pair[0] + "]").forEach(function (o) {
             o.checked = state[pair[1]] === o.getAttribute(pair[0]);
           });
-          if (pair[1] === "todoGasType") { state.todoGasDiscount = {}; renderGasDiscounts(); }
+          if (pair[1] === "todoGasType") {
+            state.todoGasDiscount = {};
+            // 区分の無いメニューへ移ったときは、選んでいた区分を外す
+            if (!gasEcoNeeded()) state.todoGasEco = "";
+            renderGasDiscounts();
+            renderGasEco();
+          }
           if (pair[1] === "todoDenkiType" || pair[1] === "todoGasType") {
             // プランを外したら、その現在の会社の選択も外す
             if (!state.todoDenkiType) state.todoDenkiNow = "";
