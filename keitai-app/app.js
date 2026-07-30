@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.25.0";
+  var APP_VERSION = "1.26.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1506,6 +1506,12 @@
    * 入れ物は替えずに中身だけ入れ替える。 */
   function applyIenaka(src) {
     var ie = Object.assign(newIenaka(), src || {});
+    /* ahamo光のルーターレンタルを1ギガと10ギガで分けた（2026-07-30）。
+     * 10ギガは月額550円のため、以前の見積もりを新しい項目へ移す。 */
+    if (ie.product === "ahamo10g" && ie.opts && ie.opts.ahamoRouter && !ie.opts.ahamoRouter10g) {
+      ie.opts.ahamoRouter10g = true;
+      delete ie.opts.ahamoRouter;
+    }
     if (!store.ienaka) store.ienaka = {};
     Object.keys(store.ienaka).forEach(function (k) { delete store.ienaka[k]; });
     Object.keys(ie).forEach(function (k) { store.ienaka[k] = ie[k]; });
@@ -3725,26 +3731,35 @@
       b36: "分割36回", b48: "分割48回", kaedoki: "いつでもカエドキプログラム（24回・残価設定）"
     }[state.payMethod] || "";
     function row(k, v) { return '<tr><td style="width:38%">' + k + "</td><td>" + v + "</td></tr>"; }
+    /* 1ギガの無線ルーターの申し込み先。プロバイダごとに違う。 */
+    var ROUTER_QR = {
+      "OCN インターネット": "router1gOcn",
+      "@nifty": "router1gNifty",
+      "andline": "router1gAndline"
+    };
     /* 手続きに要るページのQR。登録スタッフがその場で読み取れるよう、
      * 引き継ぎシートに置く。図形は qr.js に持っているので、
      * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。
      *
      * 出す条件
-     *   toss         … 光のとき（工事日を決める）
-     *   ocnRouter1g  … 1ギガ・OCN・ルーターレンタルありのとき（申し込みが要る）
-     *   ocnRouter10g … 10ギガでルーターを買っていただくとき（10ギガはレンタルが無い） */
+     *   toss         … 光のとき（工事日を確定させるのに毎回入力が要る）
+     *   router1g:*   … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
+     *   ocnRouter10g … ドコモ光10ギガでルーターを買っていただくとき
+     *
+     * GMOとくとくBBは、IDとパスワードが届いてからお客様ご自身でお申し込みいただく
+     * ため、QRは出さずに引き継ぎシートへその旨を出す（ROUTER_QR に入れない）。 */
     function qrRowHtml(ieOn) {
       if (typeof KEITAI_QR === "undefined") return "";
       var ie = store.ienaka || {};
       var keys = [];
       if (ieOn ? KQ_IENAKA.isHikari() : state.todoHikari) keys.push("toss");
       if (ieOn) {
-        if (ie.product === "hikari1g" && ie.provider === "OCN インターネット"
-          && KQ_IENAKA.routerRental() === "ari") {
-          keys.push("ocnRouter1g");
+        if (ie.product === "hikari1g" && KQ_IENAKA.routerRental() === "ari"
+          && ROUTER_QR[ie.provider]) {
+          keys.push(ROUTER_QR[ie.provider]);
         }
-        if ((ie.product === "hikari10g" || ie.product === "ahamo10g")
-          && ie.router10g && num(ie.router10gPrice) > 0) {
+        // ahamo光はプロバイダ一体型で、ルーターの優待購入の取り扱いが無い
+        if (ie.product === "hikari10g" && ie.router10g && num(ie.router10gPrice) > 0) {
           keys.push("ocnRouter10g");
         }
       }
@@ -4027,9 +4042,15 @@
       // 無料レンタルでも申し込みの手続きが要るため、あり/なしを必ず出す
       var rr = KQ_IENAKA.routerRental();
       if (rr) {
-        h += row("ルーターレンタル", rr === "ari"
+        var rrText = rr === "ari"
           ? '<b style="color:var(--red)">申込あり</b>　プロバイダの無料無線ルーター'
-          : "なし（お客様でご用意）");
+          : "なし（お客様でご用意）";
+        /* GMOとくとくBBは、IDとパスワードが届いてからお客様ご自身での
+         * お申し込みになるため、店頭で申し込めないことを書き添える。 */
+        if (rr === "ari" && store.ienaka.provider === "GMOとくとくBB") {
+          rrText += '<br><b style="color:var(--red)">IDとパスワードが届いてから、お客様でお申し込みいただきます</b>';
+        }
+        h += row("ルーターレンタル", rrText);
       }
     } else if (state.todoHikari) {
       // 手続き内容で光にチェックはあるが、「光・5G」の入力がまだ無いとき
