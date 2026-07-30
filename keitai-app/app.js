@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.17.2";
+  var APP_VERSION = "1.18.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1382,7 +1382,10 @@
       campaigns: {}, campaignAmounts: {},
       pointPoikatsu: 0, pointDcard: 0,   // ポイント自動充当（実質額案内用・pt/月）
       pointPoikatsuFamily: 0,            // ポイ活ファミリー特典（手動入力・pt/月）
-      pointApply: true,                  // true=月額から充当 / false=もらえるポイントとして案内
+      /* ポイントの扱い。true=月額から充当 / false=もらえるポイントとして案内。
+       * 既定は充当しない。進呈されるポイントであって毎月の請求が下がるものではないため、
+       * 実質額を多めに見せないようにする。充当してご案内するときは⑧で切り替える。 */
+      pointApply: false,
       pointBakuage: 0, pointBakuageAuto: 0,  // 爆アゲセレクションの還元（自動計算・編集可）
       bakuageInclude: true,              // 爆アゲの還元を見積もりに充当するか
       pointDcardAuto: 0,                 // 直近の自動計算値（手入力と区別するための記録）
@@ -1408,6 +1411,8 @@
       todoOther: "",      // 引き継ぎシートの自由記入
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
+      // データ移行の項目だけ、支払い先をこの見積もりで変えられる（未指定はマスタの設定）
+      feeItemPay: {},
     };
   }
   /* 光・home 5G（イエナカ）は世帯に1本なので、パターンA/B/Cの外に置く。
@@ -2742,7 +2747,7 @@
      * 充当しない … 何も引かない。差し引く相手がいないので、
      *   もらえるポイントは個別のチェックによらず全部を合算して案内する
      *   （爆アゲもdカード特典も、実際にはもらえるため） */
-    var pointApply = st.pointApply !== false;
+    var pointApply = st.pointApply === true;
     var pointRows = [];
     function addPointRow(name, used, earned) {
       var v = pointApply ? used : earned;
@@ -2797,7 +2802,7 @@
       }
     }
     (MASTER.feeItems || []).forEach(function (f) {
-      if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: f.pay === "bill" ? "bill" : "store" });
+      if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: feeItemPayOf(st, f) });
     });
     accOnceRows.forEach(function (a) {
       initialRows.push({ name: a.name + "（アクセサリ・一括）", amount: a.amount, where: "store" });
@@ -3142,11 +3147,32 @@
     });
     $("optionList").innerHTML = h;
   }
+  /* 初期費用の支払い先。
+   * データ移行の項目は、お客様のご希望で店頭払いにも翌月合算にもなるため、
+   * この見積もりだけ変えられるようにしている。指定がなければマスタの設定を使う。 */
+  var FEE_PAYS = { store: "店頭払い", bill: "翌月合算" };
+  function feeItemPayOf(st, f) {
+    var v = (st.feeItemPay || {})[f.id];
+    if (v === "store" || v === "bill") return v;
+    return f.pay === "bill" ? "bill" : "store";
+  }
   function renderFeeItemList() {
     var list = MASTER.feeItems || [];
     $("feeItemList").innerHTML = '<div class="tile-grid">' + list.map(function (f) {
-      return tileHtml("data-fee", f.id, f.name + (f.pay === "bill" ? "（翌月合算）" : ""), !!state.feeItems[f.id],
-        '<span class="t-price">' + yen(f.price) + "</span>");
+      var on = !!state.feeItems[f.id];
+      var body = '<span class="t-price">' + yen(f.price) + "</span>";
+      var name = f.name;
+      // データ移行の項目は、選んでいるときだけ支払い先をその場で選べるようにする
+      if (f.dataMove && on) {
+        var cur = feeItemPayOf(state, f);
+        body += '<select data-feepay="' + esc(f.id) + '">'
+          + Object.keys(FEE_PAYS).map(function (v) {
+              return '<option value="' + v + '"' + (cur === v ? " selected" : "") + ">" + FEE_PAYS[v] + "</option>";
+            }).join("") + "</select>";
+      } else if (f.pay === "bill") {
+        name += "（翌月合算）";
+      }
+      return tileHtml("data-fee", f.id, name, on, body);
     }).join("") + "</div>";
   }
   /* アクセサリのタイル。
@@ -3351,7 +3377,7 @@
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptBakuage").value = state.pointBakuage || "";
-    $("pointApply").value = state.pointApply === false ? "0" : "1";
+    $("pointApply").value = state.pointApply === true ? "1" : "0";
     $("ptDcard").value = state.pointDcard || "";
     $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
@@ -3469,7 +3495,7 @@
     var bakuOn = (r.bakuageRows || []).length > 0 || num(state.pointBakuage) > 0;
     /* 充当しないときは、個別の「見積もりに含める」は効かない（何も引かないため）。
      * 出しておくと誤解を生むので隠す。 */
-    var applyOn = state.pointApply !== false;
+    var applyOn = state.pointApply === true;
     // もらえるポイントの合計と、それを使った場合の実質月額
     var psum = $("pointSummary");
     if (psum) {
@@ -3681,7 +3707,7 @@
           var pr = num(f.price);
           var tag = pr === 0
             ? (String(f.name || "").indexOf("無料") < 0 ? "（無料）" : "")
-            : "（" + yen(pr) + "）";
+            : "（" + yen(pr) + "・" + FEE_PAYS[feeItemPayOf(state, f)] + "）";
           return esc(f.name) + tag;
         }).join("／")
       : "<b>なし</b>");
@@ -5531,7 +5557,11 @@
         }
         renderOptionList();
       }
-      if (feeId) { state.feeItems[feeId] = !state.feeItems[feeId]; renderFeeItemList(); }
+      if (feeId) {
+        state.feeItems[feeId] = !state.feeItems[feeId];
+        if (!state.feeItems[feeId]) delete (state.feeItemPay || {})[feeId];
+        renderFeeItemList();
+      }
       if (accId) {
         if (state.accSel[accId]) delete state.accSel[accId];
         else {
@@ -5557,6 +5587,15 @@
     $("feeItemList").addEventListener("keydown", tileKey);
     $("accTileList").addEventListener("click", toggleTile);
     $("accTileList").addEventListener("keydown", tileKey);
+    // 初期費用タイルの支払い先（データ移行の項目だけ出る）
+    $("feeItemList").addEventListener("change", function (e) {
+      var fp = e.target.getAttribute("data-feepay");
+      if (!fp) return;
+      if (!state.feeItemPay) state.feeItemPay = {};
+      state.feeItemPay[fp] = e.target.value;
+      recalc();
+      renderStaffSheet();
+    });
     $("accTileList").addEventListener("change", function (e) {
       var id = e.target.getAttribute("data-acsel");
       if (id) { state.accSel[id] = e.target.value; recalc(); }

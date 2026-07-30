@@ -572,6 +572,9 @@ body.sorting .sort-chip{cursor:grabbing}
 .setup-sum{margin:0 0 10px;padding-left:18px}
 .setup-sum li{font-size:13px;line-height:1.9}
 
+/* 初期費用タイルの支払い先 */
+.tile .t-price + select{margin-top:3px}
+
 /* 見積もりページの下の保存 */
 .quick-save-msg{
   margin-top:-4px;padding:7px 10px;border-radius:8px;
