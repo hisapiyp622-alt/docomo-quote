@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.30.1";
+  var APP_VERSION = "1.31.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3828,6 +3828,14 @@
           && ROUTER10G_QR[ie.provider]) {
           keys.push(ROUTER10G_QR[ie.provider]);
         }
+        /* スカパーが絡む受付では、申込フォームのQRを出す。
+         * 絡む＝スカパー工事のテレビオプション（新規のみ工事が発生）か、
+         * 映像サービスでスカパー系の内訳を選んでいるとき。 */
+        var opts = ie.opts || {};
+        var skySvc = !!(opts.skyp && (opts.vsSkyBase || opts.vsSkyBasic || opts.vsSelect5 || opts.vsSelect10));
+        var skyKoji = !!(opts.tv && ie.product !== "home5g" && ie.applyType === "shinki"
+          && (ie.tvKoji || "sky").indexOf("sky") === 0);
+        if (skySvc || skyKoji) keys.push("skyperForm");
       }
       var cards = keys.map(function (k) {
         var q = KEITAI_QR[k];
