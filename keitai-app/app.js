@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.31.0";
+  var APP_VERSION = "1.32.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -50,10 +50,18 @@
     if (!s2) { s2 = config.staff[0]; config.activeStaffId = s2.id; }
     return s2;
   }
+  /* 担当者のID。空き番号の再利用はしない。
+   * 以前は最小の空き番号を使っていたため、退職者を消して新しい人を足すと
+   * 同じIDになり、クラウドに残った前任者の保存見積もり・テンプレを
+   * 新しい人がそのまま引き継いでしまった。 */
   function newStaffId() {
-    var n = 1;
-    while (config.staff.some(function (s2) { return s2.id === "s" + n; })) n++;
-    return "s" + n;
+    var mx = 0;
+    config.staff.forEach(function (s2) {
+      var m = /^s(\d+)$/.exec(s2.id || "");
+      if (m) mx = Math.max(mx, +m[1]);
+    });
+    config.staffSeq = Math.max(num(config.staffSeq), mx) + 1;
+    return "s" + config.staffSeq;
   }
   // 店舗ログインの設定状態を画面に反映する
   function renderLockConfig() {
@@ -912,6 +920,8 @@
       version: 1,
       at: nowStamp(),
       appVersion: APP_VERSION,
+      // どの店舗アカウントで作ったか（別の店舗への取り込みを検知するため）
+      uid: cloudOn() && CLOUD.user ? CLOUD.user.uid : "",
       storeName: config.storeName || "",
       withCustomerName: !!withCust,
       config: config,
@@ -963,6 +973,13 @@
       backupMsg("バックアップの中身が読み取れませんでした。", true);
       return;
     }
+    /* 別の店舗アカウントで作られたバックアップの取り込みは、
+     * 店舗内の全端末がその内容に置き換わる事故につながるため、強めに確認する */
+    if (cloudOn() && CLOUD.user && d.uid && d.uid !== CLOUD.user.uid) {
+      if (!window.confirm("このバックアップは別の店舗アカウントで作られたもののようです。\n"
+        + "（バックアップの店舗名: " + (d.storeName || "不明") + "）\n\n"
+        + "読み込むと、この店舗の全端末がこの内容に置き換わります。\n本当に続けますか？")) return;
+    }
     var msg = "バックアップを読み込みます。\n\n"
       + "作成日時: " + (d.at || "不明") + "\n"
       + "店舗: " + (d.storeName || "（未設定）") + "\n"
@@ -979,8 +996,18 @@
       label: "バックアップを読み込む前の内容", auto: true,
       data: JSON.stringify(MASTER)
     };
+    var cfg2 = null;
     try {
-      if (d.config) localStorage.setItem(CFG_KEY, JSON.stringify(d.config));
+      if (d.config) {
+        cfg2 = Object.assign({}, d.config);
+        /* ロック（店舗ID・パスワード・マスタ設定のパスワード）は
+         * この端末・この店舗のものを残す。バックアップ側の値を入れると、
+         * 他店のバックアップを読んだときに知らないパスワードでロックされ、
+         * データ全消去でしか戻せなくなる。 */
+        cfg2.lock = config.lock || cfg2.lock;
+        cfg2.adminLock = config.adminLock || cfg2.adminLock;
+        localStorage.setItem(CFG_KEY, JSON.stringify(cfg2));
+      }
       localStorage.setItem(MASTER_KEY, JSON.stringify(d.master));
       var hs = (d.history && d.history.length) ? d.history.slice(0, HIST_MAX - 1) : [];
       hs.unshift(backEntry);
@@ -993,6 +1020,42 @@
       });
     } catch (e) {
       backupMsg("読み込みに失敗しました。端末の空き容量をご確認ください。", true);
+      return;
+    }
+    /* クラウド利用時は、読み込んだ内容をその場でクラウドへ書き戻す。
+     * これをしないと、立ち上げ直したときにクラウドの古い内容が
+     * 降ってきて、復元した内容が数秒で元に戻ってしまう（復元が効かない）。 */
+    if (cloudOn()) {
+      var jobs = [];
+      var cfgPush = cfg2 || config;
+      jobs.push(storeDoc().set(stamp({
+        master: localStorage.getItem(MASTER_KEY) || "",
+        storeName: cfgPush.storeName || "",
+        storeTel: cfgPush.storeTel || "",
+        staff: cfgPush.staff || config.staff,
+        adminLock: cfgPush.adminLock || { hash: "", salt: "", algo: "" }
+      }), { merge: true }));
+      Object.keys(d.saved || {}).forEach(function (id) {
+        // お客様名（個人情報）はクラウドへ送らない
+        var list = JSON.parse(JSON.stringify(d.saved[id]));
+        list.forEach(function (it) {
+          it.custName = "";
+          ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+        });
+        jobs.push(savedDoc(id).set(stamp({ list: JSON.stringify(list) })));
+      });
+      Object.keys(d.templates || {}).forEach(function (id) {
+        jobs.push(tplDoc(id).set(stamp({ list: JSON.stringify(d.templates[id]) })));
+      });
+      Promise.all(jobs).then(function () {
+        window.alert("バックアップを読み込み、クラウドへも反映しました。画面を読み込み直します。");
+        location.reload();
+      }, function () {
+        window.alert("端末には読み込みましたが、クラウドへの反映に失敗しました。\n"
+          + "通信できる場所で、もう一度バックアップを読み込んでください。\n"
+          + "（このまま使うと、クラウドの古い内容に戻ることがあります）");
+        location.reload();
+      });
       return;
     }
     // 反映漏れが出ないよう、読み直して立ち上げ直す
@@ -1546,6 +1609,10 @@
     });
   }
   function saveState() {
+    /* 管理者としてマスタ設定だけを開いているとき（masterOnly）は書かない。
+     * この状態は内部的に担当1として動いているため、ここで書くと
+     * 担当1の作りかけの見積もりを黙って上書きし、クラウドへも送ってしまう。 */
+    if (typeof masterOnly !== "undefined" && masterOnly) return;
     try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
     markLocalEdit();
   }
@@ -4772,7 +4839,7 @@
       }).join("");
     }
     function mInput(label, path) {
-      return "<label>" + label + '</label><input type="number" data-mpath="' + path + '" value="' + getPath(path) + '">';
+      return "<label>" + label + '</label><input type="number" min="0" data-mpath="' + path + '" value="' + getPath(path) + '">';
     }
   }
   function getPath(path) {
@@ -5020,7 +5087,10 @@
         + '<div class="log-head">' + esc(e.v)
         + (i < newCount ? '<span class="log-new">新着</span>' : "")
         + '<span class="log-date">' + esc(e.d || "") + "</span></div>"
-        + "<ul>" + (e.items || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"
+        + "<ul>" + (e.items || []).map(function (x) {
+            // 履歴の本文は自前の文（changelog.js）だけなので、<b>だけ許可して戻す
+            return "<li>" + esc(x).replace(/&lt;b&gt;/g, "<b>").replace(/&lt;\/b&gt;/g, "</b>") + "</li>";
+          }).join("") + "</ul>"
         + "</div>";
     }).join("");
   }
@@ -6255,6 +6325,15 @@
           localStorage.removeItem(savedKey(removed.id));
           localStorage.removeItem(tplKey(removed.id));
         } catch (e2) {}
+        /* クラウド側の保存（見積もり・保存済み・テンプレ）も消す。
+         * 残しておくと、IDが同じ担当者を作ったときに引き継がれてしまう。 */
+        if (cloudOn()) {
+          try {
+            quoteDoc(removed.id).delete().catch(function () {});
+            savedDoc(removed.id).delete().catch(function () {});
+            tplDoc(removed.id).delete().catch(function () {});
+          } catch (e3) {}
+        }
         if (config.activeStaffId === removed.id) {
           config.activeStaffId = config.staff[0].id;
           loadState(); syncFormFromState(); recalc();
@@ -6355,7 +6434,9 @@
       if (handleEnergyEvent(t, "input")) return;
       var path = t.getAttribute("data-mpath");
       if (path) {
-        setPath(path, num(t.value));
+        /* マイナスは受け付けない。料金マスタに負の値が入ると、
+         * 店舗内の全端末の全見積もりが狂う（値引きは値引きの欄で入れる）。 */
+        setPath(path, Math.max(0, num(t.value)));
         markEdited();
         recalc();
         return;
