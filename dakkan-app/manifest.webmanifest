@@ -1,0 +1,16 @@
+{
+  "name": "他社比較（ネット回線）",
+  "short_name": "他社比較",
+  "description": "他社ネット回線からドコモ光・home 5G への乗り換えを、その場で1枚にする店頭ツール",
+  "start_url": "./",
+  "scope": "../",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F4F5",
+  "theme_color": "#CC0033",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
