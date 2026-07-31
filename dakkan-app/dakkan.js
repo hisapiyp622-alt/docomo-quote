@@ -76,12 +76,19 @@
       zansai: null,         // 工事費の残債／ホームルーターは端末の残債
       removal: null,        // 撤去工事費（独自回線・CATVのみ）
       numberFee: null,      // 事業者変更承諾番号／転用承諾番号の発行手数料
-      /* ドコモ側の「実質」を出すための割引。どちらも0なら実質は出さない
-       *  hikariSetWari … ご家族スマホのドコモ光セット割の合計（円/月）。
-       *    ★ スマホ側から引かれる金額なので、スマホの見積書と二重に数えないこと
-       *  dcardWari … dカードお支払割（円/月）。ドコモ光の月額そのものから引かれる */
+      /* ドコモ側の「実質」を出すための割引。どちらも0なら実質は出さない。
+       * ★ どちらも「スマホ側」から引かれる金額で、ドコモ光の月額そのものは下がらない。
+       *   別紙にもその旨を必ず注記する（2026-07-31 一次情報調査）
+       *  hikariSetWari … ドコモ光セット割の合計（円/月）。ドコモ MAX等 −1,210円、
+       *    eximo・irumo(0.5GB除く)等 −1,100円。ahamo・ahamo光は対象外
+       *  dcardWari … dカードお支払割（円/月）。★ドコモ光は対象外の割引で、
+       *    対象はスマホの料金プラン。しかも光へ乗り換えなくても受けられるため、
+       *    入れると「乗り換えで得する額」が実際より大きく見える。既定は空欄 */
       hikariSetWari: "",
       dcardWari: "",
+      /* ドコモ光 乗り換え特典（他社の解約金・撤去工事費・端末残債をdポイントで補填）。
+       * 上限100,000pt・転用は対象外（2026-07-31 ドコモ公式で確認） */
+      norikaeTokuten: true,
       memo: ""
     };
   }
@@ -239,7 +246,7 @@
     var dcardWari = Math.max(0, num(state.dcardWari));
     var wariRows = [];
     if (setWari > 0) wariRows.push({ name: "ドコモ光セット割（ご家族スマホ側）", amount: setWari });
-    if (dcardWari > 0) wariRows.push({ name: "dカードお支払割", amount: dcardWari });
+    if (dcardWari > 0) wariRows.push({ name: "dカードお支払割（スマホ側）", amount: dcardWari });
     var wariTotal = setWari + dcardWari;
     var jissitsu = wariTotal > 0 ? Math.max(0, newMonthly - wariTotal) : null;
 
@@ -264,6 +271,9 @@
     } else {
       notes.push("ドコモ光／home 5G セット割（ドコモのスマホ側が下がる分）は、この紙には含めていません。スマホのセット割はスマホの見積書をご覧ください。");
     }
+    if (dcardWari > 0) {
+      notes.push("dカードお支払割 " + yen(dcardWari) + "/月 は、スマホの料金プランに対する割引です（ドコモ光の月額は割引されません）。ドコモ光へのお乗り換えの有無にかかわらず、dカードでのお支払い設定で適用されます。");
+    }
 
     /* キャンペーン（dポイント進呈）。イエナカ側の入力と計算結果から組み立てる */
     var ie2 = env.ienakaState ? env.ienakaState() : null;
@@ -279,6 +289,35 @@
         ptRows.push({ name: "新規工事料 実質0円特典", pt: iec.koji, sub: "エントリー不要・利用開始月の7か月後の月から24か月分割で進呈" });
       }
     }
+    /* ドコモ光 乗り換え特典（2026-07-31 ドコモ公式で確認）
+     *   他社光回線・他社ホームルーターの「解約金／撤去工事費／端末残債」を
+     *   dポイント（期間・用途限定）で補填。上限100,000pt。解約金等が上限を下回る場合は実額。
+     *   対象は 新規／光回線再利用／事業者変更。★転用は対象外。
+     * 出典: https://www.docomo.ne.jp/campaign_event/hikari_norikae/
+     * ここで補填の対象にするのは「他社へ出ていく費用」だけ。ドコモの事務手数料・工事料は対象外。
+     * 要確認が残っている項目は金額が分からないので補填額にも入れない（実際より多く見せないため）。 */
+    var NORIKAE_MAX = 100000;
+    var norikae = null;
+    if (state.norikaeTokuten && ie2 && ie2.applyType !== "tenyo") {
+      var base = 0, hasPending = false;
+      outRows.forEach(function (x) {
+        if (x.pending) { hasPending = true; return; }
+        base += x.amount;
+      });
+      if (base > 0) {
+        norikae = {
+          pt: Math.min(base, NORIKAE_MAX),
+          capped: base > NORIKAE_MAX,
+          hasPending: hasPending
+        };
+        ptRows.push({
+          name: "ドコモ光 乗り換え特典（他社の解約金・撤去工事費・端末残債の補填）",
+          pt: norikae.pt,
+          sub: "上限100,000pt・転用は対象外" + (hasPending ? "・「要確認」の分は含めていません" : "")
+        });
+      }
+    }
+
     var ptTotal = 0;
     ptRows.forEach(function (x) { ptTotal += x.pt; });
 
@@ -290,7 +329,7 @@
       newMonthly: newMonthly, newFirst: newFirst, segs: segs,
       wariRows: wariRows, wariTotal: wariTotal, jissitsu: jissitsu,
       saving: saving, savingYear: savingYear,
-      ptRows: ptRows, ptTotal: ptTotal,
+      ptRows: ptRows, ptTotal: ptTotal, norikae: norikae,
       diff: diff,
       outRows: outRows, outTotal: outTotal,
       inRows: inRows, inTotal: inTotal,
@@ -353,6 +392,7 @@
     $("dkSvcCs").checked = !!sv.cs;
     $("dkHikariSetWari").value = state.hikariSetWari === "" || state.hikariSetWari == null ? "" : state.hikariSetWari;
     $("dkDcardWari").value = state.dcardWari === "" || state.dcardWari == null ? "" : state.dcardWari;
+    $("dkNorikae").checked = state.norikaeTokuten !== false;
     var c = carrier(), info = "";
     if (c && c.note) info += '<span class="dk-note">' + esc(c.note) + "</span>";
     if (c && (c.tel || c.url)) {
@@ -460,6 +500,7 @@
     });
     $("dkHikariSetWari").addEventListener("input", function () { state.hikariSetWari = this.value; recalc(); });
     $("dkDcardWari").addEventListener("input", function () { state.dcardWari = this.value; recalc(); });
+    $("dkNorikae").addEventListener("change", function () { state.norikaeTokuten = this.checked; recalc(); });
   }
 
   /* ---------- 別紙の中身（A4横・表題と発行元は呼び出し側が付ける） ----------

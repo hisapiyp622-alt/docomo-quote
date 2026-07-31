@@ -11,7 +11,7 @@
  */
 (function () {
   "use strict";
-  var APP_VERSION = "1.1.0";
+  var APP_VERSION = "1.2.0";
   var KEY = "dk-state-v1";
   var CFG_KEY = "dk-config-v1";
   var MASTER_KEY = "dk-master-v1";
@@ -542,18 +542,29 @@
     ienakaState: function () { return store.ienaka; }
   });
   /* 回線の種類から、ドコモ側の申込区分・商材を提案する（担当者はイエナカ側で変更できる） */
+  /* 状態を直接書き換えず、イエナカ側の入力欄を操作して change を起こす。
+   * こうすると、商材・申込区分に連動する処理（標準料金の入れ直し、
+   * dポイント進呈の既定値＝転用は対象外で0、など）がイエナカ側の分岐を通る。
+   * 直接 store.ienaka.applyType を書くと、その連動が丸ごと抜ける。 */
+  function pick(id, value) {
+    var el = $(id);
+    if (!el || el.value === value) return;
+    el.value = value;
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
   window.KQ_DAKKAN.onSuggest = function (s) {
-    if (s.product && store.ienaka.product !== s.product) {
-      store.ienaka.product = s.product;
-      window.KQ_IENAKA.applyDefaults();
+    var wasHome5g = store.ienaka.product === "home5g";
+    if (s.product) pick("ieProduct", s.product);
+    else if (wasHome5g) pick("ieProduct", "hikari1g"); // 光の話に戻ったら既定へ
+    /* イエナカ側の applyDefaults() は home 5G のとき kojiFree を false にするが、
+     * 光へ戻したときに true へ戻す処理が無い（keitai-app/ienaka.js の既存挙動）。
+     * 奪還ツールは回線の種類でこの往復が普通に起きるので、こちら側で戻す。
+     * ★ ienaka.js は直さない（正は keitai-app 側。直すなら製品版のリリースが必要） */
+    if (wasHome5g && store.ienaka.product !== "home5g") {
+      var kf = $("ieKojiFree");
+      if (kf && !kf.checked) { kf.checked = true; kf.dispatchEvent(new Event("change", { bubbles: true })); }
     }
-    if (!s.product && store.ienaka.product === "home5g") {
-      store.ienaka.product = "hikari1g";     // 光の話に戻ったら既定へ
-      window.KQ_IENAKA.applyDefaults();
-    }
-    store.ienaka.applyType = s.applyType;
-    window.KQ_IENAKA.syncForm();
-    window.KQ_IENAKA.render();
+    pick("ieApplyType", s.applyType);
   };
   window.KQ_IENAKA.bind();
   window.KQ_DAKKAN.bind();
