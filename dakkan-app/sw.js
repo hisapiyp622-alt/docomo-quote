@@ -1,5 +1,5 @@
 /* 他社比較（ネット回線）＝ 奪還ツール — ネット優先・失敗時キャッシュ */
-var CACHE = "dk-v1";
+var CACHE = "dk-v2";
 var ASSETS = ["./", "index.html", "style.css", "data.js", "ienaka.js", "dakkan.js", "app.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", function (e) {
