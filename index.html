@@ -23,7 +23,6 @@
     <button class="tab" data-tab="sheet" type="button">見積書</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
     <button class="tab" data-tab="saved" type="button">保存</button>
-    <button class="tab" data-tab="ai" type="button">AI相談</button>
     <button class="tab" data-tab="master" type="button">マスタ設定</button>
   </nav>
 </header>
@@ -385,33 +384,6 @@
     </div>
   </section>
 
-  <section id="tab-ai" class="tab-page no-print">
-    <h2 class="ai-head">AIと相談して見積もりを作る <span class="ai-beta">実験中</span></h2>
-    <div id="aiKeyCard" class="ai-card" hidden>
-      <p>AI相談を使うには Anthropic の APIキーが必要です。<a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> で発行できます（使った分だけの従量課金）。</p>
-      <p class="hint">キーはこの端末のブラウザにだけ保存します。店舗間の同期・バックアップには含まれません。</p>
-      <div class="ai-keyrow">
-        <input type="password" id="aiKeyInput" placeholder="sk-ant-…" autocomplete="off">
-        <button type="button" id="aiKeySave">保存して開始</button>
-        <button type="button" id="aiKeyDel" hidden>キーを削除</button>
-      </div>
-    </div>
-    <div id="aiChat" hidden>
-      <div class="ai-bar">
-        <select id="aiModel" title="使うAIモデル"></select>
-        <button type="button" id="aiReset">新しい相談</button>
-        <button type="button" id="aiKeyOpen">APIキー</button>
-      </div>
-      <div id="aiLog"></div>
-      <div class="ai-quick" id="aiQuick"></div>
-      <div class="ai-inputrow">
-        <textarea id="aiInput" rows="2" placeholder="例：ドコモ MAX とポイ活MAX、この条件ならどちらが得？（Ctrl+Enterで送信）"></textarea>
-        <button type="button" id="aiSend">送信</button>
-      </div>
-      <p class="hint">送信すると、いまの見積もり内容とこの店の料金マスタをAI（Anthropic API）へ送って相談します。お客様名は送りません。トークン使用量に応じてAPIキーのアカウントに課金されます。</p>
-    </div>
-  </section>
-
   <section id="tab-master" class="tab-page no-print">
     <div class="master-top">
       <button class="btn-sub" id="masterBackBtn" type="button">← 担当者の選択に戻る</button>
@@ -610,7 +582,6 @@
 <script src="changelog.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
-<script src="ai.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
