@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.07.29-74";
+  var APP_VERSION = "2026.08.03-75";
   var MASTER_KEY = "dq-master-v3"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "dq-state-v3";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5366,6 +5366,167 @@
     state.jimuFee = jimuFeeFor(state.procType);
     state.atamakin = MASTER.fees.atamakin_default;
   }
+  /* ---------- AI相談（実験）との橋渡し ----------
+   * AIタブ（ai.js）は見積もりの中身へ直接触らず、ここだけを通す。
+   * aiSnapshot は外部のAPIへそのまま送られるため、お客様名（custName）や
+   * 店舗・担当者名などの個人情報は最初から含めない。 */
+  window.DQ_APP = {
+    version: APP_VERSION,
+    aiSnapshot: function () {
+      function lite(list, extra) {
+        return (list || []).map(function (o) {
+          var row = { id: o.id, name: o.name, price: num(o.price) };
+          (extra || []).forEach(function (k) { if (o[k] != null && o[k] !== "") row[k] = o[k]; });
+          return row;
+        });
+      }
+      function onIds(map) { return Object.keys(map || {}).filter(function (k) { return map[k]; }); }
+      var st = state;
+      var snap = {
+        master: {
+          fees: MASTER.fees,
+          plans: MASTER.plans.map(function (pl) {
+            return { id: pl.id, group: pl.group, name: pl.name,
+              tiers: pl.tiers.map(function (t) { return { label: t.label || "", price: t.price }; }),
+              discounts: pl.discounts, includes5min: !!pl.includes5min,
+              poikatsuPt: num(pl.poikatsuPt), note: pl.note || "" };
+          }),
+          voiceOptions: lite(MASTER.voiceOptions),
+          options: lite(MASTER.options, ["category", "priceChoices", "note"]),
+          feeItems: lite(MASTER.feeItems, ["pay"]),
+          accessories: lite(MASTER.accessories),
+          campaigns: lite(MASTER.campaigns, ["amount", "note"])
+        },
+        pattern: store.active + 1,
+        state: {
+          procType: st.procType, planGroup: st.planGroup, planId: st.planId, tierIdx: st.tierIdx,
+          minna: st.minna, dSet: st.dSet, dCard: st.dCard, dDenki: st.dDenki, choki: st.choki,
+          voice: st.voice,
+          options: onIds(st.options), optionPrices: st.optionPrices,
+          feeItems: onIds(st.feeItems), campaigns: onIds(st.campaigns),
+          accSel: st.accSel, accessories: st.accessories,
+          adhocMonthly: st.adhocMonthly, adhocInitial: st.adhocInitial,
+          deviceName: st.deviceName, devicePrice: num(st.devicePrice),
+          couponOff: num(st.couponOff), campaignOff: num(st.campaignOff),
+          payMethod: st.payMethod, kaedoki23: num(st.kaedoki23), kaedokiFee: num(st.kaedokiFee),
+          atamakin: num(st.atamakin), jimuFee: num(st.jimuFee),
+          currentInst: num(st.currentInst), currentInstMonths: num(st.currentInstMonths),
+          pointPoikatsu: num(st.pointPoikatsu), pointPoikatsuFamily: num(st.pointPoikatsuFamily),
+          pointDcard: num(st.pointDcard), pointBakuage: num(st.pointBakuage),
+          pointApply: st.pointApply !== false,
+          quoteMemo: st.quoteMemo
+        },
+        result: null,
+        otherPatterns: []
+      };
+      try {
+        var r = calc();
+        snap.result = {
+          planName: r.plan.name, tierLabel: r.tier.label || "", planMonthly: r.planMonthly,
+          voice: { name: r.voice.name, price: r.voicePrice },
+          optTotal: r.optTotal,
+          monthlySegments: r.segs.map(function (s) {
+            return { from: s.from, to: s.to === Infinity ? null : s.to, monthly: s.monthly };
+          }),
+          pointApplied: r.pointApply, pointTotal: r.pointTotal,
+          initialRows: (r.initialRows || []).map(function (x) { return { name: x.name, amount: x.amount }; }),
+          initialTotal: r.initialTotal, storeTotal: r.storeTotal, billTotal: r.billTotal
+        };
+      } catch (e) {}
+      store.patterns.forEach(function (pt, i) {
+        if (i === store.active || !isPatternUsed(pt)) return;
+        try {
+          var rr = calcFor(pt);
+          snap.otherPatterns.push({ pattern: i + 1, planId: pt.planId, planName: rr.plan.name,
+            monthly: rr.segs.length ? rr.segs[0].monthly : 0, initialTotal: rr.initialTotal });
+        } catch (e2) {}
+      });
+      return snap;
+    },
+    aiApply: function (patch) {
+      patch = patch || {};
+      var applied = [], rejected = [];
+      var st = state;
+      var prevPlan = st.planId;
+      var groups = {};
+      MASTER.plans.forEach(function (pl) { groups[pl.group] = true; });
+      function planOk(id) { return MASTER.plans.some(function (pl) { return pl.id === id; }); }
+      function voiceOk(id) { return MASTER.voiceOptions.some(function (v2) { return v2.id === id; }); }
+      /* AIが変更してよい項目と、その値の検証。ここに無い項目（お客様名・
+       * 店舗設定・ロック類など）は、AIが何を言ってきても書かない。 */
+      var FIELDS = {
+        procType: ["", "shinki", "mnp", "kishu", "plan_only"],
+        planGroup: function (v2) { return !!groups[v2]; },
+        planId: planOk,
+        tierIdx: "int",
+        minna: ["0", "2", "3"],
+        dSet: "bool",
+        dCard: ["none", "normal", "goldu", "gold", "platinum"],
+        dDenki: "bool",
+        choki: ["none", "y10", "y20"],
+        voice: voiceOk,
+        deviceName: "str", devicePrice: "num", couponOff: "num", campaignOff: "num",
+        payMethod: ["none", "ikkatsu", "b12", "b24", "b36", "b48", "kaedoki"],
+        kaedoki23: "num", kaedokiFee: "num", atamakin: "num", jimuFee: "num",
+        currentInst: "num", currentInstMonths: "num",
+        pointPoikatsu: "num", pointPoikatsuFamily: "num", pointDcard: "num", pointBakuage: "num",
+        pointApply: "bool",
+        quoteMemo: "str"
+      };
+      Object.keys(patch.set || {}).forEach(function (k) {
+        var rule = FIELDS[k], v = patch.set[k];
+        if (!rule) { rejected.push(k + "（変更できない項目）"); return; }
+        if (Array.isArray(rule)) {
+          v = String(v);
+          if (rule.indexOf(v) < 0) { rejected.push(k + "=" + v + "（値が不正）"); return; }
+        } else if (rule === "bool") v = !!v;
+        else if (rule === "num") v = Math.max(0, num(v));
+        else if (rule === "int") v = Math.max(0, Math.floor(num(v)));
+        else if (rule === "str") v = String(v == null ? "" : v).slice(0, 500);
+        else if (typeof rule === "function") {
+          v = String(v);
+          if (!rule(v)) { rejected.push(k + "=" + v + "（値が不正）"); return; }
+        }
+        st[k] = v;
+        applied.push(k);
+      });
+      // プランを変えたらグループを合わせ、段階が範囲外なら先頭へ戻す
+      var p2 = planById(st.planId);
+      if (p2) {
+        if (p2.group !== st.planGroup) st.planGroup = p2.group;
+        if (st.tierIdx >= p2.tiers.length) st.tierIdx = 0;
+      }
+      function applyMap(key, list, label) {
+        Object.keys(patch[key] || {}).forEach(function (id) {
+          var def = (list || []).filter(function (o) { return o.id === id; })[0];
+          if (!def) { rejected.push(label + " " + id + "（この店のマスタに無いid）"); return; }
+          if (patch[key][id]) st[key][id] = true; else delete st[key][id];
+          applied.push(label + "「" + def.name + "」");
+        });
+      }
+      applyMap("options", MASTER.options, "オプション");
+      applyMap("feeItems", MASTER.feeItems, "初期費用");
+      applyMap("campaigns", MASTER.campaigns, "キャンペーン");
+      if (patch.clearAdhocMonthly) { st.adhocMonthly = []; applied.push("自由入力の月額を削除"); }
+      if (patch.clearAdhocInitial) { st.adhocInitial = []; applied.push("自由入力の初期費用を削除"); }
+      (patch.adhocMonthly || []).forEach(function (it) {
+        if (!it || !it.name) return;
+        st.adhocMonthly.push({ name: String(it.name).slice(0, 60), amount: num(it.amount),
+          months: Math.max(0, Math.floor(num(it.months))) });
+        applied.push("月額「" + it.name + "」");
+      });
+      (patch.adhocInitial || []).forEach(function (it) {
+        if (!it || !it.name) return;
+        st.adhocInitial.push({ name: String(it.name).slice(0, 60), amount: num(it.amount) });
+        applied.push("初期費用「" + it.name + "」");
+      });
+      if (patch.set && patch.set.planId != null && st.planId !== prevPlan) syncPoikatsuDefault(prevPlan);
+      syncFormFromState();
+      recalc();
+      return { applied: applied, rejected: rejected };
+    }
+  };
+
   bindEvents();
   syncFormFromState();
   renderTplBar();
