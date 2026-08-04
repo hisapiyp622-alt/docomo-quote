@@ -27,6 +27,7 @@
     <button class="tab" data-tab="sheet" type="button">見積書</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
     <button class="tab" data-tab="saved" type="button">保存</button>
+    <button class="tab" data-tab="stats" type="button">実績</button>
   </nav>
 </header>
 
@@ -597,6 +598,17 @@
       <div id="savedList"><!-- JSで生成 --></div>
       <p class="hint">最大50件まで保存できます。担当者ごとに分かれて保存されます。</p>
     </div>
+  </section>
+
+  <section id="tab-stats" class="tab-page no-print">
+    <h2>実績（提案と成約）</h2>
+    <p class="hint">「保存」した見積もり1件を、1応対の「最初の提案」として数えます。保存タブで「成約」「見送り」を付けると、担当別・項目別に集計されます。成約にするとき、いま開いている見積もりを「成約した内容」として記録すれば、最初の提案と実際の成約を分けて集計できます。</p>
+    <div class="stats-bar">
+      <label>期間 <select id="statsMonth"></select></label>
+      <label>担当 <select id="statsStaff"></select></label>
+      <button type="button" class="btn-sub" id="statsReload">再読み込み</button>
+    </div>
+    <div id="statsBody"><p class="hint">読み込み中…</p></div>
   </section>
 
   <section id="tab-master" class="tab-page no-print">

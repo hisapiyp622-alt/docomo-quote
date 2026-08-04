@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.32.0";
+  var APP_VERSION = "1.33.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -222,10 +222,263 @@
         + "　月額 " + yen(it.monthly || 0)
         + (it.initial ? "　初期費用 " + yen(it.initial) : "")
         + "</div></div>"
+        + '<div class="saved-status">'
+        + [["", "提案中"], ["won", "成約"], ["lost", "見送り"]].map(function (st2) {
+            return '<button type="button" class="saved-st' + ((it.result || "") === st2[0] ? " on" : "")
+              + '" data-savedresult="' + st2[0] + '" data-savedrid="' + it.id + '">' + st2[1] + "</button>";
+          }).join("")
+        + "</div>"
         + '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>'
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
+        + (it.result === "won" && it.wonData
+            ? '<div class="saved-wonnote">成約した内容を記録済み（保存したときの提案内容と分けて実績に集計されます）</div>'
+            : "")
         + "</div>";
     }).join("");
+  }
+
+  /* ---------- 実績（提案と成約） ----------
+   * 「保存」した見積もり1件＝1応対の「最初に提案した内容」として数える。
+   * 成約にするとき、いま画面に開いている見積もりを「成約した内容」（wonData）
+   * として一緒に記録できる。提案のあとに内容を直して決まった場合でも、
+   * 最初の提案（提案数）と実際の成約（成約数）を分けて集計できる。
+   * マークとwonDataは保存リストと一緒にクラウドへ同期される（お客様名は除く）。 */
+  function setSavedResult(id, result) {
+    var it = savedList.filter(function (x) { return x.id === id; })[0];
+    if (!it) return;
+    if (result === "won") {
+      /* いま開いている内容＝店頭で最後に調整した内容。これを成約内容として
+       * 記録すれば、保存したときの「最初の提案」と比べられる。 */
+      var useCurrent = window.confirm(
+        "「" + it.name + "」を成約にします。\n\n"
+        + "OK：いま画面に開いている見積もりを『成約した内容』として記録します\n"
+        + "（保存したときの提案内容と分けて実績に集計されます）\n\n"
+        + "キャンセル：保存したときの内容のまま成約にします");
+      if (useCurrent) {
+        it.wonData = JSON.parse(JSON.stringify(store));
+        it.wonPattern = store.active;
+      } else {
+        delete it.wonData;
+        // どのパターンで成約したか。2つ以上使っていたら聞く
+        var used = [];
+        ((it.data && it.data.patterns) || []).forEach(function (pt, i) {
+          var m = Object.assign(defaultState(), pt || {});
+          if (isPatternUsed(m) || m.planId || m.procType) used.push(i);
+        });
+        var idx = (it.data && it.data.active) | 0;
+        if (used.length > 1) {
+          var ans = window.prompt("どのパターンで成約しましたか？（" + used.map(function (i) { return i + 1; }).join("・") + "）", String(idx + 1));
+          if (ans === null) return; // やめた
+          var n2 = (parseInt(ans, 10) || 0) - 1;
+          if (used.indexOf(n2) >= 0) idx = n2;
+        }
+        it.wonPattern = idx;
+      }
+    } else {
+      delete it.wonData;
+      delete it.wonPattern;
+    }
+    it.result = result;
+    it.resultAt = result ? Date.now() : 0;
+    persistSaved();
+    renderSaved();
+  }
+
+  // 光・5G（イエナカ）の商材名
+  var STATS_IE_NAMES = {
+    hikari1g: "ドコモ光 1ギガ", hikari10g: "ドコモ光 10ギガ",
+    ahamo1g: "ahamo光 1ギガ", ahamo10g: "ahamo光 10ギガ", home5g: "home 5G"
+  };
+
+  // 1パターンから「提案した項目」を拾う {key: 表示名}
+  function statsPatternItems(ptRaw) {
+    var pt = Object.assign(defaultState(), ptRaw || {});
+    var out = {};
+    var todo = pt.procTodo || {};
+    if (todo.shinki) out["proc:shinki"] = "新規契約";
+    if (todo.mnp) out["proc:mnp"] = "のりかえ（MNP）";
+    if (todo.kishu) out["proc:kishu"] = "機種変更";
+    if (todo.plan) out["proc:plan"] = "プラン変更";
+    if (pt.planId) {
+      var pl = planById(pt.planId);
+      out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
+    }
+    if (pt.deviceName || num(pt.devicePrice) > 0) out["device"] = "機種販売";
+    if (pt.todoDcard) out["dcard"] = "dカード申込";
+    if (pt.todoDenki) out["denki"] = "ドコモでんき";
+    if (pt.todoGas) out["gas"] = "ドコモガス";
+    if (pt.todoHikari) out["hikari"] = "ドコモ光・ネット回線";
+    Object.keys(pt.options || {}).forEach(function (id) {
+      if (!pt.options[id]) return;
+      if ((pt.optionKubun || {})[id] === "keep") return; // 継続は提案に数えない
+      var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
+      out["opt:" + id] = "オプション: " + (def ? def.name : id);
+    });
+    Object.keys(pt.feeItems || {}).forEach(function (id) {
+      if (!pt.feeItems[id]) return;
+      var def = MASTER.feeItems.filter(function (o) { return o.id === id; })[0];
+      if (!def) return;
+      if (def.pay === "bill" || /手数料|再発行/.test(def.name || "")) return; // 手数料類は提案項目ではない
+      out["fee:" + id] = def.name;
+    });
+    Object.keys(pt.accSel || {}).forEach(function (id) {
+      if (!pt.accSel[id]) return;
+      var def = MASTER.accessories.filter(function (o) { return o.id === id; })[0];
+      out["acc:" + id] = "アクセサリ: " + (def ? def.name : id);
+    });
+    if ((pt.accessories || []).length) out["acc:free"] = "アクセサリ（自由入力）";
+    return out;
+  }
+
+  // 3パターン一式＋光・5G（store のクローン）から項目を拾う
+  function statsDataItems(d, onlyPattern) {
+    var out = {};
+    var pats = (d && d.patterns) || [];
+    if (typeof onlyPattern === "number") {
+      Object.assign(out, statsPatternItems(pats[onlyPattern]));
+    } else {
+      pats.forEach(function (pt) {
+        var m = Object.assign(defaultState(), pt || {});
+        if (!(isPatternUsed(m) || m.planId || m.procType)) return;
+        Object.assign(out, statsPatternItems(pt));
+      });
+    }
+    var ie = d && d.ienaka;
+    if (ie && ie.enabled && ie.product) {
+      out["ie:" + ie.product] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
+    }
+    return out;
+  }
+
+  // 1件の保存から項目を拾う。wonOnly は「成約した内容」だけ
+  function statsSavedItems(it, wonOnly) {
+    if (!wonOnly) return statsDataItems(it.data);
+    // 成約時に記録した内容があればそれを、無ければ保存内容の成約パターンを使う
+    if (it.wonData) {
+      return statsDataItems(it.wonData, (it.wonData.active | 0));
+    }
+    var wi = typeof it.wonPattern === "number" ? it.wonPattern : (it.data && it.data.active) | 0;
+    return statsDataItems(it.data, wi);
+  }
+
+  // 全担当の保存リストを集める。クラウド利用時は最新を読みにいく
+  var statsLists = null; // {staffId: list}
+  function loadAllSaved(done) {
+    var lists = {};
+    var mine = activeStaff().id;
+    function local(sid) {
+      try { return JSON.parse(localStorage.getItem(savedKey(sid)) || "null") || []; } catch (e) { return []; }
+    }
+    config.staff.forEach(function (s) { lists[s.id] = s.id === mine ? savedList : local(s.id); });
+    if (!cloudOn()) { statsLists = lists; done(); return; }
+    var jobs = config.staff.map(function (s) {
+      if (s.id === mine) return Promise.resolve(); // 自分の分は手元が最新
+      return savedDoc(s.id).get().then(function (snap) {
+        var d = snap.exists ? snap.data() : null;
+        if (d && d.list) lists[s.id] = JSON.parse(d.list) || [];
+      }).catch(function () {});
+    });
+    Promise.all(jobs).then(function () { statsLists = lists; done(); }, function () { statsLists = lists; done(); });
+  }
+
+  function statsMonthOf(ms) {
+    var d = new Date(ms || 0);
+    return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2);
+  }
+  function renderStats(refresh) {
+    var body = $("statsBody");
+    if (!body) return;
+    if (refresh || !statsLists) {
+      body.innerHTML = '<p class="hint">読み込み中…</p>';
+      loadAllSaved(function () { renderStats(false); });
+      return;
+    }
+    var lists = statsLists;
+    // 期間の選択肢（保存がある月）
+    var monthSel = $("statsMonth"), staffSel = $("statsStaff");
+    var months = {};
+    Object.keys(lists).forEach(function (sid) {
+      lists[sid].forEach(function (it) { months[statsMonthOf(it.savedAt)] = true; });
+    });
+    var mKeys = Object.keys(months).sort().reverse();
+    var curMonth = statsMonthOf(Date.now());
+    var mPrev = monthSel.value || (months[curMonth] ? curMonth : "all");
+    monthSel.innerHTML = '<option value="all">全期間</option>' + mKeys.map(function (m) {
+      return '<option value="' + m + '">' + m + "</option>";
+    }).join("");
+    monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : "all";
+    var sPrev = staffSel.value || "all";
+    staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
+      return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>";
+    }).join("");
+    staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
+    var mFil = monthSel.value, sFil = staffSel.value;
+    function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
+
+    // 担当別のまとめ
+    var rows = [];
+    var totals = { prop: 0, won: 0, lost: 0 };
+    config.staff.forEach(function (s) {
+      if (sFil !== "all" && s.id !== sFil) return;
+      var a = (lists[s.id] || []).filter(inPeriod);
+      var won = a.filter(function (it) { return it.result === "won"; }).length;
+      var lost = a.filter(function (it) { return it.result === "lost"; }).length;
+      totals.prop += a.length; totals.won += won; totals.lost += lost;
+      rows.push({ name: s.name, prop: a.length, won: won, lost: lost });
+    });
+    function rate(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : "－"; }
+    var h = '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th></tr>';
+    rows.forEach(function (r2) {
+      h += "<tr><td>" + esc(r2.name) + "</td><td>" + r2.prop + "</td><td>" + r2.won + "</td><td>" + r2.lost + "</td><td>" + rate(r2.won, r2.prop) + "</td></tr>";
+    });
+    if (rows.length > 1) {
+      h += '<tr class="stats-total"><td>合計</td><td>' + totals.prop + "</td><td>" + totals.won + "</td><td>" + totals.lost + "</td><td>" + rate(totals.won, totals.prop) + "</td></tr>";
+    }
+    h += "</table>";
+
+    // 項目別のまとめ（提案＝最初に保存した内容、成約＝実際に成約した内容）
+    var items = {}; // key -> {name, prop, won}
+    Object.keys(lists).forEach(function (sid) {
+      if (sFil !== "all" && sid !== sFil) return;
+      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+        var prop = statsSavedItems(it, false);
+        Object.keys(prop).forEach(function (k) {
+          if (!items[k]) items[k] = { name: prop[k], prop: 0, won: 0 };
+          items[k].prop++;
+        });
+        if (it.result === "won") {
+          var wonItems = statsSavedItems(it, true);
+          Object.keys(wonItems).forEach(function (k) {
+            if (!items[k]) items[k] = { name: wonItems[k], prop: 0, won: 0 };
+            items[k].won++;
+          });
+        }
+      });
+    });
+    var order = ["proc:", "plan:", "device", "dcard", "denki", "gas", "hikari", "ie:", "opt:", "fee:", "acc:"];
+    function rank(k) {
+      for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
+      return order.length;
+    }
+    var iKeys = Object.keys(items).sort(function (a2, b2) {
+      return (rank(a2) - rank(b2)) || (items[b2].prop - items[a2].prop) || (items[a2].name < items[b2].name ? -1 : 1);
+    });
+    h += '<h3>項目別</h3>';
+    if (!iKeys.length) {
+      h += '<p class="hint">この期間の保存がありません。</p>';
+    } else {
+      h += '<table class="stats-table"><tr><th>項目</th><th>提案</th><th>成約</th><th>成約率</th></tr>';
+      iKeys.forEach(function (k) {
+        var x = items[k];
+        h += "<tr><td>" + esc(x.name) + "</td><td>" + x.prop + "</td><td>" + x.won + "</td><td>" + rate(x.won, x.prop) + "</td></tr>";
+      });
+      h += "</table>";
+      h += '<p class="hint">提案＝保存したとき（最初の提案）にその項目が入っていた件数（3パターンのどれかにあれば1件）。'
+        + '成約＝成約にした応対で、実際の成約内容にその項目が入っていた件数。'
+        + '提案0で成約が付いている項目は、最初の提案には無く、成約までの調整で加わったものです。'
+        + 'オプションの「継続」は数えません。</p>';
+    }
+    body.innerHTML = h;
   }
 
   /* 端末内モードの店舗ログイン
@@ -1041,6 +1294,7 @@
         list.forEach(function (it) {
           it.custName = "";
           ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+          ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
         });
         jobs.push(savedDoc(id).set(stamp({ list: JSON.stringify(list) })));
       });
@@ -1777,6 +2031,7 @@
       list.forEach(function (it) {
         it.custName = "";
         (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; });
+        ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
       });
       savedDoc(sid).set(stamp({ list: JSON.stringify(list) })).then(cloudOk, cloudNg);
     }, 1000);
@@ -1804,6 +2059,10 @@
           var op = (old.data && old.data.patterns) || [];
           ((x.data && x.data.patterns) || []).forEach(function (pt, i) {
             if (!pt.custName && op[i] && op[i].custName) pt.custName = op[i].custName;
+          });
+          var owp = (old.wonData && old.wonData.patterns) || [];
+          ((x.wonData && x.wonData.patterns) || []).forEach(function (pt, i) {
+            if (!pt.custName && owp[i] && owp[i].custName) pt.custName = owp[i].custName;
           });
         });
         savedList = incoming;
@@ -5304,6 +5563,7 @@
     if (name === "master") { histMark(); histLoadCloud(); renderMasterTab(); }
     else histSettle();
     if (name === "saved") { renderSaved(); $("saveQuoteName").placeholder = savedDefaultName(); }
+    if (name === "stats") renderStats(true);
     $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
   function switchPattern(i) {
@@ -6179,12 +6439,22 @@
         setTimeout(function () { m.hidden = true; }, 4000);
       });
     }
+    if ($("statsMonth")) {
+      $("statsMonth").addEventListener("change", function () { renderStats(false); });
+      $("statsStaff").addEventListener("change", function () { renderStats(false); });
+      $("statsReload").addEventListener("click", function () { renderStats(true); });
+    }
     var savedEl = $("savedList");
     if (savedEl) {
       savedEl.addEventListener("click", function (e) {
         var t = e.target;
         var lid = t.getAttribute && t.getAttribute("data-savedload");
         var did = t.getAttribute && t.getAttribute("data-saveddel");
+        var rid = t.getAttribute && t.getAttribute("data-savedrid");
+        if (rid) {
+          setSavedResult(rid, t.getAttribute("data-savedresult") || "");
+          return;
+        }
         if (lid) {
           if (!confirm("保存した見積もりを開きます。いま入力中の内容は置き換わります。よろしいですか？")) return;
           if (loadSavedQuote(lid)) switchTab("quote");
