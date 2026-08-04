@@ -690,20 +690,3 @@ body.sorting .sort-chip{cursor:grabbing}
   width:44px;padding:2px 3px;margin:0 2px;border:1px solid var(--line);
   border-radius:5px;font:inherit;font-size:11.5px;text-align:right;
 }
-
-/* ---------- 実績（提案と成約） ---------- */
-.saved-status { display: flex; gap: 0; margin-right: 8px; }
-.saved-st { border: 1px solid #ccc; background: #fff; padding: 4px 9px; font-size: 12px; cursor: pointer; color: #666; }
-.saved-st:first-child { border-radius: 8px 0 0 8px; }
-.saved-st:last-child { border-radius: 0 8px 8px 0; }
-.saved-st + .saved-st { border-left: 0; }
-.saved-st.on { background: #345; color: #fff; border-color: #345; font-weight: 600; }
-.saved-st.on[data-savedresult="won"] { background: #1b7e34; border-color: #1b7e34; }
-.saved-st.on[data-savedresult="lost"] { background: #999; border-color: #999; }
-.stats-bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 10px 0 4px; }
-.stats-bar select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 8px; }
-.stats-table { border-collapse: collapse; background: #fff; margin: 6px 0 14px; min-width: 340px; }
-.stats-table th, .stats-table td { border: 1px solid #ddd; padding: 6px 12px; font-size: 14px; text-align: right; }
-.stats-table th:first-child, .stats-table td:first-child { text-align: left; }
-.stats-table th { background: #f2f4f7; font-weight: 600; }
-.stats-table .stats-total td { font-weight: 700; background: #fafafa; }
