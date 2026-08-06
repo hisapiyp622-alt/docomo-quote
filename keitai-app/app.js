@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.35.0";
+  var APP_VERSION = "1.36.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -178,6 +178,9 @@
     if (savedList.length > SAVED_MAX) savedList = savedList.slice(0, SAVED_MAX);
     persistSaved();
     renderSaved();
+    // いま保存した内容＝この応対の提案。あとで「成約」を押したらここに紐づく
+    propSrcId = item.id;
+    if (!propSnap) propSnap = JSON.parse(JSON.stringify(item.data));
     return item;
   }
   // 保存済みの見積もりを開く（いまの入力内容は置き換わる）
@@ -194,6 +197,9 @@
     saveState();
     syncFormFromState();
     recalc();
+    // この応対はこの保存の続き。保存した内容を提案として控える
+    propSrcId = id;
+    propSnap = JSON.parse(JSON.stringify(it.data));
     return true;
   }
   function deleteSavedQuote(id) {
@@ -235,6 +241,67 @@
             : "")
         + "</div>";
     }).join("");
+  }
+
+  /* ---------- 実績のかんたん記録 ----------
+   * 店頭の流れを増やさないための仕組み。
+   * ・見積書タブを開いた時点（＝お客様に見せた時点）の内容を、
+   *   自動で「提案内容」として控える（操作は要らない）
+   * ・応対の最後に、見積もり画面の「成約」「見送り」を1回押すだけで、
+   *   控えてある提案内容＋いまの内容（成約時）が実績として保存される
+   * ・保存から開いた応対はその保存に紐づける（二重登録しない）。
+   *   「現在の見積もりを保存」も同じ応対として紐づける */
+  var propSnap = null;   // 提案内容の控え（store のクローン）
+  var propSrcId = null;  // この応対が紐づく保存のid
+  function markPropOpened() {
+    // 見積書を最初に開いたときだけ控える（開き直しでは上書きしない）
+    if (!propSnap) propSnap = JSON.parse(JSON.stringify(store));
+  }
+  function resetPropTracking() { propSnap = null; propSrcId = null; }
+  function recordOutcome(result) {
+    var label = result === "won" ? "成約" : "見送り";
+    if (!window.confirm("この応対を「" + label + "」として実績に記録します。よろしいですか？")) return;
+    var src = propSrcId ? savedList.filter(function (x) { return x.id === propSrcId; })[0] : null;
+    var it;
+    if (src) {
+      it = src;
+    } else {
+      var r = calc();
+      it = {
+        id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name: savedDefaultName(),
+        custName: state.custName || "",
+        planName: state.planId ? r.plan.name : "",
+        monthly: r.segs[0].monthly,
+        initial: r.initialTotal,
+        savedAt: Date.now(),
+        data: propSnap || JSON.parse(JSON.stringify(store))
+      };
+      savedList.unshift(it);
+      if (savedList.length > SAVED_MAX) savedList = savedList.slice(0, SAVED_MAX);
+    }
+    it.result = result;
+    it.resultAt = Date.now();
+    if (result === "won") {
+      it.wonData = JSON.parse(JSON.stringify(store));
+      it.wonPattern = store.active;
+    } else {
+      delete it.wonData;
+      delete it.wonPattern;
+    }
+    persistSaved();
+    renderSaved();
+    /* 同じ応対でもう一度押したら「記録し直し」になるように紐づけたままにする。
+     * 次のお客様は「入力をクリア」か保存の読み込みで区切られる */
+    propSrcId = it.id;
+    if (!propSnap) propSnap = JSON.parse(JSON.stringify(it.data));
+    var msg = $("recOutcomeMsg");
+    if (msg) {
+      msg.textContent = "実績に記録しました（" + label + "）";
+      msg.hidden = false;
+      clearTimeout(recordOutcome._t);
+      recordOutcome._t = setTimeout(function () { msg.hidden = true; }, 4000);
+    }
   }
 
   /* ---------- 実績（提案と成約） ----------
@@ -2306,6 +2373,7 @@
   // fresh=true … 担当者コード画面から入ったとき（新しいお客様として始める）
   function enterStaff(s, fresh) {
     masterOnly = false; // 担当者が決まったので通常の画面に戻す
+    resetPropTracking(); // 担当が替わったら前の応対と切り離す
     config.activeStaffId = s.id;
     saveConfig();
     showStaffGate(false);
@@ -5585,13 +5653,14 @@
     // 出口は「← 担当者の選択に戻る」だけにして、担当者を決めずに見積もりへ移れないようにする
     var nav = $("tabsNav");
     if (nav) nav.hidden = (name === "master");
-    if (name === "sheet") renderSheet();
+    if (name === "sheet") { markPropOpened(); renderSheet(); }
     if (name === "staff") renderStaffSheet();
     if (name === "master") { histMark(); histLoadCloud(); renderMasterTab(); }
     else histSettle();
     if (name === "saved") { renderSaved(); $("saveQuoteName").placeholder = savedDefaultName(); }
     if (name === "stats") renderStats(true);
-    $("summaryBar").style.display = name === "quote" ? "" : "none";
+    // 見積もり・見積書のどちらでも実績を記録できるよう、まとめバーは両方で出す
+    $("summaryBar").style.display = (name === "quote" || name === "sheet") ? "" : "none";
   }
   function switchPattern(i) {
     store.active = i;
@@ -6712,6 +6781,7 @@
     });
 
     $("clearQuote").addEventListener("click", function () {
+      resetPropTracking(); // 次のお客様の応対として仕切り直す
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.patterns[store.active] = defaultState();
       state = store.patterns[store.active];
@@ -6862,6 +6932,8 @@
     state.jimuFee = jimuFeeFor(state.procType);
     state.atamakin = MASTER.fees.atamakin_default;
   }
+  $("recWonBtn").addEventListener("click", function () { recordOutcome("won"); });
+  $("recLostBtn").addEventListener("click", function () { recordOutcome("lost"); });
   bindEvents();
   syncFormFromState();
   renderTplBar();
