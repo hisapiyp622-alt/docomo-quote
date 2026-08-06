@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.33.0";
+  var APP_VERSION = "1.34.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -284,32 +284,49 @@
     renderSaved();
   }
 
-  // 光・5G（イエナカ）の商材名
+  /* 光・5Gの集計はブランドを分けず速度でまとめる（店舗の指定・2026-08-04）。
+   * ドコモ光1ギガ＋ahamo光1ギガ＝「光 1ギガ」、10ギガも同様。 */
   var STATS_IE_NAMES = {
-    hikari1g: "ドコモ光 1ギガ", hikari10g: "ドコモ光 10ギガ",
-    ahamo1g: "ahamo光 1ギガ", ahamo10g: "ahamo光 10ギガ", home5g: "home 5G"
+    hikari1g: "光 1ギガ", ahamo1g: "光 1ギガ",
+    hikari10g: "光 10ギガ", ahamo10g: "光 10ギガ",
+    home5g: "home 5G"
   };
+  var STATS_IE_KEYS = { hikari1g: "1g", ahamo1g: "1g", hikari10g: "10g", ahamo10g: "10g", home5g: "home5g" };
 
   // 1パターンから「提案した項目」を拾う {key: 表示名}
   function statsPatternItems(ptRaw) {
     var pt = Object.assign(defaultState(), ptRaw || {});
     var out = {};
+    /* 追う項目は店舗の指定（2026-08-04）:
+     * ・手続きはプラン変更を数えない
+     * ・プランは MAX とポイ活 MAX だけ
+     * ・機種販売は Pixel シリーズだけ
+     * ・dカードは種別ごと、でんきはメニューごと、ガスは1行
+     * ・引き継ぎの「ドコモ光」チェックは数えない（光・5Gタブの商材で数える）
+     * ・オプションは smartあんしん補償・あんしんパック以外
+     * ・アクセサリは登録品だけ（自由入力は数えない） */
     var todo = pt.procTodo || {};
     if (todo.shinki) out["proc:shinki"] = "新規契約";
     if (todo.mnp) out["proc:mnp"] = "のりかえ（MNP）";
     if (todo.kishu) out["proc:kishu"] = "機種変更";
-    if (todo.plan) out["proc:plan"] = "プラン変更";
-    if (pt.planId) {
+    var STATS_PLANS = { max: true, poikatsu_max: true };
+    if (pt.planId && STATS_PLANS[pt.planId]) {
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
     }
-    if (pt.deviceName || num(pt.devicePrice) > 0) out["device"] = "機種販売";
-    if (pt.todoDcard) out["dcard"] = "dカード申込";
-    if (pt.todoDenki) out["denki"] = "ドコモでんき";
+    if (/pixel/i.test(pt.deviceName || "")) out["device"] = "機種販売（Pixel）";
+    if (pt.todoDcard) {
+      var dcNames = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
+      out["dcard:" + (pt.todoDcardType || "x")] = dcNames[pt.todoDcardType] || "dカード（種別未選択）";
+    }
+    if (pt.todoDenki) {
+      var dnNames = { basic: "でんき Basic", green: "でんき Green" };
+      out["denki:" + (pt.todoDenkiType || "x")] = dnNames[pt.todoDenkiType] || "でんき（メニュー未選択）";
+    }
     if (pt.todoGas) out["gas"] = "ドコモガス";
-    if (pt.todoHikari) out["hikari"] = "ドコモ光・ネット回線";
+    var STATS_OPT_SKIP = { smart_hosho: true, anshin_pack: true };
     Object.keys(pt.options || {}).forEach(function (id) {
-      if (!pt.options[id]) return;
+      if (!pt.options[id] || STATS_OPT_SKIP[id]) return;
       if ((pt.optionKubun || {})[id] === "keep") return; // 継続は提案に数えない
       var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
       out["opt:" + id] = "オプション: " + (def ? def.name : id);
@@ -326,7 +343,6 @@
       var def = MASTER.accessories.filter(function (o) { return o.id === id; })[0];
       out["acc:" + id] = "アクセサリ: " + (def ? def.name : id);
     });
-    if ((pt.accessories || []).length) out["acc:free"] = "アクセサリ（自由入力）";
     return out;
   }
 
@@ -345,7 +361,7 @@
     }
     var ie = d && d.ienaka;
     if (ie && ie.enabled && ie.product) {
-      out["ie:" + ie.product] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
+      out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
     }
     return out;
   }
@@ -455,7 +471,7 @@
         }
       });
     });
-    var order = ["proc:", "plan:", "device", "dcard", "denki", "gas", "hikari", "ie:", "opt:", "fee:", "acc:"];
+    var order = ["proc:", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
@@ -476,7 +492,8 @@
       h += '<p class="hint">提案＝保存したとき（最初の提案）にその項目が入っていた件数（3パターンのどれかにあれば1件）。'
         + '成約＝成約にした応対で、実際の成約内容にその項目が入っていた件数。'
         + '提案0で成約が付いている項目は、最初の提案には無く、成約までの調整で加わったものです。'
-        + 'オプションの「継続」は数えません。</p>';
+        + 'オプションの「継続」は数えません。追う項目は店舗の指定に合わせています'
+        + '（プランはMAX/ポイ活MAXのみ・機種はPixelのみ・プラン変更/光チェック/自由入力アクセサリ/一部オプションは対象外）。</p>';
     }
     body.innerHTML = h;
   }
