@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.08.03-78";
+  var APP_VERSION = "2026.08.06-79";
   var MASTER_KEY = "dq-master-v3"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "dq-state-v3";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -730,6 +730,29 @@
     if (!MASTER.campaigns) MASTER.campaigns = JSON.parse(JSON.stringify(DEFAULT_DATA.campaigns || []));
     if (!MASTER.accessories) MASTER.accessories = JSON.parse(JSON.stringify(DEFAULT_DATA.accessories || []));
     if (!MASTER.templates || MASTER.templates.length !== 3) MASTER.templates = [null, null, null];
+    /* 2026-08-06: スマホデビュープランU15・親子割の追加、U15はじめては旧プランへ。
+     * 社内版のマスタは保存（同期）が優先されるため、保存済みのマスタにも
+     * ここで一度だけ足す。既に手で足してあれば何もしない。 */
+    if (!MASTER.plans.some(function (pl) { return pl.id === "u15_debut"; })) {
+      var defU15d = DEFAULT_DATA.plans.filter(function (pl) { return pl.id === "u15_debut"; })[0];
+      if (defU15d) {
+        var posU15 = MASTER.plans.length;
+        MASTER.plans.forEach(function (pl, i) { if (pl.id === "u15") posU15 = Math.min(posU15, i); });
+        MASTER.plans.splice(posU15, 0, JSON.parse(JSON.stringify(defU15d)));
+      }
+    }
+    MASTER.plans.forEach(function (pl) {
+      if (pl.id === "u15" && pl.group === "current") {
+        pl.group = "legacy";
+        if ((pl.note || "").indexOf("新規受付終了") < 0) pl.note = "【新規受付終了（2026-08-06）】" + (pl.note || "");
+      }
+    });
+    ["oyako_u15", "oyako_family"].forEach(function (cid) {
+      if (!MASTER.campaigns.some(function (c) { return c.id === cid; })) {
+        var defC = DEFAULT_DATA.campaigns.filter(function (c) { return c.id === cid; })[0];
+        if (defC) MASTER.campaigns.push(JSON.parse(JSON.stringify(defC)));
+      }
+    });
     MASTER.feeItems.forEach(function (f) {
       if (f.pay !== "store" && f.pay !== "bill") {
         f.pay = (f.id === "fee_sim" || /手数料|再発行/.test(f.name || "")) ? "bill" : "store";
