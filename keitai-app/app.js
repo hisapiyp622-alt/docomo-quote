@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.34.0";
+  var APP_VERSION = "1.35.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -329,14 +329,24 @@
       if (!pt.options[id] || STATS_OPT_SKIP[id]) return;
       if ((pt.optionKubun || {})[id] === "keep") return; // 継続は提案に数えない
       var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
-      out["opt:" + id] = "オプション: " + (def ? def.name : id);
+      /* 店舗独自サービス（マスタ設定で「店舗独自」にしたもの）は
+       * 「独自: 」として別のまとまりで集計する */
+      if (def && def.own) out["own:o:" + id] = "独自: " + def.name;
+      else out["opt:" + id] = "オプション: " + (def ? def.name : id);
     });
     Object.keys(pt.feeItems || {}).forEach(function (id) {
       if (!pt.feeItems[id]) return;
       var def = MASTER.feeItems.filter(function (o) { return o.id === id; })[0];
       if (!def) return;
-      if (def.pay === "bill" || /手数料|再発行/.test(def.name || "")) return; // 手数料類は提案項目ではない
-      out["fee:" + id] = def.name;
+      if (def.own) {
+        /* 独自商材は名前に「手数料」と付いていても数える（店の商品なので）。
+         * 請求書払い（bill）のものだけは対象外 */
+        if (def.pay === "bill") return;
+        out["own:f:" + id] = "独自: " + def.name;
+      } else {
+        if (def.pay === "bill" || /手数料|再発行/.test(def.name || "")) return; // 手数料類は提案項目ではない
+        out["fee:" + id] = def.name;
+      }
     });
     Object.keys(pt.accSel || {}).forEach(function (id) {
       if (!pt.accSel[id]) return;
@@ -471,7 +481,7 @@
         }
       });
     });
-    var order = ["proc:", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "acc:"];
+    var order = ["proc:", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
