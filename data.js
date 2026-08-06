@@ -5,7 +5,7 @@
  * マスタ設定の編集(localStorage)がここより優先される。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "updated": "2026-07-28",
+  "updated": "2026-08-06",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -162,8 +162,35 @@ const DEFAULT_DATA = {
       "maxBonus": false
     },
     {
-      "id": "u15",
+      "id": "u15_debut",
       "group": "current",
+      "name": "ドコモ スマホデビュープラン U15",
+      "tiers": [
+        {
+          "label": "〜5GB",
+          "price": 2508
+        },
+        {
+          "label": "5GB超〜20GB",
+          "price": 3278
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 220,
+        "dcardGold": 550
+      },
+      "includes5min": false,
+      "note": "5〜15歳・2段階制（2026-08-07提供開始）。親子割（U15）は⑤キャンペーンから（〜5GB:-1,100円/5GB超:-1,870円×12か月）。発表済みの割引はdカードお支払割と親子割のみ。5分通話無料・みんなドコモ割等の扱いは公式ページ（8/7公開）で要確認。出典: プレスリリース 2026-08-06",
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "u15",
+      "group": "legacy",
       "name": "U15はじめてスマホプラン",
       "tiers": [
         {
@@ -183,7 +210,7 @@ const DEFAULT_DATA = {
         "dcardGold": 187
       },
       "includes5min": true,
-      "note": "15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。",
+      "note": "【新規受付終了（2026-08-06）】15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。",
       "bakuageTier": "",
       "poikatsuPt": 0,
       "maxBonus": false
@@ -856,6 +883,42 @@ const DEFAULT_DATA = {
         }
       ],
       "note": "ahamoを1年以上契約からのプラン変更・12か月間"
+    },
+    {
+      "id": "oyako_u15",
+      "name": "ドコモ 親子割（U15）",
+      "months": 12,
+      "plans": [
+        "u15_debut"
+      ],
+      "amountChoices": [
+        {
+          "label": "〜5GB",
+          "a": 1100
+        },
+        {
+          "label": "5GB超〜20GB",
+          "a": 1870
+        }
+      ],
+      "note": "スマホデビュープランU15の契約者・最大12か月（2026-08-07開始）"
+    },
+    {
+      "id": "oyako_family",
+      "name": "ドコモ 親子割（家族）",
+      "months": 12,
+      "plans": [
+        "max",
+        "poikatsu_max",
+        "ahamo"
+      ],
+      "amountChoices": [
+        {
+          "label": "一律",
+          "a": 550
+        }
+      ],
+      "note": "親子割（U15）適用回線と同一ファミリー割引グループ内・最大12か月。ahamoも対象"
     }
   ],
   "accessories": [
