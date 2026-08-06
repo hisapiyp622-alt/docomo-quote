@@ -602,7 +602,7 @@
 
   <section id="tab-stats" class="tab-page no-print">
     <h2>実績（提案と成約）</h2>
-    <p class="hint">「保存」した見積もり1件を、1応対の「最初の提案」として数えます。保存タブで「成約」「見送り」を付けると、担当別・項目別に集計されます。成約にするとき、いま開いている見積もりを「成約した内容」として記録すれば、最初の提案と実際の成約を分けて集計できます。</p>
+    <p class="hint">応対の最後に、画面下の<strong>「成約」「見送り」ボタンを1回押すだけ</strong>で実績に入ります。見積書をお客様に見せた時点の内容が「提案」、成約を押した時点の内容が「成約」として自動で控えられ、担当別・項目別に集計されます（保存タブからマークを付け直すこともできます）。次のお客様の前に「入力をクリア」を押してください。</p>
     <div class="stats-bar">
       <label>期間 <select id="statsMonth"></select></label>
       <label>担当 <select id="statsStaff"></select></label>
@@ -717,6 +717,11 @@
   <div class="summary-bar no-print" id="summaryBar">
     <div class="sum-item"><span class="sum-label" id="sumMonthlyLabel">月額</span><span class="sum-value" id="sumMonthly">0円</span></div>
     <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
+    <div class="sum-rec">
+      <span class="sum-recmsg" id="recOutcomeMsg" hidden></span>
+      <button type="button" id="recWonBtn" title="この応対を成約として実績に記録">成約</button>
+      <button type="button" id="recLostBtn" title="この応対を見送りとして実績に記録">見送り</button>
+    </div>
   </div>
 </main>
 
