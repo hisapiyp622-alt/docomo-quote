@@ -1,7 +1,7 @@
 /* イエナカ見積もり（ドコモ光・home 5G） */
 (function () {
   "use strict";
-  var APP_VERSION = "2026.07.30-65";
+  var APP_VERSION = "2026.08.07-66";
   var KEY = "ienaka-v3"; // v1,v2=旧仕様（料金改定・支払い方法変更時に破棄）
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -436,7 +436,7 @@
         if (curTk.onsite > 0 || state.tvOnsiteFee != null) {
           var curOnsite = state.tvOnsiteFee != null ? state.tvOnsiteFee : curTk.onsite;
           h += '<div class="field tv-koji"><label>接続工事費（現地払い）</label><input type="number" data-tvonsite="1" value="' + curOnsite + '" inputmode="numeric" min="0"> 円'
-            + '<span class="opt-price">スカパーへ工事当日お支払い。通常19,800円・2026年6〜7月限定キャンペーンで10,000円</span></div>';
+            + '<span class="opt-price">スカパーへ工事当日お支払い。通常19,800円・キャンペーンで10,000円（2026年8月も継続中）</span></div>';
         }
       }
     });
