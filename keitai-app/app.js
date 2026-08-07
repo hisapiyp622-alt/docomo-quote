@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.41.0";
+  var APP_VERSION = "1.42.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -4519,6 +4519,10 @@
     if (ieOn) {
       var ir = KQ_IENAKA.calc();
       h += row("商材", "<b>" + esc(KQ_IENAKA.label()) + "</b>");
+      // 奪還の比較につなげるためのヒアリング記録
+      if (KQ_IENAKA.curLine && KQ_IENAKA.curLine()) {
+        h += row("現在の回線（ヒアリング）", esc(KQ_IENAKA.curLine()));
+      }
       h += row("月額", "<b>" + yen(ir.segs[0].monthly) + "</b>"
         + (ir.segs.length > 1
           ? "（" + KQ_IENAKA.segLabel(ir.segs[0]) + "）　"

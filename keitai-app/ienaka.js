@@ -144,6 +144,7 @@
       router10g: true, router10gPrice: 6780, router10gPay: "once",
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
+      curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング・奪還比較の入口）
       enabled: false   // この見積もりに光・home 5G を含めるか（見積書に出すかどうか）
     };
   }
@@ -466,6 +467,28 @@
     $("ieHikariFields").hidden = state.product === "home5g";
     $("ieApplyTypeField").hidden = state.product === "home5g";
     $("ieApplyType").value = state.applyType || "shinki";
+    var clSel = $("ieCurLine");
+    if (clSel) {
+      if (!clSel.options.length) {
+        CUR_LINES.forEach(function (c) {
+          var o = document.createElement("option");
+          o.value = c.id; o.textContent = c.name;
+          clSel.appendChild(o);
+        });
+      }
+      clSel.value = state.curLine || "";
+      $("ieCurLineOtherField").hidden = state.curLine !== "other";
+      $("ieCurLineOther").value = state.curLineOther || "";
+      var clh = $("ieCurLineHint");
+      var cd = curLineDef();
+      if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
+        clh.hidden = false;
+        clh.textContent = (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
+          + "　※ 見積書の「開通までの流れ」に解約のご案内が載ります";
+      } else {
+        clh.hidden = true;
+      }
+    }
     $("iePtypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("ieProviderField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
     $("ieProvider").value = state.provider || "";
@@ -661,6 +684,8 @@
         state.dpoint = dpointDefaultFor(state.product, state.applyType);
       }
     }
+    $("ieCurLine").addEventListener("change", function () { state.curLine = this.value; syncForm(); recalc(); });
+    $("ieCurLineOther").addEventListener("input", function () { state.curLineOther = this.value; recalc(); });
     $("ieApplyType").addEventListener("change", function () {
       var prevDef = dpointDefaultFor(state.product, state.applyType);
       state.applyType = this.value;
@@ -741,6 +766,37 @@
    * 単体版（ienaka-app）の見積書と同じ内容。表題・お客様名・発行元・注意書きは
    * ケータイ側が付けるので、ここでは中身だけを返す。
    * セット割はケータイ側で実際に引いている金額を受け取る。 */
+  /* ---------- 現在お使いの回線（ヒアリング） ----------
+   * 将来の「奪還比較ツール」への入口として、どの回線から乗り換えるかを記録する。
+   * 開通までの流れに解約のご案内を出すのにも使う。
+   * tel は一次情報で確認できたものだけ載せる（誤った番号のご案内は事故になるため。
+   * 確認でき次第、ここに追加する）。 */
+  var CUR_LINES = [
+    { id: "", name: "（未ヒアリング）" },
+    { id: "none", name: "固定回線なし" },
+    { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
+    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料" },
+    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
+    { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
+    { id: "nuro", name: "NURO光" },
+    { id: "rakuten", name: "楽天ひかり" },
+    { id: "jcom", name: "J:COM NET" },
+    { id: "eo", name: "eo光" },
+    { id: "collabo", name: "他社光コラボ（ビッグローブ光・So-net光・OCN光 など）" },
+    { id: "cable", name: "ケーブルテレビのネット" },
+    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
+    { id: "other", name: "その他" }
+  ];
+  function curLineDef() {
+    if (!state.curLine) return null;
+    return CUR_LINES.filter(function (c) { return c.id === state.curLine; })[0] || null;
+  }
+  function curLineLabel() {
+    var d = curLineDef();
+    if (!d) return "";
+    return d.id === "other" ? (state.curLineOther || "その他") : d.name;
+  }
+
   /* ---------- 開通までの流れ（見積書のお客様説明用） ----------
    * 商材と申込区分で工程が変わる。日数は「目安」として書く
    * （工事の混み具合・地域で前後するため、断定しない）。 */
@@ -773,6 +829,21 @@
     }
     if (isHikari() && state.provider === "@nifty") {
       notes.push("開通までのご不明点は、@niftyのフォローコール（電話サポート）でご相談いただけます");
+    }
+    // いまの回線の解約。転用・事業者変更は解約が不要なので、案内だけ変える
+    var cl = curLineDef();
+    if (cl && cl.id !== "none") {
+      if (state.product === "home5g" || state.applyType === "shinki") {
+        steps.push("いまの回線（" + curLineLabel() + "）の解約手続き（開通・利用開始を確認してから）");
+        notes.push(cl.tel
+          ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
+          : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
+        notes.push("開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
+      } else if (state.applyType === "tenyo") {
+        notes.push("転用では、フレッツ光の回線契約はそのまま移行するため解約は不要です。プロバイダ（OCN・So-netなど）は別途解約が必要な場合があります");
+      } else if (state.applyType === "jigyosha") {
+        notes.push("事業者変更では、いまの光コラボ（" + curLineLabel() + "）の解約手続きは不要です（自動で切り替わります）。メールアドレスなどのオプションだけ残る場合があります");
+      }
     }
     var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
       + steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ol>";
@@ -963,6 +1034,8 @@
     },
     isHikari: isHikari,
     sheetHtml: sheetHtml,
+    // ヒアリングした現在の回線（未ヒアリングなら空）。引き継ぎシートと奪還比較の入口
+    curLine: function () { return state && state.curLine ? curLineLabel() : ""; },
     // 入れ物を差し替えずに中身だけ初期化する（ケータイ側の store.ienaka を指したまま）
     reset: function () {
       var d = defaultState();
