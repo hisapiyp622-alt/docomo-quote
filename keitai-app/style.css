@@ -789,3 +789,12 @@ body.sorting .sort-chip{cursor:grabbing}
 .sum-rec button { border: 0; border-radius: 8px; padding: 7px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
 #recWonBtn { background: #1b7e34; color: #fff; }
 #recLostBtn { background: #666; color: #fff; }
+
+/* ---------- 見積書: 開通までの流れ ---------- */
+.ie-flow { border: 1px solid #999; border-radius: 6px; padding: 6px 12px 8px; margin-top: 10px;
+  break-inside: avoid; page-break-inside: avoid; }
+.ie-flow h3 { margin: 2px 0 4px; }
+.ie-flow ol { margin: 2px 0; padding-left: 22px; }
+.ie-flow ol li { line-height: 1.6; }
+.ie-flow-notes { margin: 3px 0 0; padding-left: 4px; list-style: none; font-size: .85em; color: #333; }
+.ie-flow-notes li { line-height: 1.5; }
