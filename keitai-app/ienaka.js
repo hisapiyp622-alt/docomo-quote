@@ -800,26 +800,28 @@
   /* ---------- 開通までの流れ（見積書のお客様説明用） ----------
    * 商材と申込区分で工程が変わる。日数は「目安」として書く
    * （工事の混み具合・地域で前後するため、断定しない）。 */
-  function flowHtml(r) {
+  /* 流れの中身。見積書の下の枠と、A4・1枚もの（flowSheetHtml）で共用する */
+  function flowData(r) {
     var steps = [], notes = [];
+    function step(t, d) { steps.push({ t: t, d: d || "" }); }
     if (state.product === "home5g") {
-      steps.push("お申込み（店頭で本日完了）");
-      steps.push("本体をお受け取り");
-      steps.push("ご自宅のコンセントに挿すだけで、その日から利用開始（工事不要）");
+      step("お申込み", "本日、店頭でお手続きが完了しました");
+      step("本体のお受け取り", "home 5G の本体をお受け取りください");
+      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます");
     } else if (state.applyType === "shinki") {
-      steps.push("お申込み（店頭で本日完了）");
-      steps.push("工事日を決めるお電話（後日）で日程を決定");
-      steps.push("開通工事（立ち会いをお願いします）。お申込みから2週間〜1か月程度が目安（時期・地域により前後します）");
-      steps.push("ルーターを接続・設定して利用開始");
+      step("お申込み", "本日、店頭でお手続きが完了しました");
+      step("工事日を決めるお電話", "後日、工事日ご相談のお電話があります。ご都合のよい日をお伝えください");
+      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）");
+      step("ルーターを接続・設定して利用開始", "ルーターをつなぐと、インターネットが使えるようになります");
       if (r.tvOn) notes.push("テレビオプションの接続工事は、開通工事と同じ日に行います");
       if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
         notes.push("ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
       }
     } else {
-      steps.push("お申込み（店頭で本日完了）");
-      steps.push("切替日を書類・SMSでご案内");
-      steps.push("切替日に自動で切り替わります（工事・立ち会いなし）。お申込みから1〜2週間程度が目安");
-      steps.push("ルーターの設定を確認して利用開始");
+      step("お申込み", "本日、店頭でお手続きが完了しました");
+      step("切替日のご案内", "書類・SMSで切替日をお知らせします");
+      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です");
+      step("ルーターの設定を確認して利用開始", "つながらないときは、ルーターの設定をご確認ください");
     }
     // レンタルルーターが届くご案内（1ギガのプロバイダレンタル・ahamo光のレンタル）
     var rental = (state.product === "hikari1g" && state.routerRental !== "nashi")
@@ -834,7 +836,7 @@
     var cl = curLineDef();
     if (cl && cl.id !== "none") {
       if (state.product === "home5g" || state.applyType === "shinki") {
-        steps.push("いまの回線（" + curLineLabel() + "）の解約手続き（開通・利用開始を確認してから）");
+        step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください");
         notes.push(cl.tel
           ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
           : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
@@ -845,12 +847,36 @@
         notes.push("事業者変更では、いまの光コラボ（" + curLineLabel() + "）の解約手続きは不要です（自動で切り替わります）。メールアドレスなどのオプションだけ残る場合があります");
       }
     }
+    return { steps: steps, notes: notes };
+  }
+  // 見積書の下に出す小さい枠
+  function flowHtml(r) {
+    var fd = flowData(r);
     var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
-      + steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ol>";
-    if (notes.length) {
-      fh += '<ul class="ie-flow-notes">' + notes.map(function (s) { return "<li>※ " + esc(s) + "</li>"; }).join("") + "</ul>";
+      + fd.steps.map(function (st2) { return "<li>" + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "") + "</li>"; }).join("") + "</ol>";
+    if (fd.notes.length) {
+      fh += '<ul class="ie-flow-notes">' + fd.notes.map(function (st2) { return "<li>※ " + esc(st2) + "</li>"; }).join("") + "</ul>";
     }
     return fh + "</div>";
+  }
+  /* A4・1枚の「開通までの流れ」。お客様へお渡しする説明用の紙。
+   * 番号付きの縦タイムラインで、字を大きめにして読みやすくする */
+  function flowSheetHtml() {
+    var r = calc();
+    var fd = flowData(r);
+    var h = '<div class="flow-sheet">';
+    h += '<div class="flow-target">' + esc(PRODUCTS[state.product].name + productLabel()) + "</div>";
+    h += '<ol class="flow-steps">' + fd.steps.map(function (st2, i) {
+      return '<li><span class="fs-num">' + (i + 1) + '</span><div class="fs-body">'
+        + '<div class="fs-t">' + esc(st2.t) + "</div>"
+        + (st2.d ? '<div class="fs-d">' + esc(st2.d) + "</div>" : "")
+        + "</div></li>";
+    }).join("") + "</ol>";
+    if (fd.notes.length) {
+      h += '<div class="flow-notes"><h3>ご注意・ご案内</h3><ul>'
+        + fd.notes.map(function (st2) { return "<li>※ " + esc(st2) + "</li>"; }).join("") + "</ul></div>";
+    }
+    return h + "</div>";
   }
 
   function sheetHtml(setWariFromPhone) {
@@ -1034,6 +1060,7 @@
     },
     isHikari: isHikari,
     sheetHtml: sheetHtml,
+    flowSheetHtml: flowSheetHtml,
     // ヒアリングした現在の回線（未ヒアリングなら空）。引き継ぎシートと奪還比較の入口
     curLine: function () { return state && state.curLine ? curLineLabel() : ""; },
     // 入れ物を差し替えずに中身だけ初期化する（ケータイ側の store.ienaka を指したまま）

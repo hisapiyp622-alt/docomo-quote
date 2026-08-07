@@ -798,3 +798,25 @@ body.sorting .sort-chip{cursor:grabbing}
 .ie-flow ol li { line-height: 1.6; }
 .ie-flow-notes { margin: 3px 0 0; padding-left: 4px; list-style: none; font-size: .85em; color: #333; }
 .ie-flow-notes li { line-height: 1.5; }
+
+/* ---------- 開通までの流れ（A4・1枚） ---------- */
+.flow-sheet { margin-top: 4mm; }
+.flow-target { display: inline-block; background: #eef3fc; border: 1px solid #c9dcfb; border-radius: 999px;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  padding: 2mm 6mm; font-size: 14px; font-weight: 700; color: #1d4fb0; }
+.flow-steps { list-style: none; margin: 7mm 0 0; padding: 0; }
+.flow-steps li { display: flex; gap: 6mm; position: relative; padding-bottom: 9mm; }
+.flow-steps li::before { content: ""; position: absolute; left: 5.7mm; top: 12mm; bottom: -1mm; width: 0.8mm; background: #c9d4e4; }
+.flow-steps li:last-child { padding-bottom: 2mm; }
+.flow-steps li:last-child::before { display: none; }
+.fs-num { flex: 0 0 auto; width: 12mm; height: 12mm; border-radius: 50%; background: #2a6df4; color: #fff;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; }
+.fs-body { padding-top: 0.5mm; min-width: 0; }
+.fs-t { font-size: 17px; font-weight: 700; line-height: 1.4; }
+.fs-d { font-size: 13px; color: #333; line-height: 1.75; margin-top: 1mm; }
+.flow-notes { margin-top: 5mm; border: 1px solid #ccc; border-radius: 8px; padding: 3mm 5mm 3.5mm;
+  break-inside: avoid; page-break-inside: avoid; }
+.flow-notes h3 { margin: 0 0 1.5mm; font-size: 13px; }
+.flow-notes ul { margin: 0; padding-left: 2mm; list-style: none; }
+.flow-notes li { font-size: 11.5px; line-height: 1.7; color: #333; }
