@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.38.0";
+  var APP_VERSION = "1.39.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -4228,6 +4228,7 @@
      *   toss         … ドコモ光のとき（工事日を確定させるのに毎回入力が要る）
      *                    ahamo光は取り扱いが違うため出さない
      *   router1g:*   … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
+     *   niftyFollow  … ドコモ光×@niftyのとき（フォローコールを光と同時に申込できる）
      *   router10g:*  … ドコモ光10ギガでルーターを買っていただくとき（プロバイダごと）
      *
      * GMOとくとくBBは、IDとパスワードが届いてからお客様ご自身でお申し込みいただく
@@ -4244,6 +4245,9 @@
           && ROUTER_QR[ie.provider]) {
           keys.push(ROUTER_QR[ie.provider]);
         }
+        /* @niftyはフォローコール（開通までの電話サポート）の申込が
+         * 光の申込と同時にできるため、プロバイダが@niftyなら常に出す */
+        if (isDocomoHikari(ie) && ie.provider === "@nifty") keys.push("niftyFollow");
         // ahamo光はプロバイダ一体型で、ルーターの優待購入の取り扱いが無い
         if (ie.product === "hikari10g" && ie.router10g && num(ie.router10gPrice) > 0
           && ROUTER10G_QR[ie.provider]) {
