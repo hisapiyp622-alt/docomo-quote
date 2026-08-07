@@ -401,6 +401,15 @@
           <option value="jigyosha">事業者変更（他社光コラボから）</option>
         </select>
       </div>
+      <div class="field">
+        <label for="ieCurLine">現在の回線（ヒアリング）</label>
+        <select id="ieCurLine"><!-- JSで生成 --></select>
+      </div>
+      <div class="field" id="ieCurLineOtherField" hidden>
+        <label for="ieCurLineOther">回線名（その他）</label>
+        <input type="text" id="ieCurLineOther" maxlength="30" placeholder="例：○○光">
+      </div>
+      <p class="hint" id="ieCurLineHint" hidden></p>
       <div id="ieHikariFields">
         <div class="field">
           <label for="ieHousing">住居タイプ</label>
