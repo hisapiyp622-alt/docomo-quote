@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.42.0";
+  var APP_VERSION = "1.43.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -984,6 +984,23 @@
         ? "ドコモ光／home 5G セット割（" + yen(setWari) + "/月）は、上のスマホの月額から既に差し引いています。"
         : "スマホ側で「ドコモ光／home 5G セット割」を選んでいません。対象の場合は③割引でご確認ください。")
       + "</p>";
+    return h;
+  }
+  /* 開通までの流れ（A4・1枚）。お客様へお渡しする説明用の紙 */
+  function flowOnlySheet() {
+    var today = new Date();
+    var h = '<h2 class="sheet-title">開通までの流れ</h2>';
+    h += '<div class="sheet-meta"><span>作成日: ' + today.getFullYear() + "年"
+      + (today.getMonth() + 1) + "月" + today.getDate() + '日</span><span></span></div>';
+    if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
+    h += KQ_IENAKA.flowSheetHtml();
+    var sign = [];
+    if (config.storeName) sign.push(esc(config.storeName));
+    if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
+    if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
+    if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
+    h += '<div class="disclaimer">工事日・切替日や所要日数は目安です。お申込み内容・時期・地域により前後します。'
+      + "ご不明な点は店頭スタッフへご確認ください。<br>アプリ版 " + APP_VERSION + "</div>";
     return h;
   }
   /* 光だけの見積書（別紙）。中身はイエナカ側が作り、表題と発行元はここで付ける。 */
@@ -4589,6 +4606,11 @@
       if (!ienakaOn()) sheetScope = "phone";
       var rb = scopeWrap.querySelector('input[value="' + sheetScope + '"]');
       if (rb) rb.checked = true;
+    }
+    // 開通までの流れ（1枚）は、見積書と別の紙としてまるごと差し替える
+    if (sheetScope === "flow" && ienakaOn()) {
+      $("sheetBody").innerHTML = flowOnlySheet();
+      return;
     }
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
