@@ -145,6 +145,7 @@
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング・奪還比較の入口）
+      flowDates: {},                   // 開通までの流れ（1枚）の予定日メモ {工程番号: 文字}
       enabled: false   // この見積もりに光・home 5G を含めるか（見積書に出すかどうか）
     };
   }
@@ -803,29 +804,29 @@
   /* 流れの中身。見積書の下の枠と、A4・1枚もの（flowSheetHtml）で共用する */
   function flowData(r) {
     var steps = [], notes = [];
-    function step(t, d) { steps.push({ t: t, d: d || "" }); }
+    function step(t, d, icon) { steps.push({ t: t, d: d || "", icon: icon || "" }); }
     if (state.product === "home5g") {
-      step("お申込み", "本日、店頭でお手続きが完了しました");
-      step("本体のお受け取り", "home 5G の本体をお受け取りください");
-      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます");
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop");
+      step("本体のお受け取り", "home 5G の本体をお受け取りください", "box");
+      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug");
     } else if (state.applyType === "shinki") {
       /* 公式の「新規ご契約までの流れ」STEP1〜5 に合わせた5工程
        * （出典: docomo.ne.jp ドコモ光お申込みページ・2026-08-07確認） */
-      step("お申込み", "本日、店頭でお手続きが完了しました");
-      step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください");
-      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）");
-      step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります");
-      step("ご利用開始", "");
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop");
+      step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc");
+      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools");
+      step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router");
+      step("ご利用開始", "", "start");
       if (r.tvOn) notes.push("テレビオプションの接続工事は、開通工事と同じ日に行います");
       if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
         notes.push("ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
       }
     } else {
-      step("お申込み", "本日、店頭でお手続きが完了しました");
-      step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます");
-      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です");
-      step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください");
-      step("ご利用開始", "");
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop");
+      step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc");
+      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です", "switchi");
+      step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください", "router");
+      step("ご利用開始", "", "start");
     }
     // レンタルルーターが届くご案内（1ギガのプロバイダレンタル・ahamo光のレンタル）
     var rental = (state.product === "hikari1g" && state.routerRental !== "nashi")
@@ -840,7 +841,7 @@
     var cl = curLineDef();
     if (cl && cl.id !== "none") {
       if (state.product === "home5g" || state.applyType === "shinki") {
-        step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください");
+        step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください", "phone");
         notes.push(cl.tel
           ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
           : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
@@ -864,18 +865,40 @@
     return fh + "</div>";
   }
   /* A4・1枚の「開通までの流れ」。お客様へお渡しする説明用の紙。
-   * 番号付きの縦タイムラインで、字を大きめにして読みやすくする */
+   * 公式の流れ図と同じく、アイコン＋STEP＋赤い▼の縦並び。
+   * 右側に「予定日」の書き込み欄を付ける（画面ではタップして入力もできる） */
+  var FLOW_ICONS = {
+    shop: '<path d="M4 9.5l1.6-4.5h12.8L20 9.5v1.3a2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0z" fill="#2a6df4"/><path d="M5.8 13.2V19h12.4v-5.8" fill="none" stroke="#38507a" stroke-width="1.8"/><rect x="10.2" y="14.6" width="3.6" height="4.4" fill="#38507a"/>',
+    doc: '<rect x="3.5" y="8" width="14" height="11" rx="1.2" fill="#f5cf87"/><path d="M3.5 9l7 4.6L17.5 9" fill="none" stroke="#d3a94f" stroke-width="1.3"/><rect x="11" y="3.5" width="9.5" height="11.5" rx="1" fill="#eaf3ff" stroke="#2a6df4" stroke-width="1.2"/><path d="M13 7h5.5M13 9.4h5.5M13 11.8h3.8" stroke="#2a6df4" stroke-width="1.1"/>',
+    tools: '<path d="M5.2 18.8l6.8-6.8" stroke="#38507a" stroke-width="2.6" stroke-linecap="round"/><path d="M11.6 8.9a4.3 4.3 0 0 1 5.5-5.2l-2.3 2.3 1 2.5 2.5 1 2.3-2.3a4.3 4.3 0 0 1-5.2 5.5z" fill="#2a6df4"/><path d="M14.6 14.6l4.4 4.4" stroke="#2a6df4" stroke-width="2.6" stroke-linecap="round"/>',
+    router: '<rect x="8.4" y="9.5" width="7.2" height="10.5" rx="1" fill="#38507a"/><circle cx="12" cy="13" r="1" fill="#fff"/><path d="M12 7.2V4.4M8.5 6.4a5.2 5.2 0 0 1 7 0" fill="none" stroke="#2a6df4" stroke-width="1.7" stroke-linecap="round"/>',
+    start: '<rect x="4.8" y="5.2" width="14.4" height="9.4" rx="1" fill="#38507a"/><rect x="6.2" y="6.6" width="11.6" height="6.6" fill="#bfe0ff"/><path d="M3.4 17.4h17.2l-1.5 2.4H4.9z" fill="#38507a"/><path d="M20.6 4.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" fill="#e8a33d"/>',
+    switchi: '<path d="M6.5 8.5h9.5l-2.6-2.6M17.5 15.5H8l2.6 2.6" fill="none" stroke="#2a6df4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>',
+    box: '<path d="M4 8l8-4 8 4v9l-8 4-8-4z" fill="#dca763"/><path d="M4 8l8 4 8-4M12 12v9" fill="none" stroke="#aa7b40" stroke-width="1.4"/>',
+    plug: '<path d="M9 3.8v4.7M15 3.8v4.7" stroke="#38507a" stroke-width="2" stroke-linecap="round"/><path d="M7 8.5h10v3.2a5 5 0 0 1-4 4.9v3.6h-2v-3.6a5 5 0 0 1-4-4.9z" fill="#2a6df4"/>',
+    phone: '<path d="M4.6 8.4C4.6 6.5 7.9 5 12 5s7.4 1.5 7.4 3.4l-.8 2.4c-.2.6-.8 1-1.4.8l-2.4-.5c-.5-.1-.9-.5-1-1l-.2-1.3a9.8 9.8 0 0 0-3.2 0l-.2 1.3c-.1.5-.5.9-1 1l-2.4.5c-.6.2-1.2-.2-1.4-.8z" fill="#38507a"/><rect x="10.4" y="12.4" width="3.2" height="7" rx="1.3" fill="#2a6df4"/>'
+  };
   function flowSheetHtml() {
     var r = calc();
     var fd = flowData(r);
-    var h = '<div class="flow-sheet">';
+    var h = '<div class="flow-sheet flow2">';
     h += '<div class="flow-target">' + esc(PRODUCTS[state.product].name + productLabel()) + "</div>";
-    h += '<ol class="flow-steps">' + fd.steps.map(function (st2, i) {
-      return '<li><span class="fs-num">' + (i + 1) + '</span><div class="fs-body">'
-        + '<div class="fs-t">' + esc(st2.t) + "</div>"
-        + (st2.d ? '<div class="fs-d">' + esc(st2.d) + "</div>" : "")
-        + "</div></li>";
-    }).join("") + "</ol>";
+    h += '<div class="flow2-list">';
+    fd.steps.forEach(function (st2, i) {
+      if (i > 0) h += '<div class="f2-sep" aria-hidden="true">▼</div>';
+      h += '<div class="f2-row">'
+        + '<span class="f2-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (FLOW_ICONS[st2.icon] || "") + "</svg></span>"
+        + '<div class="f2-body">'
+        + '<span class="f2-step">STEP ' + (i + 1) + "</span>"
+        + '<div class="f2-t">' + esc(st2.t) + "</div>"
+        + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
+        + "</div>"
+        + '<div class="f2-date"><span class="f2-date-label">予定日</span>'
+        + '<span class="f2-date-line" contenteditable="true" data-fi="' + i + '">'
+        + esc((state.flowDates || {})[i] || "") + "</span></div>"
+        + "</div>";
+    });
+    h += "</div>";
     if (fd.notes.length) {
       h += '<div class="flow-notes"><h3>ご注意・ご案内</h3><ul>'
         + fd.notes.map(function (st2) { return "<li>※ " + esc(st2) + "</li>"; }).join("") + "</ul></div>";
