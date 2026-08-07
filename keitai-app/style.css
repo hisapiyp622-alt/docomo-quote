@@ -828,3 +828,8 @@ body.sorting .sort-chip{cursor:grabbing}
 .flow-notes h3 { margin: 0 0 1.2mm; font-size: 12.5px; }
 .flow-notes ul { margin: 0; padding-left: 2mm; list-style: none; }
 .flow-notes li { font-size: 11px; line-height: 1.6; color: #333; }
+
+/* 開通までの流れ: 目安時期のチップ */
+.f2-when { display: inline-block; margin-left: 2.5mm; background: #fdf3e3; border: 1px solid #e8bd7a;
+  color: #8a5400; border-radius: 999px; padding: 0.6mm 3.5mm; font-size: 10.5px; font-weight: 700;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }

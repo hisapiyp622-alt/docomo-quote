@@ -804,29 +804,29 @@
   /* 流れの中身。見積書の下の枠と、A4・1枚もの（flowSheetHtml）で共用する */
   function flowData(r) {
     var steps = [], notes = [];
-    function step(t, d, icon) { steps.push({ t: t, d: d || "", icon: icon || "" }); }
+    function step(t, d, icon, when) { steps.push({ t: t, d: d || "", icon: icon || "", when: when || "" }); }
     if (state.product === "home5g") {
-      step("お申込み", "本日、店頭でお手続きが完了しました", "shop");
-      step("本体のお受け取り", "home 5G の本体をお受け取りください", "box");
-      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug");
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
+      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug", "本日から");
     } else if (state.applyType === "shinki") {
       /* 公式の「新規ご契約までの流れ」STEP1〜5 に合わせた5工程
        * （出典: docomo.ne.jp ドコモ光お申込みページ・2026-08-07確認） */
-      step("お申込み", "本日、店頭でお手続きが完了しました", "shop");
-      step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc");
-      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools");
-      step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router");
-      step("ご利用開始", "", "start");
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc", "7〜10日後");
+      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools", "2週間〜1か月後");
+      step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router", "工事の当日");
+      step("ご利用開始", "", "start", "工事の当日から");
       if (r.tvOn) notes.push("テレビオプションの接続工事は、開通工事と同じ日に行います");
       if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
         notes.push("ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
       }
     } else {
-      step("お申込み", "本日、店頭でお手続きが完了しました", "shop");
-      step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc");
-      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です", "switchi");
-      step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください", "router");
-      step("ご利用開始", "", "start");
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc", "数日〜1週間後");
+      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です", "switchi", "1〜2週間後");
+      step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください", "router", "切替日の当日");
+      step("ご利用開始", "", "start", "切替日の当日から");
     }
     // レンタルルーターが届くご案内（1ギガのプロバイダレンタル・ahamo光のレンタル）
     var rental = (state.product === "hikari1g" && state.routerRental !== "nashi")
@@ -841,7 +841,7 @@
     var cl = curLineDef();
     if (cl && cl.id !== "none") {
       if (state.product === "home5g" || state.applyType === "shinki") {
-        step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください", "phone");
+        step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
         notes.push(cl.tel
           ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
           : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
@@ -858,7 +858,9 @@
   function flowHtml(r) {
     var fd = flowData(r);
     var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
-      + fd.steps.map(function (st2) { return "<li>" + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "") + "</li>"; }).join("") + "</ol>";
+      + fd.steps.map(function (st2) {
+          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "") + "</li>";
+        }).join("") + "</ol>";
     if (fd.notes.length) {
       fh += '<ul class="ie-flow-notes">' + fd.notes.map(function (st2) { return "<li>※ " + esc(st2) + "</li>"; }).join("") + "</ul>";
     }
@@ -890,6 +892,7 @@
         + '<span class="f2-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (FLOW_ICONS[st2.icon] || "") + "</svg></span>"
         + '<div class="f2-body">'
         + '<span class="f2-step">STEP ' + (i + 1) + "</span>"
+        + (st2.when ? '<span class="f2-when">' + esc(st2.when) + "</span>" : "")
         + '<div class="f2-t">' + esc(st2.t) + "</div>"
         + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
         + "</div>"
