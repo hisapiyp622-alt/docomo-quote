@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.08.07-81";
+  var APP_VERSION = "2026.08.07-82";
   var MASTER_KEY = "dq-master-v3"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "dq-state-v3";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5399,6 +5399,268 @@
   /* 実験で入れたAI相談（2026.08.03-75）は従量課金のため取りやめた。
    * 試した端末にAPIキーが残らないよう、ここで消す。 */
   try { localStorage.removeItem("dq-ai-key-v1"); localStorage.removeItem("dq-ai-model-v1"); } catch (e) {}
+  /* ---------- AI相談（定額チャット連携）との橋渡し ----------
+   * APIキーの従量課金を避けるため、アプリからAIを直接呼ばない。
+   * 「AIに相談（コピー）」で aiSnapshot を含む相談文を作り、店員が
+   * 自分の定額AIチャット（Claude・ChatGPTなど）に貼り付けて相談する。
+   * AIが返した dq-patch を「AIの提案を反映」に貼ると aiApply が検証して
+   * 見積もりへ反映する。書き込みは必ずこの窓口だけを通す。
+   * aiSnapshot は外部のチャットへそのまま貼られるため、お客様名（custName）や
+   * 店舗・担当者名などの個人情報は最初から含めない。 */
+  window.DQ_APP = {
+    version: APP_VERSION,
+    aiSnapshot: function () {
+      function lite(list, extra) {
+        return (list || []).map(function (o) {
+          var row = { id: o.id, name: o.name, price: num(o.price) };
+          (extra || []).forEach(function (k) { if (o[k] != null && o[k] !== "") row[k] = o[k]; });
+          return row;
+        });
+      }
+      function onIds(map) { return Object.keys(map || {}).filter(function (k) { return map[k]; }); }
+      var st = state;
+      var snap = {
+        master: {
+          fees: MASTER.fees,
+          plans: MASTER.plans.map(function (pl) {
+            return { id: pl.id, group: pl.group, name: pl.name,
+              tiers: pl.tiers.map(function (t) { return { label: t.label || "", price: t.price }; }),
+              discounts: pl.discounts, includes5min: !!pl.includes5min,
+              poikatsuPt: num(pl.poikatsuPt), note: pl.note || "" };
+          }),
+          voiceOptions: lite(MASTER.voiceOptions),
+          options: lite(MASTER.options, ["category", "priceChoices", "note"]),
+          feeItems: lite(MASTER.feeItems, ["pay"]),
+          accessories: lite(MASTER.accessories),
+          campaigns: lite(MASTER.campaigns, ["amount", "note"])
+        },
+        pattern: store.active + 1,
+        state: {
+          procType: st.procType, planGroup: st.planGroup, planId: st.planId, tierIdx: st.tierIdx,
+          minna: st.minna, dSet: st.dSet, dCard: st.dCard, dDenki: st.dDenki, choki: st.choki,
+          voice: st.voice,
+          options: onIds(st.options), optionPrices: st.optionPrices,
+          feeItems: onIds(st.feeItems), campaigns: onIds(st.campaigns),
+          accSel: st.accSel, accessories: st.accessories,
+          adhocMonthly: st.adhocMonthly, adhocInitial: st.adhocInitial,
+          deviceName: st.deviceName, devicePrice: num(st.devicePrice),
+          couponOff: num(st.couponOff), campaignOff: num(st.campaignOff),
+          payMethod: st.payMethod, kaedoki23: num(st.kaedoki23), kaedokiFee: num(st.kaedokiFee),
+          atamakin: num(st.atamakin), jimuFee: num(st.jimuFee),
+          currentInst: num(st.currentInst), currentInstMonths: num(st.currentInstMonths),
+          pointPoikatsu: num(st.pointPoikatsu), pointPoikatsuFamily: num(st.pointPoikatsuFamily),
+          pointDcard: num(st.pointDcard), pointBakuage: num(st.pointBakuage),
+          pointApply: st.pointApply !== false,
+          quoteMemo: st.quoteMemo
+        },
+        result: null,
+        otherPatterns: []
+      };
+      try {
+        var r = calc();
+        snap.result = {
+          planName: r.plan.name, tierLabel: r.tier.label || "", planMonthly: r.planMonthly,
+          voice: { name: r.voice.name, price: r.voicePrice },
+          optTotal: r.optTotal,
+          monthlySegments: r.segs.map(function (s) {
+            return { from: s.from, to: s.to === Infinity ? null : s.to, monthly: s.monthly };
+          }),
+          pointApplied: r.pointApply, pointTotal: r.pointTotal,
+          initialRows: (r.initialRows || []).map(function (x) { return { name: x.name, amount: x.amount }; }),
+          initialTotal: r.initialTotal, storeTotal: r.storeTotal, billTotal: r.billTotal
+        };
+      } catch (e) {}
+      store.patterns.forEach(function (pt, i) {
+        if (i === store.active || !isPatternUsed(pt)) return;
+        try {
+          var rr = calcFor(pt);
+          snap.otherPatterns.push({ pattern: i + 1, planId: pt.planId, planName: rr.plan.name,
+            monthly: rr.segs.length ? rr.segs[0].monthly : 0, initialTotal: rr.initialTotal });
+        } catch (e2) {}
+      });
+      return snap;
+    },
+    aiApply: function (patch) {
+      patch = patch || {};
+      var applied = [], rejected = [];
+      var st = state;
+      var prevPlan = st.planId;
+      var groups = {};
+      MASTER.plans.forEach(function (pl) { groups[pl.group] = true; });
+      function planOk(id) { return MASTER.plans.some(function (pl) { return pl.id === id; }); }
+      function voiceOk(id) { return MASTER.voiceOptions.some(function (v2) { return v2.id === id; }); }
+      /* AIが変更してよい項目と、その値の検証。ここに無い項目（お客様名・
+       * 店舗設定・ロック類など）は、AIが何を言ってきても書かない。 */
+      var FIELDS = {
+        procType: ["", "shinki", "mnp", "kishu", "plan_only"],
+        planGroup: function (v2) { return !!groups[v2]; },
+        planId: planOk,
+        tierIdx: "int",
+        minna: ["0", "2", "3"],
+        dSet: "bool",
+        dCard: ["none", "normal", "goldu", "gold", "platinum"],
+        dDenki: "bool",
+        choki: ["none", "y10", "y20"],
+        voice: voiceOk,
+        deviceName: "str", devicePrice: "num", couponOff: "num", campaignOff: "num",
+        payMethod: ["none", "ikkatsu", "b12", "b24", "b36", "b48", "kaedoki"],
+        kaedoki23: "num", kaedokiFee: "num", atamakin: "num", jimuFee: "num",
+        currentInst: "num", currentInstMonths: "num",
+        pointPoikatsu: "num", pointPoikatsuFamily: "num", pointDcard: "num", pointBakuage: "num",
+        pointApply: "bool",
+        quoteMemo: "str"
+      };
+      Object.keys(patch.set || {}).forEach(function (k) {
+        var rule = FIELDS[k], v = patch.set[k];
+        if (!rule) { rejected.push(k + "（変更できない項目）"); return; }
+        if (Array.isArray(rule)) {
+          v = String(v);
+          if (rule.indexOf(v) < 0) { rejected.push(k + "=" + v + "（値が不正）"); return; }
+        } else if (rule === "bool") v = !!v;
+        else if (rule === "num") v = Math.max(0, num(v));
+        else if (rule === "int") v = Math.max(0, Math.floor(num(v)));
+        else if (rule === "str") v = String(v == null ? "" : v).slice(0, 500);
+        else if (typeof rule === "function") {
+          v = String(v);
+          if (!rule(v)) { rejected.push(k + "=" + v + "（値が不正）"); return; }
+        }
+        st[k] = v;
+        applied.push(k);
+      });
+      // プランを変えたらグループを合わせ、段階が範囲外なら先頭へ戻す
+      var p2 = planById(st.planId);
+      if (p2) {
+        if (p2.group !== st.planGroup) st.planGroup = p2.group;
+        if (st.tierIdx >= p2.tiers.length) st.tierIdx = 0;
+      }
+      function applyMap(key, list, label) {
+        Object.keys(patch[key] || {}).forEach(function (id) {
+          var def = (list || []).filter(function (o) { return o.id === id; })[0];
+          if (!def) { rejected.push(label + " " + id + "（この店のマスタに無いid）"); return; }
+          if (patch[key][id]) st[key][id] = true; else delete st[key][id];
+          applied.push(label + "「" + def.name + "」");
+        });
+      }
+      applyMap("options", MASTER.options, "オプション");
+      applyMap("feeItems", MASTER.feeItems, "初期費用");
+      applyMap("campaigns", MASTER.campaigns, "キャンペーン");
+      if (patch.clearAdhocMonthly) { st.adhocMonthly = []; applied.push("自由入力の月額を削除"); }
+      if (patch.clearAdhocInitial) { st.adhocInitial = []; applied.push("自由入力の初期費用を削除"); }
+      (patch.adhocMonthly || []).forEach(function (it) {
+        if (!it || !it.name) return;
+        st.adhocMonthly.push({ name: String(it.name).slice(0, 60), amount: num(it.amount),
+          months: Math.max(0, Math.floor(num(it.months))) });
+        applied.push("月額「" + it.name + "」");
+      });
+      (patch.adhocInitial || []).forEach(function (it) {
+        if (!it || !it.name) return;
+        st.adhocInitial.push({ name: String(it.name).slice(0, 60), amount: num(it.amount) });
+        applied.push("初期費用「" + it.name + "」");
+      });
+      if (patch.set && patch.set.planId != null && st.planId !== prevPlan) syncPoikatsuDefault(prevPlan);
+      syncFormFromState();
+      recalc();
+      return { applied: applied, rejected: rejected };
+    }
+  };
+
+
+  /* 相談文（クリップボードへ）。定額AIチャットに貼るだけで文脈が伝わる形にする */
+  function aiPromptText() {
+    var snap = window.DQ_APP.aiSnapshot();
+    return [
+      "あなたはドコモショップの店頭見積もりアプリの相談相手です。相手は店員です。",
+      "下のJSONが、いま作っている見積もり（state）・計算結果（result）・この店の料金マスタ（master）です。",
+      "",
+      "【相談したいこと】",
+      "（ここに質問を書いてください。例: 月額を安くする案は？ / この内容で伝わりやすい説明文を作って）",
+      "",
+      "【お願い】",
+      "- 金額は master にあるものだけを使い、推測で料金を作らないでください。",
+      "- 見積もりの変更を提案するときは、説明に加えて次の形式のコードブロックを出してください。アプリに貼り付けて反映できます。",
+      "",
+      "```dq-patch",
+      '{"set": {"planId": "max", "minna": "3"}, "options": {"anshin_pack": true}, "adhocMonthly": [{"name": "○○値引き", "amount": -550, "months": 12}]}',
+      "```",
+      "",
+      '- set で使えるキー: procType("shinki"|"mnp"|"kishu"|"plan_only"), planId, tierIdx, minna("0"|"2"|"3"), dSet(真偽), dCard("none"|"normal"|"goldu"|"gold"|"platinum"), dDenki(真偽), choki("none"|"y10"|"y20"), voice, deviceName, devicePrice, couponOff, campaignOff, payMethod("none"|"ikkatsu"|"b12"|"b24"|"b36"|"b48"|"kaedoki"), kaedoki23, kaedokiFee, atamakin, jimuFee, currentInst, currentInstMonths, pointPoikatsu, pointPoikatsuFamily, pointDcard, pointBakuage, pointApply(真偽), quoteMemo',
+      "- options / feeItems / campaigns は {id: true|false}。id は master にあるものだけ。",
+      "- adhocMonthly は [{name, amount(円・マイナス可), months(0=ずっと)}]、adhocInitial は [{name, amount}] の追加。",
+      "",
+      "--- データ ---",
+      JSON.stringify({ master: snap.master, pattern: snap.pattern, state: snap.state, result: snap.result, otherPatterns: snap.otherPatterns })
+    ].join("\n");
+  }
+  function aiCopyPrompt() {
+    var text = aiPromptText();
+    function done(ok) {
+      window.alert(ok
+        ? "相談文をコピーしました。\nお使いの定額AIチャット（Claude・ChatGPTなど）に貼り付けて、【相談したいこと】の行に質問を書いて送ってください。\n\nAIが出した dq-patch のコードは「AIの提案を反映」に貼り付けると見積もりへ反映できます。"
+        : "コピーできませんでした。もう一度お試しください。");
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(aiCopyFallback(text)); });
+    } else {
+      done(aiCopyFallback(text));
+    }
+  }
+  function aiCopyFallback(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+  /* AIの返事から dq-patch を取り出して反映する。
+   * コードブロックごと貼っても、JSONだけ貼っても動くようにする */
+  function aiApplyPasted(raw) {
+    var text = String(raw || "").trim();
+    if (!text) return { ok: false, msg: "何も貼り付けられていません。" };
+    var jsons = [];
+    var fence = /```dq-patch\s*\n([\s\S]*?)```/g, m;
+    while ((m = fence.exec(text))) jsons.push(m[1]);
+    if (!jsons.length) {
+      // ブロックが無ければ、全体をJSONとして試す（AIがブロック無しで返した場合）
+      var s2 = text.indexOf("{"), e2 = text.lastIndexOf("}");
+      if (s2 >= 0 && e2 > s2) jsons.push(text.slice(s2, e2 + 1));
+    }
+    var applied = [], rejected = [], parsed = 0;
+    for (var i = 0; i < jsons.length; i++) {
+      var patch = null;
+      try { patch = JSON.parse(jsons[i]); } catch (e) {}
+      if (!patch) continue;
+      parsed++;
+      var r = window.DQ_APP.aiApply(patch);
+      applied = applied.concat(r.applied);
+      rejected = rejected.concat(r.rejected);
+    }
+    if (!parsed) return { ok: false, msg: "dq-patch の形が読み取れませんでした。AIの返事のコードブロックをそのまま貼り付けてください。" };
+    var msg = "見積もりへ反映しました（" + applied.length + "件）。";
+    if (rejected.length) msg += "\n反映できなかった項目:\n・" + rejected.join("\n・");
+    return { ok: true, msg: msg };
+  }
+  function initAiHelper() {
+    var copyBtn = $("aiCopyBtn"), applyBtn = $("aiPasteApplyBtn"), ov = $("aiPasteOverlay");
+    if (!copyBtn) return;
+    copyBtn.addEventListener("click", aiCopyPrompt);
+    $("aiPasteOpen").addEventListener("click", function () {
+      $("aiPasteText").value = "";
+      ov.hidden = false;
+      $("aiPasteText").focus();
+    });
+    $("aiPasteClose").addEventListener("click", function () { ov.hidden = true; });
+    applyBtn.addEventListener("click", function () {
+      var r = aiApplyPasted($("aiPasteText").value);
+      window.alert(r.msg);
+      if (r.ok) { ov.hidden = true; switchTab("quote"); }
+    });
+  }
+
   bindEvents();
   syncFormFromState();
   renderTplBar();
@@ -5419,6 +5681,7 @@
   initAbout();
   initDocs();
   initBackup();
+  initAiHelper();
   initStaffSelect();
   initTileSort();
   initTplHold();
