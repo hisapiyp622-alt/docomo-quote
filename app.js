@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026.08.06-79";
+  var APP_VERSION = "2026.08.07-80";
   var MASTER_KEY = "dq-master-v3"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "dq-state-v3";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -745,6 +745,13 @@
       if (pl.id === "u15" && pl.group === "current") {
         pl.group = "legacy";
         if ((pl.note || "").indexOf("新規受付終了") < 0) pl.note = "【新規受付終了（2026-08-06）】" + (pl.note || "");
+      }
+    });
+    // 8/7の公式ページで確定した内容へ、注記を置き換える（要確認のままの場合だけ）
+    MASTER.plans.forEach(function (pl) {
+      if (pl.id === "u15_debut" && (pl.note || "").indexOf("要確認") >= 0) {
+        var defN = DEFAULT_DATA.plans.filter(function (x) { return x.id === "u15_debut"; })[0];
+        if (defN) pl.note = defN.note;
       }
     });
     ["oyako_u15", "oyako_family"].forEach(function (cid) {
