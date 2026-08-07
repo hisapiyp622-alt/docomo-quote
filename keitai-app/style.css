@@ -799,24 +799,32 @@ body.sorting .sort-chip{cursor:grabbing}
 .ie-flow-notes { margin: 3px 0 0; padding-left: 4px; list-style: none; font-size: .85em; color: #333; }
 .ie-flow-notes li { line-height: 1.5; }
 
-/* ---------- 開通までの流れ（A4・1枚） ---------- */
-.flow-sheet { margin-top: 4mm; }
+/* ---------- 開通までの流れ（A4・1枚・絵付き） ---------- */
+.flow-sheet { margin-top: 3mm; }
 .flow-target { display: inline-block; background: #eef3fc; border: 1px solid #c9dcfb; border-radius: 999px;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  padding: 2mm 6mm; font-size: 14px; font-weight: 700; color: #1d4fb0; }
-.flow-steps { list-style: none; margin: 7mm 0 0; padding: 0; }
-.flow-steps li { display: flex; gap: 6mm; position: relative; padding-bottom: 9mm; }
-.flow-steps li::before { content: ""; position: absolute; left: 5.7mm; top: 12mm; bottom: -1mm; width: 0.8mm; background: #c9d4e4; }
-.flow-steps li:last-child { padding-bottom: 2mm; }
-.flow-steps li:last-child::before { display: none; }
-.fs-num { flex: 0 0 auto; width: 12mm; height: 12mm; border-radius: 50%; background: #2a6df4; color: #fff;
-  -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; }
-.fs-body { padding-top: 0.5mm; min-width: 0; }
-.fs-t { font-size: 17px; font-weight: 700; line-height: 1.4; }
-.fs-d { font-size: 13px; color: #333; line-height: 1.75; margin-top: 1mm; }
-.flow-notes { margin-top: 5mm; border: 1px solid #ccc; border-radius: 8px; padding: 3mm 5mm 3.5mm;
+  padding: 1.6mm 6mm; font-size: 14px; font-weight: 700; color: #1d4fb0; }
+.flow2-list { margin-top: 4mm; }
+.f2-row { display: flex; align-items: center; gap: 5mm; }
+.f2-icon { flex: 0 0 auto; width: 17mm; height: 17mm; border-radius: 50%; background: #f0f1f3;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.f2-icon svg { width: 11mm; height: 11mm; }
+.f2-body { flex: 1; min-width: 0; }
+.f2-step { display: inline-block; background: #223a63; color: #fff; border-radius: 999px;
+  padding: 0.6mm 4mm; font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.f2-t { font-size: 15.5px; font-weight: 700; line-height: 1.35; margin-top: 1mm; }
+.f2-d { font-size: 11.5px; color: #333; line-height: 1.55; margin-top: 0.6mm; }
+.f2-date { flex: 0 0 auto; width: 30mm; text-align: center; }
+.f2-date-label { display: block; font-size: 9.5px; color: #888; margin-bottom: 0.6mm; }
+.f2-date-line { display: block; min-height: 6.5mm; border-bottom: 1px solid #999;
+  font-size: 13px; line-height: 6.5mm; outline: none; }
+.f2-date-line:empty::before { content: "月　　日"; color: #ccc; }
+.f2-sep { text-align: center; width: 17mm; color: #c8102e; font-size: 11px; line-height: 1.4;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.flow-notes { margin-top: 4mm; border: 1px solid #ccc; border-radius: 8px; padding: 2.5mm 5mm 3mm;
   break-inside: avoid; page-break-inside: avoid; }
-.flow-notes h3 { margin: 0 0 1.5mm; font-size: 13px; }
+.flow-notes h3 { margin: 0 0 1.2mm; font-size: 12.5px; }
 .flow-notes ul { margin: 0; padding-left: 2mm; list-style: none; }
-.flow-notes li { font-size: 11.5px; line-height: 1.7; color: #333; }
+.flow-notes li { font-size: 11px; line-height: 1.6; color: #333; }

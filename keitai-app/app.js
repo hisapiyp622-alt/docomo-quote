@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.44.0";
+  var APP_VERSION = "1.45.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -6207,6 +6207,18 @@
     });
     $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
     $("backToQuote").addEventListener("click", function () { switchTab("quote"); });
+    /* 開通までの流れ（1枚）の「予定日」入力。
+     * 印刷直前（beforeprint）に見積書を描き直すため、書いた内容は
+     * 見積もりの状態（store.ienaka.flowDates）に持たせて描き直しでも残す。
+     * 保存・成約の記録にも予定日が一緒に残る。 */
+    $("sheetBody").addEventListener("input", function (e) {
+      var t = e.target;
+      if (t.classList && t.classList.contains("f2-date-line")) {
+        if (!store.ienaka.flowDates) store.ienaka.flowDates = {};
+        store.ienaka.flowDates[t.getAttribute("data-fi")] = t.textContent.slice(0, 20);
+        saveState();
+      }
+    });
     $("printBtn").addEventListener("click", function () { window.print(); });
     $("printStaffBtn").addEventListener("click", function () { window.print(); });
     $("backToQuoteStaff").addEventListener("click", function () { switchTab("quote"); });
