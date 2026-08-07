@@ -412,7 +412,7 @@
         if (curTk.onsite > 0 || state.tvOnsiteFee != null) {
           var curOnsite = state.tvOnsiteFee != null ? state.tvOnsiteFee : curTk.onsite;
           h += '<div class="field tv-koji"><label>接続工事費（現地払い）</label><input type="number" data-ietvonsite="1" value="' + curOnsite + '" inputmode="numeric" min="0"> 円'
-            + '<span class="opt-price">スカパーへ工事当日お支払い。通常19,800円・2026年6〜7月限定キャンペーンで10,000円</span></div>';
+            + '<span class="opt-price">スカパーへ工事当日お支払い。通常19,800円・キャンペーンで10,000円（2026年8月も継続中）</span></div>';
         }
       }
     });
