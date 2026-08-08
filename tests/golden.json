@@ -1,0 +1,422 @@
+{
+  "max_shinki": {
+    "initial": 4950,
+    "store": 0,
+    "bill": 4950,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "max_kishu": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "poikatsu_max": {
+    "initial": 4950,
+    "store": 0,
+    "bill": 4950,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 11748
+      }
+    ]
+  },
+  "poikatsu20": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 7898
+      }
+    ]
+  },
+  "mini_t0": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 2750
+      }
+    ]
+  },
+  "mini_t1": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 3850
+      }
+    ]
+  },
+  "ahamo": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 2970
+      }
+    ]
+  },
+  "u15_t0": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 2508
+      }
+    ]
+  },
+  "u15_t1": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 3278
+      }
+    ]
+  },
+  "max_minna3_set": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 3278
+      }
+    ]
+  },
+  "max_minna2": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
+  "max_dcard": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5478
+      }
+    ]
+  },
+  "max_dcard_gold": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
+  "max_denki": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5588
+      }
+    ]
+  },
+  "max_choki10": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "max_choki20_full": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 2618
+      }
+    ]
+  },
+  "u15_dcard_gold": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 1958
+      }
+    ]
+  },
+  "u15_oyako": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 12,
+        "monthly": 1408
+      },
+      {
+        "from": 13,
+        "to": "inf",
+        "monthly": 2508
+      }
+    ]
+  },
+  "max_oyako_family": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 12,
+        "monthly": 5148
+      },
+      {
+        "from": 13,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "max_voice5min": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6578
+      }
+    ]
+  },
+  "max_voice_full": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 7678
+      }
+    ]
+  },
+  "max_hosho990": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6688
+      }
+    ]
+  },
+  "max_hosho330": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6028
+      }
+    ]
+  },
+  "max_anshin_pack": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6160
+      }
+    ]
+  },
+  "device_ikkatsu": {
+    "initial": 134750,
+    "store": 129800,
+    "bill": 4950,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "device_ikkatsu_coupon": {
+    "initial": 107800,
+    "store": 107800,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "device_b24": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 24,
+        "monthly": 11106
+      },
+      {
+        "from": 25,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "device_b36_atamakin": {
+    "initial": 11000,
+    "store": 11000,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 36,
+        "monthly": 8114
+      },
+      {
+        "from": 37,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "device_kaedoki": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 23,
+        "monthly": 8219
+      },
+      {
+        "from": 24,
+        "to": "inf",
+        "monthly": 5698,
+        "keep": 8689
+      }
+    ]
+  },
+  "adhoc_monthly": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 12,
+        "monthly": 5148
+      },
+      {
+        "from": 13,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "adhoc_initial": {
+    "initial": 3300,
+    "store": 3300,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "accessories": {
+    "initial": 4400,
+    "store": 4400,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 24,
+        "monthly": 5835
+      },
+      {
+        "from": 25,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  }
+}
