@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.51.1";
+  var APP_VERSION = "1.51.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -3794,6 +3794,11 @@
       + priceHtml
       + "</div>";
   }
+  /* 選んだときに公式ページへの参照リンクを出すオプション。
+   * 金額が機種などで変わるものは、その場で正確な額を調べられるようにする。 */
+  var OPT_INFO_LINKS = {
+    smart_hosho: "https://www.docomo.ne.jp/service/smart_anshin_hoshou/charge.html"
+  };
   function renderOptionList() {
     // カテゴリ（フォルダ）ごとに横5列のタイルで表示
     var h = "";
@@ -3837,7 +3842,10 @@
                   + (kb === k[0] ? " checked" : "") + "> " + k[1] + "</label>";
               }).join("") + "</span>"
           : "";
-        return tileHtml("data-opt", o.id, o.name, on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
+        var linkHtml = (on && OPT_INFO_LINKS[o.id])
+          ? '<a class="t-link" href="' + OPT_INFO_LINKS[o.id] + '" target="_blank" rel="noopener">公式の料金表を開く ↗</a>'
+          : "";
+        return tileHtml("data-opt", o.id, o.name, on, priceHtml + kubunHtml + linkHtml, isOff ? "kubun-off" : "");
       }).join("") + accItems.map(accTileHtml).join("") + "</div>";
     });
     $("optionList").innerHTML = h;
@@ -6735,7 +6743,8 @@
 
     // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
     function toggleTile(e) {
-      if (e.target.closest("select") || e.target.closest(".t-kubun")) return;
+      // タイル内のリンク（公式の料金表など）のタップでは選択を切り替えない
+      if (e.target.closest("select") || e.target.closest(".t-kubun") || e.target.closest("a")) return;
       var tile = e.target.closest(".tile");
       if (!tile) return;
       var optId = tile.getAttribute("data-opt");
