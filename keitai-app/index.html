@@ -31,6 +31,10 @@
   </nav>
 </header>
 
+<div class="storage-warn no-print" id="storageWarn" hidden>
+  ⚠ この端末に保存できませんでした。端末の空き容量（ストレージ）を確認してください。いま入力した内容は端末に残らない可能性があります。
+</div>
+
 <main>
   <!-- ============ 見積もりタブ ============ -->
   <section id="tab-quote" class="tab-page active no-print">
@@ -723,6 +727,7 @@
           <input type="file" id="restoreFile" accept="application/json,.json" hidden>
         </label>
       </div>
+      <p class="hint" id="storageUsage"></p>
       <label class="check"><input type="checkbox" id="bkWithCust"> お客様名も含める</label>
       <p class="hint">お客様名は<strong>既定では含めません</strong>。料金の設定を残すことが目的のため、
         個人情報を持ち出さないようにしています。含める場合は、ファイルの保管場所にご注意ください。</p>

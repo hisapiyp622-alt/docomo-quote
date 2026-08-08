@@ -1,18 +1,62 @@
 rules_version = '2';
-// ケータイ見積もり — Firestore セキュリティルール
+// ミツモリン（料金見積もりシミュレーション） — Firestore セキュリティルール
 //
 // 店舗アカウントでログインしている場合のみ、その店舗自身のデータへアクセスできます。
 // 他店のデータは読むことも書くこともできません。
+// あわせて、書き込みの形（フィールド名）と大きさを検査し、
+// 不具合や不正なクライアントによる想定外の書き込みを弾きます。
 //
 // 反映方法: Firebaseコンソール → Firestore Database → ルール にこの内容を貼り付けて公開
 service cloud.firestore {
   match /databases/{database}/documents {
-    // stores/{店舗のUID} と、その配下の見積もり（quotes/{担当者ID}）
-    match /stores/{storeId} {
-      allow read, write: if request.auth != null && request.auth.uid == storeId;
+    // 共通: 書き込みサイズの上限（1ドキュメントの実効上限1MiBの少し手前で止める）
+    function sizeOk() {
+      return request.resource.size() < 900000;
+    }
+    function stamped() {
+      // アプリが必ず付ける印。付いていない書き込みはアプリ外からの可能性が高い
+      return request.resource.data.keys().hasAll(['clientId']);
+    }
 
-      match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == storeId;
+    // stores/{店舗のUID}: 店舗情報＋料金マスタ
+    match /stores/{storeId} {
+      allow read: if request.auth != null && request.auth.uid == storeId;
+      allow write: if request.auth != null && request.auth.uid == storeId
+        && sizeOk()
+        && request.resource.data.keys().hasOnly(
+             ['storeName', 'storeTel', 'staff', 'adminLock', 'master',
+              'clientId', 'updatedAtMs', 'updatedAt']);
+
+      // quotes/{担当者ID}: 作業中の見積もり
+      match /quotes/{staffId} {
+        allow read: if request.auth != null && request.auth.uid == storeId;
+        allow write: if request.auth != null && request.auth.uid == storeId
+          && sizeOk() && stamped()
+          && request.resource.data.keys().hasOnly(['data', 'clientId', 'updatedAtMs', 'updatedAt']);
+      }
+      // saved/{担当者ID}: 保存した見積もり（del は削除の記録）
+      match /saved/{staffId} {
+        allow read: if request.auth != null && request.auth.uid == storeId;
+        allow write: if request.auth != null && request.auth.uid == storeId
+          && sizeOk() && stamped()
+          && request.resource.data.keys().hasOnly(['list', 'del', 'clientId', 'updatedAtMs', 'updatedAt']);
+      }
+      // templates/{担当者ID}: テンプレート
+      match /templates/{staffId} {
+        allow read: if request.auth != null && request.auth.uid == storeId;
+        allow write: if request.auth != null && request.auth.uid == storeId
+          && sizeOk() && stamped()
+          && request.resource.data.keys().hasOnly(['list', 'clientId', 'updatedAtMs', 'updatedAt']);
+      }
+      // history/{履歴ID}: 料金マスタの履歴
+      match /history/{histId} {
+        allow read: if request.auth != null && request.auth.uid == storeId;
+        allow write: if request.auth != null && request.auth.uid == storeId && sizeOk();
+      }
+      // 上記以外のサブコレクションは作らせない
+      match /{other}/{doc} {
+        allow read: if request.auth != null && request.auth.uid == storeId;
+        allow write: if false;
       }
     }
     // それ以外は一切許可しない

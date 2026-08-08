@@ -865,3 +865,7 @@ body.sorting .sort-chip{cursor:grabbing}
 
 /* タイル内の参照リンク（例: smartあんしん補償の公式料金表） */
 .tile .t-link{display:block;margin-top:3px;font-size:11px;font-weight:700;color:#1a6bb8;text-decoration:underline}
+
+/* 保存失敗の警告（lsSet が失敗したとき画面上部に出す） */
+.storage-warn{position:sticky;top:0;z-index:80;background:#c62828;color:#fff;
+  font-size:13px;font-weight:700;padding:8px 14px;text-align:center}

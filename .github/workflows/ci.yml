@@ -1,0 +1,39 @@
+name: CI
+
+# main への push と Pull Request で、構文チェックと金額計算のゴールデンテストを走らせる。
+# 金額が変わる変更（料金改定など）は node tests/run-calc-tests.js --update で
+# tests/golden.json を更新してからコミットすること。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 構文チェック（全JSファイル）
+        run: |
+          set -e
+          for f in keitai-app/*.js *.js ienaka-app/*.js; do
+            [ -e "$f" ] || continue
+            node --check "$f"
+            echo "ok: $f"
+          done
+
+      - name: Playwright を準備
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-save playwright >/dev/null 2>&1
+          npx playwright install --with-deps chromium
+
+      - name: 金額計算のゴールデンテスト
+        run: node tests/run-calc-tests.js

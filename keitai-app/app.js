@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.51.3";
+  var APP_VERSION = "1.52.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -17,6 +17,39 @@
   var OPT_CATEGORIES = ["補償", "バックアップ", "セキュリティ", "エンタメ", "その他"];
 
   /* ---------- 店舗設定（店舗名・担当者） ---------- */
+  /* ---------- 端末内保存の共通入口 ----------
+   * localStorage への大事な保存はすべて lsSet() を通す。
+   * 容量超過などで保存に失敗すると、以前は何も出ないまま「保存できたつもり」に
+   * なり、あとからデータが消えた形で発覚していた。失敗したら画面上部に警告を出す。 */
+  function lsSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      storageWarn();
+      return false;
+    }
+  }
+  var storageWarnTimer = null;
+  function storageWarn() {
+    var el = document.getElementById("storageWarn");
+    if (!el) return;
+    el.hidden = false;
+    clearTimeout(storageWarnTimer);
+    storageWarnTimer = setTimeout(function () { el.hidden = true; }, 12000);
+  }
+  // この端末（同じサイトの全アプリ合計）の保存領域の使用量
+  function storageUsageText() {
+    var total = 0;
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        total += (k.length + (localStorage.getItem(k) || "").length) * 2;
+      }
+    } catch (e) { return "不明"; }
+    return (total / 1024 / 1024).toFixed(2) + "MB";
+  }
+
   var CFG_KEY = "kq-config-v1";
   var config;
   function defaultConfig() {
@@ -42,7 +75,7 @@
     });
   }
   function saveConfig() {
-    try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {}
+    lsSet(CFG_KEY, JSON.stringify(config));
     if (typeof pushConfig === "function") pushConfig();
   }
   function activeStaff() {
@@ -134,7 +167,7 @@
     }
   }
   function persistTemplates() {
-    try { localStorage.setItem(tplKey(), JSON.stringify(templates)); } catch (e) {}
+    lsSet(tplKey(), JSON.stringify(templates));
     if (typeof pushTemplates === "function") pushTemplates();
   }
 
@@ -150,7 +183,7 @@
     } catch (e) {}
   }
   function persistSaved() {
-    try { localStorage.setItem(savedKey(), JSON.stringify(savedList)); } catch (e) {}
+    lsSet(savedKey(), JSON.stringify(savedList));
     if (typeof pushSaved === "function") pushSaved();
   }
   /* 保存一覧は端末をまたいで使う（iPadで見積もり→PCで印刷など）ため、
@@ -166,7 +199,7 @@
     // 90日より古い削除の記録は捨てる（増え続けるだけのため）
     var lim = Date.now() - 90 * 24 * 60 * 60 * 1000;
     Object.keys(map).forEach(function (k) { if (map[k] < lim) delete map[k]; });
-    try { localStorage.setItem(savedDelKey(staffId), JSON.stringify(map)); } catch (e) {}
+    lsSet(savedDelKey(staffId), JSON.stringify(map));
   }
   function savedItemTs(it) { return it.upAt || it.resultAt || it.savedAt || 0; }
   // 保存名は他の端末にも同期されるため、お客様名は既定に入れない
@@ -763,7 +796,7 @@
     } catch (e) {}
   }
   function histSaveLocal() {
-    try { localStorage.setItem(HIST_KEY, JSON.stringify(histList)); } catch (e) {}
+    lsSet(HIST_KEY, JSON.stringify(histList));
   }
   function histEditor() {
     if (typeof masterOnly !== "undefined" && masterOnly) return "管理者";
@@ -979,7 +1012,7 @@
     histSettle(); // 編集の途中なら、ここでひと区切りにしてから戻す
     // 戻す操作自体もやり直せるように、いまの内容を残しておく
     var back = histAdd("戻す前の内容", JSON.stringify(MASTER), true);
-    try { localStorage.setItem(MASTER_KEY, e.data); } catch (e2) {}
+    lsSet(MASTER_KEY, e.data);
     loadMaster();
     histAttachChanges(back, JSON.stringify(MASTER)); // 戻したことで何が変わったか
     histMark();
@@ -1455,13 +1488,59 @@
     el.className = "hint" + (warn ? " backup-warn" : "");
   }
   /* 読み込んだ内容で置き換える。戻す前の内容はマスタ履歴に残す。 */
+  /* ---------- バックアップの中身の検査 ----------
+   * ここを通らないファイルは端末にもクラウドにも書かない。
+   * 検査が甘いと、壊れたファイルが localStorage と Firestore の両方に書かれて
+   * 店舗内の全端末が起動できなくなり、再ログインしても壊れた内容が降ってくるため
+   * 実質復旧できなくなる。 */
+  function bkIsArr(x) { return Object.prototype.toString.call(x) === "[object Array]"; }
+  function bkIsObj(x) { return !!x && typeof x === "object" && !bkIsArr(x); }
+  function validateBackup(d) {
+    var m = d.master;
+    if (!bkIsObj(m)) return "料金マスタがありません";
+    if (!bkIsArr(m.plans) || !m.plans.length) return "料金プランの形が正しくありません";
+    if (m.plans.some(function (p) { return !bkIsObj(p) || !p.id || !bkIsArr(p.tiers) || !p.tiers.length; })) {
+      return "料金プランの形が正しくありません";
+    }
+    if (!bkIsArr(m.options)) return "オプションの形が正しくありません";
+    if (!bkIsArr(m.feeItems)) return "商材・初期費用の形が正しくありません";
+    if (m.accessories != null && !bkIsArr(m.accessories)) return "アクセサリの形が正しくありません";
+    if (d.config != null) {
+      if (!bkIsObj(d.config)) return "店舗設定の形が正しくありません";
+      if (!bkIsArr(d.config.staff) || !d.config.staff.length
+          || d.config.staff.some(function (s2) { return !bkIsObj(s2) || !s2.id; })) {
+        return "担当者の形が正しくありません";
+      }
+    }
+    if (d.history != null && !bkIsArr(d.history)) return "マスタ履歴の形が正しくありません";
+    if (d.saved != null) {
+      if (!bkIsObj(d.saved)) return "保存した見積もりの形が正しくありません";
+      var badS = Object.keys(d.saved).some(function (id) {
+        var list = d.saved[id];
+        if (!bkIsArr(list)) return true;
+        return list.some(function (it) {
+          return !bkIsObj(it) || !it.id || !bkIsObj(it.data) || !bkIsArr(it.data.patterns);
+        });
+      });
+      if (badS) return "保存した見積もりの形が正しくありません";
+    }
+    if (d.templates != null) {
+      if (!bkIsObj(d.templates)) return "テンプレートの形が正しくありません";
+      if (Object.keys(d.templates).some(function (id) { return !bkIsArr(d.templates[id]); })) {
+        return "テンプレートの形が正しくありません";
+      }
+    }
+    return null;
+  }
+
   function restoreBackup(d) {
     if (!d || d.kind !== BACKUP_KIND) {
       backupMsg("このファイルはバックアップではないようです。", true);
       return;
     }
-    if (!d.master || !d.master.plans) {
-      backupMsg("バックアップの中身が読み取れませんでした。", true);
+    var verr = validateBackup(d);
+    if (verr) {
+      backupMsg("このファイルは復元できません（" + verr + "）。壊れているか、対応していない形式です。", true);
       return;
     }
     /* 別の店舗アカウントで作られたバックアップの取り込みは、
@@ -1488,6 +1567,13 @@
       data: JSON.stringify(MASTER)
     };
     var cfg2 = null;
+    /* 書き込む前の値を控えておき、途中で失敗したら全部元に戻す。
+     * 途中まで書けた中途半端な状態を残さないため。 */
+    var touched = {};
+    function writeLS(key, val) {
+      if (!(key in touched)) touched[key] = localStorage.getItem(key);
+      localStorage.setItem(key, val);
+    }
     try {
       if (d.config) {
         cfg2 = Object.assign({}, d.config);
@@ -1497,20 +1583,26 @@
          * データ全消去でしか戻せなくなる。 */
         cfg2.lock = config.lock || cfg2.lock;
         cfg2.adminLock = config.adminLock || cfg2.adminLock;
-        localStorage.setItem(CFG_KEY, JSON.stringify(cfg2));
+        writeLS(CFG_KEY, JSON.stringify(cfg2));
       }
-      localStorage.setItem(MASTER_KEY, JSON.stringify(d.master));
+      writeLS(MASTER_KEY, JSON.stringify(d.master));
       var hs = (d.history && d.history.length) ? d.history.slice(0, HIST_MAX - 1) : [];
       hs.unshift(backEntry);
-      localStorage.setItem(HIST_KEY, JSON.stringify(hs));
+      writeLS(HIST_KEY, JSON.stringify(hs));
       Object.keys(d.saved || {}).forEach(function (id) {
-        localStorage.setItem(SAVED_KEY + ":" + id, JSON.stringify(d.saved[id]));
+        writeLS(SAVED_KEY + ":" + id, JSON.stringify(d.saved[id]));
       });
       Object.keys(d.templates || {}).forEach(function (id) {
-        localStorage.setItem(TPL_KEY + ":" + id, JSON.stringify(d.templates[id]));
+        writeLS(TPL_KEY + ":" + id, JSON.stringify(d.templates[id]));
       });
     } catch (e) {
-      backupMsg("読み込みに失敗しました。端末の空き容量をご確認ください。", true);
+      Object.keys(touched).forEach(function (k) {
+        try {
+          if (touched[k] == null) localStorage.removeItem(k);
+          else localStorage.setItem(k, touched[k]);
+        } catch (e2) {}
+      });
+      backupMsg("読み込みに失敗したため、元の内容に戻しました。端末の空き容量をご確認ください。", true);
       return;
     }
     /* クラウド利用時は、読み込んだ内容をその場でクラウドへ書き戻す。
@@ -1676,7 +1768,7 @@
     var next = buildUpdatedMaster();
     histSettle();
     var back = histAdd("料金表の更新前", JSON.stringify(MASTER), true);
-    try { localStorage.setItem(MASTER_KEY, JSON.stringify(next)); } catch (e) {}
+    lsSet(MASTER_KEY, JSON.stringify(next));
     loadMaster();
     histAttachChanges(back, JSON.stringify(MASTER));
     histMark();
@@ -1927,7 +2019,7 @@
     saveMaster();
   }
   function saveMaster() {
-    try { localStorage.setItem(MASTER_KEY, JSON.stringify(MASTER)); } catch (e) {}
+    lsSet(MASTER_KEY, JSON.stringify(MASTER));
     if (typeof markMasterEdit === "function") markMasterEdit();
   }
   function resetMaster() {
@@ -2105,7 +2197,7 @@
      * この状態は内部的に担当1として動いているため、ここで書くと
      * 担当1の作りかけの見積もりを黙って上書きし、クラウドへも送ってしまう。 */
     if (typeof masterOnly !== "undefined" && masterOnly) return;
-    try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
+    lsSet(quoteKey(), JSON.stringify(store));
     markLocalEdit();
   }
 
@@ -2249,7 +2341,7 @@
         var a = JSON.parse(d.list);
         if (!a || a.length !== 3) return;
         templates = a;
-        try { localStorage.setItem(tplKey(sid), JSON.stringify(templates)); } catch (e2) {}
+        lsSet(tplKey(sid), JSON.stringify(templates));
         renderTplBar();
       } catch (e) {}
     }, function () {});
@@ -2337,7 +2429,7 @@
           || Object.keys(del).some(function (k) { return !rdel[k] || rdel[k] < del[k]; });
         savedList = merged;
         saveSavedDel(sid, del);
-        try { localStorage.setItem(savedKey(sid), JSON.stringify(savedList)); } catch (e2) {}
+        lsSet(savedKey(sid), JSON.stringify(savedList));
         renderSaved();
         if (needPush) pushSaved();
       } catch (e) {}
@@ -2368,7 +2460,7 @@
       saveConfig();
       if (d.master) {
         try {
-          localStorage.setItem(MASTER_KEY, d.master);
+          lsSet(MASTER_KEY, d.master);
           loadMaster();
           histMark();
           renderMasterTab();
@@ -2408,7 +2500,7 @@
       store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
       state = store.patterns[store.active];
       applyIenaka(incoming.ienaka);
-      try { localStorage.setItem(quoteKey(), JSON.stringify(store)); } catch (e) {}
+      lsSet(quoteKey(), JSON.stringify(store));
       syncFormFromState();
       recalc();
       cloudOk();
@@ -5167,6 +5259,9 @@
 
   function renderMasterTab() {
     $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
+    var su = $("storageUsage");
+    if (su) su.textContent = "この端末の保存領域の使用量: " + storageUsageText()
+      + "（このサイトの全アプリ合計。目安の上限は5MB前後。上限に近いと保存に失敗することがあります）";
     var h = masterUpdateHtml();
 
     h += '<div class="master-plan"><h3>共通費用</h3><div class="master-grid">';
@@ -7411,6 +7506,37 @@
   }
 
   /* ---------- 起動 ---------- */
+  /* ---------- 金額計算のテスト用フック ----------
+   * URL に ?kqtest=1 を付けたときだけ有効。CI（tests/run-calc-tests.js）が
+   * 代表パターンの金額を検算するために使う。通常の利用では作られない。 */
+  if (/[?&]kqtest=1/.test(location.search)) {
+    window.__KQ_TEST__ = {
+      version: APP_VERSION,
+      run: function (patch) {
+        var keep = JSON.parse(JSON.stringify(store.patterns[store.active]));
+        var p = Object.assign(defaultState(), patch || {});
+        migratePattern(p);
+        store.patterns[store.active] = p;
+        state = p;
+        var r = calc();
+        var out = {
+          initial: r.initialTotal,
+          store: r.storeTotal,
+          bill: r.billTotal,
+          segs: r.segs.map(function (sg) {
+            var o = { from: sg.from, to: sg.to === Infinity ? "inf" : sg.to, monthly: sg.monthly };
+            if (typeof sg.monthlyKeep === "number") o.keep = sg.monthlyKeep;
+            return o;
+          })
+        };
+        store.patterns[store.active] = Object.assign(defaultState(), keep);
+        state = store.patterns[store.active];
+        recalc();
+        return out;
+      }
+    };
+  }
+
   loadConfig();
   loadMaster();
   loadState();
