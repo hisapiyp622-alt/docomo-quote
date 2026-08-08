@@ -572,6 +572,13 @@
       <label class="check"><input type="radio" name="sheetScope" value="hikari"> スマホ＋光の別紙（3枚）</label>
       <label class="check"><input type="radio" name="sheetScope" value="flow"> 開通までの流れ（1枚）</label>
     </div>
+    <div class="sheet-scope no-print">
+      <span class="lbl">文字サイズ：</span>
+      <label class="check"><input type="radio" name="sheetFs" value="l"> 大</label>
+      <label class="check"><input type="radio" name="sheetFs" value="m" checked> 中</label>
+      <label class="check"><input type="radio" name="sheetFs" value="s"> 小</label>
+      <span class="lbl fs-note">画面と印刷の両方に効きます（「大」は枚数が増えることがあります）</span>
+    </div>
     <div class="sheet" id="sheetBody"><!-- JSで生成 --></div>
     <div class="actions no-print">
       <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
@@ -617,6 +624,7 @@
       <label>期間 <select id="statsMonth"></select></label>
       <label>担当 <select id="statsStaff"></select></label>
       <button type="button" class="btn-sub" id="statsReload">再読み込み</button>
+      <button type="button" class="btn-sub" id="statsCsv">CSVで保存</button>
     </div>
     <div id="statsBody"><p class="hint">読み込み中…</p></div>
   </section>
@@ -840,6 +848,7 @@
       本アプリは、料金プラン等の名称を説明のために表示しているにとどまります。</p>
     <div class="about-log">
       <button class="btn-sub" id="aboutLogBtn" type="button">更新履歴を見る</button>
+      <button class="btn-sub" id="aboutTourBtn" type="button">使い方（チュートリアル）</button>
       <div id="aboutLogBox" hidden></div>
     </div>
     <p class="about-links">
@@ -858,6 +867,21 @@
     <h2 id="docTitle">文書</h2>
     <div class="doc-body" id="docBody"></div>
     <button class="btn-main" id="docClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<div class="tour-overlay no-print" id="tourOverlay" hidden>
+  <div class="tour-box">
+    <div class="tour-mascot" id="tourMascot"><!-- JSで生成 --></div>
+    <div class="tour-bubble">
+      <div class="tour-name">ミツモリン</div>
+      <p id="tourText"></p>
+      <div class="tour-dots" id="tourDots"></div>
+      <div class="tour-actions">
+        <button class="btn-sub" id="tourSkip" type="button">とばす</button>
+        <button class="btn-main" id="tourNext" type="button">次へ</button>
+      </div>
+    </div>
   </div>
 </div>
 

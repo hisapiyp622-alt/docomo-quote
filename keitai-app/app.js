@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.49.0";
+  var APP_VERSION = "1.50.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -153,6 +153,22 @@
     try { localStorage.setItem(savedKey(), JSON.stringify(savedList)); } catch (e) {}
     if (typeof pushSaved === "function") pushSaved();
   }
+  /* 保存一覧は端末をまたいで使う（iPadで見積もり→PCで印刷など）ため、
+   * クラウドとは全文の置き換えではなく「統合（マージ）」で揃える。
+   * ・同じ保存は、更新時刻（upAt/resultAt/savedAt）の新しい方を採用
+   * ・削除だけは下の記録で他の端末へ伝える（無いと削除した保存が復活する） */
+  var SAVED_DEL_KEY = "kq-saved-del-v1";
+  function savedDelKey(staffId) { return SAVED_DEL_KEY + ":" + (staffId || activeStaff().id); }
+  function loadSavedDel(staffId) {
+    try { return JSON.parse(localStorage.getItem(savedDelKey(staffId)) || "null") || {}; } catch (e) { return {}; }
+  }
+  function saveSavedDel(staffId, map) {
+    // 90日より古い削除の記録は捨てる（増え続けるだけのため）
+    var lim = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    Object.keys(map).forEach(function (k) { if (map[k] < lim) delete map[k]; });
+    try { localStorage.setItem(savedDelKey(staffId), JSON.stringify(map)); } catch (e) {}
+  }
+  function savedItemTs(it) { return it.upAt || it.resultAt || it.savedAt || 0; }
   // 保存名は他の端末にも同期されるため、お客様名は既定に入れない
   function savedDefaultName() {
     var d = new Date();
@@ -172,6 +188,7 @@
       monthly: r.segs[0].monthly,
       initial: r.initialTotal,
       savedAt: Date.now(),
+      upAt: Date.now(),
       data: JSON.parse(JSON.stringify(store))
     };
     savedList.unshift(item);
@@ -204,6 +221,9 @@
   }
   function deleteSavedQuote(id) {
     savedList = savedList.filter(function (x) { return x.id !== id; });
+    var del = loadSavedDel();
+    del[id] = Date.now();
+    saveSavedDel(null, del);
     persistSaved();
     renderSaved();
   }
@@ -282,6 +302,7 @@
     }
     it.result = result;
     it.resultAt = Date.now();
+    it.upAt = Date.now();
     if (result === "won") {
       it.wonData = JSON.parse(JSON.stringify(store));
       it.wonPattern = store.active;
@@ -347,6 +368,7 @@
     }
     it.result = result;
     it.resultAt = result ? Date.now() : 0;
+    it.upAt = Date.now();
     persistSaved();
     renderSaved();
   }
@@ -501,6 +523,7 @@
 
   // 全担当の保存リストを集める。クラウド利用時は最新を読みにいく
   var statsLists = null; // {staffId: list}
+  var statsLast = null;  // 直近に表示した集計（CSV出力用）
   function loadAllSaved(done) {
     var lists = {};
     var mine = activeStaff().id;
@@ -618,6 +641,61 @@
         + '（設定を変えると、過去の保存分も新しい設定で数え直されます）。</p>';
     }
     body.innerHTML = h;
+    // CSV出力用に、いま表示した集計を控えておく
+    var sName = "全員";
+    if (sFil !== "all") {
+      var ss = config.staff.filter(function (s) { return s.id === sFil; })[0];
+      sName = (ss && ss.name) || sFil;
+    }
+    statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName };
+  }
+
+  /* ---------- 実績のCSV出力（Excelで開ける形式） ---------- */
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function downloadStatsCsv() {
+    var L = statsLast;
+    if (!L) return;
+    function rateTxt(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : ""; }
+    var period = L.month === "all" ? "全期間" : L.month;
+    var lines = [];
+    lines.push(["実績集計", "期間: " + period, "担当: " + L.staffName, "出力: " + savedWhen(Date.now())].map(csvCell).join(","));
+    lines.push("");
+    lines.push("担当別");
+    lines.push("担当,提案,成約,見送り,成約率");
+    L.rows.forEach(function (r2) {
+      lines.push([r2.name, r2.prop, r2.won, r2.lost, rateTxt(r2.won, r2.prop)].map(csvCell).join(","));
+    });
+    if (L.rows.length > 1) {
+      lines.push(["合計", L.totals.prop, L.totals.won, L.totals.lost, rateTxt(L.totals.won, L.totals.prop)].map(csvCell).join(","));
+    }
+    lines.push("");
+    lines.push("項目別");
+    lines.push("項目,提案,成約,成約率");
+    L.iKeys.forEach(function (k) {
+      var x = L.items[k];
+      lines.push([x.name, x.prop, x.won, rateTxt(x.won, x.prop)].map(csvCell).join(","));
+    });
+    // 先頭のBOMで、Excelが文字コードを正しく認識する（無いと文字化けする）
+    var csv = "\uFEFF" + lines.join("\r\n");
+    var store2 = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    var fname = "実績_" + store2 + "_" + (L.month === "all" ? "全期間" : L.month.replace("/", "")) + "_"
+      + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + ".csv";
+    try {
+      var blob = new Blob([csv], { type: "text/csv" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (e) {}
   }
 
   /* 端末内モードの店舗ログイン
@@ -2193,7 +2271,11 @@
         (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; });
         ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
       });
-      savedDoc(sid).set(stamp({ list: JSON.stringify(list) })).then(cloudOk, cloudNg);
+      savedDoc(sid).set(stamp({
+        list: JSON.stringify(list),
+        // 削除の記録も一緒に送る（他の端末で該当の保存を消してもらうため）
+        del: JSON.stringify(loadSavedDel(sid))
+      })).then(cloudOk, cloudNg);
     }, 1000);
   }
   function watchSaved() {
@@ -2206,9 +2288,15 @@
       var d = snap.exists ? snap.data() : null;
       if (!d || !d.list) return;
       if (d.clientId === CLOUD.clientId) return;
-      if (CLOUD.savedTimer) return; // 送信待ちのローカル変更がある間は上書きしない
       try {
         var incoming = JSON.parse(d.list) || [];
+        // 削除の記録を統合（新しい方を残す）
+        var del = loadSavedDel(sid);
+        var rdel = {};
+        try { rdel = JSON.parse(d.del || "{}") || {}; } catch (e3) {}
+        Object.keys(rdel).forEach(function (k) {
+          if (!del[k] || rdel[k] > del[k]) del[k] = rdel[k];
+        });
         // お客様名は同期しないため、この端末に残っている名前を引き継ぐ
         var mine = {};
         savedList.forEach(function (x) { mine[x.id] = x; });
@@ -2225,9 +2313,33 @@
             if (!pt.custName && owp[i] && owp[i].custName) pt.custName = owp[i].custName;
           });
         });
-        savedList = incoming;
+        /* 全文の置き換えではなく統合する。
+         * 以前は「あとから送った端末の一覧」で丸ごと置き換えていたため、
+         * 2台で別々に保存すると片方の保存が消えることがあった。
+         * 同じ保存は更新時刻の新しい方を採用し、削除の記録より新しい
+         * 更新が無いものは取り除く。 */
+        var byId = {};
+        savedList.forEach(function (x) { byId[x.id] = x; });
+        incoming.forEach(function (x) {
+          var cur = byId[x.id];
+          if (!cur || savedItemTs(x) >= savedItemTs(cur)) byId[x.id] = x;
+        });
+        var merged = Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (x) {
+          return !(del[x.id] && del[x.id] >= savedItemTs(x));
+        });
+        merged.sort(function (a, b) { return (b.savedAt || 0) - (a.savedAt || 0); });
+        if (merged.length > SAVED_MAX) merged = merged.slice(0, SAVED_MAX);
+        // この端末にしか無い保存・削除が混ざっていたら、統合の結果をクラウドへも返す
+        var inIds = {};
+        incoming.forEach(function (x) { inIds[x.id] = savedItemTs(x); });
+        var needPush = merged.some(function (x) { return !inIds[x.id] || inIds[x.id] < savedItemTs(x); })
+          || incoming.length !== merged.length
+          || Object.keys(del).some(function (k) { return !rdel[k] || rdel[k] < del[k]; });
+        savedList = merged;
+        saveSavedDel(sid, del);
         try { localStorage.setItem(savedKey(sid), JSON.stringify(savedList)); } catch (e2) {}
         renderSaved();
+        if (needPush) pushSaved();
       } catch (e) {}
     }, function () {});
   }
@@ -2458,6 +2570,8 @@
     watchQuote();
     watchSaved();
     watchTemplates();
+    // 初めての端末では、ミツモリンの使い方案内を出す（画面が落ち着いてから）
+    setTimeout(maybeStartTour, 400);
   }
   function renderStaffBar() {
     var el = $("staffBar");
@@ -5790,6 +5904,125 @@
     });
   }
 
+  /* ---------- チュートリアル（ミツモリン） ----------
+   * マスコット「ミツモリン」が最初のひと巡りを案内する。
+   * 「見積書を開いた時点が提案として控えられる」というかんたん記録の要は、
+   * 説明が無いと気づけないため、端末ごとに初回だけ自動で出す。
+   * キャラクター画像は mascotSvg() の1か所にまとめてあり、
+   * 正式なイラスト（PNG等）ができたらここを差し替えるだけでよい。 */
+  var TOUR_KEY = "kq-tour-done-v1";
+  var TOUR_STEPS = [
+    { pose: "hello", t: "はじめまして、ミツモリンです！ 使い方をぱぱっとご案内しますね。見積もり画面は、①から⑨を上から入れていくだけ。月々のお支払いがその場で出ます。A・B・Cの3パターンを並べて比べられますよ。" },
+    { pose: "sheet", t: "できあがったら「見積書」タブへ。印刷やPDF保存ができて、文字サイズも大・中・小から選べます。じつは、見積書を開いた時点の内容が「ご提案」として自動で控えられるんです。操作はいりません！" },
+    { pose: "hello", t: "応対が終わったら、画面下の「成約」か「見送り」をポンと1回。それだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく！" },
+    { pose: "sheet", t: "「実績」タブでは、担当別・項目別に提案と成約が見られて、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べますよ。" },
+    { pose: "hello", t: "わからなくなったら、ヘッダーの「情報」からこの案内をもう一度見られます。それでは、よい接客を！ ミツモリンでした〜！" }
+  ];
+  function mascotSvg(pose) {
+    var rightArm = pose === "sheet"
+      ? "" // 見積書を持つポーズは、手を紙の両脇に描く
+      : '<path d="M83 92 Q98 84 102 68" stroke="#3f86c9" stroke-width="9" stroke-linecap="round" fill="none"/>'
+        + '<circle cx="103" cy="64" r="6.5" fill="#ffeede"/>';
+    var sheet = pose === "sheet"
+      ? '<g><rect x="42" y="96" width="36" height="26" rx="2.5" fill="#fff" stroke="#d94848" stroke-width="1.6"/>'
+        + '<rect x="46" y="101" width="20" height="3" rx="1.5" fill="#d94848"/>'
+        + '<rect x="46" y="107" width="28" height="2.4" rx="1.2" fill="#c9d3dd"/>'
+        + '<rect x="46" y="112" width="28" height="2.4" rx="1.2" fill="#c9d3dd"/>'
+        + '<circle cx="41" cy="110" r="6" fill="#ffeede"/>'
+        + '<circle cx="79" cy="110" r="6" fill="#ffeede"/></g>'
+      : '<path d="M39 92 Q30 102 33 112" stroke="#3f86c9" stroke-width="9" stroke-linecap="round" fill="none"/>'
+        + '<circle cx="33" cy="115" r="6" fill="#ffeede"/>';
+    return '<svg viewBox="0 0 120 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ミツモリン">'
+      + '<ellipse cx="24" cy="78" rx="14" ry="22" fill="#cfeafd" opacity=".85" transform="rotate(-18 24 78)"/>'
+      + '<ellipse cx="96" cy="78" rx="14" ry="22" fill="#cfeafd" opacity=".85" transform="rotate(18 96 78)"/>'
+      + '<path d="M60 22 q1-9 9-12 q-4 7-2 12z" fill="#8ed2f4"/>'
+      + '<circle cx="60" cy="54" r="33" fill="#8ed2f4"/>'
+      + '<circle cx="60" cy="60" r="26" fill="#ffeede"/>'
+      + '<path d="M33 56 q3-31 27-31 q24 0 27 31 q-7-12-15-12 q-5 7-12 7 q-7 0-12-7 q-8 0-15 12z" fill="#a9def7"/>'
+      + '<path d="M40 34 l2.6 5.4 5.9.6 -4.4 4 1.3 5.8 -5.4-3 -5.4 3 1.3-5.8 -4.4-4 5.9-.6z" fill="#ffd94d" transform="scale(.72) translate(16 8)"/>'
+      + '<circle cx="50" cy="62" r="3.4" fill="#4a3f36"/><circle cx="70" cy="62" r="3.4" fill="#4a3f36"/>'
+      + '<circle cx="51.2" cy="60.8" r="1.1" fill="#fff"/><circle cx="71.2" cy="60.8" r="1.1" fill="#fff"/>'
+      + '<ellipse cx="44" cy="70" rx="4" ry="2.2" fill="#ffc9c0"/><ellipse cx="76" cy="70" rx="4" ry="2.2" fill="#ffc9c0"/>'
+      + '<path d="M56 71 q4 4 8 0" stroke="#c96a5a" stroke-width="1.8" fill="none" stroke-linecap="round"/>'
+      + '<path d="M46 88 h28 l5 34 q-19 8 -38 0z" fill="#3f86c9"/>'
+      + '<path d="M54 88 h12 l-6 9z" fill="#fff"/>'
+      + '<rect x="50" y="99" width="9" height="6" rx="1" fill="#fff" stroke="#c9d3dd"/>'
+      + rightArm + sheet
+      + '<ellipse cx="52" cy="128" rx="6" ry="3.4" fill="#2f5f92"/>'
+      + '<ellipse cx="68" cy="128" rx="6" ry="3.4" fill="#2f5f92"/>'
+      + "</svg>";
+  }
+  var tourStep = 0;
+  function renderTourStep() {
+    var st = TOUR_STEPS[tourStep];
+    $("tourMascot").innerHTML = mascotSvg(st.pose);
+    $("tourText").textContent = st.t;
+    $("tourDots").innerHTML = TOUR_STEPS.map(function (x, i) {
+      return "<span" + (i === tourStep ? ' class="on"' : "") + "></span>";
+    }).join("");
+    $("tourNext").textContent = tourStep === TOUR_STEPS.length - 1 ? "はじめる！" : "次へ";
+    $("tourSkip").hidden = tourStep === TOUR_STEPS.length - 1;
+  }
+  function showTour() {
+    tourStep = 0;
+    var ov = $("tourOverlay");
+    if (!ov) return;
+    ov.hidden = false;
+    renderTourStep();
+  }
+  function endTour() {
+    $("tourOverlay").hidden = true;
+    try { localStorage.setItem(TOUR_KEY, "1"); } catch (e) {}
+  }
+  function maybeStartTour() {
+    var done = "";
+    try { done = localStorage.getItem(TOUR_KEY) || ""; } catch (e) {}
+    if (done) return;
+    // ログイン・初期設定・担当者コードなどの画面が出ている間は出さない
+    var busy = ["loginOverlay", "setupOverlay", "staffOverlay", "masterGate", "tourOverlay"].some(function (id) {
+      var el = $(id);
+      return el && !el.hidden;
+    });
+    if (busy || masterOnly) return;
+    showTour();
+  }
+  function initTour() {
+    $("tourNext").addEventListener("click", function () {
+      if (tourStep >= TOUR_STEPS.length - 1) { endTour(); return; }
+      tourStep++;
+      renderTourStep();
+    });
+    $("tourSkip").addEventListener("click", endTour);
+    var tb = $("aboutTourBtn");
+    if (tb) tb.addEventListener("click", function () { showAbout(false); showTour(); });
+  }
+
+  /* ---------- 見積書の文字サイズ（大・中・小） ----------
+   * お客様に画面のまま見せるとき・印刷するときの文字の大きさを選べる。
+   * 端末ごとの設定（印刷する端末で選べばよいので同期しない）。 */
+  var SHEET_FS_KEY = "kq-sheet-fs";
+  function applySheetFs(v) {
+    var el = $("tab-sheet");
+    if (!el) return;
+    el.classList.remove("fs-l", "fs-s");
+    if (v === "l") el.classList.add("fs-l");
+    if (v === "s") el.classList.add("fs-s");
+  }
+  function initSheetFs() {
+    var v = "m";
+    try { v = localStorage.getItem(SHEET_FS_KEY) || "m"; } catch (e) {}
+    var r = document.querySelector('input[name="sheetFs"][value="' + v + '"]');
+    if (r) r.checked = true;
+    applySheetFs(v);
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="sheetFs"]'), function (el) {
+      el.addEventListener("change", function () {
+        if (!this.checked) return;
+        applySheetFs(this.value);
+        try { localStorage.setItem(SHEET_FS_KEY, this.value); } catch (e) {}
+      });
+    });
+  }
+
   /* ---------- タブ ---------- */
   function switchTab(name) {
     // 担当者が決まっていないままマスタ設定から出ようとしたら、コードを入れてもらう
@@ -6759,6 +6992,7 @@
       $("statsMonth").addEventListener("change", function () { renderStats(false); });
       $("statsStaff").addEventListener("change", function () { renderStats(false); });
       $("statsReload").addEventListener("click", function () { renderStats(true); });
+      $("statsCsv").addEventListener("click", downloadStatsCsv);
     }
     var savedEl = $("savedList");
     if (savedEl) {
@@ -7181,6 +7415,8 @@
   initIenakaLink();
   initTileSort();
   initTplHold();
+  initTour();
+  initSheetFs();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
   // 何かの理由で画面の決定に至らなくても、隠したままにはしない
   setTimeout(bootDone, 6000);
