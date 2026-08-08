@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.51.2";
+  var APP_VERSION = "1.51.3";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5687,7 +5687,7 @@
     var v = (typeof KEITAI_VENDOR !== "undefined" && KEITAI_VENDOR) || {};
     return {
       name: v.name || "（未設定）",
-      contact: v.contact || "（未設定）",
+      contact: v.contact || "ご契約の際にご案内します",
       hours: v.hours || ""
     };
   }
