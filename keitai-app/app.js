@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.48.0";
+  var APP_VERSION = "1.49.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -351,7 +351,39 @@
     renderSaved();
   }
 
-  /* 光・5Gの集計はブランドを分けず速度でまとめる（店舗の指定・2026-08-04）。
+  /* ---------- 実績で追う項目の設定 ----------
+   * どの項目を実績に数えるかは店舗ごとに違うため、マスタ設定の
+   * 「実績で追う項目」で選べるようにし、料金マスタ（MASTER.statsCfg）に持つ。
+   * マスタと同じ経路で保存・同期・履歴が効く。
+   * 初期値は最初の導入店の指定（2026-08-04）に合わせてある。
+   * 設定は集計のたびに参照する（保存済みの見積もりは作り直さないので、
+   * 設定を変えると過去の分も新しい設定で数え直される）。 */
+  function statsCfg() {
+    if (!MASTER.statsCfg) MASTER.statsCfg = {};
+    var c = MASTER.statsCfg;
+    if (!c.procs) c.procs = { shinki: true, mnp: true, kishu: true, plan: false };
+    if (!c.plans) c.plans = { max: true, poikatsu_max: true };
+    if (!c.device) c.device = "kw";           // off=追わない / all=全機種 / kw=キーワード
+    if (typeof c.deviceKw !== "string") c.deviceKw = "Pixel";
+    if (!c.dcard) c.dcard = "type";           // off / one=まとめて1行 / type=種別ごと
+    if (!c.denki) c.denki = "type";           // off / one / type=メニューごと
+    if (!c.gas) c.gas = "one";                // off / one
+    if (typeof c.hikari === "undefined") c.hikari = true;
+    if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
+    if (!c.feeSkip) c.feeSkip = {};
+    if (typeof c.accs === "undefined") c.accs = true;
+    return c;
+  }
+  // 「Pixel、iPhone」のように読点・カンマ区切りで複数キーワードを許す
+  function statsKwTest(kw, name) {
+    var n = String(name || "").toLowerCase();
+    return String(kw || "").split(/[、,]/).some(function (w) {
+      w = w.trim().toLowerCase();
+      return !!w && n.indexOf(w) >= 0;
+    });
+  }
+
+  /* 光・5Gの集計はブランドを分けず速度でまとめる。
    * ドコモ光1ギガ＋ahamo光1ギガ＝「光 1ギガ」、10ギガも同様。 */
   var STATS_IE_NAMES = {
     hikari1g: "光 1ギガ", ahamo1g: "光 1ギガ",
@@ -361,39 +393,50 @@
   var STATS_IE_KEYS = { hikari1g: "1g", ahamo1g: "1g", hikari10g: "10g", ahamo10g: "10g", home5g: "home5g" };
 
   // 1パターンから「提案した項目」を拾う {key: 表示名}
+  /* 何を数えるかは statsCfg()（マスタ設定の「実績で追う項目」）に従う。
+   * 固定のルール:
+   * ・引き継ぎの「ドコモ光」チェックは数えない（光・5Gタブの商材で数える）
+   * ・オプションの「継続」は提案に数えない
+   * ・ドコモの商材の手数料・再発行、請求書払いのものは数えない
+   * ・アクセサリは登録品だけ（自由入力は数えない） */
+  var STATS_PROC_NAMES = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan: "プラン変更" };
   function statsPatternItems(ptRaw) {
     var pt = Object.assign(defaultState(), ptRaw || {});
+    var cfg = statsCfg();
     var out = {};
-    /* 追う項目は店舗の指定（2026-08-04）:
-     * ・手続きはプラン変更を数えない
-     * ・プランは MAX とポイ活 MAX だけ
-     * ・機種販売は Pixel シリーズだけ
-     * ・dカードは種別ごと、でんきはメニューごと、ガスは1行
-     * ・引き継ぎの「ドコモ光」チェックは数えない（光・5Gタブの商材で数える）
-     * ・オプションは smartあんしん補償・あんしんパック以外
-     * ・アクセサリは登録品だけ（自由入力は数えない） */
     var todo = pt.procTodo || {};
-    if (todo.shinki) out["proc:shinki"] = "新規契約";
-    if (todo.mnp) out["proc:mnp"] = "のりかえ（MNP）";
-    if (todo.kishu) out["proc:kishu"] = "機種変更";
-    var STATS_PLANS = { max: true, poikatsu_max: true };
-    if (pt.planId && STATS_PLANS[pt.planId]) {
+    Object.keys(STATS_PROC_NAMES).forEach(function (k) {
+      if (todo[k] && cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
+    });
+    if (pt.planId && cfg.plans[pt.planId]) {
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
     }
-    if (/pixel/i.test(pt.deviceName || "")) out["device"] = "機種販売（Pixel）";
-    if (pt.todoDcard) {
-      var dcNames = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
-      out["dcard:" + (pt.todoDcardType || "x")] = dcNames[pt.todoDcardType] || "dカード（種別未選択）";
+    if (pt.deviceName) {
+      if (cfg.device === "all") out["device"] = "機種販売";
+      else if (cfg.device === "kw" && statsKwTest(cfg.deviceKw, pt.deviceName)) {
+        out["device"] = "機種販売（" + cfg.deviceKw + "）";
+      }
     }
-    if (pt.todoDenki) {
-      var dnNames = { basic: "でんき Basic", green: "でんき Green" };
-      out["denki:" + (pt.todoDenkiType || "x")] = dnNames[pt.todoDenkiType] || "でんき（メニュー未選択）";
+    if (pt.todoDcard && cfg.dcard !== "off") {
+      if (cfg.dcard === "one") {
+        out["dcard"] = "dカード";
+      } else {
+        var dcNames = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
+        out["dcard:" + (pt.todoDcardType || "x")] = dcNames[pt.todoDcardType] || "dカード（種別未選択）";
+      }
     }
-    if (pt.todoGas) out["gas"] = "ドコモガス";
-    var STATS_OPT_SKIP = { smart_hosho: true, anshin_pack: true };
+    if (pt.todoDenki && cfg.denki !== "off") {
+      if (cfg.denki === "one") {
+        out["denki"] = "ドコモでんき";
+      } else {
+        var dnNames = { basic: "でんき Basic", green: "でんき Green" };
+        out["denki:" + (pt.todoDenkiType || "x")] = dnNames[pt.todoDenkiType] || "でんき（メニュー未選択）";
+      }
+    }
+    if (pt.todoGas && cfg.gas !== "off") out["gas"] = "ドコモガス";
     Object.keys(pt.options || {}).forEach(function (id) {
-      if (!pt.options[id] || STATS_OPT_SKIP[id]) return;
+      if (!pt.options[id] || cfg.optSkip[id]) return;
       if ((pt.optionKubun || {})[id] === "keep") return; // 継続は提案に数えない
       var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
       /* 店舗独自サービス（マスタ設定で「店舗独自」にしたもの）は
@@ -402,7 +445,7 @@
       else out["opt:" + id] = "オプション: " + (def ? def.name : id);
     });
     Object.keys(pt.feeItems || {}).forEach(function (id) {
-      if (!pt.feeItems[id]) return;
+      if (!pt.feeItems[id] || cfg.feeSkip[id]) return;
       var def = MASTER.feeItems.filter(function (o) { return o.id === id; })[0];
       if (!def) return;
       if (def.own) {
@@ -415,11 +458,13 @@
         out["fee:" + id] = def.name;
       }
     });
-    Object.keys(pt.accSel || {}).forEach(function (id) {
-      if (!pt.accSel[id]) return;
-      var def = MASTER.accessories.filter(function (o) { return o.id === id; })[0];
-      out["acc:" + id] = "アクセサリ: " + (def ? def.name : id);
-    });
+    if (cfg.accs) {
+      Object.keys(pt.accSel || {}).forEach(function (id) {
+        if (!pt.accSel[id]) return;
+        var def = MASTER.accessories.filter(function (o) { return o.id === id; })[0];
+        out["acc:" + id] = "アクセサリ: " + (def ? def.name : id);
+      });
+    }
     return out;
   }
 
@@ -437,7 +482,7 @@
       });
     }
     var ie = d && d.ienaka;
-    if (ie && ie.enabled && ie.product) {
+    if (ie && ie.enabled && ie.product && statsCfg().hikari) {
       out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
     }
     return out;
@@ -569,8 +614,8 @@
       h += '<p class="hint">提案＝保存したとき（最初の提案）にその項目が入っていた件数（3パターンのどれかにあれば1件）。'
         + '成約＝成約にした応対で、実際の成約内容にその項目が入っていた件数。'
         + '提案0で成約が付いている項目は、最初の提案には無く、成約までの調整で加わったものです。'
-        + 'オプションの「継続」は数えません。追う項目は店舗の指定に合わせています'
-        + '（プランはMAX/ポイ活MAXのみ・機種はPixelのみ・プラン変更/光チェック/自由入力アクセサリ/一部オプションは対象外）。</p>';
+        + 'オプションの「継続」は数えません。どの項目を数えるかは、マスタ設定の<strong>「実績で追う項目」</strong>で選べます'
+        + '（設定を変えると、過去の保存分も新しい設定で数え直されます）。</p>';
     }
     body.innerHTML = h;
   }
@@ -1271,6 +1316,10 @@
             it.custName = "";
             if (it.data && it.data.patterns) {
               it.data.patterns.forEach(function (pt) { pt.custName = ""; });
+            }
+            // 成約時の控え（wonData）にもお客様名が入っている
+            if (it.wonData && it.wonData.patterns) {
+              it.wonData.patterns.forEach(function (pt) { pt.custName = ""; });
             }
           });
         }
@@ -4915,6 +4964,85 @@
   }
 
   /* ---------- マスタ設定タブ ---------- */
+  /* マスタ設定の「実績で追う項目」カード。設定は MASTER.statsCfg（statsCfg() 参照）。 */
+  function statsCfgHtml() {
+    var sc = statsCfg();
+    var h = '<div class="master-plan"><h3>実績で追う項目</h3>';
+    h += '<p class="hint">実績タブの「項目別」で<strong>どの項目を数えるか</strong>を選べます。'
+      + '店舗として力を入れている商材だけに絞ると、表が見やすくなります。<br>'
+      + '設定は保存済みの見積もりには手を加えず、<strong>集計するときに数え直す</strong>ため、'
+      + 'あとから変えても過去の分に新しい設定が効きます。店舗内の全端末で共通です。</p>';
+
+    h += '<div class="plan-sec"><span class="plan-lbl">手続き</span><div class="sub-checks">';
+    [["shinki", "新規契約"], ["mnp", "のりかえ（MNP）"], ["kishu", "機種変更"], ["plan", "プラン変更"]].forEach(function (p) {
+      h += '<label class="check"><input type="checkbox" data-sc-proc="' + p[0] + '"'
+        + (sc.procs[p[0]] ? " checked" : "") + "> " + p[1] + "</label>";
+    });
+    h += "</div></div>";
+
+    h += '<div class="plan-sec"><span class="plan-lbl">プラン（チェックしたものだけ数えます）</span><div class="sub-checks">';
+    MASTER.plans.forEach(function (pl) {
+      h += '<label class="check"><input type="checkbox" data-sc-plan="' + esc(pl.id) + '"'
+        + (sc.plans[pl.id] ? " checked" : "") + "> " + esc(pl.name)
+        + (pl.group === "legacy" ? "（旧）" : "") + "</label>";
+    });
+    h += "</div></div>";
+
+    h += '<div class="plan-sec"><span class="plan-lbl">機種販売・dカード・でんき・ガス・光</span><div class="sub-checks">';
+    h += '<label class="check">機種販売 <select id="scDevice">'
+      + '<option value="off"' + (sc.device === "off" ? " selected" : "") + ">追わない</option>"
+      + '<option value="all"' + (sc.device === "all" ? " selected" : "") + ">全機種</option>"
+      + '<option value="kw"' + (sc.device === "kw" ? " selected" : "") + ">機種名で絞る</option>"
+      + "</select></label>";
+    h += '<input type="text" id="scDeviceKw" value="' + esc(sc.deviceKw) + '"'
+      + ' placeholder="例）Pixel、iPhone（読点区切りで複数可）"' + (sc.device === "kw" ? "" : " hidden") + ">";
+    h += '<label class="check">dカード <select data-sc-sel="dcard">'
+      + '<option value="off"' + (sc.dcard === "off" ? " selected" : "") + ">追わない</option>"
+      + '<option value="one"' + (sc.dcard === "one" ? " selected" : "") + ">まとめて1行</option>"
+      + '<option value="type"' + (sc.dcard === "type" ? " selected" : "") + ">種別ごと</option>"
+      + "</select></label>";
+    h += '<label class="check">でんき <select data-sc-sel="denki">'
+      + '<option value="off"' + (sc.denki === "off" ? " selected" : "") + ">追わない</option>"
+      + '<option value="one"' + (sc.denki === "one" ? " selected" : "") + ">まとめて1行</option>"
+      + '<option value="type"' + (sc.denki === "type" ? " selected" : "") + ">メニューごと</option>"
+      + "</select></label>";
+    h += '<label class="check">ガス <select data-sc-sel="gas">'
+      + '<option value="off"' + (sc.gas === "off" ? " selected" : "") + ">追わない</option>"
+      + '<option value="one"' + (sc.gas === "one" ? " selected" : "") + ">1行で数える</option>"
+      + "</select></label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="hikari"'
+      + (sc.hikari ? " checked" : "") + "> 光・5G（1ギガ／10ギガ／home 5G）</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="accs"'
+      + (sc.accs ? " checked" : "") + "> アクセサリ（登録品）</label>";
+    h += "</div></div>";
+
+    h += '<div class="plan-sec"><span class="plan-lbl">オプション（チェックを外すと数えません）</span><div class="sub-checks">';
+    MASTER.options.forEach(function (o) {
+      h += '<label class="check"><input type="checkbox" data-sc-opt="' + esc(o.id) + '"'
+        + (sc.optSkip[o.id] ? "" : " checked") + "> " + esc(o.name)
+        + (o.own ? "（独自）" : "") + "</label>";
+    });
+    h += "</div></div>";
+
+    // もともと数えない商材（手数料・再発行・請求書払い）は一覧に出さない
+    var countableFees = (MASTER.feeItems || []).filter(function (o) {
+      if (o.pay === "bill") return false;
+      return o.own || !/手数料|再発行/.test(o.name || "");
+    });
+    if (countableFees.length) {
+      h += '<div class="plan-sec"><span class="plan-lbl">商材・サービス（チェックを外すと数えません）</span><div class="sub-checks">';
+      countableFees.forEach(function (o) {
+        h += '<label class="check"><input type="checkbox" data-sc-fee="' + esc(o.id) + '"'
+          + (sc.feeSkip[o.id] ? "" : " checked") + "> " + esc(o.name)
+          + (o.own ? "（独自）" : "") + "</label>";
+      });
+      h += "</div></div>";
+    }
+    h += '<p class="hint">手数料・再発行・請求書払いの商材と、オプションの「継続」は、もともと数えない決まりです。</p>';
+    h += "</div>";
+    return h;
+  }
+
   function renderMasterTab() {
     $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
     var h = masterUpdateHtml();
@@ -5145,6 +5273,9 @@
       h += "</div>";
     });
     h += "</div>";
+
+    // 実績で追う項目
+    h += statsCfgHtml();
 
     // 料金マスタの履歴
     h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
@@ -6043,6 +6174,53 @@
     MASTER.updated = MASTER.updated.replace(/（編集済み.*$/, "") + "（編集済み）";
     saveMaster();
   }
+  /* 「実績で追う項目」の操作。設定は MASTER.statsCfg に入れて markEdited() で
+   * 料金マスタと同じ経路（保存・同期・履歴）に乗せる。 */
+  function handleStatsCfgEvent(t, kind) {
+    if (!t.getAttribute) return false;
+    var sc;
+    if (kind === "input") {
+      if (t.id === "scDeviceKw") { statsCfg().deviceKw = t.value; markEdited(); return true; }
+      return false;
+    }
+    if (t.hasAttribute("data-sc-proc")) {
+      statsCfg().procs[t.getAttribute("data-sc-proc")] = t.checked;
+      markEdited(); return true;
+    }
+    if (t.hasAttribute("data-sc-plan")) {
+      sc = statsCfg();
+      var pid = t.getAttribute("data-sc-plan");
+      if (t.checked) sc.plans[pid] = true; else delete sc.plans[pid];
+      markEdited(); return true;
+    }
+    if (t.hasAttribute("data-sc-opt")) {
+      sc = statsCfg();
+      var oid = t.getAttribute("data-sc-opt");
+      if (t.checked) delete sc.optSkip[oid]; else sc.optSkip[oid] = true;
+      markEdited(); return true;
+    }
+    if (t.hasAttribute("data-sc-fee")) {
+      sc = statsCfg();
+      var fid = t.getAttribute("data-sc-fee");
+      if (t.checked) delete sc.feeSkip[fid]; else sc.feeSkip[fid] = true;
+      markEdited(); return true;
+    }
+    if (t.hasAttribute("data-sc-flag")) {
+      statsCfg()[t.getAttribute("data-sc-flag")] = t.checked;
+      markEdited(); return true;
+    }
+    if (t.id === "scDevice") {
+      statsCfg().device = t.value;
+      var kwEl = $("scDeviceKw");
+      if (kwEl) kwEl.hidden = t.value !== "kw";
+      markEdited(); return true;
+    }
+    if (t.hasAttribute("data-sc-sel")) {
+      statsCfg()[t.getAttribute("data-sc-sel")] = t.value;
+      markEdited(); return true;
+    }
+    return false;
+  }
   function handleListEvent(t, evType) {
     for (var prefix in LIST_DEFS) {
       var def = LIST_DEFS[prefix];
@@ -6841,6 +7019,7 @@
       var t = e.target;
       if (handlePlanEvent(t, "input")) return;
       if (handleEnergyEvent(t, "input")) return;
+      if (handleStatsCfgEvent(t, "input")) return;
       var path = t.getAttribute("data-mpath");
       if (path) {
         /* マイナスは受け付けない。料金マスタに負の値が入ると、
@@ -6872,6 +7051,7 @@
     });
     $("masterBody").addEventListener("change", function (e) {
       if (handlePlanEvent(e.target, "change")) return;
+      if (handleStatsCfgEvent(e.target, "change")) return;
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
