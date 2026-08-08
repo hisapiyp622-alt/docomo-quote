@@ -1,6 +1,6 @@
 {
-  "name": "ケータイ見積もり",
-  "short_name": "ケータイ見積",
+  "name": "ミツモリン（料金見積もりシミュレーション）",
+  "short_name": "ミツモリン",
   "start_url": "./",
   "scope": "../",
   "display": "standalone",

@@ -1,8 +1,9 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "kq-v94";
+var CACHE = "kq-v95";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "changelog.js",
   "data.js", "qr.js", "ienaka.js", "firebase-config.js",
   "manifest.webmanifest", "icon.svg",
+  "img/mitsumorin-hello.png", "img/mitsumorin-sheet.png",
   "TERMS.md", "LICENSE.md", "PRIVACY.md", "SUPPORT.md"];
 
 self.addEventListener("install", function (e) {
