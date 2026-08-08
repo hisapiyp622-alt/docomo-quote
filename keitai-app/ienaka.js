@@ -395,8 +395,8 @@
       if (shinki && o.koji && state.opts[o.id] && !banpoShown) {
         banpoShown = true;
         h += '<div class="field tv-koji"><label>電話番号</label><select data-iebanpo="1">'
-          + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番（工事料1,100円のみ）</option>'
-          + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり（＋同番移行2,200円）</option>'
+          + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番</option>'
+          + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり</option>'
           + "</select></div>"
           + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
       }
