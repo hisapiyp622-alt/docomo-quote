@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.50.0";
+  var APP_VERSION = "1.50.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5952,10 +5952,31 @@
       + '<ellipse cx="68" cy="128" rx="6" ry="3.4" fill="#2f5f92"/>'
       + "</svg>";
   }
+  /* 正式なキャラクター画像（PNG）。keitai-app/img/ に下の名前で置くと、
+   * 加工せずそのまま表示する。無い間は mascotSvg() の仮キャラで表示する。 */
+  var MASCOT_IMG = { hello: "img/mitsumorin-hello.png", sheet: "img/mitsumorin-sheet.png" };
+  var mascotImgOk = {}; // pose -> true(読めた) / false(無かった)
   var tourStep = 0;
+  function renderMascot(pose) {
+    var box = $("tourMascot");
+    if (mascotImgOk[pose] === false || !MASCOT_IMG[pose]) {
+      box.innerHTML = mascotSvg(pose);
+      return;
+    }
+    var img = new Image();
+    img.alt = "ミツモリン";
+    img.onload = function () { mascotImgOk[pose] = true; };
+    img.onerror = function () {
+      mascotImgOk[pose] = false;
+      box.innerHTML = mascotSvg(pose);
+    };
+    img.src = MASCOT_IMG[pose];
+    box.innerHTML = "";
+    box.appendChild(img);
+  }
   function renderTourStep() {
     var st = TOUR_STEPS[tourStep];
-    $("tourMascot").innerHTML = mascotSvg(st.pose);
+    renderMascot(st.pose);
     $("tourText").textContent = st.t;
     $("tourDots").innerHTML = TOUR_STEPS.map(function (x, i) {
       return "<span" + (i === tourStep ? ' class="on"' : "") + "></span>";
