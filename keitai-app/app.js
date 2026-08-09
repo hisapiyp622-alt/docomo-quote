@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.52.0";
+  var APP_VERSION = "1.53.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -272,7 +272,20 @@
       el.innerHTML = '<p class="hint">保存した見積もりはまだありません。</p>';
       return;
     }
-    el.innerHTML = savedList.map(function (it) {
+    // 検索と状態での絞り込み（保存タブの上の欄）
+    var q = (($("savedSearch") && $("savedSearch").value) || "").trim().toLowerCase();
+    var stFil = ($("savedStatus") && $("savedStatus").value) || "all";
+    var list = savedList.filter(function (it) {
+      if (stFil !== "all" && (it.result || "") !== stFil) return false;
+      if (!q) return true;
+      var hay = [it.name, it.custName, it.planName, savedWhen(it.savedAt)].join(" ").toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+    if (!list.length) {
+      el.innerHTML = '<p class="hint">条件に合う保存が見つかりません。</p>';
+      return;
+    }
+    el.innerHTML = list.map(function (it) {
       return '<div class="saved-row">'
         + '<div class="saved-main">'
         + '<div class="saved-name">' + esc(it.name) + "</div>"
@@ -621,7 +634,54 @@
       rows.push({ name: s.name, prop: a.length, won: won, lost: lost });
     });
     function rate(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : "－"; }
-    var h = '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th></tr>';
+
+    // ---- 目標（店舗全体・月あたりの成約件数。料金マスタに保存して全端末で共通） ----
+    var head = "";
+    var goal = num(MASTER.statsGoal || 0);
+    head += '<div class="stats-goal"><label>月の成約目標 <input type="number" id="statsGoalInput" min="0" value="'
+      + (goal || "") + '" placeholder="未設定"> 件</label>';
+    if (goal > 0 && mFil !== "all" && sFil === "all") {
+      var pct = Math.min(100, Math.round(totals.won * 100 / goal));
+      head += '<div class="goal-bar"><div class="goal-fill" style="width:' + pct + '%"></div></div>'
+        + '<span class="goal-note">' + esc(mFil) + " の成約 " + totals.won + " / " + goal
+        + " 件（達成率 " + Math.round(totals.won * 100 / goal) + "%）</span>";
+    } else if (goal > 0) {
+      head += '<span class="goal-note">目標は店舗全体の件数です。期間で月を、担当で「全員」を選ぶと達成率が出ます</span>';
+    }
+    head += "</div>";
+
+    // ---- 前月との比較（月を選んでいるときだけ） ----
+    if (mFil !== "all") {
+      var pmY = +mFil.slice(0, 4), pmM = +mFil.slice(5) - 1;
+      if (!pmM) { pmY--; pmM = 12; }
+      var pm = pmY + "/" + ("0" + pmM).slice(-2);
+      var prev = { prop: 0, won: 0, lost: 0 };
+      config.staff.forEach(function (s2) {
+        if (sFil !== "all" && s2.id !== sFil) return;
+        var a2 = (lists[s2.id] || []).filter(function (it) { return statsMonthOf(it.savedAt) === pm; });
+        prev.prop += a2.length;
+        prev.won += a2.filter(function (it) { return it.result === "won"; }).length;
+        prev.lost += a2.filter(function (it) { return it.result === "lost"; }).length;
+      });
+      function scBox(label, cur, pv, unit) {
+        var d2 = cur - pv;
+        var cls = d2 > 0 ? "up" : (d2 < 0 ? "down" : "");
+        var dTxt = d2 > 0 ? "＋" + d2 : (d2 < 0 ? "−" + (-d2) : "±0");
+        return '<div class="sc-box"><span class="sc-label">' + label + "</span>"
+          + '<span class="sc-value">' + cur + (unit || "") + "</span>"
+          + '<span class="sc-diff ' + cls + '">前月 ' + pv + (unit || "") + "（" + dTxt + "）</span></div>";
+      }
+      var curRate = totals.prop ? Math.round(totals.won * 100 / totals.prop) : 0;
+      var prevRate = prev.prop ? Math.round(prev.won * 100 / prev.prop) : 0;
+      head += '<div class="stats-compare">'
+        + scBox("提案", totals.prop, prev.prop, "件")
+        + scBox("成約", totals.won, prev.won, "件")
+        + scBox("見送り", totals.lost, prev.lost, "件")
+        + scBox("成約率", curRate, prevRate, "%")
+        + "</div>";
+    }
+
+    var h = head + '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th></tr>';
     rows.forEach(function (r2) {
       h += "<tr><td>" + esc(r2.name) + "</td><td>" + r2.prop + "</td><td>" + r2.won + "</td><td>" + r2.lost + "</td><td>" + rate(r2.won, r2.prop) + "</td></tr>";
     });
@@ -1495,8 +1555,7 @@
    * 実質復旧できなくなる。 */
   function bkIsArr(x) { return Object.prototype.toString.call(x) === "[object Array]"; }
   function bkIsObj(x) { return !!x && typeof x === "object" && !bkIsArr(x); }
-  function validateBackup(d) {
-    var m = d.master;
+  function validateMasterObj(m) {
     if (!bkIsObj(m)) return "料金マスタがありません";
     if (!bkIsArr(m.plans) || !m.plans.length) return "料金プランの形が正しくありません";
     if (m.plans.some(function (p) { return !bkIsObj(p) || !p.id || !bkIsArr(p.tiers) || !p.tiers.length; })) {
@@ -1505,6 +1564,11 @@
     if (!bkIsArr(m.options)) return "オプションの形が正しくありません";
     if (!bkIsArr(m.feeItems)) return "商材・初期費用の形が正しくありません";
     if (m.accessories != null && !bkIsArr(m.accessories)) return "アクセサリの形が正しくありません";
+    return null;
+  }
+  function validateBackup(d) {
+    var mErr = validateMasterObj(d.master);
+    if (mErr) return mErr;
     if (d.config != null) {
       if (!bkIsObj(d.config)) return "店舗設定の形が正しくありません";
       if (!bkIsArr(d.config.staff) || !d.config.staff.length
@@ -5543,6 +5607,7 @@
     h += "</div>";
 
     $("masterBody").innerHTML = h;
+    applyMasterSearch(); // 検索中に再描画されても絞り込みを維持する
 
     /* filter を渡すと、その条件に合う項目だけを並べる。
      * 並べ替えは同じグループの中で入れ替わるよう、相手の位置を data-*-swap で渡す。
@@ -6144,6 +6209,94 @@
         applySheetFs(this.value);
         try { localStorage.setItem(SHEET_FS_KEY, this.value); } catch (e) {}
       });
+    });
+  }
+
+  /* ---------- お客様提示モード ----------
+   * 見積書タブで、操作ボタン類を隠して見積書だけを大きく見せる。
+   * お客様に画面を向けて説明するときに使う。終了は右下のボタンかEscキー。 */
+  function initPresent() {
+    var b = $("presentBtn"), x = $("presentExit");
+    if (!b || !x) return;
+    function end() { document.body.classList.remove("present"); x.hidden = true; }
+    b.addEventListener("click", function () {
+      document.body.classList.add("present");
+      x.hidden = false;
+      window.scrollTo(0, 0);
+    });
+    x.addEventListener("click", end);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") end(); });
+  }
+
+  /* ---------- マスタ設定の検索 ----------
+   * 項目名で行を絞り込む。プラン・オプション・商材・アクセサリ・でんきガスの行が対象。 */
+  function applyMasterSearch() {
+    var inp = $("masterSearch");
+    if (!inp) return;
+    var q = inp.value.trim().toLowerCase();
+    var rows = document.querySelectorAll("#masterBody .adhoc-row, #masterBody .plan-edit");
+    Array.prototype.forEach.call(rows, function (r2) {
+      if (!q) { r2.hidden = false; return; }
+      var t = (r2.textContent || "").toLowerCase();
+      // 名称は入力欄の中にあるため value も見る
+      Array.prototype.forEach.call(r2.querySelectorAll('input[type="text"]'), function (i2) {
+        t += " " + (i2.value || "").toLowerCase();
+      });
+      r2.hidden = t.indexOf(q) < 0;
+    });
+  }
+  function initMasterSearch() {
+    var inp = $("masterSearch");
+    if (inp) inp.addEventListener("input", applyMasterSearch);
+  }
+
+  /* ---------- マスタ構成の取り込み ----------
+   * 「現在のマスタ構成をコピー」した文字列を貼り付けて、この端末（店舗）の
+   * 料金マスタを置き換える。取り込む前の内容は履歴に残す。 */
+  function initImportMaster() {
+    var btn = $("importMasterBtn"), wrap = $("importMasterWrap"), box = $("importMasterBox"),
+        go = $("importMasterGo"), cancel = $("importMasterCancel"), msg = $("importMasterMsg");
+    if (!btn || !wrap) return;
+    function say(t, err) {
+      msg.textContent = t;
+      msg.hidden = false;
+      msg.style.color = err ? "#C62828" : "";
+    }
+    btn.addEventListener("click", function () {
+      wrap.hidden = !wrap.hidden;
+      msg.hidden = true;
+      if (!wrap.hidden) box.focus();
+    });
+    cancel.addEventListener("click", function () {
+      wrap.hidden = true;
+      box.value = "";
+      msg.hidden = true;
+    });
+    go.addEventListener("click", function () {
+      var d = null;
+      try { d = JSON.parse(box.value); } catch (e) {}
+      if (!d) {
+        say("貼り付けた内容が読み取れません。「現在のマスタ構成をコピー」した内容を、そのまま貼り付けてください。", true);
+        return;
+      }
+      var verr = validateMasterObj(d);
+      if (verr) { say("取り込めません（" + verr + "）。", true); return; }
+      if (!window.confirm("貼り付けた内容で料金マスタを置き換えます。\nいまの内容は履歴に残るので、あとから戻せます。よろしいですか？")) return;
+      histSettle();
+      var back = histAdd("取り込み前の内容", JSON.stringify(MASTER), true);
+      lsSet(MASTER_KEY, JSON.stringify(d));
+      loadMaster();
+      histAttachChanges(back, JSON.stringify(MASTER));
+      histMark();
+      renderMasterTab();
+      renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
+      renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+      renderCampaigns(); renderDiscountHint();
+      syncFormFromState();
+      recalc();
+      box.value = "";
+      wrap.hidden = true;
+      say("取り込みました。前の内容は「料金マスタの履歴」から戻せます。クラウド利用時は他の端末にも同期されます。");
     });
   }
 
@@ -7118,6 +7271,23 @@
       $("statsStaff").addEventListener("change", function () { renderStats(false); });
       $("statsReload").addEventListener("click", function () { renderStats(true); });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
+      $("statsPrint").addEventListener("click", function () {
+        document.body.classList.add("print-stats");
+        window.print();
+        setTimeout(function () { document.body.classList.remove("print-stats"); }, 800);
+      });
+      window.addEventListener("afterprint", function () { document.body.classList.remove("print-stats"); });
+      // 目標の入力（料金マスタに保存され、全端末で揃う）
+      $("statsBody").addEventListener("change", function (e) {
+        if (e.target.id !== "statsGoalInput") return;
+        MASTER.statsGoal = Math.max(0, Math.round(num(e.target.value)));
+        saveMaster();
+        renderStats(false);
+      });
+      // 保存タブの検索・絞り込み
+      var ss = $("savedSearch"), sst = $("savedStatus");
+      if (ss) ss.addEventListener("input", renderSaved);
+      if (sst) sst.addEventListener("change", renderSaved);
     }
     var savedEl = $("savedList");
     if (savedEl) {
@@ -7573,6 +7743,9 @@
   initTplHold();
   initTour();
   initSheetFs();
+  initPresent();
+  initMasterSearch();
+  initImportMaster();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
   // 何かの理由で画面の決定に至らなくても、隠したままにはしない
   setTimeout(bootDone, 6000);

@@ -869,3 +869,45 @@ body.sorting .sort-chip{cursor:grabbing}
 /* 保存失敗の警告（lsSet が失敗したとき画面上部に出す） */
 .storage-warn{position:sticky;top:0;z-index:80;background:#c62828;color:#fff;
   font-size:13px;font-weight:700;padding:8px 14px;text-align:center}
+
+/* 保存タブの検索・絞り込み */
+.saved-filter{display:flex;gap:8px;margin-bottom:10px}
+.saved-filter input[type=search]{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13.5px}
+.saved-filter select{padding:7px 8px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13.5px}
+
+/* 実績: 月の成約目標 */
+.stats-goal{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:2px 0 10px}
+.stats-goal label{font-size:13px;font-weight:700}
+.stats-goal input{width:72px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.goal-bar{flex:1;min-width:130px;height:12px;background:#EDEEF0;border-radius:999px;overflow:hidden}
+.goal-fill{height:100%;background:var(--red);border-radius:999px;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.goal-note{font-size:12.5px;color:var(--muted);font-weight:700}
+
+/* 実績: 前月比較 */
+.stats-compare{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.sc-box{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;
+  padding:6px 14px;min-width:104px;background:#fff}
+.sc-box .sc-label{font-size:11.5px;color:var(--muted);font-weight:700}
+.sc-box .sc-value{font-size:19px;font-weight:700}
+.sc-box .sc-diff{font-size:11.5px;font-weight:700;color:var(--muted)}
+.sc-box .sc-diff.up{color:#1B7E45}
+.sc-box .sc-diff.down{color:#C62828}
+
+/* お客様提示モード */
+body.present .app-header,body.present .summary-bar,body.present .sheet-scope,
+body.present #tab-sheet .actions,body.present .storage-warn{display:none !important}
+body.present{background:#fff}
+body.present .sheet{box-shadow:none}
+.present-exit{position:fixed;right:14px;bottom:14px;z-index:90;padding:11px 18px;border-radius:999px;
+  border:none;background:rgba(35,45,65,.88);color:#fff;font:inherit;font-size:13.5px;font-weight:700;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer}
+
+/* 実績の印刷（実績タブの「印刷」ボタン） */
+@media print{
+  body.print-stats #tab-sheet,body.print-stats #tab-staff{display:none !important}
+  body.print-stats #tab-stats{display:block !important}
+  body.print-stats .stats-bar,body.print-stats .stats-goal input{display:none !important}
+  body.print-stats .stats-table{width:100%}
+  body.print-stats .sc-box{break-inside:avoid}
+}
