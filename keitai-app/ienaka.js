@@ -814,6 +814,16 @@
        * （出典: docomo.ne.jp ドコモ光お申込みページ・2026-08-07確認） */
       step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
       step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc", "7〜10日後");
+      // 工事の前にルーターを手元にそろえておく工程（レンタル・購入・持込で文言を変える）
+      var rentalS = (state.product === "hikari1g" && state.routerRental !== "nashi")
+        || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
+      if (rentalS) {
+        step("ルーターのお受け取り", "レンタルの無線ルーターが、プロバイダから郵送で届きます。工事の日まで大切に保管してください", "box", "工事日まで");
+      } else if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
+        step("ルーターのご準備", "ご購入の10ギガ対応ルーターを、工事の日までにご用意ください", "box", "工事日まで");
+      } else {
+        step("ルーターのご準備", "お使いになる無線ルーターを、工事の日までにご用意ください", "box", "工事日まで");
+      }
       step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools", "2週間〜1か月後");
       step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router", "工事の当日");
       step("ご利用開始", "", "start", "工事の当日から");
@@ -828,11 +838,12 @@
       step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください", "router", "切替日の当日");
       step("ご利用開始", "", "start", "切替日の当日から");
     }
-    // レンタルルーターが届くご案内（1ギガのプロバイダレンタル・ahamo光のレンタル）
+    /* レンタルルーターが届くご案内（1ギガのプロバイダレンタル・ahamo光のレンタル）。
+     * 新規は「ルーターのお受け取り」を工程として入れたので、注記は転用・事業者変更だけ */
     var rental = (state.product === "hikari1g" && state.routerRental !== "nashi")
       || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
-    if (state.product !== "home5g" && rental) {
-      notes.push("レンタルの無線ルーターは、" + (state.applyType === "shinki" ? "工事日" : "切替日") + "までにプロバイダから届きます");
+    if (state.product !== "home5g" && rental && state.applyType !== "shinki") {
+      notes.push("レンタルの無線ルーターは、切替日までにプロバイダから届きます");
     }
     if (isHikari() && state.provider === "@nifty") {
       notes.push("開通までのご不明点は、@niftyのフォローコール（電話サポート）でご相談いただけます");
