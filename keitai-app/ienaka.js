@@ -96,9 +96,10 @@
   var IENAKA_OPTS = [
     /* phone: 光電話の印。番号ポータビリティの選択と、同番移行2,200円・
      * 10ギガ機器設置1,650円の判定に使う。
-     * 交換機等工事費1,100円は店舗の方針で見積もりに入れない（2026-08-09）。 */
-    { id: "denwa", name: "ドコモ光電話", price: 550, phone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, phone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+     * 交換機等工事費1,100円（koji）は初期費用に自動で入れるが、
+     * タイル横の「工事料+1,100円」の表示は出さない（店舗の指定・2026-08-09）。 */
+    { id: "denwa", name: "ドコモ光電話", price: 550, phone: true, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, phone: true, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
@@ -393,7 +394,7 @@
         : ' <span class="opt-price"><input type="number" data-ieoptprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>';
       h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-ieopt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
         + esc(o.name) + priceHtml
-        + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
+        + (o.koji && shinki && !o.phone ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
       // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
       if (shinki && o.phone && state.opts[o.id] && !banpoShown) {
