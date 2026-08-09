@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.62.0";
+  var APP_VERSION = "1.63.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -260,6 +260,80 @@
     persistSaved();
     renderSaved();
   }
+  function savedNote(text) {
+    var el = $("savedMsg");
+    if (!el) return;
+    el.textContent = text;
+    el.hidden = false;
+    if (savedNote.t) clearTimeout(savedNote.t);
+    savedNote.t = setTimeout(function () { el.hidden = true; }, 6000);
+  }
+
+  /* 見積もりを他の担当へ渡す。
+   * 店頭の流れ: コンデザが提案の見積もりを作る → 商談する担当者へ渡す →
+   * 担当者が自分の保存一覧から開いて商談し、実際の成約内容を記録する。
+   * 実績は「提案＝作った担当（コンデザ）」「成約・収益＝渡された担当」。
+   * お客様名は端末内だけの情報なので渡さない。 */
+  function forwardSaved(id) {
+    var it = savedList.filter(function (x) { return x.id === id; })[0];
+    if (!it) return;
+    var others = config.staff.filter(function (s2) { return s2.id !== activeStaff().id; });
+    if (!others.length) { savedNote("渡せる担当がいません。マスタ設定で担当者を追加してください。"); return; }
+    pickStaff({
+      title: "担当へ渡す",
+      lead: "「" + it.name + "」を担当の保存一覧に渡します。提案はあなたの実績に、成約と収益は渡した担当に付きます。お客様名は渡りません（端末内だけの情報のため）。",
+      label: "渡す担当", choices: others, value: others[0].id, okText: "渡す"
+    }, function (to) {
+      if (!to) return;
+      var now = Date.now();
+      var copy = JSON.parse(JSON.stringify(it));
+      copy.id = "q" + now + "x" + Math.floor(Math.random() * 10000);
+      copy.savedAt = now; copy.upAt = now;
+      copy.result = ""; copy.resultAt = 0;
+      delete copy.resultStaff; delete copy.wonData; delete copy.wonPattern;
+      delete copy.sentTo; delete copy.sentAt; delete copy.sentId;
+      copy.fromStaff = activeStaff().id;
+      copy.srcId = it.id;
+      copy.custName = "";
+      ((copy.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+      it.sentTo = to; it.sentAt = now; it.sentId = copy.id; it.upAt = now;
+      it.result = ""; it.resultAt = 0; delete it.resultStaff;
+      persistSaved();
+      renderSaved();
+      sendSavedTo(to, copy, it);
+    });
+  }
+  function sendSavedTo(to, copy, src) {
+    var nm = staffName(to);
+    function localAdd() {
+      var cur = [];
+      try { cur = JSON.parse(localStorage.getItem(savedKey(to)) || "null") || []; } catch (e) {}
+      if (!cur.some(function (x) { return x.id === copy.id; })) cur.unshift(copy);
+      lsSet(savedKey(to), JSON.stringify(cur));
+    }
+    if (!cloudOn()) {
+      localAdd();
+      savedNote(nm + " に渡しました。この端末で " + nm + " に切り替えると保存一覧に入っています。");
+      return;
+    }
+    syncStatus("同期中…", "");
+    savedDoc(to).get().then(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      var list = [];
+      try { list = JSON.parse((d && d.list) || "[]") || []; } catch (e) {}
+      if (!list.some(function (x) { return x.id === copy.id; })) list.unshift(copy);
+      return savedDoc(to).set(stamp({ list: JSON.stringify(list), del: (d && d.del) || "{}" }));
+    }).then(function () {
+      localAdd(); cloudOk();
+      savedNote(nm + " に渡しました。" + nm + " の保存一覧に入っています。");
+    }, function (err) {
+      cloudNg(err);
+      // 渡せなかったときは「渡した」印を戻す（成約を記録できないまま残らないように）
+      if (src) { delete src.sentTo; delete src.sentAt; delete src.sentId; src.upAt = Date.now(); persistSaved(); renderSaved(); }
+      savedNote("いまは渡せませんでした。通信できる場所でもう一度お試しください。");
+    });
+  }
+
   function savedWhen(ms) {
     var d = new Date(ms);
     return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + ("0" + d.getDate()).slice(-2)
@@ -294,20 +368,34 @@
         + "　月額 " + yen(it.monthly || 0)
         + (it.initial ? "　初期費用 " + yen(it.initial) : "")
         + "</div></div>"
-        + '<div class="saved-status">'
-        + [["", "提案中"], ["won", "成約"], ["lost", "見送り"]].map(function (st2) {
-            return '<button type="button" class="saved-st' + ((it.result || "") === st2[0] ? " on" : "")
-              + '" data-savedresult="' + st2[0] + '" data-savedrid="' + it.id + '">' + st2[1] + "</button>";
-          }).join("")
-        + "</div>"
+        + (it.sentTo
+            ? '<div class="saved-status"><span class="saved-sent">' + esc(staffName(it.sentTo)) + " へ引き渡し済み</span></div>"
+            : '<div class="saved-status">'
+              + [["", "提案中"], ["won", "成約"], ["lost", "見送り"]].map(function (st2) {
+                  return '<button type="button" class="saved-st' + ((it.result || "") === st2[0] ? " on" : "")
+                    + '" data-savedresult="' + st2[0] + '" data-savedrid="' + it.id + '">' + st2[1] + "</button>";
+                }).join("")
+              + "</div>")
         + '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>'
+        + (config.staff.length > 1 && !it.fromStaff && !it.sentTo
+            ? '<button class="btn-sub" data-savedsend="' + it.id + '" type="button">担当へ渡す</button>' : "")
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
         + (it.result === "won" && it.wonData
             ? '<div class="saved-wonnote">成約した内容を記録済み（保存したときの提案内容と分けて実績に集計されます）</div>'
             : "")
+        + (it.fromStaff
+            ? '<div class="saved-wonnote">' + esc(staffName(it.fromStaff))
+              + " から受け取った見積もりです（提案は " + esc(staffName(it.fromStaff))
+              + " の実績、成約と収益はあなたの実績になります）</div>"
+            : "")
+        + (it.sentTo
+            ? '<div class="saved-wonnote">' + esc(staffName(it.sentTo))
+              + " に渡しました（成約・見送りは " + esc(staffName(it.sentTo))
+              + " が記録します。提案はあなたの実績のままです）</div>"
+            : "")
         + (it.result && it.resultStaff && it.resultStaff !== activeStaff().id
             ? '<div class="saved-wonnote">' + (it.result === "won" ? "成約" : "見送り") + "を決めた担当: "
-              + esc((config.staff.filter(function (s2) { return s2.id === it.resultStaff; })[0] || {}).name || "－")
+              + esc(staffName(it.resultStaff))
               + "（収益はこの担当に付きます）</div>"
             : "")
         + "</div>";
@@ -332,21 +420,19 @@
   /* 成約・見送りを記録するときの確認。担当が2名以上いる店舗では
    * 「決めた担当」を選べる（コンデザが提案を作り、担当者が成約を決める運用）。
    * 既定はログイン中の担当なので、1人で完結する運用では今までどおり。 */
-  function askResult(result, done) {
-    var label = result === "won" ? "成約" : "見送り";
+  /* 担当を選ぶ小さなダイアログ。成約を決めた担当と、見積もりの引き渡し先で使う */
+  function pickStaff(opt, done) {
     var dlg = $("resultDlg");
-    if (!dlg || config.staff.length < 2) {
-      if (window.confirm("この応対を「" + label + "」として実績に記録します。よろしいですか？")) done(activeStaff().id);
-      return;
-    }
-    $("resultDlgTitle").textContent = label + "として記録";
-    $("resultDlgLead").textContent = "この応対を「" + label + "」として実績に記録します。";
+    if (!dlg) { done(null); return; }
+    $("resultDlgTitle").textContent = opt.title;
+    $("resultDlgLead").textContent = opt.lead || "";
     var sel = $("resultDlgStaff");
-    sel.innerHTML = config.staff.map(function (s2) {
+    sel.innerHTML = opt.choices.map(function (s2) {
       return '<option value="' + esc(s2.id) + '">' + esc(s2.name || s2.id) + "</option>";
     }).join("");
-    sel.value = activeStaff().id;
-    $("resultDlgStaffWrap").querySelector("label").textContent = label + "を決めた担当";
+    if (opt.value) sel.value = opt.value;
+    $("resultDlgStaffWrap").querySelector("label").textContent = opt.label;
+    $("resultDlgOk").textContent = opt.okText || "記録する";
     dlg.hidden = false;
     function close() {
       dlg.hidden = true;
@@ -356,6 +442,22 @@
     function ok() { var v = sel.value; close(); done(v); }
     $("resultDlgOk").addEventListener("click", ok);
     $("resultDlgCancel").addEventListener("click", close);
+  }
+  function staffName(id) {
+    return (config.staff.filter(function (s2) { return s2.id === id; })[0] || {}).name || "－";
+  }
+  function askResult(result, done) {
+    var label = result === "won" ? "成約" : "見送り";
+    if (!$("resultDlg") || config.staff.length < 2) {
+      if (window.confirm("この応対を「" + label + "」として実績に記録します。よろしいですか？")) done(activeStaff().id);
+      return;
+    }
+    pickStaff({
+      title: label + "として記録",
+      lead: "この応対を「" + label + "」として実績に記録します。",
+      label: label + "を決めた担当",
+      choices: config.staff, value: activeStaff().id, okText: "記録する"
+    }, function (v) { if (v) done(v); });
   }
 
   function recordOutcome(result) {
@@ -659,6 +761,19 @@
     var me = activeStaff().id;
     /* 担当者の画面に出すのは、自分が作った応対と、自分が成約・見送りを決めた応対だけ */
     function mineOnly(it, sid) { return admin || sid === me || resStaffOf(it, sid) === me; }
+    /* 引き渡し（コンデザ → 担当者）の対応づけ。
+     * 渡した元の見積もりの結果は、渡した先の控えに記録される。 */
+    var copyBySrc = {};
+    Object.keys(lists).forEach(function (sid) {
+      (lists[sid] || []).forEach(function (it) { if (it.srcId) copyBySrc[it.srcId] = it; });
+    });
+    function effResult(it) {
+      if (it.result) return it.result;
+      if (it.sentTo && copyBySrc[it.id]) return copyBySrc[it.id].result || "";
+      return "";
+    }
+    // 受け取った控え（fromStaff あり）は提案として数えない。提案は作った担当のもの
+    function isCopy(it) { return !!it.fromStaff; }
     // 期間の選択肢（保存がある月）
     var monthSel = $("statsMonth"), staffSel = $("statsStaff");
     var months = {};
@@ -701,14 +816,16 @@
     var anySplit = false;
     Object.keys(lists).forEach(function (sid) {
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+        if (it.fromStaff || it.sentTo) anySplit = true;
         if (it.result && resStaffOf(it, sid) !== sid) anySplit = true;
       });
     });
     config.staff.forEach(function (s) {
       if (sFil !== "all" && s.id !== sFil) return;
-      var a = (lists[s.id] || []).filter(inPeriod);   // その担当が作った応対
-      var won = a.filter(function (it) { return it.result === "won"; }).length;
-      var lost = a.filter(function (it) { return it.result === "lost"; }).length;
+      // その担当が作った応対（他の担当から受け取った控えは含めない）
+      var a = (lists[s.id] || []).filter(inPeriod).filter(function (it) { return !isCopy(it); });
+      var won = a.filter(function (it) { return effResult(it) === "won"; }).length;
+      var lost = a.filter(function (it) { return effResult(it) === "lost"; }).length;
       // その担当が成約を決めた件（他の担当が作った提案を決めた分も含む）と、その収益
       var dec = 0, rev = 0;
       Object.keys(lists).forEach(function (sid) {
@@ -787,8 +904,9 @@
     h += "</table>";
     if (anySplit) {
       h += '<p class="hint"><strong>提案・成約・見送り・成約率</strong>は、その担当が<strong>作った応対</strong>の結果です'
-        + '（コンデザが提案を作った分はコンデザに付きます）。<strong>決定</strong>は、その担当が「成約」を記録した件数で、'
-        + '他の担当が作った提案を決めた分も入ります。<strong>収益は決定した担当に全額</strong>付きます。</p>';
+        + '（コンデザが作って担当へ渡した分は、渡した先で成約になってもコンデザの成約として数えます）。'
+        + '<strong>決定</strong>は、その担当が「成約」を記録した件数で、受け取った見積もりを決めた分も入ります。'
+        + '<strong>収益は決定した担当に全額</strong>付きます。受け取った見積もりは提案には数えません（二重に数えないため）。</p>';
     }
 
     // 項目別のまとめ（提案＝最初に保存した内容、成約＝実際に成約した内容）
@@ -797,7 +915,7 @@
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
         if (!mineOnly(it, sid)) return;
         // 提案＝作った担当、成約＝決めた担当で数える
-        if (sFil === "all" || sid === sFil) {
+        if (!isCopy(it) && (sFil === "all" || sid === sFil)) {
           var prop = statsSavedItems(it, false);
           Object.keys(prop).forEach(function (k) {
             if (!items[k]) items[k] = { name: prop[k], prop: 0, won: 0 };
@@ -872,7 +990,7 @@
       Object.keys(lists).forEach(function (sid) {
         (lists[sid] || []).filter(inPeriod).forEach(function (it) {
           var dec2 = resStaffOf(it, sid);
-          if (sFil === "all" || sid === sFil) {
+          if (!isCopy(it) && (sFil === "all" || sid === sFil)) {
             var prop2 = statsSavedItems(it, false);
             Object.keys(prop2).forEach(function (k) { bucket(sid, k, prop2[k]).prop++; });
           }
@@ -7543,6 +7661,8 @@
         var lid = t.getAttribute && t.getAttribute("data-savedload");
         var did = t.getAttribute && t.getAttribute("data-saveddel");
         var rid = t.getAttribute && t.getAttribute("data-savedrid");
+        var sid2 = t.getAttribute && t.getAttribute("data-savedsend");
+        if (sid2) { forwardSaved(sid2); return; }
         if (rid) {
           setSavedResult(rid, t.getAttribute("data-savedresult") || "");
           return;
