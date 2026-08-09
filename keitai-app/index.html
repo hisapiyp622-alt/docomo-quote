@@ -406,15 +406,45 @@
           <option value="jigyosha">事業者変更（他社光コラボから）</option>
         </select>
       </div>
-      <div class="field">
-        <label for="ieCurLine">現在の回線（ヒアリング）</label>
-        <select id="ieCurLine"><!-- JSで生成 --></select>
+      <div class="sub-checks ie-cur" id="ieCurCard">
+        <span class="sub-label">現在の固定回線（ヒアリング）</span>
+        <div class="field">
+          <label for="ieCurLine">ネット</label>
+          <select id="ieCurLine"><!-- JSで生成 --></select>
+        </div>
+        <div class="field" id="ieCurLineOtherField" hidden>
+          <label for="ieCurLineOther">回線名（その他）</label>
+          <input type="text" id="ieCurLineOther" maxlength="30" placeholder="例：○○光">
+        </div>
+        <p class="hint" id="ieCurLineHint" hidden></p>
+        <div class="field">
+          <label for="ieCurPhone">固定電話</label>
+          <select id="ieCurPhone">
+            <option value="">（未ヒアリング）</option>
+            <option value="set">回線とセット（あり）</option>
+            <option value="analog">アナログ電話（NTT加入電話）</option>
+            <option value="none">なし</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ieCurTv">テレビ</label>
+          <select id="ieCurTv">
+            <option value="">（未ヒアリング）</option>
+            <option value="yes">あり（回線でご視聴）</option>
+            <option value="no">なし（アンテナで視聴）</option>
+          </select>
+        </div>
+        <div class="sub-checks" id="ieCurTvBands" hidden>
+          <span class="sub-label">ご視聴</span>
+          <label class="check"><input type="checkbox" id="ieCurTvDigi"> 地デジ</label>
+          <label class="check"><input type="checkbox" id="ieCurTvBs"> BS</label>
+          <label class="check"><input type="checkbox" id="ieCurTvCs"> CS</label>
+        </div>
+        <label class="check" id="ieCurTvKeepField" hidden>
+          <input type="checkbox" id="ieCurTvKeep"> J:COMのテレビを残してご契約（解約はネットのみ）
+        </label>
+        <p class="hint" id="ieCurTvKeepHint" hidden></p>
       </div>
-      <div class="field" id="ieCurLineOtherField" hidden>
-        <label for="ieCurLineOther">回線名（その他）</label>
-        <input type="text" id="ieCurLineOther" maxlength="30" placeholder="例：○○光">
-      </div>
-      <p class="hint" id="ieCurLineHint" hidden></p>
       <div id="ieHikariFields">
         <div class="field">
           <label for="ieHousing">住居タイプ</label>
