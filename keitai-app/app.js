@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.55.2";
+  var APP_VERSION = "1.55.3";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -7726,8 +7726,21 @@
     state.jimuFee = jimuFeeFor(state.procType);
     state.atamakin = MASTER.fees.atamakin_default;
   }
-  $("recWonBtn").addEventListener("click", function () { recordOutcome("won"); });
-  $("recLostBtn").addEventListener("click", function () { recordOutcome("lost"); });
+  /* 成約・見送りは「⋯」を押したときだけ出す。
+   * お客様に画面を見せながら操作するため、常時「成約」「見送り」の文字が
+   * 見えていると印象が悪い。 */
+  $("recMenuBtn").addEventListener("click", function (e) {
+    e.stopPropagation();
+    var m = $("recMenu");
+    m.hidden = !m.hidden;
+  });
+  document.addEventListener("click", function (e) {
+    var m = $("recMenu");
+    if (!m || m.hidden) return;
+    if (!e.target.closest || !e.target.closest(".sum-rec")) m.hidden = true;
+  });
+  $("recWonBtn").addEventListener("click", function () { $("recMenu").hidden = true; recordOutcome("won"); });
+  $("recLostBtn").addEventListener("click", function () { $("recMenu").hidden = true; recordOutcome("lost"); });
   bindEvents();
   syncFormFromState();
   renderTplBar();

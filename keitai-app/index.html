@@ -769,8 +769,11 @@
     <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
     <div class="sum-rec">
       <span class="sum-recmsg" id="recOutcomeMsg" hidden></span>
-      <button type="button" id="recWonBtn" title="この応対を成約として実績に記録">成約</button>
-      <button type="button" id="recLostBtn" title="この応対を見送りとして実績に記録">見送り</button>
+      <div class="rec-pop" id="recMenu" hidden>
+        <button type="button" id="recWonBtn" title="この応対を成約として実績に記録">成約</button>
+        <button type="button" id="recLostBtn" title="この応対を見送りとして実績に記録">見送り</button>
+      </div>
+      <button type="button" id="recMenuBtn" class="rec-menu-btn" title="実績の記録" aria-label="実績の記録">⋯</button>
     </div>
   </div>
 </main>
