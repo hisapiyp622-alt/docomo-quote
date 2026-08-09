@@ -784,9 +784,15 @@ body.sorting .sort-chip{cursor:grabbing}
 .stats-table .stats-total td { font-weight: 700; background: #fafafa; }
 
 /* ---------- 実績のかんたん記録（まとめバーのボタン） ---------- */
-.sum-rec { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.sum-rec { display: flex; align-items: center; gap: 8px; margin-left: auto; position: relative; }
 .sum-recmsg { font-size: 12px; color: #9fe6ae; }
-.sum-rec button { border: 0; border-radius: 8px; padding: 7px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+/* 「⋯」ボタン: お客様に見えても意味の分からない控えめな見た目にする */
+.rec-menu-btn { border: 0; border-radius: 8px; padding: 7px 13px; font-size: 16px; font-weight: 700;
+  line-height: 1; cursor: pointer; background: rgba(255,255,255,.16); color: #fff; }
+/* 押したときだけ上に出る成約・見送り */
+.rec-pop { position: absolute; right: 0; bottom: calc(100% + 8px); display: flex; gap: 8px;
+  background: #fff; border-radius: 10px; padding: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.3); }
+.rec-pop button { border: 0; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 #recWonBtn { background: #1b7e34; color: #fff; }
 #recLostBtn { background: #666; color: #fff; }
 
