@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.63.0";
+  var APP_VERSION = "1.64.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -281,7 +281,7 @@
     if (!others.length) { savedNote("渡せる担当がいません。マスタ設定で担当者を追加してください。"); return; }
     pickStaff({
       title: "担当へ渡す",
-      lead: "「" + it.name + "」を担当の保存一覧に渡します。提案はあなたの実績に、成約と収益は渡した担当に付きます。お客様名は渡りません（端末内だけの情報のため）。",
+      lead: "「" + it.name + "」を担当の保存一覧に渡します。実績（提案・成約・収益）はすべて渡した担当に付き、この見積もりはあなたの実績には数えません。お客様名は渡りません（端末内だけの情報のため）。",
       label: "渡す担当", choices: others, value: others[0].id, okText: "渡す"
     }, function (to) {
       if (!to) return;
@@ -385,13 +385,12 @@
             : "")
         + (it.fromStaff
             ? '<div class="saved-wonnote">' + esc(staffName(it.fromStaff))
-              + " から受け取った見積もりです（提案は " + esc(staffName(it.fromStaff))
-              + " の実績、成約と収益はあなたの実績になります）</div>"
+              + " から受け取った見積もりです（提案・成約・収益はすべてあなたの実績になります）</div>"
             : "")
         + (it.sentTo
             ? '<div class="saved-wonnote">' + esc(staffName(it.sentTo))
-              + " に渡しました（成約・見送りは " + esc(staffName(it.sentTo))
-              + " が記録します。提案はあなたの実績のままです）</div>"
+              + " に渡しました（実績は " + esc(staffName(it.sentTo))
+              + " に付きます。この見積もりはあなたの実績には数えません）</div>"
             : "")
         + (it.result && it.resultStaff && it.resultStaff !== activeStaff().id
             ? '<div class="saved-wonnote">' + (it.result === "won" ? "成約" : "見送り") + "を決めた担当: "
@@ -761,19 +760,10 @@
     var me = activeStaff().id;
     /* 担当者の画面に出すのは、自分が作った応対と、自分が成約・見送りを決めた応対だけ */
     function mineOnly(it, sid) { return admin || sid === me || resStaffOf(it, sid) === me; }
-    /* 引き渡し（コンデザ → 担当者）の対応づけ。
-     * 渡した元の見積もりの結果は、渡した先の控えに記録される。 */
-    var copyBySrc = {};
-    Object.keys(lists).forEach(function (sid) {
-      (lists[sid] || []).forEach(function (it) { if (it.srcId) copyBySrc[it.srcId] = it; });
-    });
-    function effResult(it) {
-      if (it.result) return it.result;
-      if (it.sentTo && copyBySrc[it.id]) return copyBySrc[it.id].result || "";
-      return "";
-    }
-    // 受け取った控え（fromStaff あり）は提案として数えない。提案は作った担当のもの
-    function isCopy(it) { return !!it.fromStaff; }
+    /* 引き渡した元（コンデザが作って担当へ渡した見積もり）は実績に数えない。
+     * コンデザは見積もりを作る人で、提案・成約・見送りはすべて
+     * 商談した担当者の実績になる。渡した先の控えが1件として数えられる。 */
+    function isSent(it) { return !!it.sentTo; }
     // 期間の選択肢（保存がある月）
     var monthSel = $("statsMonth"), staffSel = $("statsStaff");
     var months = {};
@@ -816,21 +806,20 @@
     var anySplit = false;
     Object.keys(lists).forEach(function (sid) {
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-        if (it.fromStaff || it.sentTo) anySplit = true;
-        if (it.result && resStaffOf(it, sid) !== sid) anySplit = true;
+        if (!isSent(it) && it.result && resStaffOf(it, sid) !== sid) anySplit = true;
       });
     });
     config.staff.forEach(function (s) {
       if (sFil !== "all" && s.id !== sFil) return;
-      // その担当が作った応対（他の担当から受け取った控えは含めない）
-      var a = (lists[s.id] || []).filter(inPeriod).filter(function (it) { return !isCopy(it); });
-      var won = a.filter(function (it) { return effResult(it) === "won"; }).length;
-      var lost = a.filter(function (it) { return effResult(it) === "lost"; }).length;
+      // その担当が応対した件（担当へ渡した見積もりは渡した先で数える）
+      var a = (lists[s.id] || []).filter(inPeriod).filter(function (it) { return !isSent(it); });
+      var won = a.filter(function (it) { return it.result === "won"; }).length;
+      var lost = a.filter(function (it) { return it.result === "lost"; }).length;
       // その担当が成約を決めた件（他の担当が作った提案を決めた分も含む）と、その収益
       var dec = 0, rev = 0;
       Object.keys(lists).forEach(function (sid) {
         (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-          if (it.result !== "won" || resStaffOf(it, sid) !== s.id) return;
+          if (isSent(it) || it.result !== "won" || resStaffOf(it, sid) !== s.id) return;
           dec++; rev += itemRev(it);
         });
       });
@@ -903,10 +892,10 @@
     }
     h += "</table>";
     if (anySplit) {
-      h += '<p class="hint"><strong>提案・成約・見送り・成約率</strong>は、その担当が<strong>作った応対</strong>の結果です'
-        + '（コンデザが作って担当へ渡した分は、渡した先で成約になってもコンデザの成約として数えます）。'
-        + '<strong>決定</strong>は、その担当が「成約」を記録した件数で、受け取った見積もりを決めた分も入ります。'
-        + '<strong>収益は決定した担当に全額</strong>付きます。受け取った見積もりは提案には数えません（二重に数えないため）。</p>';
+      h += '<p class="hint"><strong>提案・成約・見送り・成約率</strong>は、その担当が<strong>応対した件</strong>の結果です。'
+        + '<strong>決定</strong>は、その担当が「成約」を記録した件数（他の担当の応対を決めた分も入ります）。'
+        + '<strong>収益は決定した担当に全額</strong>付きます。'
+        + '担当へ渡した見積もりは、渡した先で1件として数えるため、渡した側の実績には入りません。</p>';
     }
 
     // 項目別のまとめ（提案＝最初に保存した内容、成約＝実際に成約した内容）
@@ -915,14 +904,14 @@
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
         if (!mineOnly(it, sid)) return;
         // 提案＝作った担当、成約＝決めた担当で数える
-        if (!isCopy(it) && (sFil === "all" || sid === sFil)) {
+        if (!isSent(it) && (sFil === "all" || sid === sFil)) {
           var prop = statsSavedItems(it, false);
           Object.keys(prop).forEach(function (k) {
             if (!items[k]) items[k] = { name: prop[k], prop: 0, won: 0 };
             items[k].prop++;
           });
         }
-        if (it.result === "won" && (sFil === "all" || resStaffOf(it, sid) === sFil)) {
+        if (!isSent(it) && it.result === "won" && (sFil === "all" || resStaffOf(it, sid) === sFil)) {
           var wonItems = statsSavedItems(it, true);
           Object.keys(wonItems).forEach(function (k) {
             if (!items[k]) items[k] = { name: wonItems[k], prop: 0, won: 0 };
@@ -990,11 +979,11 @@
       Object.keys(lists).forEach(function (sid) {
         (lists[sid] || []).filter(inPeriod).forEach(function (it) {
           var dec2 = resStaffOf(it, sid);
-          if (!isCopy(it) && (sFil === "all" || sid === sFil)) {
+          if (!isSent(it) && (sFil === "all" || sid === sFil)) {
             var prop2 = statsSavedItems(it, false);
             Object.keys(prop2).forEach(function (k) { bucket(sid, k, prop2[k]).prop++; });
           }
-          if (it.result === "won" && (sFil === "all" || dec2 === sFil)) {
+          if (!isSent(it) && it.result === "won" && (sFil === "all" || dec2 === sFil)) {
             var won2 = statsSavedItems(it, true);
             Object.keys(won2).forEach(function (k) { bucket(dec2, k, won2[k]).won++; });
           }
