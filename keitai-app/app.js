@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.56.0";
+  var APP_VERSION = "1.57.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -634,13 +634,27 @@
     // 担当別のまとめ
     var rows = [];
     var totals = { prop: 0, won: 0, lost: 0 };
+    /* 収益 = 成約項目 × 管理者が設定した収益単価（MASTER.statsUnitPrices）。
+     * 単価が未設定の項目は0円として扱う。 */
+    var unitPrices = MASTER.statsUnitPrices || {};
+    function revenueOf(savedArr) {
+      var sum = 0;
+      savedArr.forEach(function (it) {
+        if (it.result !== "won") return;
+        var keys = statsSavedItems(it, true);
+        Object.keys(keys).forEach(function (k) { sum += num(unitPrices[k] || 0); });
+      });
+      return sum;
+    }
     config.staff.forEach(function (s) {
       if (sFil !== "all" && s.id !== sFil) return;
       var a = (lists[s.id] || []).filter(inPeriod);
       var won = a.filter(function (it) { return it.result === "won"; }).length;
       var lost = a.filter(function (it) { return it.result === "lost"; }).length;
+      var rev = revenueOf(a);
       totals.prop += a.length; totals.won += won; totals.lost += lost;
-      rows.push({ name: s.name, prop: a.length, won: won, lost: lost });
+      totals.rev = (totals.rev || 0) + rev;
+      rows.push({ id: s.id, name: s.name, prop: a.length, won: won, lost: lost, rev: rev });
     });
     function rate(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : "－"; }
 
@@ -695,12 +709,12 @@
         + "</div>";
     }
 
-    var h = head + '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th></tr>';
+    var h = head + '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th><th>収益</th></tr>';
     rows.forEach(function (r2) {
-      h += "<tr><td>" + esc(r2.name) + "</td><td>" + r2.prop + "</td><td>" + r2.won + "</td><td>" + r2.lost + "</td><td>" + rate(r2.won, r2.prop) + "</td></tr>";
+      h += "<tr><td>" + esc(r2.name) + "</td><td>" + r2.prop + "</td><td>" + r2.won + "</td><td>" + r2.lost + "</td><td>" + rate(r2.won, r2.prop) + "</td><td>" + yen(r2.rev) + "</td></tr>";
     });
     if (rows.length > 1) {
-      h += '<tr class="stats-total"><td>合計</td><td>' + totals.prop + "</td><td>" + totals.won + "</td><td>" + totals.lost + "</td><td>" + rate(totals.won, totals.prop) + "</td></tr>";
+      h += '<tr class="stats-total"><td>合計</td><td>' + totals.prop + "</td><td>" + totals.won + "</td><td>" + totals.lost + "</td><td>" + rate(totals.won, totals.prop) + "</td><td>" + yen(totals.rev || 0) + "</td></tr>";
     }
     h += "</table>";
 
@@ -735,12 +749,26 @@
     if (!iKeys.length) {
       h += '<p class="hint">この期間の保存がありません。</p>';
     } else {
-      h += '<table class="stats-table"><tr><th>項目</th><th>提案</th><th>成約</th><th>成約率</th></tr>';
+      h += '<table class="stats-table"><tr><th>項目</th><th>提案</th><th>成約</th><th>成約率</th>'
+        + (admin ? "<th>収益単価</th>" : "") + "<th>収益</th></tr>";
+      var revTotal = 0;
       iKeys.forEach(function (k) {
         var x = items[k];
-        h += "<tr><td>" + esc(x.name) + "</td><td>" + x.prop + "</td><td>" + x.won + "</td><td>" + rate(x.won, x.prop) + "</td></tr>";
+        var up = num(unitPrices[k] || 0);
+        var rev2 = x.won * up;
+        revTotal += rev2;
+        h += "<tr><td>" + esc(x.name) + "</td><td>" + x.prop + "</td><td>" + x.won + "</td><td>" + rate(x.won, x.prop) + "</td>"
+          + (admin
+            ? '<td><input type="number" class="unit-price" data-unitprice="' + esc(k) + '" min="0" value="' + (up || "") + '" placeholder="0">円</td>'
+            : "")
+          + "<td>" + yen(rev2) + "</td></tr>";
       });
+      h += '<tr class="stats-total"><td>合計収益</td><td></td><td></td><td></td>' + (admin ? "<td></td>" : "") + "<td>" + yen(revTotal) + "</td></tr>";
       h += "</table>";
+      if (admin) {
+        h += '<p class="hint">収益単価は<strong>1成約あたりの収益（インセンティブ・粗利など、店舗の基準額）</strong>を入れてください。'
+          + '入れると担当別・項目別・CSVに収益が出ます。単価は全端末で共通です（担当者の画面には自分の収益額だけが表示され、単価は表示されません）。</p>';
+      }
       h += '<p class="hint">提案＝保存したとき（最初の提案）にその項目が入っていた件数（3パターンのどれかにあれば1件）。'
         + '成約＝成約にした応対で、実際の成約内容にその項目が入っていた件数。'
         + '提案0で成約が付いている項目は、最初の提案には無く、成約までの調整で加わったものです。'
@@ -754,7 +782,35 @@
       var ss = config.staff.filter(function (s) { return s.id === sFil; })[0];
       sName = (ss && ss.name) || sFil;
     }
-    statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName };
+    /* 管理者向けCSVの明細（担当×項目）。スプレッドシートに貼って
+     * ピボット・SUMIFで収益や生産性を出せるようにする長い形式。 */
+    var detail = [];
+    if (admin) {
+      Object.keys(lists).forEach(function (sid) {
+        if (sFil !== "all" && sid !== sFil) return;
+        var sname = (config.staff.filter(function (s2) { return s2.id === sid; })[0] || {}).name || sid;
+        var per = {};
+        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+          var prop2 = statsSavedItems(it, false);
+          Object.keys(prop2).forEach(function (k) {
+            if (!per[k]) per[k] = { name: prop2[k], prop: 0, won: 0 };
+            per[k].prop++;
+          });
+          if (it.result === "won") {
+            var won2 = statsSavedItems(it, true);
+            Object.keys(won2).forEach(function (k) {
+              if (!per[k]) per[k] = { name: won2[k], prop: 0, won: 0 };
+              per[k].won++;
+            });
+          }
+        });
+        Object.keys(per).sort(function (a2, b2) { return rank(a2) - rank(b2); }).forEach(function (k) {
+          detail.push({ staff: sname, key: k, name: per[k].name, prop: per[k].prop, won: per[k].won });
+        });
+      });
+    }
+    statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName,
+      admin: admin, unitPrices: unitPrices, detail: detail };
   }
 
   /* ---------- 実績のCSV出力（Excelで開ける形式） ---------- */
@@ -767,24 +823,42 @@
     if (!L) return;
     function rateTxt(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : ""; }
     var period = L.month === "all" ? "全期間" : L.month;
+    var up = L.unitPrices || {};
     var lines = [];
     lines.push(["実績集計", "期間: " + period, "担当: " + L.staffName, "出力: " + savedWhen(Date.now())].map(csvCell).join(","));
     lines.push("");
     lines.push("担当別");
-    lines.push("担当,提案,成約,見送り,成約率");
+    lines.push("担当,提案,成約,見送り,成約率,収益");
     L.rows.forEach(function (r2) {
-      lines.push([r2.name, r2.prop, r2.won, r2.lost, rateTxt(r2.won, r2.prop)].map(csvCell).join(","));
+      lines.push([r2.name, r2.prop, r2.won, r2.lost, rateTxt(r2.won, r2.prop), r2.rev || 0].map(csvCell).join(","));
     });
     if (L.rows.length > 1) {
-      lines.push(["合計", L.totals.prop, L.totals.won, L.totals.lost, rateTxt(L.totals.won, L.totals.prop)].map(csvCell).join(","));
+      lines.push(["合計", L.totals.prop, L.totals.won, L.totals.lost, rateTxt(L.totals.won, L.totals.prop), L.totals.rev || 0].map(csvCell).join(","));
     }
     lines.push("");
     lines.push("項目別");
-    lines.push("項目,提案,成約,成約率");
+    lines.push(L.admin ? "項目,提案,成約,成約率,単価,収益" : "項目,提案,成約,成約率,収益");
+    var revTotal = 0;
     L.iKeys.forEach(function (k) {
       var x = L.items[k];
-      lines.push([x.name, x.prop, x.won, rateTxt(x.won, x.prop)].map(csvCell).join(","));
+      var u = num(up[k] || 0);
+      var rv = x.won * u;
+      revTotal += rv;
+      lines.push((L.admin
+        ? [x.name, x.prop, x.won, rateTxt(x.won, x.prop), u, rv]
+        : [x.name, x.prop, x.won, rateTxt(x.won, x.prop), rv]).map(csvCell).join(","));
     });
+    lines.push((L.admin ? ["合計収益", "", "", "", "", revTotal] : ["合計収益", "", "", "", revTotal]).map(csvCell).join(","));
+    if (L.admin && L.detail && L.detail.length) {
+      // スプレッドシートでのピボット・SUMIF用の明細（1行=担当×項目）
+      lines.push("");
+      lines.push("明細（担当×項目）");
+      lines.push("担当,項目,提案,成約,単価,収益");
+      L.detail.forEach(function (d2) {
+        var u2 = num(up[d2.key] || 0);
+        lines.push([d2.staff, d2.name, d2.prop, d2.won, u2, d2.won * u2].map(csvCell).join(","));
+      });
+    }
     // 先頭のBOMで、Excelが文字コードを正しく認識する（無いと文字化けする）
     var csv = "\uFEFF" + lines.join("\r\n");
     var store2 = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
@@ -7328,6 +7402,17 @@
       window.addEventListener("afterprint", function () { document.body.classList.remove("print-stats"); });
       // 目標の入力（料金マスタに保存され、全端末で揃う）
       $("statsBody").addEventListener("change", function (e) {
+        var upKey = e.target.getAttribute && e.target.getAttribute("data-unitprice");
+        if (upKey) {
+          // 収益単価（管理者のみ表示される入力欄）。料金マスタに入れて全端末で共通にする
+          if (!MASTER.statsUnitPrices) MASTER.statsUnitPrices = {};
+          var v2 = Math.max(0, Math.round(num(e.target.value)));
+          if (v2) MASTER.statsUnitPrices[upKey] = v2;
+          else delete MASTER.statsUnitPrices[upKey];
+          saveMaster();
+          renderStats(false);
+          return;
+        }
         if (e.target.id !== "statsGoalInput") return;
         MASTER.statsGoal = Math.max(0, Math.round(num(e.target.value)));
         saveMaster();
