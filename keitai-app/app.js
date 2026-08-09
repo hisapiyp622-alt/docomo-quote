@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.55.3";
+  var APP_VERSION = "1.56.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -573,13 +573,17 @@
   function loadAllSaved(done) {
     var lists = {};
     var mine = activeStaff().id;
+    var adminAll = statsAdminOk(); // 管理者でなければ自分の分だけ集計する
     function local(sid) {
       try { return JSON.parse(localStorage.getItem(savedKey(sid)) || "null") || []; } catch (e) { return []; }
     }
-    config.staff.forEach(function (s) { lists[s.id] = s.id === mine ? savedList : local(s.id); });
+    config.staff.forEach(function (s) {
+      if (!adminAll && s.id !== mine) return;
+      lists[s.id] = s.id === mine ? savedList : local(s.id);
+    });
     if (!cloudOn()) { statsLists = lists; done(); return; }
     var jobs = config.staff.map(function (s) {
-      if (s.id === mine) return Promise.resolve(); // 自分の分は手元が最新
+      if (s.id === mine || !adminAll) return Promise.resolve(); // 自分の分は手元が最新
       return savedDoc(s.id).get().then(function (snap) {
         var d = snap.exists ? snap.data() : null;
         if (d && d.list) lists[s.id] = JSON.parse(d.list) || [];
@@ -614,12 +618,17 @@
       return '<option value="' + m + '">' + m + "</option>";
     }).join("");
     monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : "all";
+    var admin = statsAdminOk();
+    var unlockBtn = $("statsUnlockBtn");
+    if (unlockBtn) unlockBtn.hidden = admin;
+    if (staffSel.parentElement) staffSel.parentElement.style.display = admin ? "" : "none";
     var sPrev = staffSel.value || "all";
     staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
       return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>";
     }).join("");
     staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
-    var mFil = monthSel.value, sFil = staffSel.value;
+    // 管理者以外は、常に自分（ログイン中の担当）の実績だけ
+    var mFil = monthSel.value, sFil = admin ? staffSel.value : activeStaff().id;
     function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
 
     // 担当別のまとめ
@@ -635,9 +644,13 @@
     });
     function rate(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : "－"; }
 
-    // ---- 目標（店舗全体・月あたりの成約件数。料金マスタに保存して全端末で共通） ----
+    // ---- 目標（店舗全体・月あたりの成約件数。管理者の画面だけに出す） ----
     var head = "";
+    if (!admin) {
+      head += '<p class="hint">ご自身（' + esc(activeStaff().name || "担当") + '）の実績を表示しています。</p>';
+    }
     var goal = num(MASTER.statsGoal || 0);
+    if (admin) {
     head += '<div class="stats-goal"><label>月の成約目標 <input type="number" id="statsGoalInput" min="0" value="'
       + (goal || "") + '" placeholder="未設定"> 件</label>';
     if (goal > 0 && mFil !== "all" && sFil === "all") {
@@ -649,6 +662,7 @@
       head += '<span class="goal-note">目標は店舗全体の件数です。期間で月を、担当で「全員」を選ぶと達成率が出ます</span>';
     }
     head += "</div>";
+    }
 
     // ---- 前月との比較（月を選んでいるときだけ） ----
     if (mFil !== "all") {
@@ -2835,6 +2849,7 @@
   function onSignedOut() {
     CLOUD.user = null;
     masterUnlocked = false;
+    statsUnlocked = false;
     masterGateFrom = null;
     showMasterGate(false);
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
@@ -2890,6 +2905,7 @@
     masterOnly = false;
     clearActiveStaff();
     masterUnlocked = false;
+    statsUnlocked = false;
     masterGateFrom = null;
     showMasterGate(false);
     switchTab("quote");
@@ -2956,6 +2972,7 @@
   // 担当を確定していない状態にする（購読も解除する）
   function clearActiveStaff() {
     masterUnlocked = false; // 担当が変わったらマスタ設定は開き直しにする
+    statsUnlocked = false;
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
     if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
@@ -5717,6 +5734,13 @@
    * 店舗ログインを使っていない（クラウド未設定かつ端末内ロック未設定）場合は、
    * 照合するものが無く、店舗ログインの設定自体がこのタブにあるため素通しにする。 */
   var masterUnlocked = false;
+  /* 実績タブの「全担当表示」の解錠状態。管理者（マスタ設定のパスワードを知っている人）だけが
+   * 全担当の実績を見られるようにするための仕切り。担当切替・ログアウトで畳む。 */
+  var statsUnlocked = false;
+  function statsAdminOk() {
+    // ロックを何も設定していない店舗では仕切りようがないので、従来どおり全員に見せる
+    return statsUnlocked || !masterGateOn();
+  }
   var masterGateFrom = null; // キャンセルしたときに戻る先
   /* マスタ設定のパスワードを忘れたときは、店舗ID＋店舗のパスワードで開けるようにする。
    * 店舗の資格情報のほうが上位なので、これを塞ぐと復旧手段が無くなってしまう。 */
@@ -5825,6 +5849,13 @@
         masterUnlocked = true;
         $("masterGatePass").value = "";
         showMasterGate(false);
+        // 実績タブの「全担当を表示」から来た場合は、マスタ設定ではなく実績へ戻す
+        if (masterGateFrom === "stats") {
+          masterGateFrom = null;
+          statsUnlocked = true;
+          switchTab("stats");
+          return;
+        }
         var fromGate = masterGateFrom === "staff";
         if (fromGate) {
           masterGateFrom = null;
@@ -5848,6 +5879,7 @@
     $("masterGateCancel").addEventListener("click", function () {
       showMasterGate(false);
       if (masterGateFrom === "staff") { masterGateFrom = null; showStaffGate(true); return; }
+      if (masterGateFrom === "stats") { masterGateFrom = null; switchTab("stats"); return; }
       switchTab("quote");
     });
   }
@@ -7282,6 +7314,11 @@
       $("statsMonth").addEventListener("change", function () { renderStats(false); });
       $("statsStaff").addEventListener("change", function () { renderStats(false); });
       $("statsReload").addEventListener("click", function () { renderStats(true); });
+      $("statsUnlockBtn").addEventListener("click", function () {
+        if (statsAdminOk()) { renderStats(true); return; }
+        masterGateFrom = "stats";
+        showMasterGate(true);
+      });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
       $("statsPrint").addEventListener("click", function () {
         document.body.classList.add("print-stats");
