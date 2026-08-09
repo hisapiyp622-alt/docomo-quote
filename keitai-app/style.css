@@ -943,3 +943,10 @@ body.present .sheet{box-shadow:none}
 .flow2-dense .f2-when { font-size: 9.5px; padding: 0.4mm 2.8mm; }
 .flow2-dense .f2-step { font-size: 9.5px; }
 .flow2-dense .f2-date { font-size: 9.5px; }
+
+/* 引き継ぎシート: オプションの付け替え（廃止 → 新規） */
+.kubun-swap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.kubun-swap .sw-old { color: var(--red); font-weight: 700; text-decoration: line-through; }
+.kubun-swap .sw-arrow { color: var(--red); font-weight: 700;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.kubun-swap .sw-new { font-weight: 700; }
