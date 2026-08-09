@@ -683,6 +683,15 @@ body.sorting .sort-chip{cursor:grabbing}
 
 /* 規約などの文書 */
 .doc-box{max-width:720px;display:flex;flex-direction:column;max-height:88vh}
+/* 成約・見送りの記録ダイアログ（成約を決めた担当を選べる） */
+#resultDlg .login-box{max-width:400px}
+#resultDlg select{
+  width:100%;padding:9px 10px;font-size:15px;border:1px solid var(--line);
+  border-radius:8px;background:#fff
+}
+#resultDlg .row-btns{display:flex;gap:8px;margin-top:6px}
+#resultDlg .row-btns button{flex:1;margin:0}
+
 .doc-body{
   overflow-y:auto;-webkit-overflow-scrolling:touch;
   margin:4px 0 14px;padding-right:6px;font-size:13px;line-height:1.75;text-align:left;
