@@ -911,3 +911,7 @@ body.present .sheet{box-shadow:none}
   body.print-stats .stats-table{width:100%}
   body.print-stats .sc-box{break-inside:avoid}
 }
+
+/* ログイン・担当者コード画面のミツモリン */
+.login-mascot{display:block;margin:0 auto 4px;width:84px;height:auto;
+  filter:drop-shadow(0 3px 8px rgba(0,0,0,.18))}
