@@ -10,8 +10,8 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 1,
-  "updated": "2026-08-07",
+  "masterVersion": 2,
+  "updated": "2026-08-09",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -500,9 +500,21 @@ const DEFAULT_DATA = {
     },
     {
       "id": "anshin_pack",
-      "name": "あんしんパック",
-      "price": 462,
-      "note": "",
+      "name": "smartあんしんパック",
+      "price": 792,
+      "priceChoices": [
+        792,
+        952,
+        1012,
+        1067,
+        1287,
+        1322,
+        1452,
+        1562,
+        1922,
+        2182
+      ],
+      "note": "機種により792〜2,182円（smartあんしん補償の月額＋462円）。公式ページで機種の額をご確認ください",
       "category": "補償",
       "carrier": true,
       "own": false

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.53.3";
+  var APP_VERSION = "1.54.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2012,7 +2012,8 @@
       bk_googleone: ["Google One（爆アゲ）", "Google One"],
       bk_appleone: ["Apple One（爆アゲ）", "Apple One"],
       netflix: ["NETFLIX", "Netflix"],
-      op_1785221644318: ["店頭安心サポートミニプラン", "店頭あんしんサポートミニプラン"]
+      op_1785221644318: ["店頭安心サポートミニプラン", "店頭あんしんサポートミニプラン"],
+      anshin_pack: ["あんしんパック", "smartあんしんパック"]
     };
     MASTER.options.forEach(function (o) {
       var nf = NAME_FIXES[o.id];
@@ -3953,7 +3954,8 @@
   /* 選んだときに公式ページへの参照リンクを出すオプション。
    * 金額が機種などで変わるものは、その場で正確な額を調べられるようにする。 */
   var OPT_INFO_LINKS = {
-    smart_hosho: "https://www.docomo.ne.jp/service/smart_anshin_hoshou/charge.html"
+    smart_hosho: "https://www.docomo.ne.jp/service/smart_anshin_hoshou/charge.html",
+    anshin_pack: "https://www.docomo.ne.jp/service/smart_anshinpack/"
   };
   function renderOptionList() {
     // カテゴリ（フォルダ）ごとに横5列のタイルで表示
