@@ -94,8 +94,11 @@
   /* 月額オプション（チェック式・金額は見積もりごとに編集可）
    * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
   var IENAKA_OPTS = [
-    { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* phone: 光電話の印。番号ポータビリティの選択と、同番移行2,200円・
+     * 10ギガ機器設置1,650円の判定に使う。
+     * 交換機等工事費1,100円は店舗の方針で見積もりに入れない（2026-08-09）。 */
+    { id: "denwa", name: "ドコモ光電話", price: 550, phone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, phone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
@@ -261,7 +264,8 @@
     if (isHikari() && state.applyType === "shinki") {
       IENAKA_OPTS.forEach(function (o) {
         if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
-        if (o.koji) { phoneKoji += o.koji; phoneChecked = true; }
+        if (o.phone) phoneChecked = true;
+        if (o.koji) phoneKoji += o.koji;
         if (o.tvKoji) {
           var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
           var tkFee = state.tvKojiFee != null ? num(state.tvKojiFee) : tk.koji; // 金額は編集可
@@ -392,7 +396,7 @@
         + (o.koji && shinki ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
         + "</label>";
       // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
-      if (shinki && o.koji && state.opts[o.id] && !banpoShown) {
+      if (shinki && o.phone && state.opts[o.id] && !banpoShown) {
         banpoShown = true;
         h += '<div class="field tv-koji"><label>電話番号</label><select data-iebanpo="1">'
           + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番</option>'
