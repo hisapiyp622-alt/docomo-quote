@@ -925,3 +925,8 @@ body.present .sheet{box-shadow:none}
 /* 実績: 収益単価の入力（管理者のみ表示） */
 .stats-table .unit-price{width:76px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12.5px;text-align:right}
 @media print{ body.print-stats .unit-price{border:none} }
+
+/* 開通までの流れ（1枚）: 工程ごとの注意事項 */
+.flow2 .f2-n { margin: 1mm 0 0; padding-left: 4.5mm; list-style: none; }
+.flow2 .f2-n li { position: relative; font-size: 10px; line-height: 1.5; color: #5a4a2a; margin-top: 0.5mm; }
+.flow2 .f2-n li:before { content: "※"; position: absolute; left: -4.5mm; }
