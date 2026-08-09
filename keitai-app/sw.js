@@ -1,10 +1,10 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "kq-v118";
+var CACHE = "kq-v119";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "changelog.js",
   "data.js", "qr.js", "ienaka.js", "firebase-config.js",
   "manifest.webmanifest", "icon.svg",
   "img/mitsumorin-hello.png", "img/mitsumorin-sheet.png",
-  "TERMS.md", "LICENSE.md", "PRIVACY.md", "SUPPORT.md"];
+  "TERMS.md", "LICENSE.md", "PRIVACY.md", "SUPPORT.md", "STATS_GUIDE.md"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));
