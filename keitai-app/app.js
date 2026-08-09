@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.58.2";
+  var APP_VERSION = "1.59.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -4812,22 +4812,35 @@
       else if (kb === "keep") kKeep.push({ name: nm, price: pr });
       else kNew.push({ name: nm, price: pr });
     });
-    h += "<h3>オプション（新規・継続・廃止）</h3><table><tbody>";
+    h += "<h3>オプション</h3><table><tbody>";
     var anyOpt = false;
-    if (kNew.length) {
+    /* 廃止と新規が同時にあるときは「付け替え」として矢印でまとめる。
+     * 別々の行に分けるより、何を何へ替えるのかが一目で分かる（店舗の指定・2026-08-09）。
+     * 例）smartあんしんパック → dバリューパス パック */
+    if (kOff.length && kNew.length) {
       anyOpt = true;
-      h += row("<b>新規</b>", '<div class="kubun-list">'
-        + kNew.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月</i>"; }).join("") + "</div>");
+      h += row("<b>付け替え</b>", '<div class="kubun-swap">'
+        + '<span class="sw-old">' + kOff.map(function (x) { return esc(x); }).join("・") + "</span>"
+        + '<span class="sw-arrow">→</span>'
+        + '<span class="sw-new">'
+        + kNew.map(function (x) { return esc(x.name) + "　" + yen(x.price) + "/月"; }).join("・")
+        + "</span></div>");
+    } else {
+      if (kNew.length) {
+        anyOpt = true;
+        h += row("<b>新規</b>", '<div class="kubun-list">'
+          + kNew.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月</i>"; }).join("") + "</div>");
+      }
+      if (kOff.length) {
+        anyOpt = true;
+        h += row("<b>廃止</b>", '<div class="kubun-list" style="color:var(--red);font-weight:700">'
+          + kOff.map(function (x) { return "<i>" + esc(x) + "</i>"; }).join("") + "</div>");
+      }
     }
     if (kKeep.length) {
       anyOpt = true;
       h += row("継続", '<div class="kubun-list">'
         + kKeep.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月</i>"; }).join("") + "</div>");
-    }
-    if (kOff.length) {
-      anyOpt = true;
-      h += row("<b>廃止</b>", '<div class="kubun-list" style="color:var(--red);font-weight:700">'
-        + kOff.map(function (x) { return "<i>" + esc(x) + "</i>"; }).join("") + "</div>");
     }
     state.adhocMonthly.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -4848,20 +4861,18 @@
         if (r.device.offCoupon > 0) h += row("　クーポン値引き", "−" + yen(r.device.offCoupon));
         // 引き継ぎシートは店内の呼び方に合わせる（お客様向けは「店舗独自キャンペーン」）
         if (r.device.offTebiki > 0) h += row("　手値引き", "−" + yen(r.device.offTebiki));
-        if (r.device.offDirect > 0) {
-          h += row("　ダイレクト割", "−" + yen(r.device.offDirect) + "　<b>分割金から差引</b>");
-        }
+        /* ダイレクト割は「案内したかどうか」が分かるよう、無い場合も行を出す。 */
+        h += row("　ダイレクト割", r.device.offDirect > 0
+          ? "−" + yen(r.device.offDirect) + "　<b>分割金から差引</b>"
+          : '<span style="color:var(--muted)">なし</span>');
         if (r.device.offTotal > 0) h += row("　<b>値引き後の端末代金</b>", "<b>" + yen(r.device.total) + "</b>"
           + (r.device.atamaOff > 0
             ? "　店頭頭金 " + yen(r.device.atamaList) + " → " + yen(r.device.atamaBeforePoint) : ""));
         h += row("お支払い方法", "<b>" + payLabel + "</b>"
           + (r.device.monthly > 0 ? "　" + yen(r.device.monthly) + "/月 × " + r.device.months + "回" : ""));
-        if (r.device.kaedoki) {
-          h += row("　残価（24回目支払分）", yen(r.device.zanka || 0));
-          if (r.device.kaedokiFee > 0) h += row("　プログラム利用料", yen(r.device.kaedokiFee) + "（返却時・ドコモで買替えなら免除）");
-          h += row("　23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0));
-          h += row("　返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回");
-        }
+        /* 残価・実質負担・返却後の金額は、引き継ぎ（登録作業）には要らない（店舗の指定・2026-08-09）。
+         * 登録に要るのは、値引きの有無・ダイレクト割・一括か分割かだけ。
+         * これらの金額は見積書（お客様向け）には従来どおり出る。 */
       }
       r.accMonthlyRows.forEach(function (a) { h += row(esc(a.name) + "（アクセサリ）", yen(a.monthly) + "/月 × " + a.months + "回"); });
       r.accOnceRows.forEach(function (a) { h += row(esc(a.name) + "（アクセサリ）", yen(a.amount) + "（一括）"); });
