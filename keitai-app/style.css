@@ -691,6 +691,10 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 #resultDlg .row-btns{display:flex;gap:8px;margin-top:6px}
 #resultDlg .row-btns button{flex:1;margin:0}
+.saved-sent{
+  display:inline-block;padding:4px 10px;border-radius:999px;
+  background:#eef3fb;color:#2c4a7c;font-size:12px;font-weight:700
+}
 
 .doc-body{
   overflow-y:auto;-webkit-overflow-scrolling:touch;
