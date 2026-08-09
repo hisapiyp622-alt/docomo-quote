@@ -31,6 +31,8 @@
   </nav>
 </header>
 
+<button class="present-exit no-print" id="presentExit" type="button" hidden>✕ 提示モードを終了</button>
+
 <div class="storage-warn no-print" id="storageWarn" hidden>
   ⚠ この端末に保存できませんでした。端末の空き容量（ストレージ）を確認してください。いま入力した内容は端末に残らない可能性があります。
 </div>
@@ -586,6 +588,7 @@
     <div class="sheet" id="sheetBody"><!-- JSで生成 --></div>
     <div class="actions no-print">
       <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="presentBtn" type="button">お客様提示モード</button>
       <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
     </div>
   </section>
@@ -616,6 +619,15 @@
     </div>
     <div class="card full">
       <h2>保存した見積もり</h2>
+      <div class="saved-filter">
+        <input type="search" id="savedSearch" placeholder="名前・プラン・お客様名で検索" autocomplete="off">
+        <select id="savedStatus">
+          <option value="all">すべて</option>
+          <option value="">提案中</option>
+          <option value="won">成約</option>
+          <option value="lost">見送り</option>
+        </select>
+      </div>
       <div id="savedList"><!-- JSで生成 --></div>
       <p class="hint">最大50件まで保存できます。担当者ごとに分かれて保存されます。</p>
     </div>
@@ -629,6 +641,7 @@
       <label>担当 <select id="statsStaff"></select></label>
       <button type="button" class="btn-sub" id="statsReload">再読み込み</button>
       <button type="button" class="btn-sub" id="statsCsv">CSVで保存</button>
+      <button type="button" class="btn-sub" id="statsPrint">印刷</button>
     </div>
     <div id="statsBody"><p class="hint">読み込み中…</p></div>
   </section>
@@ -643,7 +656,7 @@
       <p class="hint" id="lockState"></p>
       <div class="field">
         <label for="lockStoreId">店舗ID</label>
-        <input type="text" id="lockStoreId" placeholder="例）hannan01" autocapitalize="none" spellcheck="false">
+        <input type="text" id="lockStoreId" placeholder="例）shop01" autocapitalize="none" spellcheck="false">
       </div>
       <div class="field">
         <label for="lockPass">パスワード</label>
@@ -709,12 +722,25 @@
     <div class="card">
       <h2>料金マスタ</h2>
       <p class="hint">料金改定があったらここで直せます。変更は自動保存されます（この端末のみ）。<br>データ基準日: <strong id="masterUpdated"></strong></p>
+      <div class="field">
+        <label for="masterSearch">項目を探す</label>
+        <input type="search" id="masterSearch" placeholder="例）あんしん、コーティング、頭金" autocomplete="off">
+      </div>
       <div class="actions">
         <button class="btn-sub" id="resetMaster" type="button">マスタを初期値に戻す</button>
         <button class="btn-sub" id="exportMaster" type="button">現在のマスタ構成をコピー</button>
+        <button class="btn-sub" id="importMasterBtn" type="button">コピーした構成を取り込む</button>
       </div>
-      <p class="hint">「現在のマスタ構成をコピー」: この端末で編集した料金マスタ一式をクリップボードにコピーします。別の端末へ移すときや、設定内容を控えておくときにお使いください。</p>
+      <p class="hint">「コピー」はこの端末の料金マスタ一式を文字としてコピーします。別の端末の「取り込む」に貼り付けると、同じ構成に揃えられます（設定の控えにも使えます）。</p>
       <textarea id="exportMasterBox" class="export-box" hidden readonly></textarea>
+      <div id="importMasterWrap" hidden>
+        <textarea id="importMasterBox" class="export-box" placeholder="ここに「現在のマスタ構成をコピー」した内容を貼り付けてください"></textarea>
+        <div class="actions">
+          <button class="btn-main" id="importMasterGo" type="button">この内容で取り込む</button>
+          <button class="btn-sub" id="importMasterCancel" type="button">キャンセル</button>
+        </div>
+      </div>
+      <p class="hint" id="importMasterMsg" hidden></p>
     </div>
     <div class="card">
       <h2>バックアップ</h2>
@@ -860,8 +886,7 @@
       <button type="button" class="link-btn" data-doc="TERMS.md" data-doc-title="利用規約">利用規約</button>
       <button type="button" class="link-btn" data-doc="LICENSE.md" data-doc-title="使用許諾条件">使用許諾条件</button>
       <button type="button" class="link-btn" data-doc="PRIVACY.md" data-doc-title="プライバシーポリシー">プライバシーポリシー</button>
-      <button type="button" class="link-btn" data-doc="SUPPORT.md" data-doc-title="サービス説明書">サービス説明書</button>
-      <button type="button" class="link-btn" data-doc="SUPPORT.md" data-doc-title="サポート">サポート</button>
+      <button type="button" class="link-btn" data-doc="SUPPORT.md" data-doc-title="サービス説明書（サポート・保守）">サービス説明書（サポート）</button>
     </p>
     <button class="btn-main" id="aboutClose" type="button">閉じる</button>
   </div>
