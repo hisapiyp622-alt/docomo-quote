@@ -937,7 +937,7 @@
     if (cl && cl.id !== "none") {
       if (state.product === "home5g" || state.applyType === "shinki") {
         var jcKeep = cl.id === "jcom" && state.curTvKeep;
-        step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "（ネットのみ）" : ""),
+        step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "**（ネットのみ）**" : ""),
           "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
         noteTo("の解約", cl.tel
           ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
@@ -945,9 +945,9 @@
         /* J:COMはテレビ・お電話を残したままネットだけ乗り換えるご案内がある。
          * まとめて解約されると事故になるため、連絡時の言い方を必ず載せる。 */
         if (cl.id === "jcom") {
-          noteTo("の解約", "J:COMへのご連絡では、解約するのは「インターネットのみ」と必ずお伝えください。まとめて解約されると、テレビ・お電話も止まってしまいます");
+          noteTo("の解約", "J:COMへのご連絡では、**解約するのはインターネットのみ**と必ずお伝えください。まとめて解約されると、テレビ・お電話も止まってしまいます");
           if (jcKeep) {
-            noteTo("の解約", "テレビはJ:COMに残します。お電話もJ:COMに残されたほうが、お客様のご負担は安くなります");
+            noteTo("の解約", "**テレビはJ:COMに残します。**お電話もJ:COMに残されたほうが、お客様のご負担は安くなります");
           }
         }
         noteTo("の解約", "開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
@@ -995,7 +995,7 @@
     var fd = flowData(r);
     var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
       + fd.steps.map(function (st2) {
-          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "")
+          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + noteHtml(st2.t) + (st2.d ? "。" + esc(st2.d) : "")
             + (st2.notes.length ? "<br>" + st2.notes.map(function (n2) { return "※ " + noteHtml(n2); }).join("<br>") : "")
             + "</li>";
         }).join("") + "</ol>";
@@ -1018,9 +1018,15 @@
   /* 注意書きの中の電話番号は、お客様が見て分かるように本文と同じ大きさ＋太字＋赤にする
    * （小さい字のままだと解約のご連絡先が読めない、という店頭の指摘・2026-08-09） */
   function noteHtml(t) {
-    return esc(t).replace(/0\d{1,3}[-‐−ー]\d{2,4}[-‐−ー]\d{3,4}/g, function (m) {
-      return '<span class="f2-tel">' + m + "</span>";
-    });
+    /* **…** で囲んだところは、電話番号と同じく本文と同じ大きさ＋太字＋赤にする
+     * （J:COMの「解約はインターネットのみ」のように、読み飛ばされると事故になる箇所） */
+    return esc(t)
+      .replace(/0\d{1,3}[-‐−ー]\d{2,4}[-‐−ー]\d{3,4}/g, function (m) {
+        return '<span class="f2-tel">' + m + "</span>";
+      })
+      .replace(/\*\*([^*]+)\*\*/g, function (m, in1) {
+        return '<span class="f2-em">' + in1 + "</span>";
+      });
   }
 
   function flowSheetHtml() {
@@ -1042,7 +1048,7 @@
         + '<div class="f2-body">'
         + '<span class="f2-step">STEP ' + (i + 1) + "</span>"
         + (st2.when ? '<span class="f2-when">' + esc(st2.when) + "</span>" : "")
-        + '<div class="f2-t">' + esc(st2.t) + "</div>"
+        + '<div class="f2-t">' + noteHtml(st2.t) + "</div>"
         + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
         + (st2.notes.length
             ? '<ul class="f2-n">' + st2.notes.map(function (n2) { return "<li>" + noteHtml(n2) + "</li>"; }).join("") + "</ul>"
