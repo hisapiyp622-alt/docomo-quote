@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.55.0";
+  var APP_VERSION = "1.55.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2279,6 +2279,7 @@
   var CLOUD = {
     enabled: false, user: null, db: null, auth: null,
     suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
+    quoteSynced: false, // クラウドの見積もりを一度受け取るまで、この端末からは送らない
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
     savedTimer: null, unsubSaved: null, watchingSavedId: null,
     tplTimer: null, unsubTpl: null, watchingTplId: null,
@@ -2340,6 +2341,11 @@
   }
   function markLocalEdit() {
     if (!cloudOn() || CLOUD.suppress) return;
+    /* ログイン・担当切替の直後、クラウドの見積もりを受け取る前は送らない。
+     * ここで送ると、この端末に残っていた古い（空の）見積もりが予約され、
+     * その予約がある間はクラウドから届く内容も無視されるため、
+     * 「iPadで作成→PCで印刷しようとログイン→両方消える」事故になっていた。 */
+    if (!CLOUD.quoteSynced) return;
     var sid = activeStaff().id;
     if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
     syncStatus("同期中…", "");
@@ -2588,11 +2594,15 @@
     if (CLOUD.unsubQuote && CLOUD.watchingStaffId === sid) return;
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     CLOUD.watchingStaffId = sid;
+    CLOUD.quoteSynced = false; // 初回スナップショットを受け取るまで、この端末からの送信を止める
     CLOUD.unsubQuote = quoteDoc(sid).onSnapshot(function (snap) {
+      var first = !CLOUD.quoteSynced;
+      CLOUD.quoteSynced = true;
       var d = snap.exists ? snap.data() : null;
-      if (!d) { markLocalEdit(); return; }
+      if (!d) { markLocalEdit(); return; } // クラウドに見積もりが無ければ、この端末の内容を初期値にする
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
-      if (CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
+      // 初回は必ずクラウドの内容を取り込む（ログイン直後はクラウドが正）
+      if (!first && CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
       applyRemoteQuote(d);
     }, function () { syncStatus("同期:接続エラー", "err"); });
   }
