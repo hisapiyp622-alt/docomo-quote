@@ -930,3 +930,16 @@ body.present .sheet{box-shadow:none}
 .flow2 .f2-n { margin: 1mm 0 0; padding-left: 4.5mm; list-style: none; }
 .flow2 .f2-n li { position: relative; font-size: 10px; line-height: 1.5; color: #5a4a2a; margin-top: 0.5mm; }
 .flow2 .f2-n li:before { content: "※"; position: absolute; left: -4.5mm; }
+
+/* 工程が8つ以上のとき、A4・1枚に収まるよう全体を詰める */
+.flow2-dense .flow2-list { margin-top: 2mm; }
+.flow2-dense .f2-row { gap: 4mm; }
+.flow2-dense .f2-icon { width: 13mm; height: 13mm; }
+.flow2-dense .f2-icon svg { width: 8.5mm; height: 8.5mm; }
+.flow2-dense .f2-t { font-size: 13px; margin-top: 0.6mm; }
+.flow2-dense .f2-d { font-size: 10.5px; line-height: 1.45; }
+.flow2-dense .f2-n li { font-size: 9.2px; line-height: 1.4; }
+.flow2-dense .f2-sep { width: 13mm; font-size: 9px; line-height: 1.1; }
+.flow2-dense .f2-when { font-size: 9.5px; padding: 0.4mm 2.8mm; }
+.flow2-dense .f2-step { font-size: 9.5px; }
+.flow2-dense .f2-date { font-size: 9.5px; }

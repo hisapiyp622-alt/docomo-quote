@@ -904,6 +904,26 @@
         }
       }
     }
+    /* ドコモ光 乗り換え特典（他社の解約金・撤去工事費・端末残債をdポイントで還元）。
+     * 対象は「事業者変更」と「他社回線からの新規」。フレッツ光からの転用は対象外。
+     * 解約金の請求書などが要るため、解約の工程よりあとに置く。
+     * （出典: ドコモ光 乗り換え特典の案内・2026-08確認） */
+    var otherLine = cl && cl.id !== "none" && cl.id !== "flets";
+    var needCancel = otherLine && (state.product === "home5g" || state.applyType === "shinki");
+    if (isHikari() && (state.applyType === "jigyosha" || (state.applyType === "shinki" && otherLine))) {
+      step("ドコモ光 乗り換え特典のお申込み",
+        "他社の解約金・撤去工事費・端末の残債が、dポイント（期間・用途限定）で還元される特典です。お客様ご自身でのお申込みが必要です",
+        "doc", needCancel ? "解約金のご請求後" : "開通の確認後");
+      noteTo("乗り換え特典", "お申込みには、他社の解約金などが分かる書面（請求書・利用明細など）が必要です。捨てずに保管してください");
+      noteTo("乗り換え特典", "利用開始月の4か月後の月末時点でドコモ光をご契約中であることなどの条件があります。金額の上限・お申込みの締切は公式の案内をご確認ください");
+    }
+    // 店舗独自特典があるときは、来店してのお申込みが必要
+    if (num(state.storeCash) > 0 || num(state.storePt) > 0) {
+      step("店舗特典のお申込み（ご来店）",
+        "開通日から7日以降に、当店へご来店のうえ特典のお申し込みをお願いします",
+        "shop", "開通の7日後以降");
+      noteTo("店舗特典", "ご来店の際は、ご契約者さまの本人確認書類をお持ちください");
+    }
     return { steps: steps };
   }
   // 見積書の下に出す小さい枠
@@ -936,7 +956,13 @@
   function flowSheetHtml() {
     var r = calc();
     var fd = flowData(r);
-    var h = '<div class="flow-sheet flow2">';
+    /* 工程が多いときもA4・1枚に収める。
+     * 8工程以上は余白と文字を詰め（flow2-dense）、9工程以上はさらに全体を縮小する。 */
+    var nStep = fd.steps.length;
+    var dense = nStep >= 8 ? " flow2-dense" : "";
+    var zoom = nStep >= 9 ? Math.max(0.62, 8.4 / nStep) : 0;
+    var h = '<div class="flow-sheet flow2' + dense + '"'
+      + (zoom ? ' style="zoom:' + zoom.toFixed(2) + '"' : "") + ">";
     h += '<div class="flow-target">' + esc(PRODUCTS[state.product].name + productLabel()) + "</div>";
     h += '<div class="flow2-list">';
     fd.steps.forEach(function (st2, i) {
