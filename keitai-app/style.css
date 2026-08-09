@@ -912,7 +912,10 @@ body.present .sheet{box-shadow:none}
 /* 実績の印刷（実績タブの「印刷」ボタン） */
 @media print{
   body.print-stats #tab-sheet,body.print-stats #tab-staff{display:none !important}
-  body.print-stats #tab-stats{display:block !important}
+  /* 実績は保存タブの中にあるため、保存タブを出したうえで実績カードだけを残す */
+  body.print-stats #tab-saved{display:block !important}
+  body.print-stats #tab-saved > *:not(#statsCard){display:none !important}
+  body.print-stats #statsCard,body.print-stats #statsPanel{display:block !important}
   body.print-stats .stats-bar,body.print-stats .stats-goal input{display:none !important}
   body.print-stats .stats-table{width:100%}
   body.print-stats .sc-box{break-inside:avoid}

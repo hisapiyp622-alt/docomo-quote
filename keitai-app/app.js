@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.59.0";
+  var APP_VERSION = "1.60.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5938,7 +5938,7 @@
         if (masterGateFrom === "stats") {
           masterGateFrom = null;
           statsUnlocked = true;
-          switchTab("stats");
+          openStats();
           return;
         }
         var fromGate = masterGateFrom === "staff";
@@ -5964,7 +5964,7 @@
     $("masterGateCancel").addEventListener("click", function () {
       showMasterGate(false);
       if (masterGateFrom === "staff") { masterGateFrom = null; showStaffGate(true); return; }
-      if (masterGateFrom === "stats") { masterGateFrom = null; switchTab("stats"); return; }
+      if (masterGateFrom === "stats") { masterGateFrom = null; openStats(); return; }
       switchTab("quote");
     });
   }
@@ -6304,6 +6304,16 @@
     if (busy || masterOnly) return;
     showTour();
   }
+  /* 実績は保存タブの中にしまってある（お客様に見える所に「実績」の文字を出さないため）。
+   * ここを通ると保存タブへ移動し、実績のパネルを開いて読み込む。 */
+  function openStats() {
+    switchTab("saved");
+    var p = $("statsPanel");
+    if (p) p.hidden = false;
+    var b = $("statsOpenBtn");
+    if (b) b.textContent = "実績を閉じる";
+    renderStats(true);
+  }
   function initTour() {
     $("tourNext").addEventListener("click", function () {
       if (tourStep >= TOUR_STEPS.length - 1) { endTour(); return; }
@@ -6458,7 +6468,7 @@
     if (name === "master") { histMark(); histLoadCloud(); renderMasterTab(); }
     else histSettle();
     if (name === "saved") { renderSaved(); $("saveQuoteName").placeholder = savedDefaultName(); }
-    if (name === "stats") renderStats(true);
+
     // 見積もり・見積書のどちらでも実績を記録できるよう、まとめバーは両方で出す
     $("summaryBar").style.display = (name === "quote" || name === "sheet") ? "" : "none";
   }
@@ -7398,6 +7408,12 @@
     if ($("statsMonth")) {
       $("statsMonth").addEventListener("change", function () { renderStats(false); });
       $("statsStaff").addEventListener("change", function () { renderStats(false); });
+      $("statsOpenBtn").addEventListener("click", function () {
+        var p = $("statsPanel");
+        p.hidden = !p.hidden;
+        this.textContent = p.hidden ? "実績を見る" : "実績を閉じる";
+        if (!p.hidden) renderStats(true);
+      });
       $("statsReload").addEventListener("click", function () { renderStats(true); });
       $("statsUnlockBtn").addEventListener("click", function () {
         if (statsAdminOk()) { renderStats(true); return; }
