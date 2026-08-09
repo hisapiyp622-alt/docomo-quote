@@ -921,3 +921,7 @@ body.present .sheet{box-shadow:none}
 /* ログイン・担当者コード画面のミツモリン */
 .login-mascot{display:block;margin:0 auto 4px;width:84px;height:auto;
   filter:drop-shadow(0 3px 8px rgba(0,0,0,.18))}
+
+/* 実績: 収益単価の入力（管理者のみ表示） */
+.stats-table .unit-price{width:76px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12.5px;text-align:right}
+@media print{ body.print-stats .unit-price{border:none} }
