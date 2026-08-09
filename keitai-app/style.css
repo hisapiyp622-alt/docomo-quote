@@ -340,6 +340,11 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 }
 .sub-checks .sub-label{font-size:12px;font-weight:700;color:var(--muted)}
 .sub-checks .check{margin:2px 0;font-size:13px}
+/* 現在の固定回線ヒアリング（ネット・電話・テレビ） */
+.ie-cur{display:block}
+.ie-cur .field{margin:6px 0}
+.ie-cur .sub-checks{margin:6px 0 0}
+
 .sub-checks .sub-note{font-size:12px;font-weight:700;color:var(--red)}
 
 /* ネットワークサービスの「廃止」チェック（②通話・メール） */
@@ -946,6 +951,8 @@ body.present .sheet{box-shadow:none}
 .flow2 .f2-n { margin: 1mm 0 0; padding-left: 4.5mm; list-style: none; }
 .flow2 .f2-n li { position: relative; font-size: 10px; line-height: 1.5; color: #5a4a2a; margin-top: 0.5mm; }
 .flow2 .f2-n li:before { content: "※"; position: absolute; left: -4.5mm; }
+/* 解約のご連絡先などの電話番号は、本文と同じ大きさ＋太字＋赤で見やすくする */
+.f2-tel { font-size: 11.5px; font-weight: 700; color: #c00; }
 
 /* 工程が8つ以上のとき、A4・1枚に収まるよう全体を詰める */
 .flow2-dense .flow2-list { margin-top: 2mm; }
@@ -955,6 +962,7 @@ body.present .sheet{box-shadow:none}
 .flow2-dense .f2-t { font-size: 13px; margin-top: 0.6mm; }
 .flow2-dense .f2-d { font-size: 10.5px; line-height: 1.45; }
 .flow2-dense .f2-n li { font-size: 9.2px; line-height: 1.4; }
+.flow2-dense .f2-tel { font-size: 10.5px; }
 .flow2-dense .f2-sep { width: 13mm; font-size: 9px; line-height: 1.1; }
 .flow2-dense .f2-when { font-size: 9.5px; padding: 0.4mm 2.8mm; }
 .flow2-dense .f2-step { font-size: 9.5px; }

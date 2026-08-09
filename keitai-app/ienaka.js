@@ -150,6 +150,9 @@
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング・奪還比較の入口）
+      /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
+       * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
+      curPhone: "", curTv: "", curTvDigi: false, curTvBs: false, curTvCs: false, curTvKeep: false,
       flowDates: {},                   // 開通までの流れ（1枚）の予定日メモ {工程番号: 文字}
       enabled: false   // この見積もりに光・home 5G を含めるか（見積書に出すかどうか）
     };
@@ -496,6 +499,26 @@
         clh.hidden = true;
       }
     }
+    if ($("ieCurPhone")) {
+      $("ieCurPhone").value = state.curPhone || "";
+      $("ieCurTv").value = state.curTv || "";
+      $("ieCurTvBands").hidden = state.curTv !== "yes";
+      $("ieCurTvDigi").checked = !!state.curTvDigi;
+      $("ieCurTvBs").checked = !!state.curTvBs;
+      $("ieCurTvCs").checked = !!state.curTvCs;
+      /* J:COMはテレビを残したままネットだけ乗り換えるご案内がある。
+       * その場合、お電話もJ:COMに残したほうがお客様のご負担が安くなる。 */
+      var jc = state.curLine === "jcom";
+      $("ieCurTvKeepField").hidden = !jc;
+      if (!jc && state.curTvKeep) state.curTvKeep = false;
+      $("ieCurTvKeep").checked = !!state.curTvKeep;
+      var kh = $("ieCurTvKeepHint");
+      kh.hidden = !(jc && state.curTvKeep);
+      if (!kh.hidden) {
+        kh.textContent = "テレビを残す場合、お電話もJ:COMに残したほうがお客様のご負担が安くなります。"
+          + "J:COMへのご連絡では「解約するのはインターネットのみ」と必ずお伝えください（開通までの流れにも記載されます）。";
+      }
+    }
     $("iePtypeField").hidden = !!PRODUCTS[state.product].noPtype;
     $("ieProviderField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
     $("ieProvider").value = state.provider || "";
@@ -697,6 +720,12 @@
     }
     $("ieCurLine").addEventListener("change", function () { state.curLine = this.value; syncForm(); recalc(); });
     $("ieCurLineOther").addEventListener("input", function () { state.curLineOther = this.value; recalc(); });
+    $("ieCurPhone").addEventListener("change", function () { state.curPhone = this.value; recalc(); });
+    $("ieCurTv").addEventListener("change", function () { state.curTv = this.value; syncForm(); recalc(); });
+    [["ieCurTvDigi", "curTvDigi"], ["ieCurTvBs", "curTvBs"], ["ieCurTvCs", "curTvCs"]].forEach(function (pr) {
+      $(pr[0]).addEventListener("change", function () { state[pr[1]] = this.checked; recalc(); });
+    });
+    $("ieCurTvKeep").addEventListener("change", function () { state.curTvKeep = this.checked; syncForm(); recalc(); });
     $("ieApplyType").addEventListener("change", function () {
       var prevDef = dpointDefaultFor(state.product, state.applyType);
       state.applyType = this.value;
@@ -784,20 +813,43 @@
    * 確認でき次第、ここに追加する）。 */
   var CUR_LINES = [
     { id: "", name: "（未ヒアリング）" },
-    { id: "none", name: "固定回線なし" },
-    { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
-    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料" },
-    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
-    { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
-    { id: "nuro", name: "NURO光" },
-    { id: "rakuten", name: "楽天ひかり" },
+    { id: "none", name: "利用なし（固定回線なし）" },
     { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
     { id: "eo", name: "eo光", tel: "0120-919-151", telNote: "eoサポートダイヤル" },
-    { id: "collabo", name: "他社光コラボ（ビッグローブ光・So-net光・OCN光 など）" },
+    { id: "nuro", name: "NURO光" },
+    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料" },
+    { id: "biglobe", name: "BIGLOBE光", cancel: "解約はビッグローブお客さまサポートの窓口へ（事業者変更の場合は解約不要です）" },
+    { id: "ocn", name: "OCN光", cancel: "解約はOCNカスタマーズフロントの窓口へ（事業者変更の場合は解約不要です）" },
+    { id: "collabo", name: "その他コラボ光（So-net光・@nifty光 など）" },
+    { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
+    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
+    { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
+    { id: "rakuten", name: "楽天ひかり" },
     { id: "cable", name: "ケーブルテレビのネット" },
     { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     { id: "other", name: "その他" }
   ];
+  var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
+  /* ヒアリング内容を1行にまとめる（引き継ぎシート用） */
+  function curHearingText() {
+    if (!state) return "";
+    var a2 = [];
+    if (state.curLine) a2.push("ネット: " + curLineLabel());
+    if (state.curPhone) a2.push("電話: " + (CUR_PHONE_NAMES[state.curPhone] || state.curPhone));
+    if (state.curTv) {
+      var tv = state.curTv === "yes" ? "あり" : "なし（アンテナ）";
+      if (state.curTv === "yes") {
+        var b2 = [];
+        if (state.curTvDigi) b2.push("地デジ");
+        if (state.curTvBs) b2.push("BS");
+        if (state.curTvCs) b2.push("CS");
+        if (b2.length) tv += "（" + b2.join("・") + "）";
+      }
+      a2.push("テレビ: " + tv);
+    }
+    if (state.curTvKeep) a2.push("J:COMのテレビを残す（解約はネットのみ）");
+    return a2.join(" ／ ");
+  }
   function curLineDef() {
     if (!state.curLine) return null;
     return CUR_LINES.filter(function (c) { return c.id === state.curLine; })[0] || null;
@@ -884,10 +936,20 @@
     var cl = curLineDef();
     if (cl && cl.id !== "none") {
       if (state.product === "home5g" || state.applyType === "shinki") {
-        step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
+        var jcKeep = cl.id === "jcom" && state.curTvKeep;
+        step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "（ネットのみ）" : ""),
+          "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
         noteTo("の解約", cl.tel
           ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
           : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
+        /* J:COMはテレビ・お電話を残したままネットだけ乗り換えるご案内がある。
+         * まとめて解約されると事故になるため、連絡時の言い方を必ず載せる。 */
+        if (cl.id === "jcom") {
+          noteTo("の解約", "J:COMへのご連絡では、解約するのは「インターネットのみ」と必ずお伝えください。まとめて解約されると、テレビ・お電話も止まってしまいます");
+          if (jcKeep) {
+            noteTo("の解約", "テレビはJ:COMに残します。お電話もJ:COMに残されたほうが、お客様のご負担は安くなります");
+          }
+        }
         noteTo("の解約", "開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
       } else if (state.applyType === "tenyo") {
         noteTo("切替", "転用では、フレッツ光の回線契約はそのまま移行するため解約は不要です。プロバイダ（OCN・So-netなど）は別途解約が必要な場合があります");
@@ -934,7 +996,7 @@
     var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
       + fd.steps.map(function (st2) {
           return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "")
-            + (st2.notes.length ? "<br>" + st2.notes.map(function (n2) { return "※ " + esc(n2); }).join("<br>") : "")
+            + (st2.notes.length ? "<br>" + st2.notes.map(function (n2) { return "※ " + noteHtml(n2); }).join("<br>") : "")
             + "</li>";
         }).join("") + "</ol>";
     return fh + "</div>";
@@ -953,6 +1015,14 @@
     plug: '<path d="M9 3.8v4.7M15 3.8v4.7" stroke="#38507a" stroke-width="2" stroke-linecap="round"/><path d="M7 8.5h10v3.2a5 5 0 0 1-4 4.9v3.6h-2v-3.6a5 5 0 0 1-4-4.9z" fill="#2a6df4"/>',
     phone: '<path d="M4.6 8.4C4.6 6.5 7.9 5 12 5s7.4 1.5 7.4 3.4l-.8 2.4c-.2.6-.8 1-1.4.8l-2.4-.5c-.5-.1-.9-.5-1-1l-.2-1.3a9.8 9.8 0 0 0-3.2 0l-.2 1.3c-.1.5-.5.9-1 1l-2.4.5c-.6.2-1.2-.2-1.4-.8z" fill="#38507a"/><rect x="10.4" y="12.4" width="3.2" height="7" rx="1.3" fill="#2a6df4"/>'
   };
+  /* 注意書きの中の電話番号は、お客様が見て分かるように本文と同じ大きさ＋太字＋赤にする
+   * （小さい字のままだと解約のご連絡先が読めない、という店頭の指摘・2026-08-09） */
+  function noteHtml(t) {
+    return esc(t).replace(/0\d{1,3}[-‐−ー]\d{2,4}[-‐−ー]\d{3,4}/g, function (m) {
+      return '<span class="f2-tel">' + m + "</span>";
+    });
+  }
+
   function flowSheetHtml() {
     var r = calc();
     var fd = flowData(r);
@@ -975,7 +1045,7 @@
         + '<div class="f2-t">' + esc(st2.t) + "</div>"
         + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
         + (st2.notes.length
-            ? '<ul class="f2-n">' + st2.notes.map(function (n2) { return "<li>" + esc(n2) + "</li>"; }).join("") + "</ul>"
+            ? '<ul class="f2-n">' + st2.notes.map(function (n2) { return "<li>" + noteHtml(n2) + "</li>"; }).join("") + "</ul>"
             : "")
         + "</div>"
         + '<div class="f2-date"><span class="f2-date-label">予定日</span>'
@@ -1173,6 +1243,7 @@
     flowSheetHtml: flowSheetHtml,
     // ヒアリングした現在の回線（未ヒアリングなら空）。引き継ぎシートと奪還比較の入口
     curLine: function () { return state && state.curLine ? curLineLabel() : ""; },
+    curHearing: function () { return state ? curHearingText() : ""; },
     // 入れ物を差し替えずに中身だけ初期化する（ケータイ側の store.ienaka を指したまま）
     reset: function () {
       var d = defaultState();
