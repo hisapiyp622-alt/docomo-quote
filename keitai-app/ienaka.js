@@ -139,6 +139,7 @@
   function defaultState() {
     return {
       product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "", providerType: "shinki", routerRental: "ari",
+      visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
       baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
       opts: {}, optPrices: {},
@@ -502,6 +503,9 @@
      * 申込区分によらず、プロバイダを選んだら聞く。 */
     var ptOn = !$("ieProviderField").hidden && !!state.provider;
     $("ieProviderTypeField").hidden = !ptOn;
+    // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す
+    $("ieVisitWrap").hidden = $("ieProviderField").hidden || state.provider !== "@nifty";
+    $("ieVisit").checked = !!state.visitSupport;
     if (!ptOn && state.providerType !== "shinki") state.providerType = "shinki";
     $("ieProviderType").value = state.providerType || "shinki";
     // プロバイダ無料無線ルーターレンタルは1ギガのみ（10ギガは対象プロバイダなし・別途購入）
@@ -670,6 +674,7 @@
       syncForm(); recalc();
     });
     $("ieProviderType").addEventListener("change", function () { state.providerType = this.value; recalc(); });
+    $("ieVisit").addEventListener("change", function () { state.visitSupport = this.checked; recalc(); });
     $("ieRouterRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
     $("ieBaseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
     $("ieH5DeviceName").addEventListener("input", function () { state.h5DeviceName = this.value; recalc(); });
@@ -819,6 +824,10 @@
        * （出典: docomo.ne.jp ドコモ光お申込みページ・2026-08-07確認） */
       step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
       step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc", "7〜10日後");
+      // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
+      if (state.provider === "@nifty" && state.visitSupport) {
+        step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
+      }
       /* 工事の前にルーターを手元にそろえておく工程。
        * レンタルまたは購入があるときだけ出す（お手持ちの持ち込みのときは出さない） */
       var rentalS = (state.product === "hikari1g" && state.routerRental !== "nashi")
@@ -838,6 +847,10 @@
     } else {
       step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
       step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc", "数日〜1週間後");
+      // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
+      if (state.provider === "@nifty" && state.visitSupport) {
+        step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
+      }
       // レンタルがあるときは、切替日の前にルーターを受け取っておく工程を入れる
       var rentalT = (state.product === "hikari1g" && state.routerRental !== "nashi")
         || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
