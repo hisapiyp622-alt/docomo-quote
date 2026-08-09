@@ -813,8 +813,16 @@
    * （工事の混み具合・地域で前後するため、断定しない）。 */
   /* 流れの中身。見積書の下の枠と、A4・1枚もの（flowSheetHtml）で共用する */
   function flowData(r) {
-    var steps = [], notes = [];
-    function step(t, d, icon, when) { steps.push({ t: t, d: d || "", icon: icon || "", when: when || "" }); }
+    var steps = [];
+    function step(t, d, icon, when) { steps.push({ t: t, d: d || "", icon: icon || "", when: when || "", notes: [] }); }
+    /* 注意事項は末尾にまとめず、関係する工程の中に書く（店舗の指定・2026-08-09）。
+     * match は工程名の一部。見つからないときは最後の工程に付ける。 */
+    function noteTo(match, text) {
+      for (var i = steps.length - 1; i >= 0; i--) {
+        if (steps[i].t.indexOf(match) >= 0) { steps[i].notes.push(text); return; }
+      }
+      if (steps.length) steps[steps.length - 1].notes.push(text);
+    }
     if (state.product === "home5g") {
       step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
       step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
@@ -840,9 +848,9 @@
       step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools", "2週間〜1か月後");
       step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router", "工事の当日");
       step("ご利用開始", "", "start", "工事の当日から");
-      if (r.tvOn) notes.push("テレビオプションの接続工事は、開通工事と同じ日に行います");
+      if (r.tvOn) noteTo("開通工事", "テレビオプションの接続工事は、開通工事と同じ日に行います");
       if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
-        notes.push("ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
+        noteTo("ルーターなど", "ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
       }
     } else {
       step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
@@ -864,32 +872,39 @@
     /* レンタルルーターの到着案内は、新規・転用・事業者変更とも
      * 「ルーターのお受け取り」の工程として流れに入れたので、注記は無し */
     if (isHikari() && state.provider === "@nifty") {
-      notes.push("開通までのご不明点は、@niftyのフォローコール（電話サポート）でご相談いただけます");
+      if (state.visitSupport) {
+        // 訪問設定サポートを希望した場合は、設定の工程に「訪問が来る」ことを書く
+        noteTo("ルーターなど", "@niftyの訪問設定サポートのスタッフがご自宅へ伺い、"
+          + "ルーターの接続・設定を行います（日程は事前のお電話で調整します）");
+      } else {
+        noteTo("ルーターなど", "設定でお困りのときは、@niftyのフォローコール（電話サポート）でご相談いただけます");
+      }
     }
     // いまの回線の解約。転用・事業者変更は解約が不要なので、案内だけ変える
     var cl = curLineDef();
     if (cl && cl.id !== "none") {
       if (state.product === "home5g" || state.applyType === "shinki") {
         step("いまの回線（" + curLineLabel() + "）の解約", "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
-        notes.push(cl.tel
+        noteTo("の解約", cl.tel
           ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
           : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
-        notes.push("開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
+        noteTo("の解約", "開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
       } else if (state.applyType === "tenyo") {
-        notes.push("転用では、フレッツ光の回線契約はそのまま移行するため解約は不要です。プロバイダ（OCN・So-netなど）は別途解約が必要な場合があります");
+        noteTo("切替", "転用では、フレッツ光の回線契約はそのまま移行するため解約は不要です。プロバイダ（OCN・So-netなど）は別途解約が必要な場合があります");
       } else if (state.applyType === "jigyosha") {
-        notes.push("事業者変更では、いまの光コラボ（" + curLineLabel() + "）の解約手続きは不要です（自動で切り替わります）。メールアドレスなどのオプションだけ残る場合があります");
+        noteTo("切替", "事業者変更では、いまの光コラボ（" + curLineLabel() + "）の解約手続きは不要です（自動で切り替わります）。メールアドレスなどのオプションだけ残る場合があります");
         /* ソフトバンク光からの事業者変更は、レンタル機器（光BBユニットなど）の
          * 返却が必要。返却先は公式ページで確認した住所（2026-08確認）。 */
         if (cl.id === "sbhikari") {
           step("レンタル機器（光BBユニットなど）の返却",
             "ソフトバンクからのレンタル機器がある場合は、切替を確認してから梱包して返却してください（送料はお客様のご負担・利用停止月の翌月20日まで）",
             "box", "切替の確認後");
-          notes.push("BBユニットなどの返却先: 〒272-0001 千葉県市川市二俣678-55 ESR市川ディストリビューションセンター 3階 北棟N8 ソフトバンク返品センター宛");
+          noteTo("の返却", "返却先: 〒272-0001 千葉県市川市二俣678-55 "
+            + "ESR市川ディストリビューションセンター 3階 北棟N8 ソフトバンク返品センター宛");
         }
       }
     }
-    return { steps: steps, notes: notes };
+    return { steps: steps };
   }
   // 見積書の下に出す小さい枠
   /* 見積書の下に出していた小さい枠。いまは使っていない（別紙の1枚ものに一本化）。
@@ -898,11 +913,10 @@
     var fd = flowData(r);
     var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
       + fd.steps.map(function (st2) {
-          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "") + "</li>";
+          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + esc(st2.t) + (st2.d ? "。" + esc(st2.d) : "")
+            + (st2.notes.length ? "<br>" + st2.notes.map(function (n2) { return "※ " + esc(n2); }).join("<br>") : "")
+            + "</li>";
         }).join("") + "</ol>";
-    if (fd.notes.length) {
-      fh += '<ul class="ie-flow-notes">' + fd.notes.map(function (st2) { return "<li>※ " + esc(st2) + "</li>"; }).join("") + "</ul>";
-    }
     return fh + "</div>";
   }
   /* A4・1枚の「開通までの流れ」。お客様へお渡しする説明用の紙。
@@ -934,6 +948,9 @@
         + (st2.when ? '<span class="f2-when">' + esc(st2.when) + "</span>" : "")
         + '<div class="f2-t">' + esc(st2.t) + "</div>"
         + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
+        + (st2.notes.length
+            ? '<ul class="f2-n">' + st2.notes.map(function (n2) { return "<li>" + esc(n2) + "</li>"; }).join("") + "</ul>"
+            : "")
         + "</div>"
         + '<div class="f2-date"><span class="f2-date-label">予定日</span>'
         + '<span class="f2-date-line" contenteditable="true" data-fi="' + i + '">'
@@ -941,10 +958,7 @@
         + "</div>";
     });
     h += "</div>";
-    if (fd.notes.length) {
-      h += '<div class="flow-notes"><h3>ご注意・ご案内</h3><ul>'
-        + fd.notes.map(function (st2) { return "<li>※ " + esc(st2) + "</li>"; }).join("") + "</ul></div>";
-    }
+    // 注意事項は各工程の中に書くため、末尾の「ご注意・ご案内」の枠は出さない
     return h + "</div>";
   }
 
