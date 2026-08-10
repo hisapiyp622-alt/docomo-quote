@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.71.0";
+  var APP_VERSION = "1.72.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -947,18 +947,24 @@
     }
     /* 件数の手修正。数え違い・二重計上を直すためのもので、管理者が
      * 月と担当を選んでいるときだけ出す（どの月の誰の数字かが決まらないため）。 */
-    if (admin) {
-      if (mFil !== "all" && sFil !== "all") {
-        var adNow = statsAdjOf(sFil, mFil);
-        h += '<div class="stats-adj"><b>件数の修正（' + esc(mFil) + "・" + esc(sName) + "）</b>"
-          + '<p class="hint">数え違いや二重計上を直すときだけ使ってください。ここに入れた数が、上の件数に足し引きされます（0で元に戻ります）。</p>'
-          + '<label>提案 <input type="number" data-adj="prop" value="' + (adNow.prop || "") + '" placeholder="0"></label>'
-          + '<label>成約 <input type="number" data-adj="won" value="' + (adNow.won || "") + '" placeholder="0"></label>'
-          + '<label>見送り <input type="number" data-adj="lost" value="' + (adNow.lost || "") + '" placeholder="0"></label>'
-          + "</div>";
-      } else {
-        h += '<p class="hint">件数を修正するときは、<strong>期間で月を、担当でその担当者</strong>を選んでください。</p>';
-      }
+    /* 担当者は自分の分だけ、管理者はどの担当の分でも直せる。
+     * 月が決まらないとどこに足し引きするか決まらないため、月の選択は必須。 */
+    var canAdj = mFil !== "all" && sFil !== "all" && (admin || sFil === me);
+    if (canAdj) {
+      var adNow = statsAdjOf(sFil, mFil);
+      var adjInput = function (k, label) {
+        return "<label>" + label + ' <input type="number" data-adj="' + k
+          + '" data-adjs="' + esc(sFil) + '" data-adjm="' + esc(mFil) + '" value="'
+          + (adNow[k] || "") + '" placeholder="0"></label>';
+      };
+      h += '<div class="stats-adj"><b>件数の修正（' + esc(mFil) + "・" + esc(sName) + "）</b>"
+        + '<p class="hint">数え違いや二重計上を直すときだけ使ってください。ここに入れた数が、上の件数に足し引きされます（0で元に戻ります）。</p>'
+        + adjInput("prop", "提案") + adjInput("won", "成約") + adjInput("lost", "見送り")
+        + "</div>";
+    } else if (admin) {
+      h += '<p class="hint">件数を修正するときは、<strong>期間で月を、担当でその担当者</strong>を選んでください。</p>';
+    } else if (mFil === "all") {
+      h += '<p class="hint">件数を修正するときは、<strong>期間で月</strong>を選んでください（ご自身の分だけ直せます）。</p>';
     }
     if (anySplit) {
       h += '<p class="hint"><strong>提案・成約・見送り・成約率</strong>は、その担当が<strong>応対した件</strong>の結果です。'
@@ -7858,9 +7864,11 @@
         }
         var adjKey = e.target.getAttribute && e.target.getAttribute("data-adj");
         if (adjKey) {
-          // 件数の手修正。いま選んでいる月と担当に対して保存する
-          var mSel = $("statsMonth").value, sSel = $("statsStaff").value;
-          if (mSel === "all" || sSel === "all") return;
+          /* 件数の手修正。対象の担当と月は入力欄に持たせてある
+           * （担当者の画面では担当の選択欄を出していないため）。 */
+          var mSel = e.target.getAttribute("data-adjm") || "";
+          var sSel = e.target.getAttribute("data-adjs") || "";
+          if (!mSel || !sSel || mSel === "all" || sSel === "all") return;
           if (!MASTER.statsAdjust) MASTER.statsAdjust = {};
           if (!MASTER.statsAdjust[sSel]) MASTER.statsAdjust[sSel] = {};
           var cur = MASTER.statsAdjust[sSel][mSel] || { prop: 0, won: 0, lost: 0 };
