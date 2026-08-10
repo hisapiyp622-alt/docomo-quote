@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.70.0";
+  var APP_VERSION = "1.70.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -683,7 +683,7 @@
   }
 
   // 3パターン一式＋光・5G（store のクローン）から項目を拾う
-  function statsDataItems(d, onlyPattern) {
+  function statsDataItems(d, onlyPattern, won) {
     var out = {};
     var pats = (d && d.patterns) || [];
     if (typeof onlyPattern === "number") {
@@ -697,7 +697,18 @@
     }
     var ie = d && d.ienaka;
     if (ie && ie.enabled && ie.product && statsCfg().hikari) {
-      out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
+      /* 成約として数えるのは「光申し込み」にチェックがあるときだけ。
+       * 金額をお見せしただけ（提案）と、実際にお申込みいただいた（成約）を
+       * 分けるため（店舗の指定・2026-08-10）。 */
+      var applied = true;
+      if (won) {
+        applied = typeof onlyPattern === "number"
+          ? !!(pats[onlyPattern] && pats[onlyPattern].todoHikari)
+          : pats.some(function (pt) { return pt && pt.todoHikari; });
+      }
+      if (applied) {
+        out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
+      }
     }
     return out;
   }
@@ -707,10 +718,10 @@
     if (!wonOnly) return statsDataItems(it.data);
     // 成約時に記録した内容があればそれを、無ければ保存内容の成約パターンを使う
     if (it.wonData) {
-      return statsDataItems(it.wonData, (it.wonData.active | 0));
+      return statsDataItems(it.wonData, (it.wonData.active | 0), true);
     }
     var wi = typeof it.wonPattern === "number" ? it.wonPattern : (it.data && it.data.active) | 0;
-    return statsDataItems(it.data, wi);
+    return statsDataItems(it.data, wi, true);
   }
 
   /* 成約・見送りを決めた担当。入っていない古い保存は、その保存を作った
