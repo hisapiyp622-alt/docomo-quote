@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.74.0";
+  var APP_VERSION = "1.74.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -620,6 +620,19 @@
     buy: "端末購入（新規・MNP・機種変更など）", plan: "プラン見直し", repair: "故障",
     howto: "操作", ask: "問合せ", other: "その他"
   };
+  var VISIT_ORDER = ["buy", "plan", "repair", "howto", "ask", "other"];
+  /* ご来店の目的。以前は1つだけ選ぶ形（visitPurpose）だったため、
+   * 古い保存もそのまま読めるようにここでまとめる。 */
+  function visitPurposesOf(st) {
+    var v = (st && st.visitPurposes) || null;
+    if (v && Object.keys(v).length) return v;
+    if (st && st.visitPurpose) { var o = {}; o[st.visitPurpose] = true; return o; }
+    return {};
+  }
+  function visitKeys(st) {
+    var v = visitPurposesOf(st);
+    return VISIT_ORDER.filter(function (k) { return !!v[k]; });
+  }
   /* Amazonプライムのように「もともとご自身で入っていたものをドコモ経由に移す」
    * ことがあるオプションは、区分に「既存」を足す。マスタで kubunExist を
    * 立てたもの（＋名前にAmazonが入るもの）が対象。 */
@@ -640,16 +653,16 @@
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
       if (todo[k] && cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
-    if (pt.visitPurpose && cfg.visit) {
-      out["visit:" + pt.visitPurpose] = "来店目的: " + (VISIT_NAMES[pt.visitPurpose] || pt.visitPurpose);
+    var vks = visitKeys(pt);
+    if (cfg.visit) {
+      vks.forEach(function (k) { out["visit:" + k] = "来店目的: " + (VISIT_NAMES[k] || k); });
     }
     /* 買い増し: 端末購入以外のご用件で来店されて機種変更が入った場合と、
      * 端末購入で来店されて「買い増しあり」にチェックした場合。
      * 機種変更の実績はそのまま数え、これは再掲として別に数える。 */
     if (cfg.kaimashi) {
-      var kaimashiOn = pt.visitPurpose === "buy"
-        ? !!pt.kaimashi
-        : !!(pt.visitPurpose && todo.kishu);
+      var buyOn = vks.indexOf("buy") >= 0;
+      var kaimashiOn = buyOn ? !!pt.kaimashi : !!(vks.length && todo.kishu);
       if (kaimashiOn) out["kaimashi"] = "買い増し（再掲）";
     }
     if (pt.planId && cfg.plans[pt.planId]) {
@@ -2572,7 +2585,7 @@
       // 手続き内容（引き継ぎシートに記載）
       /* ご来店の目的。①端末購入 以外で来店されて機種変更が入った場合は
        * 「買い増し」として実績に再掲する。①のときは買い増しの有無をチェックで持つ。 */
-      visitPurpose: "", kaimashi: false,
+      visitPurposes: {}, kaimashi: false,
       procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
       todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
@@ -4310,13 +4323,19 @@
   function renderVisitPurpose() {
     var f = $("kaimashiField"), n = $("kaimashiNote");
     if (!f || !n) return;
-    var buy = state.visitPurpose === "buy";
+    var v = state.visitPurposes || {};
+    document.querySelectorAll("[data-visit]").forEach(function (cb) {
+      cb.checked = !!v[cb.getAttribute("data-visit")];
+    });
+    var vks = visitKeys(state);
+    var buy = vks.indexOf("buy") >= 0;
     f.hidden = !buy;
     $("kaimashi").checked = !!state.kaimashi;
-    var auto = !buy && !!state.visitPurpose && !!(state.procTodo || {}).kishu;
+    var auto = !buy && vks.length > 0 && !!(state.procTodo || {}).kishu;
     n.hidden = !auto;
     if (auto) {
-      n.textContent = "「" + (VISIT_NAMES[state.visitPurpose] || "") + "」でのご来店から機種変更になったため、"
+      n.textContent = "「" + vks.map(function (k) { return VISIT_NAMES[k]; }).join("・")
+        + "」でのご来店から機種変更になったため、"
         + "実績では機種変更に加えて「買い増し（再掲）」としても数えます。";
     }
   }
@@ -4691,7 +4710,6 @@
     $("shopTel").value = state.shopTel || "";
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
-    $("visitPurpose").value = state.visitPurpose || "";
     $("kaimashi").checked = !!state.kaimashi;
     renderVisitPurpose();
     $("voiceChange").checked = !!state.voiceChange;
@@ -5128,11 +5146,13 @@
     ["kishu", "shinki", "mnp", "plan"].forEach(function (k) {
       if ((state.procTodo || {})[k]) procs.push(PROC_LABEL[k]);
     });
-    if (state.visitPurpose) {
+    var vkS = visitKeys(state);
+    if (vkS.length) {
       anyTodo = true;
-      h += row("ご来店の目的", "<b>" + esc(VISIT_NAMES[state.visitPurpose] || state.visitPurpose) + "</b>"
-        + (state.visitPurpose === "buy" && state.kaimashi ? "　<b>買い増しあり</b>" : "")
-        + (state.visitPurpose !== "buy" && (state.procTodo || {}).kishu ? "　<b>買い増し（機種変更）</b>" : ""));
+      var buyS = vkS.indexOf("buy") >= 0;
+      h += row("ご来店の目的", "<b>" + esc(vkS.map(function (k) { return VISIT_NAMES[k]; }).join("　／　")) + "</b>"
+        + (buyS && state.kaimashi ? "　<b>買い増しあり</b>" : "")
+        + (!buyS && (state.procTodo || {}).kishu ? "　<b>買い増し（機種変更）</b>" : ""));
     }
     if (procs.length) { anyTodo = true; h += row("手続き", "<b>" + procs.join("　／　") + "</b>"); }
     var apps = [];
@@ -7870,11 +7890,15 @@
     $("custZip").addEventListener("input", function () {
       state.custZip = this.value; saveState(); renderStaffSheet();
     });
-    $("visitPurpose").addEventListener("change", function () {
-      state.visitPurpose = this.value;
-      if (state.visitPurpose !== "buy") state.kaimashi = false;
-      renderVisitPurpose();
-      recalc();
+    document.querySelectorAll("[data-visit]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        if (!state.visitPurposes) state.visitPurposes = {};
+        var k = cb.getAttribute("data-visit");
+        if (cb.checked) state.visitPurposes[k] = true; else delete state.visitPurposes[k];
+        if (visitKeys(state).indexOf("buy") < 0) state.kaimashi = false;
+        renderVisitPurpose();
+        recalc();
+      });
     });
     $("kaimashi").addEventListener("change", function () {
       state.kaimashi = this.checked;

@@ -696,12 +696,6 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 #resultDlg .row-btns{display:flex;gap:8px;margin-top:6px}
 #resultDlg .row-btns button{flex:1;margin:0}
-/* ご来店の目的（手続き内容の先頭） */
-.visit-field{margin-bottom:6px}
-.visit-field select{
-  width:100%;padding:9px 10px;font-size:15px;border:1px solid var(--line);
-  border-radius:8px;background:#fff
-}
 /* 実績の件数の手修正 */
 .stats-adj{
   margin:10px 0;padding:10px 12px;border:1px solid var(--line);
