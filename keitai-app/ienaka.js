@@ -494,6 +494,9 @@
       if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
         clh.hidden = false;
         clh.textContent = (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
+          + (state.applyType === "jigyosha" && cd.jgTel
+              ? "　／　承諾番号の窓口: " + cd.jgTel + (cd.jgTelNote ? "（" + cd.jgTelNote + "）" : "")
+              : "")
           + "　※ 見積書の「開通までの流れ」に解約のご案内が載ります";
       } else {
         clh.hidden = true;
@@ -817,7 +820,9 @@
     { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
     { id: "eo", name: "eo光", tel: "0120-919-151", telNote: "eoサポートダイヤル" },
     { id: "nuro", name: "NURO光" },
-    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料" },
+    /* jgTel は事業者変更承諾番号の専用窓口。解約の窓口（tel）とは別 */
+    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料",
+      jgTel: "0800-111-6710", jgTelNote: "事業者変更承諾番号 専用窓口" },
     { id: "biglobe", name: "BIGLOBE光", tel: "0120-86-0962", telNote: "ビッグローブ カスタマーサポート" },
     { id: "ocn", name: "OCN光", tel: "0120-506-506", telNote: "OCNカスタマーズフロント・日祝は休み" },
     { id: "collabo", name: "その他コラボ光（So-net光・@nifty光 など）" },
@@ -932,8 +937,12 @@
         } else {
           step("事業者変更承諾番号の取得（いまのご契約先へお電話）",
             "いまご契約の事業者へお電話し、事業者変更承諾番号をお受け取りください", "phone", "本日・店頭");
-          noteTo("承諾番号の取得", jgLine && jgLine.tel
-            ? "いまのご契約先: " + jgLine.name + " " + jgLine.tel + (jgLine.telNote ? "（" + jgLine.telNote + "）" : "")
+          /* 承諾番号の専用窓口が分かっていればそちらを、無ければ契約先の窓口を出す */
+          var jgT = jgLine && (jgLine.jgTel || jgLine.tel);
+          var jgN = jgLine && (jgLine.jgTel ? jgLine.jgTelNote : jgLine.telNote);
+          noteTo("承諾番号の取得", jgT
+            ? (jgLine.jgTel ? "承諾番号のご連絡先: " : "いまのご契約先: ")
+              + jgLine.name + " " + jgT + (jgN ? "（" + jgN + "）" : "")
             : "ご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください");
         }
         step("承諾番号をドコモ光サービスセンターへご連絡",
