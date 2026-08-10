@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.74.1";
+  var APP_VERSION = "1.75.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -645,7 +645,11 @@
   }
   // 新規AmazonPrime加入率の対象プラン（ドコモMAX・ポイ活MAX・ドコモmini）
   var AMAZON_TARGET_PLANS = { max: "ドコモ MAX", poikatsu_max: "ドコモ ポイ活 MAX", mini: "ドコモ mini" };
-  function statsPatternItems(ptRaw) {
+  /* ドコモ MAX・ポイ活 MAX の獲得は「プラン変更」で数える指標のため、
+   * 成約として数えるのは手続きに「プラン変更」があるときだけにする
+   * （店舗の指定・2026-08-10）。提案はこれまでどおり、選んだ時点で数える。 */
+  var PLAN_WON_NEEDS_CHANGE = { max: true, poikatsu_max: true };
+  function statsPatternItems(ptRaw, won) {
     var pt = Object.assign(defaultState(), ptRaw || {});
     var cfg = statsCfg();
     var out = {};
@@ -665,7 +669,8 @@
       var kaimashiOn = buyOn ? !!pt.kaimashi : !!(vks.length && todo.kishu);
       if (kaimashiOn) out["kaimashi"] = "買い増し（再掲）";
     }
-    if (pt.planId && cfg.plans[pt.planId]) {
+    if (pt.planId && cfg.plans[pt.planId]
+        && !(won && PLAN_WON_NEEDS_CHANGE[pt.planId] && !todo.plan)) {
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
     }
@@ -734,12 +739,12 @@
     var out = {};
     var pats = (d && d.patterns) || [];
     if (typeof onlyPattern === "number") {
-      Object.assign(out, statsPatternItems(pats[onlyPattern]));
+      Object.assign(out, statsPatternItems(pats[onlyPattern], won));
     } else {
       pats.forEach(function (pt) {
         var m = Object.assign(defaultState(), pt || {});
         if (!(isPatternUsed(m) || m.planId || m.procType)) return;
-        Object.assign(out, statsPatternItems(pt));
+        Object.assign(out, statsPatternItems(pt, won));
       });
     }
     var ie = d && d.ienaka;
