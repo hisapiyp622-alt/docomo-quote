@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.81.0";
+  var APP_VERSION = "1.82.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -998,6 +998,7 @@
   // 全担当の保存リストを集める。クラウド利用時は最新を読みにいく
   var statsLists = null; // {staffId: list}
   var statsLast = null;  // 直近に表示した集計（CSV出力用）
+  var statsCloudOk = true; // クラウドから全担当ぶんを読めたか（確定してよいかの判断に使う）
   function loadAllSaved(done) {
     var lists = {};
     var mine = activeStaff().id;
@@ -1010,13 +1011,14 @@
     config.staff.forEach(function (s) {
       lists[s.id] = s.id === mine ? savedList : local(s.id);
     });
-    if (!cloudOn()) { statsLists = lists; done(); return; }
+    if (!cloudOn()) { statsCloudOk = true; statsLists = lists; done(); return; }
+    statsCloudOk = true;
     var jobs = config.staff.map(function (s) {
       if (s.id === mine) return Promise.resolve(); // 自分の分は手元が最新
       return savedDoc(s.id).get().then(function (snap) {
         var d = snap.exists ? snap.data() : null;
         if (d && d.list) lists[s.id] = JSON.parse(d.list) || [];
-      }).catch(function () {});
+      }).catch(function () { statsCloudOk = false; });
     });
     Promise.all(jobs).then(function () { statsLists = lists; done(); }, function () { statsLists = lists; done(); });
   }
@@ -1059,69 +1061,16 @@
     var d = new Date(ms || 0);
     return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2);
   }
-  /* 実績の画面。
-   * 主役は「何の応対から何を成約したか」の早見表。
-   * 成約率などの分析は、現場が記録に慣れてからにする（店舗の指定・2026-08-10）。 */
-  function renderStats(refresh) {
-    var body = $("statsBody");
-    if (!body) return;
-    if (refresh || !statsLists) {
-      body.innerHTML = '<p class="hint">読み込み中…</p>';
-      loadAllSaved(function () { renderStats(false); });
-      return;
-    }
-    var lists = statsLists;
-    var admin = statsAdminOk();
-    var me = activeStaff().id;
-    /* 担当者の画面に出すのは、自分が応対した件と、自分が成約・見送りを決めた件だけ */
-    function mineOnly(it, sid) { return admin || sid === me || resStaffOf(it, sid) === me; }
-    /* 引き渡した元（コンデザが作って担当へ渡した見積もり）は数えない。
-     * 渡した先の控えが1件として数えられる。 */
-    function isSent(it) { return !!it.sentTo; }
-
-    /* ---- 期間・担当の選択 ---- */
-    var monthSel = $("statsMonth"), staffSel = $("statsStaff");
-    var months = {};
-    Object.keys(lists).forEach(function (sid) {
-      lists[sid].forEach(function (it) { if (mineOnly(it, sid)) months[statsMonthOf(it.savedAt)] = true; });
-    });
-    var curMonth = statsMonthOf(Date.now());
-    months[curMonth] = true;                 // 当月は保存がなくても選べるようにする
-    var mKeys = Object.keys(months).sort().reverse();
-    var mPrev = monthSel.value || curMonth;
-    monthSel.innerHTML = mKeys.map(function (m) {
-      return '<option value="' + m + '">' + m + (m === curMonth ? "（今月）" : "") + "</option>";
-    }).join("") + '<option value="all">全期間</option>';
-    monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : curMonth;
-
-    var unlockBtn = $("statsUnlockBtn");
-    if (unlockBtn) unlockBtn.hidden = admin;
-    var mornBtn = $("statsMorning");
-    if (mornBtn) mornBtn.hidden = !admin;
-    if (staffSel.parentElement) staffSel.parentElement.style.display = admin ? "" : "none";
-    var sPrev = staffSel.value || "all";
-    staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
-      return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>";
-    }).join("");
-    staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
-    // 管理者以外は、常に自分（ログイン中の担当）の実績だけ
-    var mFil = monthSel.value, sFil = admin ? staffSel.value : me;
-    function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
-    var sName = "全員";
-    if (sFil !== "all") {
-      var ssNow = config.staff.filter(function (s) { return s.id === sFil; })[0];
-      sName = (ssNow && ssNow.name) || sFil;
-    }
-
-    /* ---- 集計 ----
-     * 提案・応対・未記録は「応対した担当」、成約は「成約を決めた担当」で数える。 */
+  /* ---------- 実績の集計 ----------
+   * 提案・応対・未記録は「応対した担当」、成約は「成約を決めた担当」で数える。
+   * 画面の描画と、月次の確定（スナップショット）で同じものを使う。 */
+  function statsAggregate(lists, mFil, sFil, mineOnlyFn) {
     var items = {};      // 項目キー -> {name, prop, won, byVisit}
     var visitUsed = {};  // 使われた来店目的
     var vpAgg = {};      // 来店目的 -> {prop, won}
     var byDay = {};      // 日 -> {prop, won, dow}
     var staffAgg = {};   // 担当id -> {prop, won, undone}
     var cross = {};      // 担当id -> {項目キー -> 成約件数}
-    var undoneList = []; // 結果未記録の保存（自分のぶん）
 
     config.staff.forEach(function (s) {
       staffAgg[s.id] = { prop: 0, won: 0, undone: 0 };
@@ -1131,10 +1080,11 @@
       if (!items[k]) items[k] = { name: name, prop: 0, won: 0, byVisit: {} };
       return items[k];
     }
+    function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
 
     Object.keys(lists).forEach(function (sid) {
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-        if (isSent(it) || !mineOnly(it, sid)) return;
+        if (it.sentTo || !mineOnlyFn(it, sid)) return;
         var decider = resStaffOf(it, sid);
         var ownMatch = (sFil === "all" || sid === sFil);       // 応対した担当
         var decMatch = (sFil === "all" || decider === sFil);   // 成約を決めた担当
@@ -1155,7 +1105,6 @@
           }
           if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay() };
           byDay[dk].prop++;
-          if (!it.result && sid === sFil) undoneList.push(it);
           // 提案した項目
           var propI = statsSavedItems(it, false);
           Object.keys(propI).forEach(function (k) { bagItem(k, propI[k]).prop++; });
@@ -1192,8 +1141,252 @@
       var b = bagItem(k, catalog[k] || k);
       b.prop = Math.max(0, b.prop + itemAdj[k].prop);
       b.won = Math.max(0, b.won + itemAdj[k].won);
-      b.adj = itemAdj[k];
     });
+    return { items: items, visitUsed: visitUsed, vpAgg: vpAgg,
+      byDay: byDay, staffAgg: staffAgg, cross: cross };
+  }
+
+  /* ---------- 月次の確定（スナップショット） ----------
+   * 保存は担当ごとに300件までなので、忙しい店では1〜2か月で古いものから
+   * こぼれてしまう。そうなる前に、先々月ぶんの集計値を確定して料金マスタに残し、
+   * 生の保存は消して枠を空ける。確定済みの月は、この数字を表示する。
+   * 確定は自動（実績を開いたとき）。取り返しがつかない削除なので、
+   * ・当月と先月は触らない
+   * ・クラウド利用時は全担当ぶんを読めたときだけ確定する
+   * ・すでに確定した月は数字を作り直さない
+   * ・削除は「確定済みの月」の自分の保存だけ
+   * という順で守っている。 */
+  var STATS_SNAP_KEEP = 24;   // 確定を残す月数
+
+  function monthShift(m, n) {
+    var y = +m.slice(0, 4), mo = +m.slice(5) + n;
+    y += Math.floor((mo - 1) / 12);
+    mo = ((mo - 1) % 12 + 12) % 12 + 1;
+    return y + "/" + ("0" + mo).slice(-2);
+  }
+  function statsSnapshots() { return MASTER.statsSnapshot || {}; }
+
+  // 1か月ぶんの確定データを作る（担当ごとに持ち、合計は足し上げて出す）
+  function statsBuildSnapshot(month, lists) {
+    var all = function () { return true; };
+    var names = {}, staff = {};
+    config.staff.forEach(function (s) {
+      var a = statsAggregate(lists, month, s.id, all);
+      var st = { prop: 0, won: 0, undone: 0, items: {}, vp: {}, days: {} };
+      var sa = a.staffAgg[s.id] || { prop: 0, won: 0, undone: 0 };
+      st.prop = sa.prop; st.won = sa.won; st.undone = sa.undone;
+      Object.keys(a.items).forEach(function (k) {
+        var x = a.items[k];
+        if (!x.prop && !x.won) return;
+        names[k] = x.name;
+        st.items[k] = [x.prop, x.won, x.byVisit];
+      });
+      Object.keys(a.vpAgg).forEach(function (vk) {
+        st.vp[vk] = [a.vpAgg[vk].prop, a.vpAgg[vk].won];
+      });
+      Object.keys(a.byDay).forEach(function (d) {
+        st.days[d] = [a.byDay[d].prop, a.byDay[d].won, a.byDay[d].dow];
+      });
+      if (st.prop || st.won || Object.keys(st.items).length) staff[s.id] = st;
+    });
+    return { at: Date.now(), names: names, staff: staff };
+  }
+
+  // 2つの集計を足し合わせる（「全期間」で、生の保存と確定データを合わせるのに使う）
+  function statsMergeAgg(a, b) {
+    Object.keys(b.items).forEach(function (k) {
+      var x = b.items[k];
+      if (!a.items[k]) a.items[k] = { name: x.name, prop: 0, won: 0, byVisit: {} };
+      a.items[k].prop += x.prop;
+      a.items[k].won += x.won;
+      Object.keys(x.byVisit || {}).forEach(function (vk) {
+        a.items[k].byVisit[vk] = (a.items[k].byVisit[vk] || 0) + x.byVisit[vk];
+      });
+    });
+    Object.keys(b.visitUsed).forEach(function (vk) { a.visitUsed[vk] = true; });
+    Object.keys(b.vpAgg).forEach(function (vk) {
+      if (!a.vpAgg[vk]) a.vpAgg[vk] = { prop: 0, won: 0 };
+      a.vpAgg[vk].prop += b.vpAgg[vk].prop;
+      a.vpAgg[vk].won += b.vpAgg[vk].won;
+    });
+    Object.keys(b.byDay).forEach(function (d) {
+      if (!a.byDay[d]) a.byDay[d] = { prop: 0, won: 0, dow: b.byDay[d].dow };
+      a.byDay[d].prop += b.byDay[d].prop;
+      a.byDay[d].won += b.byDay[d].won;
+    });
+    Object.keys(b.staffAgg).forEach(function (sid) {
+      if (!a.staffAgg[sid]) a.staffAgg[sid] = { prop: 0, won: 0, undone: 0 };
+      a.staffAgg[sid].prop += b.staffAgg[sid].prop;
+      a.staffAgg[sid].won += b.staffAgg[sid].won;
+      a.staffAgg[sid].undone += b.staffAgg[sid].undone;
+    });
+    Object.keys(b.cross).forEach(function (sid) {
+      if (!a.cross[sid]) a.cross[sid] = {};
+      Object.keys(b.cross[sid]).forEach(function (k) {
+        a.cross[sid][k] = (a.cross[sid][k] || 0) + b.cross[sid][k];
+      });
+    });
+    return a;
+  }
+
+  // 確定データを、画面が使う形（statsAggregate と同じ形）に戻す
+  function statsFromSnapshot(snap, sFil) {
+    var items = {}, visitUsed = {}, vpAgg = {}, byDay = {}, staffAgg = {}, cross = {};
+    config.staff.forEach(function (s) { staffAgg[s.id] = { prop: 0, won: 0, undone: 0 }; cross[s.id] = {}; });
+    Object.keys(snap.staff || {}).forEach(function (sid) {
+      if (sFil !== "all" && sid !== sFil) return;
+      var st = snap.staff[sid];
+      staffAgg[sid] = { prop: st.prop, won: st.won, undone: st.undone };
+      if (!cross[sid]) cross[sid] = {};
+      Object.keys(st.items || {}).forEach(function (k) {
+        var a = st.items[k];
+        if (!items[k]) items[k] = { name: (snap.names || {})[k] || k, prop: 0, won: 0, byVisit: {} };
+        items[k].prop += a[0];
+        items[k].won += a[1];
+        Object.keys(a[2] || {}).forEach(function (vk) {
+          items[k].byVisit[vk] = (items[k].byVisit[vk] || 0) + a[2][vk];
+          if (vk !== "_none") visitUsed[vk] = true;
+        });
+        if (a[1]) cross[sid][k] = a[1];
+      });
+      Object.keys(st.vp || {}).forEach(function (vk) {
+        if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0 };
+        vpAgg[vk].prop += st.vp[vk][0];
+        vpAgg[vk].won += st.vp[vk][1];
+        if (vk !== "_none") visitUsed[vk] = true;
+      });
+      Object.keys(st.days || {}).forEach(function (d) {
+        if (!byDay[d]) byDay[d] = { prop: 0, won: 0, dow: st.days[d][2] };
+        byDay[d].prop += st.days[d][0];
+        byDay[d].won += st.days[d][1];
+      });
+    });
+    return { items: items, visitUsed: visitUsed, vpAgg: vpAgg,
+      byDay: byDay, staffAgg: staffAgg, cross: cross };
+  }
+
+  /* 先々月以前で、保存が残っているのに確定していない月を確定する。
+   * 数字を作れなかった（読めなかった）ときは何もしない。 */
+  function statsAutoSettle(lists) {
+    if (cloudOn() && !statsCloudOk) return false;   // 全担当ぶんを読めていない
+    var snaps = MASTER.statsSnapshot || (MASTER.statsSnapshot = {});
+    var limit = monthShift(statsMonthOf(Date.now()), -2);
+    var todo = {};
+    Object.keys(lists).forEach(function (sid) {
+      (lists[sid] || []).forEach(function (it) {
+        var m = statsMonthOf(it.savedAt);
+        if (m <= limit && !snaps[m]) todo[m] = true;
+      });
+    });
+    var keys = Object.keys(todo);
+    if (!keys.length) return false;
+    keys.forEach(function (m) { snaps[m] = statsBuildSnapshot(m, lists); });
+    // 古い確定は間引く（料金マスタが際限なく大きくならないように）
+    var all = Object.keys(snaps).sort();
+    while (all.length > STATS_SNAP_KEEP) { delete snaps[all.shift()]; }
+    saveMaster();
+    return true;
+  }
+
+  /* 確定済みの月の保存（自分のぶん）を消して、保存の枠を空ける。
+   * 数字は確定データに残っているので、実績の表示は変わらない。 */
+  function statsPurgeSettled() {
+    var snaps = statsSnapshots();
+    if (!Object.keys(snaps).length) return 0;
+    var del = loadSavedDel();
+    var now = Date.now(), removed = 0;
+    var keep = savedList.filter(function (it) {
+      if (!snaps[statsMonthOf(it.savedAt)]) return true;
+      del[it.id] = now;
+      removed++;
+      return false;
+    });
+    if (!removed) return 0;
+    savedList = keep;
+    saveSavedDel(null, del);
+    persistSaved();
+    renderSaved();
+    return removed;
+  }
+
+  /* 実績の画面。
+   * 主役は「何の応対から何を成約したか」の早見表。
+   * 成約率などの分析は、現場が記録に慣れてからにする（店舗の指定・2026-08-10）。 */
+  function renderStats(refresh) {
+    var body = $("statsBody");
+    if (!body) return;
+    if (refresh || !statsLists) {
+      body.innerHTML = '<p class="hint">読み込み中…</p>';
+      loadAllSaved(function () {
+        /* 先々月ぶんを確定して、確定済みの月の保存を消す（保存の枠を空ける）。
+         * 数字は確定データに残るので、実績の表示は変わらない。 */
+        statsAutoSettle(statsLists);
+        if (statsPurgeSettled()) { statsLists[activeStaff().id] = savedList; }
+        renderStats(false);
+      });
+      return;
+    }
+    var lists = statsLists;
+    var admin = statsAdminOk();
+    var me = activeStaff().id;
+    /* 担当者の画面に出すのは、自分が応対した件と、自分が成約・見送りを決めた件だけ */
+    function mineOnly(it, sid) { return admin || sid === me || resStaffOf(it, sid) === me; }
+    /* 引き渡した元（コンデザが作って担当へ渡した見積もり）は数えない。
+     * 渡した先の控えが1件として数えられる。 */
+    function isSent(it) { return !!it.sentTo; }
+
+    /* ---- 期間・担当の選択 ---- */
+    var monthSel = $("statsMonth"), staffSel = $("statsStaff");
+    var months = {};
+    Object.keys(lists).forEach(function (sid) {
+      lists[sid].forEach(function (it) { if (mineOnly(it, sid)) months[statsMonthOf(it.savedAt)] = true; });
+    });
+    var curMonth = statsMonthOf(Date.now());
+    months[curMonth] = true;                 // 当月は保存がなくても選べるようにする
+    var snaps = statsSnapshots();
+    Object.keys(snaps).forEach(function (m) { months[m] = true; });  // 確定済みの月も選べる
+    var mKeys = Object.keys(months).sort().reverse();
+    var mPrev = monthSel.value || curMonth;
+    monthSel.innerHTML = mKeys.map(function (m) {
+      return '<option value="' + m + '">' + m
+        + (m === curMonth ? "（今月）" : (snaps[m] ? "（確定）" : "")) + "</option>";
+    }).join("") + '<option value="all">全期間</option>';
+    monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : curMonth;
+
+    var unlockBtn = $("statsUnlockBtn");
+    if (unlockBtn) unlockBtn.hidden = admin;
+    var mornBtn = $("statsMorning");
+    if (mornBtn) mornBtn.hidden = !admin;
+    if (staffSel.parentElement) staffSel.parentElement.style.display = admin ? "" : "none";
+    var sPrev = staffSel.value || "all";
+    staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
+      return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>";
+    }).join("");
+    staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
+    // 管理者以外は、常に自分（ログイン中の担当）の実績だけ
+    var mFil = monthSel.value, sFil = admin ? staffSel.value : me;
+    var settled = snaps[mFil] || null;   // 確定済みの月は、この数字を出す
+    var sName = "全員";
+    if (sFil !== "all") {
+      var ssNow = config.staff.filter(function (s) { return s.id === sFil; })[0];
+      sName = (ssNow && ssNow.name) || sFil;
+    }
+
+    var agg;
+    if (settled) {
+      agg = statsFromSnapshot(settled, sFil);
+    } else {
+      agg = statsAggregate(lists, mFil, sFil, mineOnly);
+      // 「全期間」では、確定済みの月ぶんも足す（保存を消したぶんが欠けないように）
+      if (mFil === "all") {
+        Object.keys(snaps).forEach(function (m) {
+          statsMergeAgg(agg, statsFromSnapshot(snaps[m], sFil));
+        });
+      }
+    }
+    var items = agg.items, visitUsed = agg.visitUsed, vpAgg = agg.vpAgg;
+    var byDay = agg.byDay, staffAgg = agg.staffAgg, cross = agg.cross;
+    var catalog = statsCatalog();
 
     /* ---- 並び順 ---- */
     var order = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
@@ -1232,14 +1425,14 @@
     /* ---- 手修正ができるか ----
      * 担当者は当月の自分ぶんだけ（当日の記録として足し引きされる）。
      * 管理者は担当と月を選んでいればいつでも。 */
-    var canAdj = sFil !== "all" && mFil !== "all"
+    var canAdj = !settled && sFil !== "all" && mFil !== "all"
       && (admin || (sFil === me && mFil === curMonth));
     var adjScope = (admin && mFil !== curMonth) ? "month" : "day";
 
     var h = "";
 
     /* ---- 結果が未記録の応対 ---- */
-    var myUndone = staffAgg[sFil] ? staffAgg[sFil].undone : 0;
+    var myUndone = (!settled && staffAgg[sFil]) ? staffAgg[sFil].undone : 0;
     if (sFil !== "all" && myUndone > 0) {
       h += '<div class="stats-undone">結果が未記録の応対が <b>' + myUndone + "件</b>あります。"
         + '<button type="button" class="btn-sub" id="statsUndoneBtn">保存タブで記録する</button></div>';
@@ -1247,7 +1440,8 @@
 
     /* ---- 主役: 成約の早見表 ---- */
     h += "<h3>" + (mFil === "all" ? "全期間" : esc(mFil)) + "の成約"
-      + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）") + "</h3>";
+      + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）")
+      + (settled ? '<span class="settled-mark">確定済み</span>' : "") + "</h3>";
     if (!iKeys.length) {
       h += '<p class="hint">この期間の記録がまだありません。</p>';
     } else {
