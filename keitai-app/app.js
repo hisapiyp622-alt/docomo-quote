@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.77.0";
+  var APP_VERSION = "1.78.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -172,7 +172,41 @@
   }
 
   var SAVED_KEY = "kq-saved-v1";
-  var SAVED_MAX = 50;
+  /* 保存できる件数。1か月をあとから振り返って分析するため多めに持つ。
+   * ただしクラウドは1件のデータに上限（約1MB）があるので、
+   * 新しい SAVED_FULL 件だけ見積もりの中身をそのまま持ち、
+   * それより古いものは実績の集計に要る項目だけに軽くする（slimSavedItem）。 */
+  var SAVED_MAX = 300;
+  var SAVED_FULL = 60;
+  /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
+  var SLIM_PATTERN_KEYS = ["planId", "procType", "procTodo", "visitPurposes", "visitPurpose",
+    "kaimashi", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
+  function slimData(d) {
+    if (!d) return d;
+    var out = { active: d.active | 0, patterns: (d.patterns || []).map(function (pt) {
+      var o = {};
+      SLIM_PATTERN_KEYS.forEach(function (k) { if (pt && pt[k] !== undefined) o[k] = pt[k]; });
+      return o;
+    }) };
+    if (d.ienaka) out.ienaka = { enabled: !!d.ienaka.enabled, product: d.ienaka.product || "" };
+    return out;
+  }
+  function slimSavedItem(it) {
+    if (!it || it.slim) return it;
+    it.data = slimData(it.data);
+    if (it.wonData) it.wonData = slimData(it.wonData);
+    it.slim = true;
+    return it;
+  }
+  /* 新しい方から SAVED_FULL 件を残して、それより古いものを軽くする。
+   * 件数の上限も合わせてここで掛ける。 */
+  function trimSavedList(list) {
+    list.sort(function (a2, b2) { return (b2.savedAt || 0) - (a2.savedAt || 0); });
+    if (list.length > SAVED_MAX) list = list.slice(0, SAVED_MAX);
+    for (var i = SAVED_FULL; i < list.length; i++) slimSavedItem(list[i]);
+    return list;
+  }
   var savedList = [];
   function savedKey(staffId) { return SAVED_KEY + ":" + (staffId || activeStaff().id); }
   function loadSaved() {
@@ -225,7 +259,7 @@
       data: JSON.parse(JSON.stringify(store))
     };
     savedList.unshift(item);
-    if (savedList.length > SAVED_MAX) savedList = savedList.slice(0, SAVED_MAX);
+    savedList = trimSavedList(savedList);
     persistSaved();
     renderSaved();
     // いま保存した内容＝この応対の提案。あとで「成約」を押したらここに紐づく
@@ -376,7 +410,9 @@
                     + '" data-savedresult="' + st2[0] + '" data-savedrid="' + it.id + '">' + st2[1] + "</button>";
                 }).join("")
               + "</div>")
-        + '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>'
+        + (it.slim
+            ? '<span class="saved-slim">実績用（開けません）</span>'
+            : '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>')
         + (config.staff.length > 1 && !it.fromStaff && !it.sentTo
             ? '<button class="btn-sub" data-savedsend="' + it.id + '" type="button">担当へ渡す</button>' : "")
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
@@ -481,7 +517,7 @@
         data: propSnap || JSON.parse(JSON.stringify(store))
       };
       savedList.unshift(it);
-      if (savedList.length > SAVED_MAX) savedList = savedList.slice(0, SAVED_MAX);
+      savedList = trimSavedList(savedList);
     }
     it.result = result;
     it.resultAt = Date.now();
@@ -1160,6 +1196,59 @@
       h += '<p class="hint">期間で<strong>月</strong>を選ぶと、日別の表が出ます。</p>';
     }
 
+    var order = ["visit:", "proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
+    function rank(k) {
+      for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
+      return order.length;
+    }
+    /* ---- 来店目的別 ----
+     * 「何を目的に来店されて、何が成約になったか」を1か月ぶん振り返るための表。
+     * 目的を複数選んだ応対は、それぞれの行に数える。 */
+    var vpAgg = {}, vpAny = false;
+    Object.keys(lists).forEach(function (sid) {
+      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+        if (isSent(it) || !mineOnly(it, sid)) return;
+        if (!(sFil === "all" || sid === sFil)) return;
+        var pt0 = (((it.data || {}).patterns) || [])[((it.data || {}).active | 0)] || {};
+        var vks2 = visitKeys(pt0);
+        if (!vks2.length) vks2 = ["_none"]; else vpAny = true;
+        var wonI = it.result === "won" ? statsSavedItems(it, true) : null;
+        vks2.forEach(function (vk) {
+          if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0, lost: 0, items: {}, names: {} };
+          vpAgg[vk].prop++;
+          if (it.result === "lost") vpAgg[vk].lost++;
+          if (wonI) {
+            vpAgg[vk].won++;
+            Object.keys(wonI).forEach(function (k6) {
+              if (k6.indexOf("visit:") === 0) return;   // 目的そのものは中身に出さない
+              vpAgg[vk].items[k6] = (vpAgg[vk].items[k6] || 0) + 1;
+              vpAgg[vk].names[k6] = wonI[k6];
+            });
+          }
+        });
+      });
+    });
+    var vpKeys = VISIT_ORDER.filter(function (k) { return vpAgg[k]; });
+    if (vpAgg["_none"]) vpKeys.push("_none");
+    if (vpKeys.length && vpAny) {
+      h += "<h3>来店目的別</h3>";
+      h += '<table class="stats-table"><tr><th>来店目的</th><th>応対</th><th>成約</th><th>見送り</th><th>成約率</th><th>成約になった内容</th></tr>';
+      vpKeys.forEach(function (k7) {
+        var v7 = vpAgg[k7];
+        var top = Object.keys(v7.items).sort(function (a7, b7) {
+          return (v7.items[b7] - v7.items[a7]) || (rank(a7) - rank(b7));
+        }).slice(0, 10).map(function (k8) {
+          return esc(v7.names[k8]) + " " + v7.items[k8];
+        }).join("・");
+        h += "<tr><td>" + esc(k7 === "_none" ? "（未選択）" : VISIT_NAMES[k7]) + "</td><td>"
+          + v7.prop + "</td><td>" + v7.won + "</td><td>" + v7.lost + "</td><td>"
+          + rate(v7.won, v7.prop) + '</td><td class="vp-items">' + (top || "－") + "</td></tr>";
+      });
+      h += "</table>";
+      h += '<p class="hint">「成約になった内容」は、その目的で来店された応対のうち<strong>成約になったもの</strong>に入っていた項目の件数です（多い順に10件まで）。'
+        + '目的を複数選んだ応対は、それぞれの行に数えるため、応対の合計は実件数と一致しないことがあります。</p>';
+    }
+
     // 項目別のまとめ（提案＝最初に保存した内容、成約＝実際に成約した内容）
     var items = {}; // key -> {name, prop, won}
     Object.keys(lists).forEach(function (sid) {
@@ -1182,11 +1271,6 @@
         }
       });
     });
-    var order = ["visit:", "proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
-    function rank(k) {
-      for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
-      return order.length;
-    }
     /* 項目ごとの手修正を足す。0件で表に出ていない項目も、
      * 修正が入っていれば行として出す。 */
     var itemAdj = statsAdjItemSum(sFil, mFil);
@@ -1336,7 +1420,13 @@
     }
     statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName,
       admin: admin, unitPrices: unitPrices, detail: detail, split: anySplit,
-      amazon: azIds.length ? az : null, days: dayRows };
+      amazon: azIds.length ? az : null, days: dayRows,
+      visits: vpKeys.filter(function (k9) { return k9 !== "_none" || vpAgg["_none"]; }).map(function (k9) {
+        var v9 = vpAgg[k9];
+        return { name: k9 === "_none" ? "（未選択）" : VISIT_NAMES[k9], prop: v9.prop, won: v9.won, lost: v9.lost,
+          items: Object.keys(v9.items).sort(function (a9, b9) { return v9.items[b9] - v9.items[a9]; })
+            .map(function (k10) { return v9.names[k10] + " " + v9.items[k10]; }).join("・") };
+      }) };
   }
 
   /* ---------- 実績のCSV出力（Excelで開ける形式） ---------- */
@@ -1387,6 +1477,14 @@
       lines.push("日付,提案,成約,見送り,成約率,収益");
       L.days.forEach(function (d3) {
         lines.push([d3.date, d3.prop, d3.won, d3.lost, rateTxt(d3.won, d3.prop), d3.rev].map(csvCell).join(","));
+      });
+    }
+    if (L.visits && L.visits.length) {
+      lines.push("");
+      lines.push("来店目的別");
+      lines.push("来店目的,応対,成約,見送り,成約率,成約になった内容");
+      L.visits.forEach(function (v2) {
+        lines.push([v2.name, v2.prop, v2.won, v2.lost, rateTxt(v2.won, v2.prop), v2.items].map(csvCell).join(","));
       });
     }
     if (L.amazon && L.amazon.base) {
@@ -3128,8 +3226,7 @@
         var merged = Object.keys(byId).map(function (k) { return byId[k]; }).filter(function (x) {
           return !(del[x.id] && del[x.id] >= savedItemTs(x));
         });
-        merged.sort(function (a, b) { return (b.savedAt || 0) - (a.savedAt || 0); });
-        if (merged.length > SAVED_MAX) merged = merged.slice(0, SAVED_MAX);
+        merged = trimSavedList(merged);
         // この端末にしか無い保存・削除が混ざっていたら、統合の結果をクラウドへも返す
         var inIds = {};
         incoming.forEach(function (x) { inIds[x.id] = savedItemTs(x); });
