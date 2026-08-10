@@ -10,8 +10,8 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 2,
-  "updated": "2026-08-09",
+  "masterVersion": 3,
+  "updated": "2026-08-10",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -550,6 +550,7 @@ const DEFAULT_DATA = {
       "id": "op_1784430972981",
       "name": "amazon prime",
       "price": 600,
+      "kubunExist": true,
       "category": "エンタメ",
       "note": "ドコモ公式の爆アゲ セレクションの一覧には含まれません。固定120ptとして計算しています（マスタ設定の「固定pt」で変更できます）",
       "own": false,
