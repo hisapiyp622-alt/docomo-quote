@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.72.0";
+  var APP_VERSION = "1.73.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -614,6 +614,18 @@
    * ・ドコモの商材の手数料・再発行、請求書払いのものは数えない
    * ・アクセサリは登録品だけ（自由入力は数えない） */
   var STATS_PROC_NAMES = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan: "プラン変更" };
+  /* Amazonプライムのように「もともとご自身で入っていたものをドコモ経由に移す」
+   * ことがあるオプションは、区分に「既存」を足す。マスタで kubunExist を
+   * 立てたもの（＋名前にAmazonが入るもの）が対象。 */
+  function optHasExist(o) {
+    return !!(o && (o.kubunExist === true || /amazon/i.test(o.name || "")));
+  }
+  // Amazonプライムのオプションid（実績の加入率で使う）
+  function amazonOptIds() {
+    return (MASTER.options || []).filter(optHasExist).map(function (o) { return o.id; });
+  }
+  // 新規AmazonPrime加入率の対象プラン（ドコモMAX・ポイ活MAX・ドコモmini）
+  var AMAZON_TARGET_PLANS = { max: "ドコモ MAX", poikatsu_max: "ドコモ ポイ活 MAX", mini: "ドコモ mini" };
   function statsPatternItems(ptRaw) {
     var pt = Object.assign(defaultState(), ptRaw || {});
     var cfg = statsCfg();
@@ -651,12 +663,16 @@
     if (pt.todoGas && cfg.gas !== "off") out["gas"] = "ドコモガス";
     Object.keys(pt.options || {}).forEach(function (id) {
       if (!pt.options[id] || cfg.optSkip[id]) return;
-      if ((pt.optionKubun || {})[id] === "keep") return; // 継続は提案に数えない
+      var kb2 = (pt.optionKubun || {})[id];
+      if (kb2 === "keep") return; // 継続は提案に数えない
       var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
       /* 店舗独自サービス（マスタ設定で「店舗独自」にしたもの）は
        * 「独自: 」として別のまとまりで集計する */
       if (def && def.own) out["own:o:" + id] = "独自: " + def.name;
-      else out["opt:" + id] = "オプション: " + (def ? def.name : id);
+      else if (kb2 === "exist") {
+        // 既存（もともとご加入のものをドコモ経由へ）は新規と分けて数える
+        out["opt:" + id + ":exist"] = "オプション: " + (def ? def.name : id) + "（既存）";
+      } else out["opt:" + id] = "オプション: " + (def ? def.name : id);
     });
     Object.keys(pt.feeItems || {}).forEach(function (id) {
       if (!pt.feeItems[id] || cfg.feeSkip[id]) return;
@@ -711,6 +727,13 @@
       }
     }
     return out;
+  }
+
+  // 成約として記録した内容のパターン（無ければ保存内容の成約パターン）
+  function wonPatternOf(it) {
+    if (it.wonData) return ((it.wonData.patterns) || [])[(it.wonData.active | 0)];
+    var wi = typeof it.wonPattern === "number" ? it.wonPattern : (it.data && it.data.active) | 0;
+    return (((it.data || {}).patterns) || [])[wi];
   }
 
   // 1件の保存から項目を拾う。wonOnly は「成約した内容」だけ
@@ -1033,6 +1056,48 @@
         + 'オプションの「継続」は数えません。どの項目を数えるかは、マスタ設定の<strong>「実績で追う項目」</strong>で選べます'
         + '（設定を変えると、過去の保存分も新しい設定で数え直されます）。</p>';
     }
+
+    /* Amazonプライムの新規加入率。
+     * ドコモの指標に合わせ、ドコモMAX・ポイ活MAX・ドコモmini が成約になった
+     * 応対を母数にして、そのうち新規でAmazonプライムに入っていただけた割合を出す。
+     * 「既存」（もともとご加入のものをドコモ経由へ移した分）は分けて数える。 */
+    var azIds = amazonOptIds();
+    var az = { base: 0, nw: 0, ex: 0 };
+    if (azIds.length) {
+      Object.keys(lists).forEach(function (sid) {
+        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+          if (isSent(it) || it.result !== "won") return;
+          if (!mineOnly(it, sid)) return;
+          if (!(sFil === "all" || resStaffOf(it, sid) === sFil)) return;
+          var wpt = wonPatternOf(it);
+          if (!wpt || !AMAZON_TARGET_PLANS[wpt.planId]) return;
+          az.base++;
+          var kb3 = "";
+          azIds.forEach(function (id) {
+            if (!(wpt.options || {})[id]) return;
+            var k3 = (wpt.optionKubun || {})[id] || "new";
+            if (k3 === "new") kb3 = "new";
+            else if (k3 === "exist" && kb3 !== "new") kb3 = "exist";
+          });
+          if (kb3 === "new") az.nw++;
+          else if (kb3 === "exist") az.ex++;
+        });
+      });
+      h += "<h3>Amazonプライム 新規加入率</h3>";
+      if (!az.base) {
+        h += '<p class="hint">この期間に、ドコモ MAX・ドコモ ポイ活 MAX・ドコモ mini の成約がありません。</p>';
+      } else {
+        h += '<table class="stats-table"><tr><th>対象の成約</th><th>新規加入</th><th>加入率</th><th>既存を移行</th></tr>'
+          + "<tr><td>" + az.base + "</td><td>" + az.nw + "</td><td>"
+          + Math.round(az.nw * 100 / az.base) + "%</td><td>" + az.ex + "</td></tr></table>";
+      }
+      h += '<p class="hint"><strong>対象の成約</strong>は、成約した内容のプランが'
+        + '<strong>ドコモ MAX・ドコモ ポイ活 MAX・ドコモ mini</strong>の応対です。'
+        + 'そのうちAmazonプライムを<strong>「新規」</strong>で付けた件数が新規加入、'
+        + '<strong>「既存」</strong>（もともとご加入のものをドコモ経由へ移した分）は別に数えます。'
+        + '区分は見積もり画面のAmazonプライムのタイルで選べます。</p>';
+    }
+
     body.innerHTML = h;
     // CSV出力用に、いま表示した集計を控えておく
     /* 管理者向けCSVの明細（担当×項目）。スプレッドシートに貼って
@@ -1067,7 +1132,8 @@
       });
     }
     statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName,
-      admin: admin, unitPrices: unitPrices, detail: detail, split: anySplit };
+      admin: admin, unitPrices: unitPrices, detail: detail, split: anySplit,
+      amazon: azIds.length ? az : null };
   }
 
   /* ---------- 実績のCSV出力（Excelで開ける形式） ---------- */
@@ -1112,6 +1178,13 @@
         : [x.name, x.prop, x.won, rateTxt(x.won, x.prop), rv]).map(csvCell).join(","));
     });
     lines.push((L.admin ? ["合計収益", "", "", "", "", revTotal] : ["合計収益", "", "", "", revTotal]).map(csvCell).join(","));
+    if (L.amazon && L.amazon.base) {
+      lines.push("");
+      lines.push("Amazonプライム 新規加入率（対象: ドコモMAX・ポイ活MAX・ドコモminiの成約）");
+      lines.push("対象の成約,新規加入,加入率,既存を移行");
+      lines.push([L.amazon.base, L.amazon.nw,
+        Math.round(L.amazon.nw * 100 / L.amazon.base) + "%", L.amazon.ex].map(csvCell).join(","));
+    }
     if (L.admin && L.detail && L.detail.length) {
       // スプレッドシートでのピボット・SUMIF用の明細（1行=担当×項目）
       lines.push("");
@@ -2097,7 +2170,7 @@
   var PLAN_TAKE = ["tiers", "discounts", "includes5min", "dcard10",
     "bakuageTier", "poikatsuPt", "maxBonus", "voiceOverrides", "group"];
   var OPT_TAKE = ["price", "priceChoices", "priceLabels", "carrier",
-    "bakuage", "bakuage2", "bakuageFixed", "note"];
+    "bakuage", "bakuage2", "bakuageFixed", "note", "kubunExist"];
   var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove"];
   var CAMP_TAKE = ["months", "plans", "amountChoices", "note"];
 
@@ -4356,9 +4429,12 @@
         // 区分（新規／継続／廃止）は、対象にしているオプションだけに表示する
         var kb = state.optionKubun[o.id] || (on ? "new" : "");
         var isOff = kb === "off";
+        var kbList = optHasExist(o)
+          ? [["new", "新規"], ["exist", "既存"], ["keep", "継続"], ["off", "廃止"]]
+          : [["new", "新規"], ["keep", "継続"], ["off", "廃止"]];
         var kubunHtml = (on || isOff)
           ? '<span class="t-kubun">'
-            + [["new", "新規"], ["keep", "継続"], ["off", "廃止"]].map(function (k) {
+            + kbList.map(function (k) {
                 return '<label class="kb' + (kb === k[0] ? " on" : "") + '">'
                   + '<input type="checkbox" data-optkubun="' + esc(o.id) + '" value="' + k[0] + '"'
                   + (kb === k[0] ? " checked" : "") + "> " + k[1] + "</label>";
@@ -5062,7 +5138,7 @@
 
     var secContract = h; h = "";
     // オプション（新規／継続／廃止をまとめる）
-    var kNew = [], kKeep = [], kOff = [];
+    var kNew = [], kKeep = [], kOff = [], kExist = [];
     var netSheet = netSvcCalc(state);
     netSheet.rows.forEach(function (n) { kNew.push({ name: n.name, price: n.price }); });
     netSheet.off.forEach(function (n) { kOff.push(n.name); });
@@ -5074,6 +5150,7 @@
       var nm = o.name + (lb ? "（" + lb + "）" : "");
       if (kb === "off") kOff.push(nm);
       else if (kb === "keep") kKeep.push({ name: nm, price: pr });
+      else if (kb === "exist") kExist.push({ name: nm, price: pr });
       else kNew.push({ name: nm, price: pr });
     });
     h += "<h3>オプション</h3><table><tbody>";
@@ -5100,6 +5177,12 @@
         h += row("<b>廃止</b>", '<div class="kubun-list" style="color:var(--red);font-weight:700">'
           + kOff.map(function (x) { return "<i>" + esc(x) + "</i>"; }).join("") + "</div>");
       }
+    }
+    if (kExist.length) {
+      // 既存: もともとご加入のものをドコモ経由へ移す（新規加入とは分けて出す）
+      anyOpt = true;
+      h += row("<b>既存</b>", '<div class="kubun-list">'
+        + kExist.map(function (x) { return "<i>" + esc(x.name) + "　" + yen(x.price) + "/月　※ドコモ経由へ移行</i>"; }).join("") + "</div>");
     }
     if (kKeep.length) {
       anyOpt = true;
