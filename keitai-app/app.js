@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.79.0";
+  var APP_VERSION = "1.79.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -693,10 +693,9 @@
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
       if (todo[k] && cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
+    /* 来店目的そのものは項目別に混ぜない（「何を成約したか」の一覧ではないため）。
+     * 目的ごとの応対数は「来店目的別」の表で見る（店舗の指定・2026-08-10）。 */
     var vks = visitKeys(pt);
-    if (cfg.visit) {
-      vks.forEach(function (k) { out["visit:" + k] = "来店目的: " + (VISIT_NAMES[k] || k); });
-    }
     /* 買い増し: 端末購入以外のご用件で来店されて機種変更が入った場合と、
      * 端末購入で来店されて「買い増しあり」にチェックした場合。
      * 機種変更の実績はそのまま数え、これは再掲として別に数える。 */
@@ -874,7 +873,6 @@
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
       if (cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
-    if (cfg.visit) VISIT_ORDER.forEach(function (k) { out["visit:" + k] = "来店目的: " + VISIT_NAMES[k]; });
     if (cfg.kaimashi) out["kaimashi"] = "買い増し（再掲）";
     (MASTER.plans || []).forEach(function (pl) {
       if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
@@ -1210,7 +1208,7 @@
       h += '<p class="hint">期間で<strong>月</strong>を選ぶと、日別の表が出ます。</p>';
     }
 
-    var order = ["visit:", "proc:", "kaimashi", "plan:", "maxAmazon", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
+    var order = ["proc:", "kaimashi", "plan:", "maxAmazon", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
@@ -1244,7 +1242,7 @@
     });
     var vpKeys = VISIT_ORDER.filter(function (k) { return vpAgg[k]; });
     if (vpAgg["_none"]) vpKeys.push("_none");
-    if (vpKeys.length && vpAny) {
+    if (statsCfg().visit && vpKeys.length && vpAny) {
       h += "<h3>来店目的別</h3>";
       h += '<table class="stats-table"><tr><th>来店目的</th><th>応対</th><th>成約</th><th>見送り</th><th>成約率</th><th>成約になった内容</th></tr>';
       vpKeys.forEach(function (k7) {
@@ -6044,7 +6042,7 @@
 
     h += '<div class="plan-sec"><span class="plan-lbl">ご来店の目的・買い増し</span><div class="sub-checks">'
       + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
-      + "> ご来店の目的（端末購入・プラン見直し・故障・操作・問合せ・その他）</label>"
+      + "> 「来店目的別」の表を出す（目的ごとの応対数・成約・成約になった内容）</label>"
       + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
       + "> 買い増し（再掲）</label></div>"
       + '<p class="hint">買い増しは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
