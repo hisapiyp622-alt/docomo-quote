@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.75.0";
+  var APP_VERSION = "1.76.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -794,6 +794,78 @@
     var a = ((MASTER.statsAdjust || {})[sid] || {})[month];
     return a ? { prop: num(a.prop), won: num(a.won), lost: num(a.lost) } : { prop: 0, won: 0, lost: 0 };
   }
+  /* 項目ごとの補正 MASTER.statsAdjItem[担当][月][項目キー] = {prop, won} */
+  function statsAdjItemOf(sid, month) {
+    return (((MASTER.statsAdjItem || {})[sid] || {})[month]) || {};
+  }
+  // 表示中の期間・担当ぶんの項目補正を合計する（"all" は全部を足す）
+  function statsAdjItemSum(sid, month) {
+    var per = MASTER.statsAdjItem || {};
+    var out = {};
+    Object.keys(per).forEach(function (s2) {
+      if (sid !== "all" && s2 !== sid) return;
+      Object.keys(per[s2] || {}).forEach(function (m) {
+        if (month !== "all" && m !== month) return;
+        var o = per[s2][m] || {};
+        Object.keys(o).forEach(function (k) {
+          if (!out[k]) out[k] = { prop: 0, won: 0 };
+          out[k].prop += num(o[k].prop);
+          out[k].won += num(o[k].won);
+        });
+      });
+    });
+    return out;
+  }
+  /* 実績で数えうる項目の一覧（キー→表示名）。
+   * この期間に1件も出ていない項目を、修正で足すときに使う。
+   * キーの作り方は statsPatternItems / statsDataItems と揃える。 */
+  function statsCatalog() {
+    var cfg = statsCfg();
+    var out = {};
+    Object.keys(STATS_PROC_NAMES).forEach(function (k) {
+      if (cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
+    });
+    if (cfg.visit) VISIT_ORDER.forEach(function (k) { out["visit:" + k] = "来店目的: " + VISIT_NAMES[k]; });
+    if (cfg.kaimashi) out["kaimashi"] = "買い増し（再掲）";
+    (MASTER.plans || []).forEach(function (pl) {
+      if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
+    });
+    if (cfg.device === "all") out["device"] = "機種販売";
+    else if (cfg.device === "kw") out["device"] = "機種販売（" + cfg.deviceKw + "）";
+    if (cfg.dcard === "one") out["dcard"] = "dカード";
+    else if (cfg.dcard === "type") {
+      var dcN = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
+      Object.keys(dcN).forEach(function (k) { out["dcard:" + k] = dcN[k]; });
+    }
+    if (cfg.denki === "one") out["denki"] = "ドコモでんき";
+    else if (cfg.denki === "type") {
+      out["denki:basic"] = "でんき Basic";
+      out["denki:green"] = "でんき Green";
+    }
+    if (cfg.gas !== "off") out["gas"] = "ドコモガス";
+    if (cfg.hikari) {
+      out["ie:1g"] = "光・5G: 光 1ギガ";
+      out["ie:10g"] = "光・5G: 光 10ギガ";
+      out["ie:home5g"] = "光・5G: home 5G";
+    }
+    (MASTER.options || []).forEach(function (o) {
+      if (cfg.optSkip[o.id]) return;
+      if (o.own) { out["own:o:" + o.id] = "独自: " + o.name; return; }
+      out["opt:" + o.id] = "オプション: " + o.name;
+      if (optHasExist(o)) out["opt:" + o.id + ":exist"] = "オプション: " + o.name + "（既存）";
+    });
+    (MASTER.feeItems || []).forEach(function (o) {
+      if (cfg.feeSkip[o.id]) return;
+      if (o.own) { if (o.pay !== "bill") out["own:f:" + o.id] = "独自: " + o.name; return; }
+      if (o.pay === "bill" || /手数料|再発行/.test(o.name || "")) return;
+      out["fee:" + o.id] = o.name;
+    });
+    if (cfg.accs) {
+      (MASTER.accessories || []).forEach(function (o) { out["acc:" + o.id] = "アクセサリ: " + o.name; });
+    }
+    return out;
+  }
+
   // 期間ぶんの補正を足す（「全期間」のときは登録されている月をすべて足す）
   function statsAdjSum(sid, month) {
     if (month !== "all") return statsAdjOf(sid, month);
@@ -911,6 +983,10 @@
           dec++; rev += itemRev(it);
         });
       });
+      /* 項目の手修正ぶんの収益も足す（項目別の合計収益と食い違わないように） */
+      var iadS = statsAdjItemSum(s.id, mFil);
+      Object.keys(iadS).forEach(function (k4) { rev += num(unitPrices[k4] || 0) * iadS[k4].won; });
+      rev = Math.max(0, rev);
       // 手修正の補正を足す（マイナスにはしない）
       var ad = statsAdjSum(s.id, mFil);
       var prop2 = Math.max(0, a.length + ad.prop);
@@ -1059,6 +1135,15 @@
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
     }
+    /* 項目ごとの手修正を足す。0件で表に出ていない項目も、
+     * 修正が入っていれば行として出す。 */
+    var itemAdj = statsAdjItemSum(sFil, mFil);
+    var catalog = statsCatalog();
+    Object.keys(itemAdj).forEach(function (k) {
+      if (!items[k]) items[k] = { name: catalog[k] || k, prop: 0, won: 0 };
+      items[k].prop = Math.max(0, items[k].prop + itemAdj[k].prop);
+      items[k].won = Math.max(0, items[k].won + itemAdj[k].won);
+    });
     var iKeys = Object.keys(items).sort(function (a2, b2) {
       return (rank(a2) - rank(b2)) || (items[b2].prop - items[a2].prop) || (items[a2].name < items[b2].name ? -1 : 1);
     });
@@ -1067,21 +1152,47 @@
       h += '<p class="hint">この期間の保存がありません。</p>';
     } else {
       h += '<table class="stats-table"><tr><th>項目</th><th>提案</th><th>成約</th><th>成約率</th>'
-        + (admin ? "<th>収益単価</th>" : "") + "<th>収益</th></tr>";
+        + (admin ? "<th>収益単価</th>" : "") + "<th>収益</th>"
+        + (canAdj ? "<th>件数の修正<br><small>提案／成約</small></th>" : "") + "</tr>";
       var revTotal = 0;
       iKeys.forEach(function (k) {
         var x = items[k];
         var up = num(unitPrices[k] || 0);
         var rev2 = x.won * up;
         revTotal += rev2;
+        var ia = canAdj ? (statsAdjItemOf(sFil, mFil)[k] || { prop: 0, won: 0 }) : null;
         h += "<tr><td>" + esc(x.name) + "</td><td>" + x.prop + "</td><td>" + x.won + "</td><td>" + rate(x.won, x.prop) + "</td>"
           + (admin
             ? '<td><input type="number" class="unit-price" data-unitprice="' + esc(k) + '" min="0" value="' + (up || "") + '" placeholder="0">円</td>'
             : "")
-          + "<td>" + yen(rev2) + "</td></tr>";
+          + "<td>" + yen(rev2) + "</td>"
+          + (canAdj
+            ? '<td class="iadj">'
+              + '<input type="number" data-iadj="prop" data-iadjk="' + esc(k) + '" data-adjs="' + esc(sFil)
+              + '" data-adjm="' + esc(mFil) + '" value="' + (ia.prop || "") + '" placeholder="0">'
+              + '<input type="number" data-iadj="won" data-iadjk="' + esc(k) + '" data-adjs="' + esc(sFil)
+              + '" data-adjm="' + esc(mFil) + '" value="' + (ia.won || "") + '" placeholder="0"></td>'
+            : "")
+          + "</tr>";
       });
-      h += '<tr class="stats-total"><td>合計収益</td><td></td><td></td><td></td>' + (admin ? "<td></td>" : "") + "<td>" + yen(revTotal) + "</td></tr>";
+      h += '<tr class="stats-total"><td>合計収益</td><td></td><td></td><td></td>' + (admin ? "<td></td>" : "")
+        + "<td>" + yen(revTotal) + "</td>" + (canAdj ? "<td></td>" : "") + "</tr>";
       h += "</table>";
+      if (canAdj) {
+        // この期間に出ていない項目も、選んで足せるようにする
+        var missing = Object.keys(catalog).filter(function (k2) { return iKeys.indexOf(k2) < 0; })
+          .sort(function (a3, b3) { return rank(a3) - rank(b3); });
+        if (missing.length) {
+          h += '<div class="stats-adj"><b>この期間に出ていない項目を足す</b>'
+            + '<p class="hint">選ぶと表に行が増えるので、右端の「件数の修正」に数を入れてください。</p>'
+            + '<select id="iadjAdd"><option value="">（項目を選ぶ）</option>'
+            + missing.map(function (k2) {
+                return '<option value="' + esc(k2) + '">' + esc(catalog[k2]) + "</option>";
+              }).join("") + "</select></div>";
+        }
+        h += '<p class="hint">右端の「件数の修正」は、<strong>' + esc(mFil) + "・" + esc(sName)
+          + '</strong>の項目ごとの足し引きです（0で元に戻ります）。</p>';
+      }
       if (admin) {
         h += '<p class="hint">収益単価は<strong>1成約あたりの収益（インセンティブ・粗利など、店舗の基準額）</strong>を入れてください。'
           + '入れると担当別・項目別・CSVに収益が出ます。単価は全端末で共通です（担当者の画面には自分の収益額だけが表示され、単価は表示されません）。</p>';
@@ -8039,6 +8150,41 @@
           var v2 = Math.max(0, Math.round(num(e.target.value)));
           if (v2) MASTER.statsUnitPrices[upKey] = v2;
           else delete MASTER.statsUnitPrices[upKey];
+          saveMaster();
+          renderStats(false);
+          return;
+        }
+        // 項目ごとの件数の修正
+        var iaKind = e.target.getAttribute && e.target.getAttribute("data-iadj");
+        if (iaKind) {
+          var iM = e.target.getAttribute("data-adjm") || "", iS = e.target.getAttribute("data-adjs") || "";
+          var iK = e.target.getAttribute("data-iadjk") || "";
+          if (!iM || !iS || !iK || iM === "all" || iS === "all") return;
+          if (!MASTER.statsAdjItem) MASTER.statsAdjItem = {};
+          if (!MASTER.statsAdjItem[iS]) MASTER.statsAdjItem[iS] = {};
+          if (!MASTER.statsAdjItem[iS][iM]) MASTER.statsAdjItem[iS][iM] = {};
+          var bag = MASTER.statsAdjItem[iS][iM];
+          var cur2 = bag[iK] || { prop: 0, won: 0 };
+          cur2[iaKind] = Math.round(num(e.target.value));
+          if (!cur2.prop && !cur2.won) delete bag[iK]; else bag[iK] = cur2;
+          if (!Object.keys(bag).length) {
+            delete MASTER.statsAdjItem[iS][iM];
+            if (!Object.keys(MASTER.statsAdjItem[iS]).length) delete MASTER.statsAdjItem[iS];
+          }
+          saveMaster();
+          renderStats(false);
+          return;
+        }
+        if (e.target.id === "iadjAdd") {
+          // 表に出ていない項目を、0件の行として足す（値を入れて確定させる）
+          var addK = e.target.value;
+          if (!addK) return;
+          var aM = $("statsMonth").value, aS = statsAdminOk() ? $("statsStaff").value : activeStaff().id;
+          if (!aM || aM === "all" || !aS || aS === "all") return;
+          if (!MASTER.statsAdjItem) MASTER.statsAdjItem = {};
+          if (!MASTER.statsAdjItem[aS]) MASTER.statsAdjItem[aS] = {};
+          if (!MASTER.statsAdjItem[aS][aM]) MASTER.statsAdjItem[aS][aM] = {};
+          if (!MASTER.statsAdjItem[aS][aM][addK]) MASTER.statsAdjItem[aS][aM][addK] = { prop: 0, won: 0 };
           saveMaster();
           renderStats(false);
           return;
