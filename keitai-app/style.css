@@ -741,6 +741,11 @@ body.sorting .sort-chip{cursor:grabbing}
 
 .stats-table tr.d-sat td:first-child{color:#1565C0}
 .stats-table tr.d-sun td:first-child{color:#C62828}
+/* その日に成約した内容。件数の列より控えめに、折り返して全部見せる */
+.stats-table td.day-items{
+  min-width:180px;white-space:normal;word-break:break-word;
+  font-size:12px;line-height:1.5;color:var(--muted);text-align:left
+}
 /* 見積もりなしの成約 */
 .saved-nq{
   display:inline-block;padding:4px 10px;border-radius:999px;
