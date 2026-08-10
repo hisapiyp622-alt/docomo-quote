@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.67.1";
+  var APP_VERSION = "1.68.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5098,28 +5098,14 @@
     }
 
     var secInit = h; h = "";
-    // ポイント充当・メモ
-    h += "<h3>ポイント・その他</h3><table><tbody>";
-    if (r.pointRows.length) {
-      r.pointRows.forEach(function (pt) {
-        h += row((r.pointApply ? "ポイント充当（" + esc(pt.name) + "）" : "もらえるポイント（" + esc(pt.name) + "）"),
-          pt.amount.toLocaleString("ja-JP") + "pt/月");
-      });
-      h += row("ポイントの扱い", r.pointApply ? "月額から充当してご案内" : "<b>充当せず</b>、もらえるポイントとしてご案内");
-      if (r.pointApply && r.pointOver > 0) {
-        h += row("充当しきれない分", '<b style="color:var(--red)">'
-          + r.pointOver.toLocaleString("ja-JP") + "pt/月</b>　月額が0円になるため反映していません");
-      }
-    } else {
-      h += row("ポイント", "なし");
+    /* 受付メモだけ。ポイントの内訳・月額の目安・ポイント充当のご案内は、
+     * 登録作業には使わないため引き継ぎシートには出さない（店舗の指定・2026-08-10）。
+     * 金額はお客様向けの見積書で確認する。 */
+    if (state.quoteMemo) {
+      h += "<h3>受付メモ</h3><table><tbody>";
+      h += row("受付メモ", esc(state.quoteMemo));
+      h += "</tbody></table>";
     }
-    h += row("毎月のお支払い目安", "<b>" + yen(r.segs[0].monthly) + "</b>"
-      + (r.segs.length > 1 ? "（" + segLabel(r.segs[r.segs.length - 1]) + " " + yen(r.segs[r.segs.length - 1].monthly) + "）" : ""));
-    if (!r.pointApply && r.pointTotal > 0) {
-      h += row("ポイントを使った場合の実質", "<b>" + yen(Math.max(0, r.segs[0].monthly - r.pointTotal)) + "</b>/月");
-    }
-    if (state.quoteMemo) h += row("受付メモ", esc(state.quoteMemo));
-    h += "</tbody></table>";
 
     var secPoint = h; h = "";
     /* ドコモでんき・ドコモガス。
@@ -5177,25 +5163,12 @@
       } else if (KQ_IENAKA.curLine && KQ_IENAKA.curLine()) {
         h += row("現在の回線（ヒアリング）", esc(KQ_IENAKA.curLine()));
       }
-      h += row("月額", "<b>" + yen(ir.segs[0].monthly) + "</b>"
-        + (ir.segs.length > 1
-          ? "（" + KQ_IENAKA.segLabel(ir.segs[0]) + "）　"
-            + KQ_IENAKA.segLabel(ir.segs[ir.segs.length - 1]) + " "
-            + yen(ir.segs[ir.segs.length - 1].monthly)
-          : ""));
+      /* 光の月額・初期費用・工事費のお支払いは、登録作業には使わないため出さない
+       * （店舗の指定・2026-08-10）。金額はお客様向けの見積書で確認する。 */
       var ieOpts = ir.rows.slice(1).filter(function (x) { return x.amount >= 0; });
       h += row("オプション", ieOpts.length
         ? ieOpts.map(function (x) { return esc(x.name) + "（" + yen(x.amount) + "）"; }).join("　／　")
         : "なし");
-      if (ir.initRows.length) {
-        h += row("初期費用", "<b>" + yen(ir.initial) + "</b>　"
-          + ir.initRows.map(function (x) { return esc(x.name) + " " + yen(x.amount); }).join("　／　"));
-      }
-      if (ir.kojiTotal > 0) {
-        h += row("工事費のお支払い", store.ienaka.kojiPay === "b24"
-          ? "<b>24回分割</b>（総額 " + yen(ir.kojiTotal) + "・月 " + yen(Math.floor(ir.kojiTotal / 24)) + "）"
-          : "<b>一括</b>（" + yen(ir.kojiTotal) + "）");
-      }
       if (KQ_IENAKA.isHikari() && store.ienaka.provider) {
         h += row("プロバイダ", esc(store.ienaka.provider)
           + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）");
