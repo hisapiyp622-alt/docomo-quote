@@ -708,6 +708,8 @@ body.sorting .sort-chip{cursor:grabbing}
   width:100%;max-width:360px;padding:7px 9px;border:1px solid var(--line);
   border-radius:6px;font-size:14px;background:#fff
 }
+.stats-table tr.d-sat td:first-child{color:#1565C0}
+.stats-table tr.d-sun td:first-child{color:#C62828}
 .stats-table td.iadj{white-space:nowrap}
 .stats-table td.iadj input{
   width:52px;padding:4px 5px;border:1px solid var(--line);border-radius:5px;

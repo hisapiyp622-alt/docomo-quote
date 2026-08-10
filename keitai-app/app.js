@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.76.2";
+  var APP_VERSION = "1.77.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1108,6 +1108,58 @@
         + '担当へ渡した見積もりは、渡した先で1件として数えるため、渡した側の実績には入りません。</p>';
     }
 
+    /* ---- 日別（月を選んでいるときだけ） ----
+     * 「その日どうだったか」を振り返るための表。日付は見積もりを保存した日。
+     * 提案・成約・見送りは応対した担当のもの、収益は成約を決めた担当のもの
+     * （担当別の表と同じ数え方）。 */
+    var dayRows = [];
+    if (mFil !== "all") {
+      var byDay = {};
+      Object.keys(lists).forEach(function (sid) {
+        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+          if (isSent(it) || !mineOnly(it, sid)) return;
+          var ownD = (sFil === "all" || sid === sFil);
+          var decD = (sFil === "all" || resStaffOf(it, sid) === sFil);
+          if (!ownD && !decD) return;
+          var dt = new Date(it.savedAt || 0);
+          var dk = dt.getFullYear() + "/" + ("0" + (dt.getMonth() + 1)).slice(-2)
+            + "/" + ("0" + dt.getDate()).slice(-2);
+          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, lost: 0, rev: 0, dow: dt.getDay() };
+          if (ownD) {
+            byDay[dk].prop++;
+            if (it.result === "won") byDay[dk].won++;
+            else if (it.result === "lost") byDay[dk].lost++;
+          }
+          if (it.result === "won" && decD) byDay[dk].rev += itemRev(it);
+        });
+      });
+      var dKeys = Object.keys(byDay).sort();
+      var DOW = ["日", "月", "火", "水", "木", "金", "土"];
+      h += "<h3>日別（" + esc(mFil) + "）</h3>";
+      if (!dKeys.length) {
+        h += '<p class="hint">この月の保存がありません。</p>';
+      } else {
+        h += '<table class="stats-table"><tr><th>日付</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th><th>収益</th></tr>';
+        var dTot = { prop: 0, won: 0, lost: 0, rev: 0 };
+        dKeys.forEach(function (k5) {
+          var v5 = byDay[k5];
+          dTot.prop += v5.prop; dTot.won += v5.won; dTot.lost += v5.lost; dTot.rev += v5.rev;
+          var label = k5.slice(5) + "（" + DOW[v5.dow] + "）";
+          dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won, lost: v5.lost, rev: v5.rev });
+          h += '<tr class="' + (v5.dow === 0 ? "d-sun" : (v5.dow === 6 ? "d-sat" : "")) + '"><td>'
+            + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td><td>" + v5.lost
+            + "</td><td>" + rate(v5.won, v5.prop) + "</td><td>" + yen(v5.rev) + "</td></tr>";
+        });
+        h += '<tr class="stats-total"><td>合計</td><td>' + dTot.prop + "</td><td>" + dTot.won
+          + "</td><td>" + dTot.lost + "</td><td>" + rate(dTot.won, dTot.prop) + "</td><td>"
+          + yen(dTot.rev) + "</td></tr></table>";
+      }
+      h += '<p class="hint">日付は<strong>見積もりを保存した日</strong>です。'
+        + '「件数の修正」で足し引きした分は月ごとの調整のため、この表には入りません。</p>';
+    } else {
+      h += '<p class="hint">期間で<strong>月</strong>を選ぶと、日別の表が出ます。</p>';
+    }
+
     // 項目別のまとめ（提案＝最初に保存した内容、成約＝実際に成約した内容）
     var items = {}; // key -> {name, prop, won}
     Object.keys(lists).forEach(function (sid) {
@@ -1284,7 +1336,7 @@
     }
     statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName,
       admin: admin, unitPrices: unitPrices, detail: detail, split: anySplit,
-      amazon: azIds.length ? az : null };
+      amazon: azIds.length ? az : null, days: dayRows };
   }
 
   /* ---------- 実績のCSV出力（Excelで開ける形式） ---------- */
@@ -1329,6 +1381,14 @@
         : [x.name, x.prop, x.won, rateTxt(x.won, x.prop), rv]).map(csvCell).join(","));
     });
     lines.push((L.admin ? ["合計収益", "", "", "", "", revTotal] : ["合計収益", "", "", "", revTotal]).map(csvCell).join(","));
+    if (L.days && L.days.length) {
+      lines.push("");
+      lines.push("日別");
+      lines.push("日付,提案,成約,見送り,成約率,収益");
+      L.days.forEach(function (d3) {
+        lines.push([d3.date, d3.prop, d3.won, d3.lost, rateTxt(d3.won, d3.prop), d3.rev].map(csvCell).join(","));
+      });
+    }
     if (L.amazon && L.amazon.base) {
       lines.push("");
       lines.push("Amazonプライム 新規加入率（対象: ドコモMAX・ポイ活MAX・ドコモminiの成約）");
