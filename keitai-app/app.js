@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.69.0";
+  var APP_VERSION = "1.70.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -4489,6 +4489,7 @@
     renderAdhocInitial();
     $("deviceName").value = state.deviceName;
     $("devicePrice").value = state.devicePrice || "";
+    renderDeviceSelect();
     $("couponOff").value = state.couponOff || "";
     $("tebikiOff").value = state.tebikiOff || "";
     $("directOff").value = state.directOff || "";
@@ -5478,32 +5479,8 @@
         + p2 + "</div>";
     }
 
-    // パターン比較（ユーザーが編集したパターンだけを対象に、2つ以上あるとき）
-    var others = [];
-    for (var i = 0; i < 3; i++) {
-      if (i !== store.active && !isPatternUsed(store.patterns[i])) continue;
-      others.push({ i: i, r: i === store.active ? r : calcFor(store.patterns[i]) });
-    }
-    if (others.length >= 2) {
-      h += "<h3>パターン比較</h3><table><tbody>";
-      h += "<tr><th></th>" + others.map(function (o) {
-        return "<th>パターン" + PAT_NAMES[o.i] + (o.i === store.active ? "（この見積書）" : "") + "</th>";
-      }).join("") + "</tr>";
-      h += "<tr><td>プラン</td>" + others.map(function (o) {
-        return "<td>" + esc(o.r.plan.name) + "</td>";
-      }).join("") + "</tr>";
-      h += "<tr><td>月額（当初）</td>" + others.map(function (o) {
-        return '<td class="amt">' + yen(o.r.segs[0].monthly) + "</td>";
-      }).join("") + "</tr>";
-      h += "<tr><td>月額（最終）</td>" + others.map(function (o) {
-        var ls = o.r.segs[o.r.segs.length - 1];
-        return '<td class="amt">' + yen(ls.monthly) + "</td>";
-      }).join("") + "</tr>";
-      h += "<tr><td>初期費用</td>" + others.map(function (o) {
-        return '<td class="amt">' + yen(o.r.initialTotal) + "</td>";
-      }).join("") + "</tr>";
-      h += "</tbody></table>";
-    }
+    /* パターンA・B・Cは複数台のご提案に使うもので、同じお客様の案を見比べる
+     * ためのものではないため、見積書に比較表は出さない（店舗の指定・2026-08-10）。 */
 
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
 
@@ -6571,6 +6548,198 @@
   /* ---------- マスタ構成の取り込み ----------
    * 「現在のマスタ構成をコピー」した文字列を貼り付けて、この端末（店舗）の
    * 料金マスタを置き換える。取り込む前の内容は履歴に残す。 */
+  /* ---------- 端末マスタ（商品マスタ）----------
+   * 代理店からもらった「機種名と本体価格の一覧」を取り込み、
+   * 見積もりの機種名をプルダウンにして本体代金を自動で入れる。
+   * MASTER に持たせるので、料金マスタと同じくクラウドで他の端末にも同期される。
+   * 取り込んでいない店舗は、これまでどおり手入力で使える。 */
+  function deviceMaster() {
+    return (MASTER && Array.isArray(MASTER.devices)) ? MASTER.devices : [];
+  }
+  /* CSV・TSVを1行1機種で読む。列は「機種名」と「本体価格」があればよい。
+   * 見出し行・「円」・カンマ・全角数字は自動で外す。 */
+  function parseDeviceText(text) {
+    var out = [], skipped = 0;
+    String(text || "").split(/\r\n|\r|\n/).forEach(function (line, i) {
+      if (!line.trim()) return;
+      var cols = (line.indexOf("\t") >= 0 ? line.split("\t") : splitCsvLine(line))
+        .map(function (c) { return String(c).replace(/^"|"$/g, "").trim(); });
+      if (cols.length < 2) { skipped++; return; }
+      // 見出し行は読み飛ばす
+      if (i === 0 && !/\d/.test(cols.join(""))) return;
+      function digits(v) {
+        return String(v).replace(/[，,円\s]/g, "")
+          .replace(/[０-９]/g, function (z) { return String.fromCharCode(z.charCodeAt(0) - 0xFEE0); });
+      }
+      var name = cols[0];
+      var price = 0, found = false;
+      for (var j = 1; j < cols.length; j++) {
+        var v = digits(cols[j]);
+        if (!/^\d+$/.test(v)) continue;
+        /* 「145,200」のように、桁区切りのカンマで列が割れている場合をつなぎ直す。
+         * 先頭が1〜3桁で、続く列がちょうど3桁の数字なら同じ金額とみなす。 */
+        while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(digits(cols[j + 1]))) {
+          v += digits(cols[j + 1]);
+          j++;
+        }
+        price = parseInt(v, 10);
+        found = true;
+        break;
+      }
+      if (!name || !found) { skipped++; return; }
+      if (name.length > 60) name = name.slice(0, 60);
+      out.push({ name: name, price: price });
+    });
+    return { list: out, skipped: skipped };
+  }
+  // 「a,"b,c",d」のような引用符付きCSVを1行分に分ける
+  function splitCsvLine(line) {
+    var out = [], cur = "", q = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line.charAt(i);
+      if (q) {
+        if (ch === '"' && line.charAt(i + 1) === '"') { cur += '"'; i++; }
+        else if (ch === '"') q = false;
+        else cur += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === "," ) { out.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+  function renderDeviceMaster() {
+    var list = deviceMaster();
+    var cnt = $("devMasterCount");
+    if (cnt) {
+      cnt.textContent = list.length
+        ? "いま登録されている機種: " + list.length + "件"
+        : "まだ取り込んでいません（機種名は手入力です）";
+    }
+    var wrap = $("devMasterPreview"), tb = $("devMasterTable");
+    if (wrap && tb) {
+      wrap.hidden = !list.length;
+      if (list.length) {
+        var head = "<tr><th>機種名</th><th>本体価格</th></tr>";
+        var rows = list.slice(0, 8).map(function (d) {
+          return "<tr><td>" + esc(d.name) + "</td><td>" + yen(d.price) + "</td></tr>";
+        }).join("");
+        if (list.length > 8) {
+          rows += '<tr><td colspan="2">ほか ' + (list.length - 8) + "件</td></tr>";
+        }
+        tb.innerHTML = head + rows;
+      }
+    }
+    renderDeviceSelect();
+  }
+  // 見積もり画面の機種プルダウン（端末マスタがあるときだけ出す）
+  function renderDeviceSelect() {
+    var fld = $("deviceSelectField"), sel = $("deviceSelect");
+    if (!fld || !sel) return;
+    var list = deviceMaster();
+    fld.hidden = !list.length;
+    if (!list.length) return;
+    sel.innerHTML = '<option value="">（手入力）</option>'
+      + list.map(function (d, i) {
+          return '<option value="' + i + '">' + esc(d.name) + "　" + yen(d.price) + "</option>";
+        }).join("");
+    // いまの入力と同じ機種名があれば選んだ状態にする
+    var hit = -1;
+    list.forEach(function (d, i) { if (hit < 0 && d.name === state.deviceName) hit = i; });
+    sel.value = hit >= 0 ? String(hit) : "";
+  }
+  function initDeviceMaster() {
+    var file = $("devMasterFile"), pasteBtn = $("devMasterPasteBtn"), wrap = $("devMasterPasteWrap"),
+        box = $("devMasterBox"), go = $("devMasterGo"), cancel = $("devMasterCancel"),
+        clear = $("devMasterClear"), msg = $("devMasterMsg"), sel = $("deviceSelect");
+    function say(t, err) {
+      if (!msg) return;
+      msg.textContent = t;
+      msg.hidden = false;
+      msg.style.color = err ? "#C62828" : "";
+    }
+    function take(text) {
+      var r = parseDeviceText(text);
+      if (!r.list.length) {
+        say("読み取れる行がありませんでした。1行に「機種名」と「本体価格」が並んでいるかご確認ください。", true);
+        return;
+      }
+      if (!window.confirm(r.list.length + "件の機種を取り込みます。いまの端末マスタは置き換わります。よろしいですか？")) return;
+      histSettle();
+      var back = histAdd("端末マスタの取り込み前", JSON.stringify(MASTER), true);
+      MASTER.devices = r.list;
+      saveMaster();
+      histAttachChanges(back, JSON.stringify(MASTER));
+      histMark();
+      renderDeviceMaster();
+      say(r.list.length + "件を取り込みました。"
+        + (r.skipped ? "（読み取れなかった " + r.skipped + "行は飛ばしました）" : "")
+        + "見積もりの機種名がプルダウンになります。");
+      if (wrap) { wrap.hidden = true; box.value = ""; }
+    }
+    if (file) {
+      file.addEventListener("change", function () {
+        var f = this.files && this.files[0];
+        this.value = "";
+        if (!f) return;
+        var rd = new FileReader();
+        rd.onload = function () { take(String(rd.result || "")); };
+        rd.onerror = function () { say("ファイルを読み込めませんでした。", true); };
+        /* 代理店のCSVはShift_JISのことが多い。まずUTF-8で読み、
+         * 文字化けの記号が出たらShift_JISで読み直す。 */
+        rd.readAsText(f, "UTF-8");
+        rd.onload = function () {
+          var t = String(rd.result || "");
+          if (t.indexOf("\uFFFD") >= 0) {
+            var rd2 = new FileReader();
+            rd2.onload = function () { take(String(rd2.result || "")); };
+            rd2.onerror = function () { take(t); };
+            try { rd2.readAsText(f, "Shift_JIS"); } catch (e) { take(t); }
+            return;
+          }
+          take(t);
+        };
+      });
+    }
+    if (pasteBtn && wrap) {
+      pasteBtn.addEventListener("click", function () {
+        wrap.hidden = !wrap.hidden;
+        if (msg) msg.hidden = true;
+        if (!wrap.hidden) box.focus();
+      });
+      cancel.addEventListener("click", function () { wrap.hidden = true; box.value = ""; });
+      go.addEventListener("click", function () { take(box.value); });
+    }
+    if (clear) {
+      clear.addEventListener("click", function () {
+        if (!deviceMaster().length) { say("端末マスタはまだ取り込まれていません。"); return; }
+        if (!window.confirm("端末マスタを削除します。機種名は手入力に戻ります。よろしいですか？")) return;
+        histSettle();
+        var back = histAdd("端末マスタの削除前", JSON.stringify(MASTER), true);
+        delete MASTER.devices;
+        saveMaster();
+        histAttachChanges(back, JSON.stringify(MASTER));
+        histMark();
+        renderDeviceMaster();
+        say("削除しました。");
+      });
+    }
+    if (sel) {
+      sel.addEventListener("change", function () {
+        var list = deviceMaster();
+        var d = this.value === "" ? null : list[parseInt(this.value, 10)];
+        if (!d) return;                      // 「手入力」を選んだときは今の入力のまま
+        state.deviceName = d.name;
+        state.devicePrice = num(d.price);
+        $("deviceName").value = state.deviceName;
+        $("devicePrice").value = state.devicePrice || "";
+        saveState();
+        recalc();
+      });
+    }
+    renderDeviceMaster();
+  }
+
   function initImportMaster() {
     var btn = $("importMasterBtn"), wrap = $("importMasterWrap"), box = $("importMasterBox"),
         go = $("importMasterGo"), cancel = $("importMasterCancel"), msg = $("importMasterMsg");
@@ -7459,7 +7628,11 @@
     });
 
     // 端末
-    $("deviceName").addEventListener("input", function () { state.deviceName = this.value; saveState(); });
+    $("deviceName").addEventListener("input", function () {
+      state.deviceName = this.value;
+      renderDeviceSelect();   // 手で直したらプルダウンの選択も合わせる
+      saveState();
+    });
     $("devicePrice").addEventListener("input", function () { state.devicePrice = num(this.value); recalc(); });
     $("couponOff").addEventListener("input", function () { state.couponOff = num(this.value); recalc(); });
     $("tebikiOff").addEventListener("input", function () { state.tebikiOff = num(this.value); recalc(); });
@@ -8101,6 +8274,7 @@
   initPresent();
   initMasterSearch();
   initImportMaster();
+  initDeviceMaster();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
   // 何かの理由で画面の決定に至らなくても、隠したままにはしない
   setTimeout(bootDone, 6000);
