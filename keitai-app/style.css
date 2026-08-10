@@ -340,10 +340,10 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 }
 .sub-checks .sub-label{font-size:12px;font-weight:700;color:var(--muted)}
 .sub-checks .check{margin:2px 0;font-size:13px}
-/* 現在の固定回線ヒアリング（ネット・電話・テレビ） */
-.ie-cur{display:block}
+/* 現在の固定回線ヒアリング（ネット・電話・テレビ）。イエナカの①のセクション */
 .ie-cur .field{margin:6px 0}
 .ie-cur .sub-checks{margin:6px 0 0}
+.ie-cur .check{margin-top:4px}
 
 .sub-checks .sub-note{font-size:12px;font-weight:700;color:var(--red)}
 
