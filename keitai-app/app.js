@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.76.1";
+  var APP_VERSION = "1.76.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1196,6 +1196,10 @@
       if (admin) {
         h += '<p class="hint">収益単価は<strong>1成約あたりの収益（インセンティブ・粗利など、店舗の基準額）</strong>を入れてください。'
           + '入れると担当別・項目別・CSVに収益が出ます。単価は全端末で共通です（担当者の画面には自分の収益額だけが表示され、単価は表示されません）。</p>';
+      }
+      if (!canAdj) {
+        h += '<p class="hint">項目ごとに件数を直したいときは、上の<strong>「件数を修正」</strong>を押してください'
+          + '（期間の月' + (admin ? "と担当" : "") + 'を選ぶと、各行の右端に入力欄が出ます）。</p>';
       }
       h += '<p class="hint">提案＝保存したとき（最初の提案）にその項目が入っていた件数（3パターンのどれかにあれば1件）。'
         + '成約＝成約にした応対で、実際の成約内容にその項目が入っていた件数。'
@@ -8133,6 +8137,22 @@
         if (statsAdminOk()) { renderStats(true); return; }
         masterGateFrom = "stats";
         showMasterGate(true);
+      });
+      /* 「件数を修正」: 修正の入力欄は月（管理者は担当も）が決まって
+       * いないと出せないため、押したら自動で選んでその場所まで送る。 */
+      $("statsAdjBtn").addEventListener("click", function () {
+        var m = $("statsMonth"), sSel = $("statsStaff");
+        if (m.value === "all") {
+          var first = Array.prototype.filter.call(m.options, function (o) { return o.value !== "all"; })[0];
+          if (!first) { window.alert("この期間に集計できる保存がありません。"); return; }
+          m.value = first.value;
+        }
+        if (statsAdminOk() && sSel.value === "all") sSel.value = activeStaff().id;
+        renderStats(false);
+        setTimeout(function () {
+          var box = document.querySelector("#statsBody .stats-adj");
+          if (box && box.scrollIntoView) box.scrollIntoView({ block: "center" });
+        }, 60);
       });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
       $("statsPrint").addEventListener("click", function () {
