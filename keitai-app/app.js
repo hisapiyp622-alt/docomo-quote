@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.79.2";
+  var APP_VERSION = "1.80.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -711,7 +711,7 @@
         var kb9 = (pt.optionKubun || {})[o2.id] || "new";
         if (kb9 === "new" || kb9 === "exist") azOn = true;
       });
-      if (azOn) out["maxAmazon"] = "新料金＋Amazonプライム同時";
+      if (azOn) out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     }
     if (cfg.kaimashi) {
       var buyOn = vks.indexOf("buy") >= 0;
@@ -814,13 +814,6 @@
     return out;
   }
 
-  // 成約として記録した内容のパターン（無ければ保存内容の成約パターン）
-  function wonPatternOf(it) {
-    if (it.wonData) return ((it.wonData.patterns) || [])[(it.wonData.active | 0)];
-    var wi = typeof it.wonPattern === "number" ? it.wonPattern : (it.data && it.data.active) | 0;
-    return (((it.data || {}).patterns) || [])[wi];
-  }
-
   // 1件の保存から項目を拾う。wonOnly は「成約した内容」だけ
   function statsSavedItems(it, wonOnly) {
     if (!wonOnly) return statsDataItems(it.data);
@@ -842,10 +835,6 @@
   function statsAdjOf(sid, month) {
     var a = ((MASTER.statsAdjust || {})[sid] || {})[month];
     return a ? { prop: num(a.prop), won: num(a.won), lost: num(a.lost) } : { prop: 0, won: 0, lost: 0 };
-  }
-  /* 項目ごとの補正 MASTER.statsAdjItem[担当][月][項目キー] = {prop, won} */
-  function statsAdjItemOf(sid, month) {
-    return (((MASTER.statsAdjItem || {})[sid] || {})[month]) || {};
   }
   // 表示中の期間・担当ぶんの項目補正を合計する（"all" は全部を足す）
   function statsAdjItemSum(sid, month) {
@@ -878,7 +867,7 @@
     (MASTER.plans || []).forEach(function (pl) {
       if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
     });
-    out["maxAmazon"] = "新料金＋Amazonプライム同時";
+    out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     if (cfg.device === "all") out["device"] = "機種販売";
     else if (cfg.device === "kw") out["device"] = "機種販売（" + cfg.deviceKw + "）";
     if (cfg.dcard === "one") out["dcard"] = "dカード";
@@ -952,10 +941,47 @@
     Promise.all(jobs).then(function () { statsLists = lists; done(); }, function () { statsLists = lists; done(); });
   }
 
+  /* ---------- 実績の手修正 ----------
+   * ・担当者は「当日ぶん」だけ直せる（日付キー MASTER.statsAdjDay）。
+   *   日付でキーを分けているので、翌日になると前日ぶんには手が届かない。
+   * ・管理者は月ぶんをまとめて直せる（月キー MASTER.statsAdjItem）。
+   * どちらも料金マスタに入るため、店舗内の全端末で揃う。 */
+  function adjTodayKey() {
+    var d = new Date();
+    return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + ("0" + d.getDate()).slice(-2);
+  }
+  function statsAdjDayBag(sid, day) {
+    return (((MASTER.statsAdjDay || {})[sid] || {})[day]) || {};
+  }
+  // その期間の項目補正（担当者の当日ぶん＋管理者の月ぶん）を合算する
+  function statsAdjItemTotal(sid, month) {
+    var out = {};
+    function add(o) {
+      Object.keys(o || {}).forEach(function (k) {
+        if (!out[k]) out[k] = { prop: 0, won: 0 };
+        out[k].prop += num(o[k].prop);
+        out[k].won += num(o[k].won);
+      });
+    }
+    var perDay = MASTER.statsAdjDay || {};
+    Object.keys(perDay).forEach(function (s2) {
+      if (sid !== "all" && s2 !== sid) return;
+      Object.keys(perDay[s2] || {}).forEach(function (day) {
+        if (month !== "all" && day.slice(0, 7) !== month) return;
+        add(perDay[s2][day]);
+      });
+    });
+    add(statsAdjItemSum(sid, month));
+    return out;
+  }
+
   function statsMonthOf(ms) {
     var d = new Date(ms || 0);
     return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2);
   }
+  /* 実績の画面。
+   * 主役は「何の応対から何を成約したか」の早見表。
+   * 成約率などの分析は、現場が記録に慣れてからにする（店舗の指定・2026-08-10）。 */
   function renderStats(refresh) {
     var body = $("statsBody");
     if (!body) return;
@@ -967,27 +993,31 @@
     var lists = statsLists;
     var admin = statsAdminOk();
     var me = activeStaff().id;
-    /* 担当者の画面に出すのは、自分が作った応対と、自分が成約・見送りを決めた応対だけ */
+    /* 担当者の画面に出すのは、自分が応対した件と、自分が成約・見送りを決めた件だけ */
     function mineOnly(it, sid) { return admin || sid === me || resStaffOf(it, sid) === me; }
-    /* 引き渡した元（コンデザが作って担当へ渡した見積もり）は実績に数えない。
-     * コンデザは見積もりを作る人で、提案・成約・見送りはすべて
-     * 商談した担当者の実績になる。渡した先の控えが1件として数えられる。 */
+    /* 引き渡した元（コンデザが作って担当へ渡した見積もり）は数えない。
+     * 渡した先の控えが1件として数えられる。 */
     function isSent(it) { return !!it.sentTo; }
-    // 期間の選択肢（保存がある月）
+
+    /* ---- 期間・担当の選択 ---- */
     var monthSel = $("statsMonth"), staffSel = $("statsStaff");
     var months = {};
     Object.keys(lists).forEach(function (sid) {
       lists[sid].forEach(function (it) { if (mineOnly(it, sid)) months[statsMonthOf(it.savedAt)] = true; });
     });
-    var mKeys = Object.keys(months).sort().reverse();
     var curMonth = statsMonthOf(Date.now());
-    var mPrev = monthSel.value || (months[curMonth] ? curMonth : "all");
-    monthSel.innerHTML = '<option value="all">全期間</option>' + mKeys.map(function (m) {
-      return '<option value="' + m + '">' + m + "</option>";
-    }).join("");
-    monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : "all";
+    months[curMonth] = true;                 // 当月は保存がなくても選べるようにする
+    var mKeys = Object.keys(months).sort().reverse();
+    var mPrev = monthSel.value || curMonth;
+    monthSel.innerHTML = mKeys.map(function (m) {
+      return '<option value="' + m + '">' + m + (m === curMonth ? "（今月）" : "") + "</option>";
+    }).join("") + '<option value="all">全期間</option>';
+    monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : curMonth;
+
     var unlockBtn = $("statsUnlockBtn");
     if (unlockBtn) unlockBtn.hidden = admin;
+    var mornBtn = $("statsMorning");
+    if (mornBtn) mornBtn.hidden = !admin;
     if (staffSel.parentElement) staffSel.parentElement.style.display = admin ? "" : "none";
     var sPrev = staffSel.value || "all";
     staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
@@ -995,454 +1025,302 @@
     }).join("");
     staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
     // 管理者以外は、常に自分（ログイン中の担当）の実績だけ
-    var mFil = monthSel.value, sFil = admin ? staffSel.value : activeStaff().id;
+    var mFil = monthSel.value, sFil = admin ? staffSel.value : me;
     function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
-
-    // 担当別のまとめ
-    var rows = [];
-    var totals = { prop: 0, won: 0, lost: 0, dec: 0 };
-    /* 収益 = 成約項目 × 管理者が設定した収益単価（MASTER.statsUnitPrices）。
-     * 単価が未設定の項目は0円として扱う。収益は「成約を決めた担当」に全額付ける。 */
-    var unitPrices = MASTER.statsUnitPrices || {};
-    function itemRev(it) {
-      var sum = 0;
-      var keys = statsSavedItems(it, true);
-      Object.keys(keys).forEach(function (k) { sum += num(unitPrices[k] || 0); });
-      return sum;
-    }
-    /* 提案を作った担当と、成約・見送りを決めた担当が違う件があるか。
-     * ある店舗（コンデザが提案を作る運用）でだけ「決定」の列を出す。 */
-    var anySplit = false;
-    Object.keys(lists).forEach(function (sid) {
-      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-        if (!isSent(it) && it.result && resStaffOf(it, sid) !== sid) anySplit = true;
-      });
-    });
-    config.staff.forEach(function (s) {
-      if (sFil !== "all" && s.id !== sFil) return;
-      // その担当が応対した件（担当へ渡した見積もりは渡した先で数える）
-      var a = (lists[s.id] || []).filter(inPeriod).filter(function (it) { return !isSent(it); });
-      var won = a.filter(function (it) { return it.result === "won"; }).length;
-      var lost = a.filter(function (it) { return it.result === "lost"; }).length;
-      // その担当が成約を決めた件（他の担当が作った提案を決めた分も含む）と、その収益
-      var dec = 0, rev = 0;
-      Object.keys(lists).forEach(function (sid) {
-        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-          if (isSent(it) || it.result !== "won" || resStaffOf(it, sid) !== s.id) return;
-          dec++; rev += itemRev(it);
-        });
-      });
-      /* 項目の手修正ぶんの収益も足す（項目別の合計収益と食い違わないように） */
-      var iadS = statsAdjItemSum(s.id, mFil);
-      Object.keys(iadS).forEach(function (k4) { rev += num(unitPrices[k4] || 0) * iadS[k4].won; });
-      rev = Math.max(0, rev);
-      // 手修正の補正を足す（マイナスにはしない）
-      var ad = statsAdjSum(s.id, mFil);
-      var prop2 = Math.max(0, a.length + ad.prop);
-      var won2 = Math.max(0, won + ad.won);
-      var lost2 = Math.max(0, lost + ad.lost);
-      totals.prop += prop2; totals.won += won2; totals.lost += lost2; totals.dec += dec;
-      totals.rev = (totals.rev || 0) + rev;
-      rows.push({ id: s.id, name: s.name, prop: prop2, won: won2, lost: lost2, dec: dec, rev: rev,
-        adj: (ad.prop || ad.won || ad.lost) ? ad : null });
-    });
-    function rate(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : "－"; }
-
-    // ---- 目標（店舗全体・月あたりの成約件数。管理者の画面だけに出す） ----
-    var head = "";
-    if (!admin) {
-      head += '<p class="hint">ご自身（' + esc(activeStaff().name || "担当") + '）の実績を表示しています。</p>';
-    }
-    var goal = num(MASTER.statsGoal || 0);
-    if (admin) {
-    head += '<div class="stats-goal"><label>月の成約目標 <input type="number" id="statsGoalInput" min="0" value="'
-      + (goal || "") + '" placeholder="未設定"> 件</label>';
-    if (goal > 0 && mFil !== "all" && sFil === "all") {
-      var pct = Math.min(100, Math.round(totals.won * 100 / goal));
-      head += '<div class="goal-bar"><div class="goal-fill" style="width:' + pct + '%"></div></div>'
-        + '<span class="goal-note">' + esc(mFil) + " の成約 " + totals.won + " / " + goal
-        + " 件（達成率 " + Math.round(totals.won * 100 / goal) + "%）</span>";
-    } else if (goal > 0) {
-      head += '<span class="goal-note">目標は店舗全体の件数です。期間で月を、担当で「全員」を選ぶと達成率が出ます</span>';
-    }
-    head += "</div>";
-    }
-
-    // ---- 前月との比較（月を選んでいるときだけ） ----
-    if (mFil !== "all") {
-      var pmY = +mFil.slice(0, 4), pmM = +mFil.slice(5) - 1;
-      if (!pmM) { pmY--; pmM = 12; }
-      var pm = pmY + "/" + ("0" + pmM).slice(-2);
-      var prev = { prop: 0, won: 0, lost: 0 };
-      config.staff.forEach(function (s2) {
-        if (sFil !== "all" && s2.id !== sFil) return;
-        var a2 = (lists[s2.id] || []).filter(function (it) {
-          return statsMonthOf(it.savedAt) === pm && !isSent(it);
-        });
-        var ad2 = statsAdjOf(s2.id, pm);
-        prev.prop += Math.max(0, a2.length + ad2.prop);
-        prev.won += Math.max(0, a2.filter(function (it) { return it.result === "won"; }).length + ad2.won);
-        prev.lost += Math.max(0, a2.filter(function (it) { return it.result === "lost"; }).length + ad2.lost);
-      });
-      function scBox(label, cur, pv, unit) {
-        var d2 = cur - pv;
-        var cls = d2 > 0 ? "up" : (d2 < 0 ? "down" : "");
-        var dTxt = d2 > 0 ? "＋" + d2 : (d2 < 0 ? "−" + (-d2) : "±0");
-        return '<div class="sc-box"><span class="sc-label">' + label + "</span>"
-          + '<span class="sc-value">' + cur + (unit || "") + "</span>"
-          + '<span class="sc-diff ' + cls + '">前月 ' + pv + (unit || "") + "（" + dTxt + "）</span></div>";
-      }
-      var curRate = totals.prop ? Math.round(totals.won * 100 / totals.prop) : 0;
-      var prevRate = prev.prop ? Math.round(prev.won * 100 / prev.prop) : 0;
-      head += '<div class="stats-compare">'
-        + scBox("提案", totals.prop, prev.prop, "件")
-        + scBox("成約", totals.won, prev.won, "件")
-        + scBox("見送り", totals.lost, prev.lost, "件")
-        + scBox("成約率", curRate, prevRate, "%")
-        + "</div>";
-    }
-
     var sName = "全員";
     if (sFil !== "all") {
-      var ssNow = config.staff.filter(function (s2) { return s2.id === sFil; })[0];
+      var ssNow = config.staff.filter(function (s) { return s.id === sFil; })[0];
       sName = (ssNow && ssNow.name) || sFil;
     }
-    var h = head + '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th>'
-      + (anySplit ? "<th>決定</th>" : "") + "<th>収益</th></tr>";
-    rows.forEach(function (r2) {
-      h += "<tr><td>" + esc(r2.name) + "</td><td>" + r2.prop + "</td><td>" + r2.won + "</td><td>" + r2.lost + "</td><td>" + rate(r2.won, r2.prop) + "</td>"
-        + (anySplit ? "<td>" + r2.dec + "</td>" : "") + "<td>" + yen(r2.rev) + "</td></tr>";
+
+    /* ---- 集計 ----
+     * 提案・応対・未記録は「応対した担当」、成約は「成約を決めた担当」で数える。 */
+    var items = {};      // 項目キー -> {name, prop, won, byVisit}
+    var visitUsed = {};  // 使われた来店目的
+    var vpAgg = {};      // 来店目的 -> {prop, won}
+    var byDay = {};      // 日 -> {prop, won, dow}
+    var staffAgg = {};   // 担当id -> {prop, won, undone}
+    var cross = {};      // 担当id -> {項目キー -> 成約件数}
+    var undoneList = []; // 結果未記録の保存（自分のぶん）
+
+    config.staff.forEach(function (s) {
+      staffAgg[s.id] = { prop: 0, won: 0, undone: 0 };
+      cross[s.id] = {};
     });
-    if (rows.length > 1) {
-      h += '<tr class="stats-total"><td>合計</td><td>' + totals.prop + "</td><td>" + totals.won + "</td><td>" + totals.lost + "</td><td>" + rate(totals.won, totals.prop) + "</td>"
-        + (anySplit ? "<td>" + totals.dec + "</td>" : "") + "<td>" + yen(totals.rev || 0) + "</td></tr>";
-    }
-    h += "</table>";
-    // 手修正が入っている行の目印
-    if (rows.some(function (r3) { return r3.adj; })) {
-      h += '<p class="hint">' + rows.filter(function (r3) { return r3.adj; }).map(function (r3) {
-        function sg(n) { return n > 0 ? "＋" + n : String(n); }
-        var ps = [];
-        if (r3.adj.prop) ps.push("提案 " + sg(r3.adj.prop));
-        if (r3.adj.won) ps.push("成約 " + sg(r3.adj.won));
-        if (r3.adj.lost) ps.push("見送り " + sg(r3.adj.lost));
-        return esc(r3.name) + " は手修正を含みます（" + ps.join("・") + "）";
-      }).join("／") + "</p>";
-    }
-    /* 件数の手修正。数え違い・二重計上を直すためのもので、管理者が
-     * 月と担当を選んでいるときだけ出す（どの月の誰の数字かが決まらないため）。 */
-    /* 担当者は自分の分だけ、管理者はどの担当の分でも直せる。
-     * 月が決まらないとどこに足し引きするか決まらないため、月の選択は必須。 */
-    var canAdj = mFil !== "all" && sFil !== "all" && (admin || sFil === me);
-    if (canAdj) {
-      var adNow = statsAdjOf(sFil, mFil);
-      var adjInput = function (k, label) {
-        return "<label>" + label + ' <input type="number" data-adj="' + k
-          + '" data-adjs="' + esc(sFil) + '" data-adjm="' + esc(mFil) + '" value="'
-          + (adNow[k] || "") + '" placeholder="0"></label>';
-      };
-      h += '<div class="stats-adj"><b>件数の修正（' + esc(mFil) + "・" + esc(sName) + "）</b>"
-        + '<p class="hint">数え違いや二重計上を直すときだけ使ってください。ここに入れた数が、上の件数に足し引きされます（0で元に戻ります）。</p>'
-        + adjInput("prop", "提案") + adjInput("won", "成約") + adjInput("lost", "見送り")
-        + "</div>";
-    } else if (admin) {
-      h += '<p class="hint">件数を修正するときは、<strong>期間で月を、担当でその担当者</strong>を選んでください。</p>';
-    } else if (mFil === "all") {
-      h += '<p class="hint">件数を修正するときは、<strong>期間で月</strong>を選んでください（ご自身の分だけ直せます）。</p>';
-    }
-    if (anySplit) {
-      h += '<p class="hint"><strong>提案・成約・見送り・成約率</strong>は、その担当が<strong>応対した件</strong>の結果です。'
-        + '<strong>決定</strong>は、その担当が「成約」を記録した件数（他の担当の応対を決めた分も入ります）。'
-        + '<strong>収益は決定した担当に全額</strong>付きます。'
-        + '担当へ渡した見積もりは、渡した先で1件として数えるため、渡した側の実績には入りません。</p>';
+    function bagItem(k, name) {
+      if (!items[k]) items[k] = { name: name, prop: 0, won: 0, byVisit: {} };
+      return items[k];
     }
 
-    /* ---- 日別（月を選んでいるときだけ） ----
-     * 「その日どうだったか」を振り返るための表。日付は見積もりを保存した日。
-     * 提案・成約・見送りは応対した担当のもの、収益は成約を決めた担当のもの
-     * （担当別の表と同じ数え方）。 */
-    var dayRows = [];
-    if (mFil !== "all") {
-      var byDay = {};
-      Object.keys(lists).forEach(function (sid) {
-        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-          if (isSent(it) || !mineOnly(it, sid)) return;
-          var ownD = (sFil === "all" || sid === sFil);
-          var decD = (sFil === "all" || resStaffOf(it, sid) === sFil);
-          if (!ownD && !decD) return;
-          var dt = new Date(it.savedAt || 0);
-          var dk = dt.getFullYear() + "/" + ("0" + (dt.getMonth() + 1)).slice(-2)
-            + "/" + ("0" + dt.getDate()).slice(-2);
-          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, lost: 0, rev: 0, dow: dt.getDay() };
-          if (ownD) {
-            byDay[dk].prop++;
-            if (it.result === "won") byDay[dk].won++;
-            else if (it.result === "lost") byDay[dk].lost++;
+    Object.keys(lists).forEach(function (sid) {
+      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+        if (isSent(it) || !mineOnly(it, sid)) return;
+        var decider = resStaffOf(it, sid);
+        var ownMatch = (sFil === "all" || sid === sFil);       // 応対した担当
+        var decMatch = (sFil === "all" || decider === sFil);   // 成約を決めた担当
+        if (!ownMatch && !decMatch) return;
+
+        var pt0 = (((it.data || {}).patterns) || [])[((it.data || {}).active | 0)] || {};
+        var vks = visitKeys(pt0);
+        if (!vks.length) vks = ["_none"];
+        var wonI = it.result === "won" ? statsSavedItems(it, true) : null;
+        var dt = new Date(it.savedAt || 0);
+        var dk = dt.getFullYear() + "/" + ("0" + (dt.getMonth() + 1)).slice(-2)
+          + "/" + ("0" + dt.getDate()).slice(-2);
+
+        if (ownMatch) {
+          if (staffAgg[sid]) {
+            staffAgg[sid].prop++;
+            if (!it.result) staffAgg[sid].undone++;
           }
-          if (it.result === "won" && decD) byDay[dk].rev += itemRev(it);
-        });
+          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay() };
+          byDay[dk].prop++;
+          if (!it.result && sid === sFil) undoneList.push(it);
+          // 提案した項目
+          var propI = statsSavedItems(it, false);
+          Object.keys(propI).forEach(function (k) { bagItem(k, propI[k]).prop++; });
+          vks.forEach(function (vk) {
+            if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0 };
+            vpAgg[vk].prop++;
+            if (vk !== "_none") visitUsed[vk] = true;
+          });
+        }
+        if (wonI && decMatch) {
+          if (staffAgg[decider]) staffAgg[decider].won++;
+          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay() };
+          byDay[dk].won++;
+          vks.forEach(function (vk) {
+            if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0 };
+            vpAgg[vk].won++;
+            if (vk !== "_none") visitUsed[vk] = true;
+          });
+          Object.keys(wonI).forEach(function (k) {
+            var b = bagItem(k, wonI[k]);
+            b.won++;
+            // どの来店目的からの成約か（目的が複数なら按分せず両方に立てる）
+            vks.forEach(function (vk) { b.byVisit[vk] = (b.byVisit[vk] || 0) + 1; });
+            if (cross[decider]) cross[decider][k] = (cross[decider][k] || 0) + 1;
+          });
+        }
       });
-      var dKeys = Object.keys(byDay).sort();
-      var DOW = ["日", "月", "火", "水", "木", "金", "土"];
-      h += "<h3>日別（" + esc(mFil) + "）</h3>";
-      if (!dKeys.length) {
-        h += '<p class="hint">この月の保存がありません。</p>';
-      } else {
-        h += '<table class="stats-table"><tr><th>日付</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th><th>収益</th></tr>';
-        var dTot = { prop: 0, won: 0, lost: 0, rev: 0 };
-        dKeys.forEach(function (k5) {
-          var v5 = byDay[k5];
-          dTot.prop += v5.prop; dTot.won += v5.won; dTot.lost += v5.lost; dTot.rev += v5.rev;
-          var label = k5.slice(5) + "（" + DOW[v5.dow] + "）";
-          dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won, lost: v5.lost, rev: v5.rev });
-          h += '<tr class="' + (v5.dow === 0 ? "d-sun" : (v5.dow === 6 ? "d-sat" : "")) + '"><td>'
-            + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td><td>" + v5.lost
-            + "</td><td>" + rate(v5.won, v5.prop) + "</td><td>" + yen(v5.rev) + "</td></tr>";
-        });
-        h += '<tr class="stats-total"><td>合計</td><td>' + dTot.prop + "</td><td>" + dTot.won
-          + "</td><td>" + dTot.lost + "</td><td>" + rate(dTot.won, dTot.prop) + "</td><td>"
-          + yen(dTot.rev) + "</td></tr></table>";
-      }
-      h += '<p class="hint">日付は<strong>見積もりを保存した日</strong>です。'
-        + '「件数の修正」で足し引きした分は月ごとの調整のため、この表には入りません。</p>';
-    } else {
-      h += '<p class="hint">期間で<strong>月</strong>を選ぶと、日別の表が出ます。</p>';
-    }
+    });
 
-    var order = ["proc:", "kaimashi", "plan:", "maxAmazon", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
+    /* 手修正を足す（0件で表に出ていない項目も、修正が入っていれば行を出す） */
+    var catalog = statsCatalog();
+    var itemAdj = statsAdjItemTotal(sFil, mFil);
+    Object.keys(itemAdj).forEach(function (k) {
+      var b = bagItem(k, catalog[k] || k);
+      b.prop = Math.max(0, b.prop + itemAdj[k].prop);
+      b.won = Math.max(0, b.won + itemAdj[k].won);
+      b.adj = itemAdj[k];
+    });
+
+    /* ---- 並び順 ---- */
+    var order = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
     }
-    /* ---- 来店目的別 ----
-     * 「何を目的に来店されて、何が成約になったか」を1か月ぶん振り返るための表。
-     * 目的を複数選んだ応対は、それぞれの行に数える。 */
-    var vpAgg = {}, vpAny = false;
-    Object.keys(lists).forEach(function (sid) {
-      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-        if (isSent(it) || !mineOnly(it, sid)) return;
-        if (!(sFil === "all" || sid === sFil)) return;
-        var pt0 = (((it.data || {}).patterns) || [])[((it.data || {}).active | 0)] || {};
-        var vks2 = visitKeys(pt0);
-        if (!vks2.length) vks2 = ["_none"]; else vpAny = true;
-        var wonI = it.result === "won" ? statsSavedItems(it, true) : null;
-        vks2.forEach(function (vk) {
-          if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0, lost: 0, items: {}, names: {} };
-          vpAgg[vk].prop++;
-          if (it.result === "lost") vpAgg[vk].lost++;
-          if (wonI) {
-            vpAgg[vk].won++;
-            Object.keys(wonI).forEach(function (k6) {
-              if (k6.indexOf("visit:") === 0) return;   // 目的そのものは中身に出さない
-              vpAgg[vk].items[k6] = (vpAgg[vk].items[k6] || 0) + 1;
-              vpAgg[vk].names[k6] = wonI[k6];
-            });
-          }
-        });
+    var iKeys = Object.keys(items).filter(function (k) {
+      return items[k].prop > 0 || items[k].won > 0;
+    }).sort(function (a2, b2) {
+      return (rank(a2) - rank(b2)) || (items[b2].won - items[a2].won)
+        || (items[b2].prop - items[a2].prop) || (items[a2].name < items[b2].name ? -1 : 1);
+    });
+    /* 「（再掲）新プラン × Amazon Prime」は Amazon プライムの行の直後に置く */
+    var azIds = amazonOptIds();
+    var lastAz = -1;
+    iKeys.forEach(function (k, i) {
+      azIds.forEach(function (id) {
+        if (k === "opt:" + id || k === "opt:" + id + ":exist") lastAz = i;
       });
     });
-    var vpKeys = VISIT_ORDER.filter(function (k) { return vpAgg[k]; });
-    if (vpAgg["_none"]) vpKeys.push("_none");
-    if (statsCfg().visit && vpKeys.length && vpAny) {
-      h += "<h3>来店目的別</h3>";
-      h += '<table class="stats-table"><tr><th>来店目的</th><th>応対</th><th>成約</th><th>見送り</th><th>成約率</th><th>成約になった内容</th></tr>';
-      vpKeys.forEach(function (k7) {
-        var v7 = vpAgg[k7];
-        var top = Object.keys(v7.items).sort(function (a7, b7) {
-          return (v7.items[b7] - v7.items[a7]) || (rank(a7) - rank(b7));
-        }).slice(0, 10).map(function (k8) {
-          return esc(v7.names[k8]) + " " + v7.items[k8];
-        }).join("・");
-        h += "<tr><td>" + esc(k7 === "_none" ? "（未選択）" : VISIT_NAMES[k7]) + "</td><td>"
-          + v7.prop + "</td><td>" + v7.won + "</td><td>" + v7.lost + "</td><td>"
-          + rate(v7.won, v7.prop) + '</td><td class="vp-items">' + (top || "－") + "</td></tr>";
-      });
-      h += "</table>";
-      h += '<p class="hint">「成約になった内容」は、その目的で来店された応対のうち<strong>成約になったもの</strong>に入っていた項目の件数です（多い順に10件まで）。'
-        + '目的を複数選んだ応対は、それぞれの行に数えるため、応対の合計は実件数と一致しないことがあります。</p>';
+    var reIdx = iKeys.indexOf("maxAmazon");
+    if (reIdx >= 0 && lastAz >= 0) {
+      iKeys.splice(reIdx, 1);
+      if (reIdx < lastAz) lastAz--;
+      iKeys.splice(lastAz + 1, 0, "maxAmazon");
+    }
+    var vCols = VISIT_ORDER.filter(function (k) { return visitUsed[k]; });
+    if (vpAgg["_none"]) vCols.push("_none");
+    function vName(k) { return k === "_none" ? "（未選択）" : VISIT_NAMES[k]; }
+    function vShort(k) {
+      var m2 = { buy: "端末購入", plan: "プラン見直し", repair: "故障", howto: "操作", ask: "問合せ", other: "その他", _none: "未選択" };
+      return m2[k] || k;
     }
 
-    // 項目別のまとめ（提案＝最初に保存した内容、成約＝実際に成約した内容）
-    var items = {}; // key -> {name, prop, won}
-    Object.keys(lists).forEach(function (sid) {
-      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-        if (!mineOnly(it, sid)) return;
-        // 提案＝作った担当、成約＝決めた担当で数える
-        if (!isSent(it) && (sFil === "all" || sid === sFil)) {
-          var prop = statsSavedItems(it, false);
-          Object.keys(prop).forEach(function (k) {
-            if (!items[k]) items[k] = { name: prop[k], prop: 0, won: 0 };
-            items[k].prop++;
-          });
-        }
-        if (!isSent(it) && it.result === "won" && (sFil === "all" || resStaffOf(it, sid) === sFil)) {
-          var wonItems = statsSavedItems(it, true);
-          Object.keys(wonItems).forEach(function (k) {
-            if (!items[k]) items[k] = { name: wonItems[k], prop: 0, won: 0 };
-            items[k].won++;
-          });
-        }
-      });
-    });
-    /* 項目ごとの手修正を足す。0件で表に出ていない項目も、
-     * 修正が入っていれば行として出す。 */
-    var itemAdj = statsAdjItemSum(sFil, mFil);
-    var catalog = statsCatalog();
-    Object.keys(itemAdj).forEach(function (k) {
-      if (!items[k]) items[k] = { name: catalog[k] || k, prop: 0, won: 0 };
-      items[k].prop = Math.max(0, items[k].prop + itemAdj[k].prop);
-      items[k].won = Math.max(0, items[k].won + itemAdj[k].won);
-    });
-    var iKeys = Object.keys(items).sort(function (a2, b2) {
-      return (rank(a2) - rank(b2)) || (items[b2].prop - items[a2].prop) || (items[a2].name < items[b2].name ? -1 : 1);
-    });
-    h += '<h3>項目別</h3>';
+    /* ---- 手修正ができるか ----
+     * 担当者は当月の自分ぶんだけ（当日の記録として足し引きされる）。
+     * 管理者は担当と月を選んでいればいつでも。 */
+    var canAdj = sFil !== "all" && mFil !== "all"
+      && (admin || (sFil === me && mFil === curMonth));
+    var adjScope = (admin && mFil !== curMonth) ? "month" : "day";
+
+    var h = "";
+
+    /* ---- 結果が未記録の応対 ---- */
+    var myUndone = staffAgg[sFil] ? staffAgg[sFil].undone : 0;
+    if (sFil !== "all" && myUndone > 0) {
+      h += '<div class="stats-undone">結果が未記録の応対が <b>' + myUndone + "件</b>あります。"
+        + '<button type="button" class="btn-sub" id="statsUndoneBtn">保存タブで記録する</button></div>';
+    }
+
+    /* ---- 主役: 成約の早見表 ---- */
+    h += "<h3>" + (mFil === "all" ? "全期間" : esc(mFil)) + "の成約"
+      + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）") + "</h3>";
     if (!iKeys.length) {
-      h += '<p class="hint">この期間の保存がありません。</p>';
+      h += '<p class="hint">この期間の記録がまだありません。</p>';
     } else {
-      h += '<table class="stats-table"><tr><th>項目</th><th>提案</th><th>成約</th><th>成約率</th>'
-        + (admin ? "<th>収益単価</th>" : "") + "<th>収益</th>"
-        + (canAdj ? "<th>件数の修正<br><small>提案／成約</small></th>" : "") + "</tr>";
-      var revTotal = 0;
+      h += '<div class="stats-scroll"><table class="stats-table stats-main"><tr><th>項目</th><th>提案</th><th>成約</th>'
+        + vCols.map(function (k) { return "<th>" + esc(vShort(k)) + "</th>"; }).join("")
+        + (canAdj ? "<th>修正</th>" : "") + "</tr>";
+      var tProp = 0, tWon = 0, tByV = {};
       iKeys.forEach(function (k) {
         var x = items[k];
-        var up = num(unitPrices[k] || 0);
-        var rev2 = x.won * up;
-        revTotal += rev2;
-        var ia = canAdj ? (statsAdjItemOf(sFil, mFil)[k] || { prop: 0, won: 0 }) : null;
-        h += "<tr><td>" + esc(x.name) + "</td><td>" + x.prop + "</td><td>" + x.won + "</td><td>" + rate(x.won, x.prop) + "</td>"
-          + (admin
-            ? '<td><input type="number" class="unit-price" data-unitprice="' + esc(k) + '" min="0" value="' + (up || "") + '" placeholder="0">円</td>'
-            : "")
-          + "<td>" + yen(rev2) + "</td>"
+        tProp += x.prop; tWon += x.won;
+        h += "<tr><td>" + esc(x.name) + "</td>"
+          + '<td class="n-prop">' + (x.prop || "－") + "</td>"
+          + '<td class="n-won">' + (x.won || "－") + "</td>"
+          + vCols.map(function (vk) {
+              tByV[vk] = (tByV[vk] || 0) + (x.byVisit[vk] || 0);
+              return "<td>" + (x.byVisit[vk] || "") + "</td>";
+            }).join("")
           + (canAdj
-            ? '<td class="iadj">'
-              + '<input type="number" data-iadj="prop" data-iadjk="' + esc(k) + '" data-adjs="' + esc(sFil)
-              + '" data-adjm="' + esc(mFil) + '" value="' + (ia.prop || "") + '" placeholder="0">'
-              + '<input type="number" data-iadj="won" data-iadjk="' + esc(k) + '" data-adjs="' + esc(sFil)
-              + '" data-adjm="' + esc(mFil) + '" value="' + (ia.won || "") + '" placeholder="0"></td>'
-            : "")
+              ? '<td class="adj-cell"><button type="button" class="adjb" data-adjk="' + esc(k) + '" data-adjd="-1">−</button>'
+                + '<button type="button" class="adjb" data-adjk="' + esc(k) + '" data-adjd="1">＋</button></td>'
+              : "")
           + "</tr>";
       });
-      h += '<tr class="stats-total"><td>合計収益</td><td></td><td></td><td></td>' + (admin ? "<td></td>" : "")
-        + "<td>" + yen(revTotal) + "</td>" + (canAdj ? "<td></td>" : "") + "</tr>";
-      h += "</table>";
+      h += '<tr class="stats-total"><td>合計</td><td>' + tProp + "</td><td>" + tWon + "</td>"
+        + vCols.map(function (vk) { return "<td>" + (tByV[vk] || "") + "</td>"; }).join("")
+        + (canAdj ? "<td></td>" : "") + "</tr></table></div>";
       if (canAdj) {
-        // この期間に出ていない項目も、選んで足せるようにする
-        var missing = Object.keys(catalog).filter(function (k2) { return iKeys.indexOf(k2) < 0; })
-          .sort(function (a3, b3) { return rank(a3) - rank(b3); });
-        if (missing.length) {
-          h += '<div class="stats-adj"><b>この期間に出ていない項目を足す</b>'
-            + '<p class="hint">選ぶと表に行が増えるので、右端の「件数の修正」に数を入れてください。</p>'
-            + '<select id="iadjAdd"><option value="">（項目を選ぶ）</option>'
-            + missing.map(function (k2) {
-                return '<option value="' + esc(k2) + '">' + esc(catalog[k2]) + "</option>";
-              }).join("") + "</select></div>";
-        }
-        h += '<p class="hint">右端の「件数の修正」は、<strong>' + esc(mFil) + "・" + esc(sName)
-          + '</strong>の項目ごとの足し引きです（0で元に戻ります）。</p>';
+        h += '<p class="hint">数え違いがあれば「修正」の <b>＋ −</b> で直せます'
+          + (adjScope === "day" ? "（今日の記録として足し引きされます）" : "（" + esc(mFil) + " の調整として足し引きされます）")
+          + "。</p>";
       }
-      if (admin) {
-        h += '<p class="hint">収益単価は<strong>1成約あたりの収益（インセンティブ・粗利など、店舗の基準額）</strong>を入れてください。'
-          + '入れると担当別・項目別・CSVに収益が出ます。単価は全端末で共通です（担当者の画面には自分の収益額だけが表示され、単価は表示されません）。</p>';
-      }
-      if (!canAdj) {
-        h += '<p class="hint">項目ごとに件数を直したいときは、上の<strong>「件数を修正」</strong>を押してください'
-          + '（期間の月' + (admin ? "と担当" : "") + 'を選ぶと、各行の右端に入力欄が出ます）。</p>';
-      }
-      h += '<p class="hint">提案＝保存したとき（最初の提案）にその項目が入っていた件数（3パターンのどれかにあれば1件）。'
-        + '成約＝成約にした応対で、実際の成約内容にその項目が入っていた件数。'
-        + '提案0で成約が付いている項目は、最初の提案には無く、成約までの調整で加わったものです。'
-        + 'オプションの「継続」は数えません。どの項目を数えるかは、マスタ設定の<strong>「実績で追う項目」</strong>で選べます'
-        + '（設定を変えると、過去の保存分も新しい設定で数え直されます）。</p>';
     }
 
-    /* Amazonプライムの新規加入率。
-     * ドコモの指標に合わせ、ドコモMAX・ポイ活MAX・ドコモmini が成約になった
-     * 応対を母数にして、そのうち新規でAmazonプライムに入っていただけた割合を出す。
-     * 「既存」（もともとご加入のものをドコモ経由へ移した分）は分けて数える。 */
-    var azIds = amazonOptIds();
-    var az = { base: 0, nw: 0, ex: 0 };
-    if (azIds.length) {
-      Object.keys(lists).forEach(function (sid) {
-        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-          if (isSent(it) || it.result !== "won") return;
-          if (!mineOnly(it, sid)) return;
-          if (!(sFil === "all" || resStaffOf(it, sid) === sFil)) return;
-          var wpt = wonPatternOf(it);
-          // 新料金への変更（料金プランの「変更あり」のチェック）が母数の条件
-          if (!wpt || !AMAZON_TARGET_PLANS[wpt.planId] || !wpt.planChange) return;
-          az.base++;
-          var kb3 = "";
-          azIds.forEach(function (id) {
-            if (!(wpt.options || {})[id]) return;
-            var k3 = (wpt.optionKubun || {})[id] || "new";
-            if (k3 === "new") kb3 = "new";
-            else if (k3 === "exist" && kb3 !== "new") kb3 = "exist";
-          });
-          if (kb3 === "new") az.nw++;
-          else if (kb3 === "exist") az.ex++;
-        });
+    /* ---- 来店目的ごとの応対 ---- */
+    var vpKeys = VISIT_ORDER.filter(function (k) { return vpAgg[k]; });
+    if (vpAgg["_none"]) vpKeys.push("_none");
+    if (statsCfg().visit && vpKeys.length) {
+      h += "<h3>ご来店の目的</h3>";
+      h += '<div class="stats-scroll"><table class="stats-table"><tr><th>目的</th><th>応対</th><th>成約</th></tr>';
+      vpKeys.forEach(function (k) {
+        h += "<tr><td>" + esc(vName(k)) + "</td><td>" + vpAgg[k].prop + "</td><td>" + vpAgg[k].won + "</td></tr>";
       });
-      h += "<h3>Amazonプライム 新規加入率</h3>";
-      if (!az.base) {
-        h += '<p class="hint">この期間に、ドコモ MAX・ドコモ ポイ活 MAX・ドコモ mini への料金プランの変更がありません。</p>';
-      } else {
-        h += '<table class="stats-table"><tr><th>対象の成約</th><th>新規加入</th><th>加入率</th><th>既存を移行</th></tr>'
-          + "<tr><td>" + az.base + "</td><td>" + az.nw + "</td><td>"
-          + Math.round(az.nw * 100 / az.base) + "%</td><td>" + az.ex + "</td></tr></table>";
+      h += "</table></div>";
+    }
+
+    /* ---- 日別（折りたたみ） ---- */
+    var dayRows = [];
+    if (mFil !== "all") {
+      var dKeys = Object.keys(byDay).sort();
+      var DOW = ["日", "月", "火", "水", "木", "金", "土"];
+      var dTot = { prop: 0, won: 0 };
+      var dHtml = "";
+      dKeys.forEach(function (k5) {
+        var v5 = byDay[k5];
+        dTot.prop += v5.prop; dTot.won += v5.won;
+        var label = k5.slice(5) + "（" + DOW[v5.dow] + "）";
+        dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won });
+        dHtml += '<tr class="' + (v5.dow === 0 ? "d-sun" : (v5.dow === 6 ? "d-sat" : "")) + '"><td>'
+          + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td></tr>";
+      });
+      if (dKeys.length) {
+        h += '<details class="stats-days"><summary>日別（応対 ' + dTot.prop + "・成約 " + dTot.won + "）</summary>"
+          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th><th>成約</th></tr>'
+          + dHtml + "</table></div></details>";
       }
-      h += '<p class="hint"><strong>対象の成約</strong>は、成約した内容のプランが'
-        + '<strong>ドコモ MAX・ドコモ ポイ活 MAX・ドコモ mini</strong>で、'
-        + 'かつ料金プランの<strong>「変更あり」にチェックが入っている</strong>応対です'
-        + '（機種変更でも新規でも、チェックが入っていれば対象です）。' 
-        + 'そのうちAmazonプライムを<strong>「新規」</strong>で付けた件数が新規加入、'
-        + '<strong>「既存」</strong>（もともとご加入のものをドコモ経由へ移した分）は別に数えます。'
-        + '新規・既存のどちらでも、項目別の<strong>「新料金＋Amazonプライム同時」</strong>に1件として入ります。</p>';
+    }
+
+    /* ---- ここから管理者だけ ---- */
+    if (admin) {
+      // 担当別（担当を選んでいるときは1行だけになるので出さない）
+      var sRows = (sFil === "all" ? config.staff : []).map(function (s) {
+        var a3 = staffAgg[s.id] || { prop: 0, won: 0, undone: 0 };
+        var ad3 = statsAdjSum(s.id, mFil);
+        return { id: s.id, name: s.name,
+          prop: Math.max(0, a3.prop + ad3.prop), won: Math.max(0, a3.won + ad3.won), undone: a3.undone };
+      });
+      var anyUndone = sRows.some(function (r) { return r.undone > 0; });
+      if (sRows.length) {
+      h += "<h3>担当別</h3>";
+      h += '<div class="stats-scroll"><table class="stats-table"><tr><th>担当</th><th>応対</th><th>成約</th>'
+        + (anyUndone ? "<th>未記録</th>" : "") + "</tr>";
+      var sT = { prop: 0, won: 0, undone: 0 };
+      sRows.forEach(function (r) {
+        sT.prop += r.prop; sT.won += r.won; sT.undone += r.undone;
+        h += "<tr><td>" + esc(r.name) + "</td><td>" + r.prop + "</td><td>" + r.won + "</td>"
+          + (anyUndone ? '<td class="' + (r.undone ? "warn-cell" : "") + '">' + (r.undone || "") + "</td>" : "")
+          + "</tr>";
+      });
+      if (sRows.length > 1) {
+        h += '<tr class="stats-total"><td>合計</td><td>' + sT.prop + "</td><td>" + sT.won + "</td>"
+          + (anyUndone ? "<td>" + (sT.undone || "") + "</td>" : "") + "</tr>";
+      }
+      h += "</table></div>";
+      }
+
+      // 担当 × 項目（誰が何を決めたか）
+      if (sFil === "all" && iKeys.length && config.staff.length > 1) {
+        h += "<h3>担当 × 項目（成約）</h3>";
+        h += '<div class="stats-scroll"><table class="stats-table"><tr><th>項目</th>'
+          + config.staff.map(function (s) { return "<th>" + esc(s.name) + "</th>"; }).join("")
+          + "<th>合計</th></tr>";
+        iKeys.forEach(function (k) {
+          if (!items[k].won) return;
+          h += "<tr><td>" + esc(items[k].name) + "</td>"
+            + config.staff.map(function (s) {
+                var n2 = (cross[s.id] || {})[k] || 0;
+                return "<td>" + (n2 || "") + "</td>";
+              }).join("")
+            + "<td><b>" + items[k].won + "</b></td></tr>";
+        });
+        h += "</table></div>";
+      }
+
+      // 目標と進捗（目標はマスタ設定で入れる）
+      var goals = MASTER.statsGoalItems || {};
+      var gKeys = Object.keys(goals).filter(function (k) { return num(goals[k]) > 0; });
+      if (gKeys.length && mFil !== "all") {
+        var d9 = new Date();
+        var isCur = mFil === curMonth;
+        var daysIn = new Date(+mFil.slice(0, 4), +mFil.slice(5), 0).getDate();
+        var passed = isCur ? d9.getDate() : daysIn;
+        h += "<h3>目標と進捗（" + esc(mFil) + "）</h3>";
+        h += '<div class="stats-scroll"><table class="stats-table"><tr><th>項目</th><th>目標</th><th>成約</th><th>残り</th><th>着地見込み</th></tr>';
+        gKeys.sort(function (a4, b4) { return rank(a4) - rank(b4); }).forEach(function (k) {
+          var g = num(goals[k]);
+          var w = (items[k] && items[k].won) || 0;
+          var est = passed ? Math.round(w * daysIn / passed) : 0;
+          h += "<tr><td>" + esc(catalog[k] || k) + "</td><td>" + g + "</td><td>" + w + "</td>"
+            + '<td class="' + (w >= g ? "ok-cell" : "warn-cell") + '">' + Math.max(0, g - w) + "</td>"
+            + "<td>" + (isCur ? est : w) + "</td></tr>";
+        });
+        h += "</table></div>";
+        h += '<p class="hint">目標は<strong>マスタ設定 →「実績の目標」</strong>で決めます。着地見込みは、今のペースが月末まで続いた場合の件数です。</p>';
+      }
     }
 
     body.innerHTML = h;
+
     // CSV出力用に、いま表示した集計を控えておく
-    /* 管理者向けCSVの明細（担当×項目）。スプレッドシートに貼って
-     * ピボット・SUMIFで収益や生産性を出せるようにする長い形式。 */
-    var detail = [];
-    if (admin) {
-      // 提案は作った担当、成約は決めた担当の行に入れる
-      var per = {};
-      function bucket(sid2, k, nm) {
-        if (!per[sid2]) per[sid2] = {};
-        if (!per[sid2][k]) per[sid2][k] = { name: nm, prop: 0, won: 0 };
-        return per[sid2][k];
-      }
-      Object.keys(lists).forEach(function (sid) {
-        (lists[sid] || []).filter(inPeriod).forEach(function (it) {
-          var dec2 = resStaffOf(it, sid);
-          if (!isSent(it) && (sFil === "all" || sid === sFil)) {
-            var prop2 = statsSavedItems(it, false);
-            Object.keys(prop2).forEach(function (k) { bucket(sid, k, prop2[k]).prop++; });
-          }
-          if (!isSent(it) && it.result === "won" && (sFil === "all" || dec2 === sFil)) {
-            var won2 = statsSavedItems(it, true);
-            Object.keys(won2).forEach(function (k) { bucket(dec2, k, won2[k]).won++; });
-          }
-        });
-      });
-      Object.keys(per).forEach(function (sid) {
-        var sname = (config.staff.filter(function (s2) { return s2.id === sid; })[0] || {}).name || sid;
-        Object.keys(per[sid]).sort(function (a2, b2) { return rank(a2) - rank(b2); }).forEach(function (k) {
-          detail.push({ staff: sname, key: k, name: per[sid][k].name, prop: per[sid][k].prop, won: per[sid][k].won });
-        });
-      });
-    }
-    statsLast = { rows: rows, totals: totals, items: items, iKeys: iKeys, month: mFil, staffName: sName,
-      admin: admin, unitPrices: unitPrices, detail: detail, split: anySplit,
-      amazon: azIds.length ? az : null, days: dayRows,
-      visits: vpKeys.filter(function (k9) { return k9 !== "_none" || vpAgg["_none"]; }).map(function (k9) {
-        var v9 = vpAgg[k9];
-        return { name: k9 === "_none" ? "（未選択）" : VISIT_NAMES[k9], prop: v9.prop, won: v9.won, lost: v9.lost,
-          items: Object.keys(v9.items).sort(function (a9, b9) { return v9.items[b9] - v9.items[a9]; })
-            .map(function (k10) { return v9.names[k10] + " " + v9.items[k10]; }).join("・") };
-      }) };
+    statsLast = {
+      month: mFil, staffName: sName, admin: admin,
+      items: items, iKeys: iKeys, vCols: vCols, vName: vName,
+      visits: vpKeys.map(function (k) {
+        return { name: vName(k), prop: vpAgg[k].prop, won: vpAgg[k].won };
+      }),
+      days: dayRows,
+      staff: config.staff.filter(function (s) { return sFil === "all" || s.id === sFil; }).map(function (s) {
+        var a5 = staffAgg[s.id] || { prop: 0, won: 0, undone: 0 };
+        var ad5 = statsAdjSum(s.id, mFil);
+        return { name: s.name, prop: Math.max(0, a5.prop + ad5.prop), won: Math.max(0, a5.won + ad5.won), undone: a5.undone };
+      }),
+      cross: cross
+    };
   }
 
   /* ---------- 実績のCSV出力（Excelで開ける形式） ---------- */
@@ -1453,71 +1331,54 @@
   function downloadStatsCsv() {
     var L = statsLast;
     if (!L) return;
-    function rateTxt(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : ""; }
     var period = L.month === "all" ? "全期間" : L.month;
-    var up = L.unitPrices || {};
     var lines = [];
-    lines.push(["実績集計", "期間: " + period, "担当: " + L.staffName, "出力: " + savedWhen(Date.now())].map(csvCell).join(","));
+    lines.push(["実績", "期間: " + period, "担当: " + L.staffName, "出力: " + savedWhen(Date.now())].map(csvCell).join(","));
+
+    // 成約の早見表（項目 × 来店目的）。画面と同じ並び・同じ列
     lines.push("");
-    lines.push("担当別");
-    lines.push(L.split ? "担当,提案,成約,見送り,成約率,決定,収益" : "担当,提案,成約,見送り,成約率,収益");
-    L.rows.forEach(function (r2) {
-      var base = [r2.name, r2.prop, r2.won, r2.lost, rateTxt(r2.won, r2.prop)];
-      if (L.split) base.push(r2.dec || 0);
-      base.push(r2.rev || 0);
-      lines.push(base.map(csvCell).join(","));
-    });
-    if (L.rows.length > 1) {
-      var tot = ["合計", L.totals.prop, L.totals.won, L.totals.lost, rateTxt(L.totals.won, L.totals.prop)];
-      if (L.split) tot.push(L.totals.dec || 0);
-      tot.push(L.totals.rev || 0);
-      lines.push(tot.map(csvCell).join(","));
-    }
-    lines.push("");
-    lines.push("項目別");
-    lines.push(L.admin ? "項目,提案,成約,成約率,単価,収益" : "項目,提案,成約,成約率,収益");
-    var revTotal = 0;
+    lines.push("成約の早見表");
+    lines.push(["項目", "提案", "成約"].concat(L.vCols.map(function (k) { return L.vName(k); })).map(csvCell).join(","));
     L.iKeys.forEach(function (k) {
       var x = L.items[k];
-      var u = num(up[k] || 0);
-      var rv = x.won * u;
-      revTotal += rv;
-      lines.push((L.admin
-        ? [x.name, x.prop, x.won, rateTxt(x.won, x.prop), u, rv]
-        : [x.name, x.prop, x.won, rateTxt(x.won, x.prop), rv]).map(csvCell).join(","));
+      lines.push([x.name, x.prop, x.won].concat(L.vCols.map(function (vk) {
+        return x.byVisit[vk] || 0;
+      })).map(csvCell).join(","));
     });
-    lines.push((L.admin ? ["合計収益", "", "", "", "", revTotal] : ["合計収益", "", "", "", revTotal]).map(csvCell).join(","));
+
+    if (L.visits && L.visits.length) {
+      lines.push("");
+      lines.push("ご来店の目的");
+      lines.push("目的,応対,成約");
+      L.visits.forEach(function (v2) {
+        lines.push([v2.name, v2.prop, v2.won].map(csvCell).join(","));
+      });
+    }
     if (L.days && L.days.length) {
       lines.push("");
       lines.push("日別");
-      lines.push("日付,提案,成約,見送り,成約率,収益");
+      lines.push("日付,応対,成約");
       L.days.forEach(function (d3) {
-        lines.push([d3.date, d3.prop, d3.won, d3.lost, rateTxt(d3.won, d3.prop), d3.rev].map(csvCell).join(","));
+        lines.push([d3.date, d3.prop, d3.won].map(csvCell).join(","));
       });
     }
-    if (L.visits && L.visits.length) {
+    if (L.admin && L.staff && L.staff.length) {
       lines.push("");
-      lines.push("来店目的別");
-      lines.push("来店目的,応対,成約,見送り,成約率,成約になった内容");
-      L.visits.forEach(function (v2) {
-        lines.push([v2.name, v2.prop, v2.won, v2.lost, rateTxt(v2.won, v2.prop), v2.items].map(csvCell).join(","));
+      lines.push("担当別");
+      lines.push("担当,応対,成約,未記録");
+      L.staff.forEach(function (r2) {
+        lines.push([r2.name, r2.prop, r2.won, r2.undone].map(csvCell).join(","));
       });
-    }
-    if (L.amazon && L.amazon.base) {
+      /* スプレッドシートでのピボット用に、1行＝担当×項目の明細も出す */
       lines.push("");
-      lines.push("Amazonプライム 新規加入率（対象: ドコモMAX・ポイ活MAX・ドコモminiの成約）");
-      lines.push("対象の成約,新規加入,加入率,既存を移行");
-      lines.push([L.amazon.base, L.amazon.nw,
-        Math.round(L.amazon.nw * 100 / L.amazon.base) + "%", L.amazon.ex].map(csvCell).join(","));
-    }
-    if (L.admin && L.detail && L.detail.length) {
-      // スプレッドシートでのピボット・SUMIF用の明細（1行=担当×項目）
-      lines.push("");
-      lines.push("明細（担当×項目）");
-      lines.push("担当,項目,提案,成約,単価,収益");
-      L.detail.forEach(function (d2) {
-        var u2 = num(up[d2.key] || 0);
-        lines.push([d2.staff, d2.name, d2.prop, d2.won, u2, d2.won * u2].map(csvCell).join(","));
+      lines.push("明細（担当×項目の成約）");
+      lines.push("担当,項目,成約");
+      config.staff.forEach(function (s2) {
+        var bag = (L.cross || {})[s2.id] || {};
+        L.iKeys.forEach(function (k) {
+          if (!bag[k]) return;
+          lines.push([s2.name, L.items[k].name, bag[k]].map(csvCell).join(","));
+        });
       });
     }
     // 先頭のBOMで、Excelが文字コードを正しく認識する（無いと文字化けする）
@@ -6110,6 +5971,28 @@
     }
     h += '<p class="hint">手数料・再発行・請求書払いの商材と、オプションの「継続」は、もともと数えない決まりです。</p>';
     h += "</div>";
+
+    /* 月の目標。入れた項目だけが実績の「目標と進捗」に出る（管理者だけに見えます）。 */
+    var goals = MASTER.statsGoalItems || {};
+    var cat = statsCatalog();
+    var gOrder = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+    function gRank(k) {
+      for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
+      return gOrder.length;
+    }
+    h += '<div class="master-plan"><h3>実績の目標（月あたり・管理者）</h3>';
+    h += '<p class="hint">項目ごとの<strong>月の成約目標</strong>を入れると、実績に「目標と進捗」の表が出ます'
+      + '（残りの件数と、いまのペースでの着地見込み）。空欄の項目は出ません。</p>';
+    h += '<div class="goal-grid">';
+    Object.keys(cat).sort(function (a2, b2) {
+      return (gRank(a2) - gRank(b2)) || (cat[a2] < cat[b2] ? -1 : 1);
+    }).forEach(function (k) {
+      h += '<label class="goal-item"><span>' + esc(cat[k]) + "</span>"
+        + '<input type="number" min="0" data-sc-goal="' + esc(k) + '" value="'
+        + (num(goals[k]) || "") + '" placeholder="－"></label>';
+    });
+    h += "</div></div>";
+    h += "</div>";
     return h;
   }
 
@@ -7707,6 +7590,15 @@
       statsCfg().procs[t.getAttribute("data-sc-proc")] = t.checked;
       markEdited(); return true;
     }
+    if (t.hasAttribute("data-sc-goal")) {
+      // 月の目標。頻繁に触るものではないが、履歴を増やさないよう直接保存する
+      if (!MASTER.statsGoalItems) MASTER.statsGoalItems = {};
+      var gk = t.getAttribute("data-sc-goal");
+      var gv = Math.max(0, Math.round(num(t.value)));
+      if (gv) MASTER.statsGoalItems[gk] = gv; else delete MASTER.statsGoalItems[gk];
+      saveMaster();
+      return true;
+    }
     if (t.hasAttribute("data-sc-visit")) { statsCfg().visit = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-kaimashi")) { statsCfg().kaimashi = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-plan")) {
@@ -8311,100 +8203,62 @@
         masterGateFrom = "stats";
         showMasterGate(true);
       });
-      /* 「件数を修正」: 修正の入力欄は月（管理者は担当も）が決まって
-       * いないと出せないため、押したら自動で選んでその場所まで送る。 */
-      $("statsAdjBtn").addEventListener("click", function () {
-        var m = $("statsMonth"), sSel = $("statsStaff");
-        if (m.value === "all") {
-          var first = Array.prototype.filter.call(m.options, function (o) { return o.value !== "all"; })[0];
-          if (!first) { window.alert("この期間に集計できる保存がありません。"); return; }
-          m.value = first.value;
-        }
-        if (statsAdminOk() && sSel.value === "all") sSel.value = activeStaff().id;
-        renderStats(false);
-        setTimeout(function () {
-          var box = document.querySelector("#statsBody .stats-adj");
-          if (box && box.scrollIntoView) box.scrollIntoView({ block: "center" });
-        }, 60);
-      });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
       $("statsPrint").addEventListener("click", function () {
         document.body.classList.add("print-stats");
         window.print();
         setTimeout(function () { document.body.classList.remove("print-stats"); }, 800);
       });
-      window.addEventListener("afterprint", function () { document.body.classList.remove("print-stats"); });
-      // 目標の入力（料金マスタに保存され、全端末で揃う）
-      $("statsBody").addEventListener("change", function (e) {
-        var upKey = e.target.getAttribute && e.target.getAttribute("data-unitprice");
-        if (upKey) {
-          // 収益単価（管理者のみ表示される入力欄）。料金マスタに入れて全端末で共通にする
-          if (!MASTER.statsUnitPrices) MASTER.statsUnitPrices = {};
-          var v2 = Math.max(0, Math.round(num(e.target.value)));
-          if (v2) MASTER.statsUnitPrices[upKey] = v2;
-          else delete MASTER.statsUnitPrices[upKey];
-          saveMaster();
-          renderStats(false);
+      window.addEventListener("afterprint", function () {
+        document.body.classList.remove("print-stats");
+        document.body.classList.remove("print-morning");
+      });
+      // 朝礼サマリ: 目標と進捗・担当別だけをA4に出す（管理者）
+      $("statsMorning").addEventListener("click", function () {
+        document.body.classList.add("print-stats");
+        document.body.classList.add("print-morning");
+        window.print();
+        setTimeout(function () {
+          document.body.classList.remove("print-stats");
+          document.body.classList.remove("print-morning");
+        }, 800);
+      });
+      /* 件数の手修正（早見表の「修正」の ＋ −）。
+       * 担当者は当月だけで、今日の記録として足し引きされる（日付キー）。
+       * 管理者が過去の月を直すときは、その月の調整として足し引きする（月キー）。 */
+      $("statsBody").addEventListener("click", function (e) {
+        var t = e.target;
+        if (t.id === "statsUndoneBtn") {
+          var st2 = $("savedStatus");
+          if (st2) { st2.value = ""; renderSaved(); }
+          var el2 = $("savedList");
+          if (el2 && el2.scrollIntoView) el2.scrollIntoView({ block: "start" });
           return;
         }
-        // 項目ごとの件数の修正
-        var iaKind = e.target.getAttribute && e.target.getAttribute("data-iadj");
-        if (iaKind) {
-          var iM = e.target.getAttribute("data-adjm") || "", iS = e.target.getAttribute("data-adjs") || "";
-          var iK = e.target.getAttribute("data-iadjk") || "";
-          if (!iM || !iS || !iK || iM === "all" || iS === "all") return;
+        var key = t.getAttribute && t.getAttribute("data-adjk");
+        if (!key) return;
+        var dir = num(t.getAttribute("data-adjd"));
+        var sSel = statsAdminOk() ? $("statsStaff").value : activeStaff().id;
+        var mSel = $("statsMonth").value;
+        if (!sSel || sSel === "all" || !mSel || mSel === "all") return;
+        var curM = statsMonthOf(Date.now());
+        var useDay = !statsAdminOk() || mSel === curM;
+        var bag;
+        if (useDay) {
+          var day = adjTodayKey();
+          if (!MASTER.statsAdjDay) MASTER.statsAdjDay = {};
+          if (!MASTER.statsAdjDay[sSel]) MASTER.statsAdjDay[sSel] = {};
+          if (!MASTER.statsAdjDay[sSel][day]) MASTER.statsAdjDay[sSel][day] = {};
+          bag = MASTER.statsAdjDay[sSel][day];
+        } else {
           if (!MASTER.statsAdjItem) MASTER.statsAdjItem = {};
-          if (!MASTER.statsAdjItem[iS]) MASTER.statsAdjItem[iS] = {};
-          if (!MASTER.statsAdjItem[iS][iM]) MASTER.statsAdjItem[iS][iM] = {};
-          var bag = MASTER.statsAdjItem[iS][iM];
-          var cur2 = bag[iK] || { prop: 0, won: 0 };
-          cur2[iaKind] = Math.round(num(e.target.value));
-          if (!cur2.prop && !cur2.won) delete bag[iK]; else bag[iK] = cur2;
-          if (!Object.keys(bag).length) {
-            delete MASTER.statsAdjItem[iS][iM];
-            if (!Object.keys(MASTER.statsAdjItem[iS]).length) delete MASTER.statsAdjItem[iS];
-          }
-          saveMaster();
-          renderStats(false);
-          return;
+          if (!MASTER.statsAdjItem[sSel]) MASTER.statsAdjItem[sSel] = {};
+          if (!MASTER.statsAdjItem[sSel][mSel]) MASTER.statsAdjItem[sSel][mSel] = {};
+          bag = MASTER.statsAdjItem[sSel][mSel];
         }
-        if (e.target.id === "iadjAdd") {
-          // 表に出ていない項目を、0件の行として足す（値を入れて確定させる）
-          var addK = e.target.value;
-          if (!addK) return;
-          var aM = $("statsMonth").value, aS = statsAdminOk() ? $("statsStaff").value : activeStaff().id;
-          if (!aM || aM === "all" || !aS || aS === "all") return;
-          if (!MASTER.statsAdjItem) MASTER.statsAdjItem = {};
-          if (!MASTER.statsAdjItem[aS]) MASTER.statsAdjItem[aS] = {};
-          if (!MASTER.statsAdjItem[aS][aM]) MASTER.statsAdjItem[aS][aM] = {};
-          if (!MASTER.statsAdjItem[aS][aM][addK]) MASTER.statsAdjItem[aS][aM][addK] = { prop: 0, won: 0 };
-          saveMaster();
-          renderStats(false);
-          return;
-        }
-        var adjKey = e.target.getAttribute && e.target.getAttribute("data-adj");
-        if (adjKey) {
-          /* 件数の手修正。対象の担当と月は入力欄に持たせてある
-           * （担当者の画面では担当の選択欄を出していないため）。 */
-          var mSel = e.target.getAttribute("data-adjm") || "";
-          var sSel = e.target.getAttribute("data-adjs") || "";
-          if (!mSel || !sSel || mSel === "all" || sSel === "all") return;
-          if (!MASTER.statsAdjust) MASTER.statsAdjust = {};
-          if (!MASTER.statsAdjust[sSel]) MASTER.statsAdjust[sSel] = {};
-          var cur = MASTER.statsAdjust[sSel][mSel] || { prop: 0, won: 0, lost: 0 };
-          cur[adjKey] = Math.round(num(e.target.value));
-          if (!cur.prop && !cur.won && !cur.lost) {
-            delete MASTER.statsAdjust[sSel][mSel];
-            if (!Object.keys(MASTER.statsAdjust[sSel]).length) delete MASTER.statsAdjust[sSel];
-          } else {
-            MASTER.statsAdjust[sSel][mSel] = cur;
-          }
-          saveMaster();
-          renderStats(false);
-          return;
-        }
-        if (e.target.id !== "statsGoalInput") return;
-        MASTER.statsGoal = Math.max(0, Math.round(num(e.target.value)));
+        var cur = bag[key] || { prop: 0, won: 0 };
+        cur.won = Math.round(num(cur.won)) + dir;
+        if (!cur.prop && !cur.won) delete bag[key]; else bag[key] = cur;
         saveMaster();
         renderStats(false);
       });
