@@ -69,6 +69,20 @@
 
     <div class="card full">
       <h2>手続き内容</h2>
+      <div class="field visit-field">
+        <label for="visitPurpose">ご来店の目的</label>
+        <select id="visitPurpose">
+          <option value="">（未選択）</option>
+          <option value="buy">① 端末購入（新規・MNP・機種変更など）</option>
+          <option value="plan">② プラン見直し</option>
+          <option value="repair">③ 故障</option>
+          <option value="howto">④ 操作</option>
+          <option value="ask">⑤ 問合せ</option>
+          <option value="other">⑥ その他</option>
+        </select>
+      </div>
+      <label class="check" id="kaimashiField" hidden><input type="checkbox" id="kaimashi"> 買い増しあり（お手持ちに追加でご購入）</label>
+      <p class="hint" id="kaimashiNote" hidden></p>
       <div class="proc-checks">
         <label class="check"><input type="checkbox" data-proc="kishu"> 機種変更</label>
         <label class="check"><input type="checkbox" data-proc="shinki"> 新規</label>

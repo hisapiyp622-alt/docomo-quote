@@ -10,7 +10,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 3,
+  "masterVersion": 4,
   "updated": "2026-08-10",
   "fees": {
     "jimu_shinki": 4950,
@@ -217,6 +217,29 @@ const DEFAULT_DATA = {
       },
       "includes5min": true,
       "note": "【新規受付終了（2026-08-06）】15歳以下・5分通話無料込み。U15はじめてスマホISP割（−165円）は「月額の追加項目」で追加を。U15ポイント特典（5GB:500pt/10GB:1,000pt×最大12か月）あり。みんなドコモ割はカウントのみ。",
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "hajimete",
+      "group": "current",
+      "name": "はじめてスマホプラン",
+      "tiers": [
+        {
+          "label": "1GB",
+          "price": 1980
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 187,
+        "dcardGold": 187
+      },
+      "includes5min": true,
+      "note": "他社3G回線からの乗りかえ（契約変更・MNP）が対象・データ1GB・5分通話無料込み。はじめてスマホISP割（−165円・継続）は「月額の追加項目」で追加を。はじめてスマホ割（−550円・最大12か月）は「月額の追加項目」で期間12か月にして追加を。割引をすべて適用すると1〜12か月目1,078円／13か月目以降1,628円（2026-08-10 公式確認）。みんなドコモ割はカウントのみ。",
       "bakuageTier": "",
       "poikatsuPt": 0,
       "maxBonus": false

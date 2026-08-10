@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.73.0";
+  var APP_VERSION = "1.74.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -576,6 +576,8 @@
     if (!MASTER.statsCfg) MASTER.statsCfg = {};
     var c = MASTER.statsCfg;
     if (!c.procs) c.procs = { shinki: true, mnp: true, kishu: true, plan: false };
+    if (typeof c.visit === "undefined") c.visit = true;        // 来店目的
+    if (typeof c.kaimashi === "undefined") c.kaimashi = true;  // 買い増し（再掲）
     if (!c.plans) c.plans = { max: true, poikatsu_max: true };
     if (!c.device) c.device = "kw";           // off=追わない / all=全機種 / kw=キーワード
     if (typeof c.deviceKw !== "string") c.deviceKw = "Pixel";
@@ -614,6 +616,10 @@
    * ・ドコモの商材の手数料・再発行、請求書払いのものは数えない
    * ・アクセサリは登録品だけ（自由入力は数えない） */
   var STATS_PROC_NAMES = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan: "プラン変更" };
+  var VISIT_NAMES = {
+    buy: "端末購入（新規・MNP・機種変更など）", plan: "プラン見直し", repair: "故障",
+    howto: "操作", ask: "問合せ", other: "その他"
+  };
   /* Amazonプライムのように「もともとご自身で入っていたものをドコモ経由に移す」
    * ことがあるオプションは、区分に「既存」を足す。マスタで kubunExist を
    * 立てたもの（＋名前にAmazonが入るもの）が対象。 */
@@ -634,6 +640,18 @@
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
       if (todo[k] && cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
+    if (pt.visitPurpose && cfg.visit) {
+      out["visit:" + pt.visitPurpose] = "来店目的: " + (VISIT_NAMES[pt.visitPurpose] || pt.visitPurpose);
+    }
+    /* 買い増し: 端末購入以外のご用件で来店されて機種変更が入った場合と、
+     * 端末購入で来店されて「買い増しあり」にチェックした場合。
+     * 機種変更の実績はそのまま数え、これは再掲として別に数える。 */
+    if (cfg.kaimashi) {
+      var kaimashiOn = pt.visitPurpose === "buy"
+        ? !!pt.kaimashi
+        : !!(pt.visitPurpose && todo.kishu);
+      if (kaimashiOn) out["kaimashi"] = "買い増し（再掲）";
+    }
     if (pt.planId && cfg.plans[pt.planId]) {
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
@@ -1018,7 +1036,7 @@
         }
       });
     });
-    var order = ["proc:", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
+    var order = ["visit:", "proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
@@ -2552,6 +2570,9 @@
       adhocInitial: [],   // {name, amount} ±
       custName: "", shopName: "", staffName: "", shopTel: "", quoteMemo: "",
       // 手続き内容（引き継ぎシートに記載）
+      /* ご来店の目的。①端末購入 以外で来店されて機種変更が入った場合は
+       * 「買い増し」として実績に再掲する。①のときは買い増しの有無をチェックで持つ。 */
+      visitPurpose: "", kaimashi: false,
       procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
       todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
@@ -4283,6 +4304,23 @@
     $("saveTplBtn").hidden = false;
     renderTplBar();
   }
+  /* ご来店の目的まわりの表示。
+   * ①端末購入のときだけ「買い増しあり」のチェックを出し、
+   * それ以外の目的で機種変更が入っているときは、買い増しとして数える旨を出す。 */
+  function renderVisitPurpose() {
+    var f = $("kaimashiField"), n = $("kaimashiNote");
+    if (!f || !n) return;
+    var buy = state.visitPurpose === "buy";
+    f.hidden = !buy;
+    $("kaimashi").checked = !!state.kaimashi;
+    var auto = !buy && !!state.visitPurpose && !!(state.procTodo || {}).kishu;
+    n.hidden = !auto;
+    if (auto) {
+      n.textContent = "「" + (VISIT_NAMES[state.visitPurpose] || "") + "」でのご来店から機種変更になったため、"
+        + "実績では機種変更に加えて「買い増し（再掲）」としても数えます。";
+    }
+  }
+
   function renderPatternTabs() {
     document.querySelectorAll(".pat").forEach(function (b) {
       var i = +b.dataset.pat;
@@ -4653,6 +4691,9 @@
     $("shopTel").value = state.shopTel || "";
     $("quoteMemo").value = state.quoteMemo;
     ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (k) { $(k).checked = !!state[k]; });
+    $("visitPurpose").value = state.visitPurpose || "";
+    $("kaimashi").checked = !!state.kaimashi;
+    renderVisitPurpose();
     $("voiceChange").checked = !!state.voiceChange;
     renderNetSvc();
     $("planChange").checked = !!state.planChange;
@@ -5087,6 +5128,12 @@
     ["kishu", "shinki", "mnp", "plan"].forEach(function (k) {
       if ((state.procTodo || {})[k]) procs.push(PROC_LABEL[k]);
     });
+    if (state.visitPurpose) {
+      anyTodo = true;
+      h += row("ご来店の目的", "<b>" + esc(VISIT_NAMES[state.visitPurpose] || state.visitPurpose) + "</b>"
+        + (state.visitPurpose === "buy" && state.kaimashi ? "　<b>買い増しあり</b>" : "")
+        + (state.visitPurpose !== "buy" && (state.procTodo || {}).kishu ? "　<b>買い増し（機種変更）</b>" : ""));
+    }
     if (procs.length) { anyTodo = true; h += row("手続き", "<b>" + procs.join("　／　") + "</b>"); }
     var apps = [];
     if (state.todoDcard) {
@@ -5681,6 +5728,15 @@
     });
     h += "</div></div>";
 
+    h += '<div class="plan-sec"><span class="plan-lbl">ご来店の目的・買い増し</span><div class="sub-checks">'
+      + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
+      + "> ご来店の目的（端末購入・プラン見直し・故障・操作・問合せ・その他）</label>"
+      + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
+      + "> 買い増し（再掲）</label></div>"
+      + '<p class="hint">買い増しは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
+      + '<strong>端末購入で「買い増しあり」にチェックした場合</strong>に数えます。'
+      + '機種変更の実績はそのまま数えたうえで、<strong>再掲</strong>として別に1件数えます。</p></div>';
+
     h += '<div class="plan-sec"><span class="plan-lbl">プラン（チェックしたものだけ数えます）</span><div class="sub-checks">';
     MASTER.plans.forEach(function (pl) {
       h += '<label class="check"><input type="checkbox" data-sc-plan="' + esc(pl.id) + '"'
@@ -6115,6 +6171,7 @@
     renderDeviceOff(r);
     renderPointUse(r);
     renderSummary(r);
+    renderVisitPurpose();
     renderPatternTabs();
     renderIenakaWarn(r);
     saveState();
@@ -7337,6 +7394,8 @@
       statsCfg().procs[t.getAttribute("data-sc-proc")] = t.checked;
       markEdited(); return true;
     }
+    if (t.hasAttribute("data-sc-visit")) { statsCfg().visit = t.checked; markEdited(); return true; }
+    if (t.hasAttribute("data-sc-kaimashi")) { statsCfg().kaimashi = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-plan")) {
       sc = statsCfg();
       var pid = t.getAttribute("data-sc-plan");
@@ -7810,6 +7869,16 @@
     });
     $("custZip").addEventListener("input", function () {
       state.custZip = this.value; saveState(); renderStaffSheet();
+    });
+    $("visitPurpose").addEventListener("change", function () {
+      state.visitPurpose = this.value;
+      if (state.visitPurpose !== "buy") state.kaimashi = false;
+      renderVisitPurpose();
+      recalc();
+    });
+    $("kaimashi").addEventListener("change", function () {
+      state.kaimashi = this.checked;
+      recalc();
     });
     ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () {
