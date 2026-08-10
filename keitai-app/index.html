@@ -696,6 +696,7 @@
       <h2>実績（提案と成約）</h2>
       <div class="actions no-print">
         <button class="btn-sub" id="statsOpenBtn" type="button">実績を見る</button>
+        <button class="btn-sub" id="noQuoteBtn" type="button">見積もりなしの成約を記録</button>
         <button class="btn-sub" type="button" data-doc="STATS_GUIDE.md" data-doc-title="実績の使い方">実績の使い方</button>
       </div>
       <div id="statsPanel" hidden>
@@ -995,6 +996,26 @@
     <h2 id="docTitle">文書</h2>
     <div class="doc-body" id="docBody"></div>
     <button class="btn-main" id="docClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="nqDlg" hidden>
+  <div class="login-box nq-box">
+    <h2>見積もりなしの成約を記録</h2>
+    <p class="login-lead">見積もりを作らずに決まったぶんを、実績に足します。<strong>成約した項目だけ</strong>を選んでください。</p>
+    <div class="sub-checks">
+      <span class="sub-label">ご来店の目的</span>
+      <div id="nqVisits"><!-- JSで生成 --></div>
+    </div>
+    <div class="nq-items">
+      <span class="sub-label">成約した項目</span>
+      <div id="nqItems"><!-- JSで生成 --></div>
+    </div>
+    <p class="login-err" id="nqErr" hidden></p>
+    <div class="row-btns">
+      <button class="btn-sub" id="nqCancel" type="button">キャンセル</button>
+      <button class="btn-main" id="nqGo" type="button">記録する</button>
+    </div>
   </div>
 </div>
 

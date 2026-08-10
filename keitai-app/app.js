@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.80.0";
+  var APP_VERSION = "1.81.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -303,6 +303,71 @@
     savedNote.t = setTimeout(function () { el.hidden = true; }, 6000);
   }
 
+  /* ---------- 見積もりなしの成約 ----------
+   * 故障・操作・問合せなどで来店され、見積もりを作らずに何かが決まったとき、
+   * 成約した項目だけをチェックで残す。応対1件としても数える。 */
+  function openNoQuoteDlg() {
+    var dlg = $("nqDlg");
+    if (!dlg) return;
+    var vWrap = $("nqVisits"), iWrap = $("nqItems"), err = $("nqErr");
+    vWrap.innerHTML = VISIT_ORDER.map(function (k) {
+      return '<label class="check"><input type="checkbox" data-nqv="' + k + '"> ' + esc(VISIT_NAMES[k]) + "</label>";
+    }).join("");
+    var cat = statsCatalog();
+    var nqOrder = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+    function nqRank(k) {
+      for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
+      return nqOrder.length;
+    }
+    iWrap.innerHTML = Object.keys(cat).sort(function (a2, b2) {
+      return (nqRank(a2) - nqRank(b2)) || (cat[a2] < cat[b2] ? -1 : 1);
+    }).map(function (k) {
+      return '<label class="check"><input type="checkbox" data-nqi="' + esc(k) + '"> ' + esc(cat[k]) + "</label>";
+    }).join("");
+    err.hidden = true;
+    dlg.hidden = false;
+
+    function close() {
+      dlg.hidden = true;
+      $("nqGo").removeEventListener("click", go);
+      $("nqCancel").removeEventListener("click", close);
+    }
+    function go() {
+      var vis = {}, its = {}, nItems = 0;
+      Array.prototype.forEach.call(vWrap.querySelectorAll("[data-nqv]"), function (c) {
+        if (c.checked) vis[c.getAttribute("data-nqv")] = true;
+      });
+      Array.prototype.forEach.call(iWrap.querySelectorAll("[data-nqi]"), function (c) {
+        if (c.checked) { its[c.getAttribute("data-nqi")] = true; nItems++; }
+      });
+      if (!nItems) {
+        err.textContent = "成約した項目を1つ以上選んでください。";
+        err.hidden = false;
+        return;
+      }
+      var now = Date.now();
+      var names = Object.keys(its).map(function (k) { return cat[k] || k; });
+      var item = {
+        id: "q" + now.toString(36) + Math.random().toString(36).slice(2, 6),
+        name: "（見積もりなし）" + names.slice(0, 2).join("・") + (names.length > 2 ? " ほか" : ""),
+        custName: "", planName: "", monthly: 0, initial: 0,
+        savedAt: now, upAt: now,
+        noQuote: true, noQuoteItems: its,
+        result: "won", resultAt: now, resultStaff: activeStaff().id,
+        data: { active: 0, patterns: [{ visitPurposes: vis }] }
+      };
+      savedList.unshift(item);
+      savedList = trimSavedList(savedList);
+      persistSaved();
+      renderSaved();
+      close();
+      savedNote("見積もりなしの成約を記録しました（" + nItems + "項目）。");
+      if (!$("statsPanel").hidden) renderStats(true);
+    }
+    $("nqGo").addEventListener("click", go);
+    $("nqCancel").addEventListener("click", close);
+  }
+
   /* 見積もりを他の担当へ渡す。
    * 店頭の流れ: コンデザが提案の見積もりを作る → 商談する担当者へ渡す →
    * 担当者が自分の保存一覧から開いて商談し、実際の成約内容を記録する。
@@ -402,7 +467,9 @@
         + "　月額 " + yen(it.monthly || 0)
         + (it.initial ? "　初期費用 " + yen(it.initial) : "")
         + "</div></div>"
-        + (it.sentTo
+        + (it.noQuote
+            ? '<div class="saved-status"><span class="saved-nq-mark">成約</span></div>'
+            : it.sentTo
             ? '<div class="saved-status"><span class="saved-sent">' + esc(staffName(it.sentTo)) + " へ引き渡し済み</span></div>"
             : '<div class="saved-status">'
               + [["", "提案中"], ["won", "成約"], ["lost", "見送り"]].map(function (st2) {
@@ -410,10 +477,12 @@
                     + '" data-savedresult="' + st2[0] + '" data-savedrid="' + it.id + '">' + st2[1] + "</button>";
                 }).join("")
               + "</div>")
-        + (it.slim
-            ? '<span class="saved-slim">実績用（開けません）</span>'
-            : '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>')
-        + (config.staff.length > 1 && !it.fromStaff && !it.sentTo
+        + (it.noQuote
+            ? '<span class="saved-nq">見積もりなしの成約</span>'
+            : (it.slim
+                ? '<span class="saved-slim">実績用（開けません）</span>'
+                : '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>'))
+        + (config.staff.length > 1 && !it.fromStaff && !it.sentTo && !it.noQuote
             ? '<button class="btn-sub" data-savedsend="' + it.id + '" type="button">担当へ渡す</button>' : "")
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
         + (it.result === "won" && it.wonData
@@ -816,6 +885,17 @@
 
   // 1件の保存から項目を拾う。wonOnly は「成約した内容」だけ
   function statsSavedItems(it, wonOnly) {
+    /* 見積もりなしの成約は、チェックした項目がそのまま成約の中身。
+     * 金額をお見せしていないので、提案には数えない。 */
+    if (it.noQuote) {
+      if (!wonOnly) return {};
+      var cat0 = statsCatalog();
+      var outNQ = {};
+      Object.keys(it.noQuoteItems || {}).forEach(function (k) {
+        if (it.noQuoteItems[k]) outNQ[k] = cat0[k] || k;
+      });
+      return outNQ;
+    }
     if (!wonOnly) return statsDataItems(it.data);
     // 成約時に記録した内容があればそれを、無ければ保存内容の成約パターンを使う
     if (it.wonData) {
@@ -8198,6 +8278,7 @@
         if (!p.hidden) renderStats(true);
       });
       $("statsReload").addEventListener("click", function () { renderStats(true); });
+      $("noQuoteBtn").addEventListener("click", openNoQuoteDlg);
       $("statsUnlockBtn").addEventListener("click", function () {
         if (statsAdminOk()) { renderStats(true); return; }
         masterGateFrom = "stats";
