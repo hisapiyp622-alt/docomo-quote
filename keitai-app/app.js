@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.79.1";
+  var APP_VERSION = "1.79.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -179,7 +179,7 @@
   var SAVED_MAX = 300;
   var SAVED_FULL = 60;
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
-  var SLIM_PATTERN_KEYS = ["planId", "procType", "procTodo", "visitPurposes", "visitPurpose",
+  var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose",
     "kaimashi", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
   function slimData(d) {
@@ -681,8 +681,9 @@
   }
   // 新規AmazonPrime加入率の対象プラン（ドコモMAX・ポイ活MAX・ドコモmini）
   var AMAZON_TARGET_PLANS = { max: "ドコモ MAX", poikatsu_max: "ドコモ ポイ活 MAX", mini: "ドコモ mini" };
-  /* ドコモ MAX・ポイ活 MAX の獲得は「プラン変更」で数える指標のため、
-   * 成約として数えるのは手続きに「プラン変更」があるときだけにする
+  /* ドコモ MAX・ポイ活 MAX の獲得は「料金プランの変更」で数える指標のため、
+   * 成約として数えるのは料金プランの「変更あり」（state.planChange）に
+   * チェックが入っているときだけにする。手続きの種類（新規・機種変更など）は問わない
    * （店舗の指定・2026-08-10）。提案はこれまでどおり、選んだ時点で数える。 */
   var PLAN_WON_NEEDS_CHANGE = { max: true, poikatsu_max: true };
   function statsPatternItems(ptRaw, won) {
@@ -703,7 +704,7 @@
      * Amazonプライムにご加入いただいた分。ドコモの指標に合わせて
      * 「料金プランの変更あり」のチェックが入っていることを条件にする。
      * 区分は新規・既存のどちらでも数える（継続・廃止は数えない）。 */
-    if (AMAZON_TARGET_PLANS[pt.planId] && todo.plan) {
+    if (AMAZON_TARGET_PLANS[pt.planId] && pt.planChange) {
       var azOn = false;
       (MASTER.options || []).forEach(function (o2) {
         if (!optHasExist(o2) || !(pt.options || {})[o2.id]) return;
@@ -718,7 +719,7 @@
       if (kaimashiOn) out["kaimashi"] = "買い増し（再掲）";
     }
     if (pt.planId && cfg.plans[pt.planId]
-        && !(won && PLAN_WON_NEEDS_CHANGE[pt.planId] && !todo.plan)) {
+        && !(won && PLAN_WON_NEEDS_CHANGE[pt.planId] && !pt.planChange)) {
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
     }
@@ -1369,8 +1370,8 @@
           if (!mineOnly(it, sid)) return;
           if (!(sFil === "all" || resStaffOf(it, sid) === sFil)) return;
           var wpt = wonPatternOf(it);
-          // 新料金への変更（料金プランの変更ありのチェック）が母数の条件
-          if (!wpt || !AMAZON_TARGET_PLANS[wpt.planId] || !((wpt.procTodo || {}).plan)) return;
+          // 新料金への変更（料金プランの「変更あり」のチェック）が母数の条件
+          if (!wpt || !AMAZON_TARGET_PLANS[wpt.planId] || !wpt.planChange) return;
           az.base++;
           var kb3 = "";
           azIds.forEach(function (id) {
@@ -1393,8 +1394,8 @@
       }
       h += '<p class="hint"><strong>対象の成約</strong>は、成約した内容のプランが'
         + '<strong>ドコモ MAX・ドコモ ポイ活 MAX・ドコモ mini</strong>で、'
-        + 'かつ手続きの<strong>「プラン変更」にチェックが入っている</strong>応対です'
-        + '（機種変更や新規と一緒でも、チェックが入っていれば対象です）。'
+        + 'かつ料金プランの<strong>「変更あり」にチェックが入っている</strong>応対です'
+        + '（機種変更でも新規でも、チェックが入っていれば対象です）。' 
         + 'そのうちAmazonプライムを<strong>「新規」</strong>で付けた件数が新規加入、'
         + '<strong>「既存」</strong>（もともとご加入のものをドコモ経由へ移した分）は別に数えます。'
         + '新規・既存のどちらでも、項目別の<strong>「新料金＋Amazonプライム同時」</strong>に1件として入ります。</p>';
