@@ -735,6 +735,26 @@ body.sorting .sort-chip{cursor:grabbing}
 
 .stats-table tr.d-sat td:first-child{color:#1565C0}
 .stats-table tr.d-sun td:first-child{color:#C62828}
+/* 見積もりなしの成約 */
+.saved-nq{
+  display:inline-block;padding:4px 10px;border-radius:999px;
+  background:#EAF3EA;color:#1B7E45;font-size:12px;font-weight:700
+}
+.saved-nq-mark{
+  display:inline-block;padding:4px 12px;border-radius:999px;
+  background:#1B7E45;color:#fff;font-size:12px;font-weight:700
+}
+#nqDlg .nq-box{max-width:520px;max-height:88vh;display:flex;flex-direction:column}
+#nqDlg .nq-items{display:flex;flex-direction:column;min-height:0;margin-top:8px}
+#nqDlg #nqItems{
+  overflow-y:auto;max-height:34vh;border:1px solid var(--line);border-radius:8px;
+  padding:6px 10px;margin-top:4px
+}
+#nqDlg #nqVisits{display:flex;flex-wrap:wrap;gap:0 14px}
+#nqDlg #nqVisits .check{font-size:13px}
+#nqDlg #nqItems .check{font-size:13px;padding:4px 0}
+#nqDlg .row-btns{display:flex;gap:8px;margin-top:10px}
+#nqDlg .row-btns button{flex:1;margin:0}
 .saved-slim{
   display:inline-block;padding:4px 10px;border-radius:999px;
   background:#f2f2f2;color:var(--muted);font-size:12px
