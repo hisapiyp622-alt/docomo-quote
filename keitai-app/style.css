@@ -696,6 +696,15 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 #resultDlg .row-btns{display:flex;gap:8px;margin-top:6px}
 #resultDlg .row-btns button{flex:1;margin:0}
+/* 実績の件数の手修正 */
+.stats-adj{
+  margin:10px 0;padding:10px 12px;border:1px solid var(--line);
+  border-radius:8px;background:#fafbfc
+}
+.stats-adj label{display:inline-flex;align-items:center;gap:6px;margin:4px 10px 0 0;font-size:13px}
+.stats-adj input{width:74px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+.stats-adj .hint{margin:4px 0 6px}
+.saved-adj-note{font-size:12px;color:var(--muted)}
 .saved-sent{
   display:inline-block;padding:4px 10px;border-radius:999px;
   background:#eef3fb;color:#2c4a7c;font-size:12px;font-weight:700
