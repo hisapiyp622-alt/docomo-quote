@@ -387,27 +387,8 @@
       <div class="qcols">
         <div class="qcol">
 <div class="step">
-      <h2 data-iet="商材">① 商材</h2>
-      <div class="field">
-        <label for="ieProduct">商材</label>
-        <select id="ieProduct">
-          <option value="hikari1g">ドコモ光 1ギガ</option>
-          <option value="hikari10g">ドコモ光 10ギガ</option>
-          <option value="ahamo1g">ahamo光 1ギガ</option>
-          <option value="ahamo10g">ahamo光 10ギガ</option>
-          <option value="home5g">home 5G</option>
-        </select>
-      </div>
-      <div class="field" id="ieApplyTypeField">
-        <label for="ieApplyType">申込区分</label>
-        <select id="ieApplyType">
-          <option value="shinki">新規</option>
-          <option value="tenyo">転用（フレッツ光から）</option>
-          <option value="jigyosha">事業者変更（他社光コラボから）</option>
-        </select>
-      </div>
-      <div class="sub-checks ie-cur" id="ieCurCard">
-        <span class="sub-label">現在の固定回線（ヒアリング）</span>
+      <h2 data-iet="現在の固定回線（ヒアリング）">① 現在の固定回線（ヒアリング）</h2>
+      <div class="ie-cur" id="ieCurCard">
         <div class="field">
           <label for="ieCurLine">ネット</label>
           <select id="ieCurLine"><!-- JSで生成 --></select>
@@ -444,6 +425,27 @@
           <input type="checkbox" id="ieCurTvKeep"> J:COMのテレビを残してご契約（解約はネットのみ）
         </label>
         <p class="hint" id="ieCurTvKeepHint" hidden></p>
+      </div>
+</div>
+<div class="step">
+      <h2 data-iet="商材">② 商材</h2>
+      <div class="field">
+        <label for="ieProduct">商材</label>
+        <select id="ieProduct">
+          <option value="hikari1g">ドコモ光 1ギガ</option>
+          <option value="hikari10g">ドコモ光 10ギガ</option>
+          <option value="ahamo1g">ahamo光 1ギガ</option>
+          <option value="ahamo10g">ahamo光 10ギガ</option>
+          <option value="home5g">home 5G</option>
+        </select>
+      </div>
+      <div class="field" id="ieApplyTypeField">
+        <label for="ieApplyType">申込区分</label>
+        <select id="ieApplyType">
+          <option value="shinki">新規</option>
+          <option value="tenyo">転用（フレッツ光から）</option>
+          <option value="jigyosha">事業者変更（他社光コラボから）</option>
+        </select>
       </div>
       <div id="ieHikariFields">
         <div class="field">
@@ -497,7 +499,7 @@
     </div>
 
     <div class="step" id="ieHome5gStep" hidden>
-      <h2 data-iet="home 5G 端末">② home 5G 端末</h2>
+      <h2 data-iet="home 5G 端末">③ home 5G 端末</h2>
       <div class="field">
         <label for="ieH5DeviceName">端末名</label>
         <input type="text" id="ieH5DeviceName" placeholder="例）home 5G HR02">
@@ -518,7 +520,7 @@
     </div>
 
     <div class="step">
-      <h2 data-iet="月額オプション">③ 月額オプション</h2>
+      <h2 data-iet="月額オプション">④ 月額オプション</h2>
       <div id="ieOptList"></div>
       <div class="adhoc-list" id="ieExtraMonthlyList"></div>
       <button class="btn-sub" id="ieAddExtraMonthly" type="button">＋ 月額の追加項目（オプション・割引など）</button>
@@ -528,7 +530,7 @@
           </div>
       <div class="qcol">
 <div class="step">
-      <h2 data-iet="初期費用">④ 初期費用</h2>
+      <h2 data-iet="初期費用">⑤ 初期費用</h2>
       <div class="field" id="ieKojiPayField">
         <label for="ieKojiPay">工事費の支払い</label>
         <select id="ieKojiPay">
@@ -557,7 +559,7 @@
     </div>
 
     <div class="step">
-      <h2 data-iet="特典・見積書情報">⑤ 特典・見積書情報</h2>
+      <h2 data-iet="特典・見積書情報">⑥ 特典・見積書情報</h2>
       <div class="field" id="ieDcardField">
         <label for="ieDcard">dカード</label>
         <select id="ieDcard">
