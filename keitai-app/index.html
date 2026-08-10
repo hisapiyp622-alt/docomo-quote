@@ -216,6 +216,10 @@
 
     <div class="card c5">
       <h2>⑤ 端末代金</h2>
+      <div class="field" id="deviceSelectField" hidden>
+        <label for="deviceSelect">機種を選ぶ（端末マスタ）</label>
+        <select id="deviceSelect"><!-- JSで生成 --></select>
+      </div>
       <div class="field">
         <label for="deviceName">機種名（任意）</label>
         <input type="text" id="deviceName" placeholder="例）iPhone 17 128GB">
@@ -781,6 +785,30 @@
         </div>
       </div>
       <p class="hint" id="importMasterMsg" hidden></p>
+    </div>
+    <div class="card">
+      <h2>端末マスタ（商品マスタ）</h2>
+      <p class="hint">代理店からもらった<strong>商品マスタ（機種名と本体価格の一覧）</strong>を取り込むと、見積もりの<strong>機種名がプルダウンになり、本体代金が自動で入ります</strong>。取り込まなくても、これまでどおり手入力で使えます。</p>
+      <p class="hint" id="devMasterCount"></p>
+      <div class="actions">
+        <label class="btn-sub file-btn">ファイルから取り込む（CSV）
+          <input type="file" id="devMasterFile" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden>
+        </label>
+        <button class="btn-sub" id="devMasterPasteBtn" type="button">貼り付けて取り込む</button>
+        <button class="btn-sub" id="devMasterClear" type="button">端末マスタを削除</button>
+      </div>
+      <div id="devMasterPasteWrap" hidden>
+        <textarea id="devMasterBox" class="export-box" placeholder="機種名,本体価格&#10;iPhone 17 128GB,145200&#10;Galaxy S26,132000&#10;&#10;※ Excel・スプレッドシートからそのままコピーして貼り付けられます"></textarea>
+        <div class="actions">
+          <button class="btn-main" id="devMasterGo" type="button">この内容で取り込む</button>
+          <button class="btn-sub" id="devMasterCancel" type="button">キャンセル</button>
+        </div>
+      </div>
+      <p class="hint">1行1機種で、<strong>機種名と本体価格</strong>の2列があれば取り込めます（カンマ区切り・タブ区切りのどちらでも可）。1行目が「機種名,本体価格」などの見出しでも大丈夫です。価格の「円」やカンマは自動で外します。</p>
+      <div id="devMasterPreview" hidden>
+        <table class="stats-table" id="devMasterTable"><!-- JSで生成 --></table>
+      </div>
+      <p class="hint" id="devMasterMsg" hidden></p>
     </div>
     <div class="card">
       <h2>バックアップ</h2>
