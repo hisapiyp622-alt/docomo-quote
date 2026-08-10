@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.82.0";
+  var APP_VERSION = "1.83.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1068,7 +1068,7 @@
     var items = {};      // 項目キー -> {name, prop, won, byVisit}
     var visitUsed = {};  // 使われた来店目的
     var vpAgg = {};      // 来店目的 -> {prop, won}
-    var byDay = {};      // 日 -> {prop, won, dow}
+    var byDay = {};      // 日 -> {prop, won, dow, items:{項目キー -> 成約件数}}
     var staffAgg = {};   // 担当id -> {prop, won, undone}
     var cross = {};      // 担当id -> {項目キー -> 成約件数}
 
@@ -1103,7 +1103,7 @@
             staffAgg[sid].prop++;
             if (!it.result) staffAgg[sid].undone++;
           }
-          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay() };
+          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay(), items: {} };
           byDay[dk].prop++;
           // 提案した項目
           var propI = statsSavedItems(it, false);
@@ -1116,7 +1116,7 @@
         }
         if (wonI && decMatch) {
           if (staffAgg[decider]) staffAgg[decider].won++;
-          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay() };
+          if (!byDay[dk]) byDay[dk] = { prop: 0, won: 0, dow: dt.getDay(), items: {} };
           byDay[dk].won++;
           vks.forEach(function (vk) {
             if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0 };
@@ -1126,6 +1126,7 @@
           Object.keys(wonI).forEach(function (k) {
             var b = bagItem(k, wonI[k]);
             b.won++;
+            byDay[dk].items[k] = (byDay[dk].items[k] || 0) + 1;   // その日の成約内訳
             // どの来店目的からの成約か（目的が複数なら按分せず両方に立てる）
             vks.forEach(function (vk) { b.byVisit[vk] = (b.byVisit[vk] || 0) + 1; });
             if (cross[decider]) cross[decider][k] = (cross[decider][k] || 0) + 1;
@@ -1185,7 +1186,7 @@
         st.vp[vk] = [a.vpAgg[vk].prop, a.vpAgg[vk].won];
       });
       Object.keys(a.byDay).forEach(function (d) {
-        st.days[d] = [a.byDay[d].prop, a.byDay[d].won, a.byDay[d].dow];
+        st.days[d] = [a.byDay[d].prop, a.byDay[d].won, a.byDay[d].dow, a.byDay[d].items || {}];
       });
       if (st.prop || st.won || Object.keys(st.items).length) staff[s.id] = st;
     });
@@ -1210,9 +1211,13 @@
       a.vpAgg[vk].won += b.vpAgg[vk].won;
     });
     Object.keys(b.byDay).forEach(function (d) {
-      if (!a.byDay[d]) a.byDay[d] = { prop: 0, won: 0, dow: b.byDay[d].dow };
+      if (!a.byDay[d]) a.byDay[d] = { prop: 0, won: 0, dow: b.byDay[d].dow, items: {} };
       a.byDay[d].prop += b.byDay[d].prop;
       a.byDay[d].won += b.byDay[d].won;
+      var bi = b.byDay[d].items || {};
+      Object.keys(bi).forEach(function (k) {
+        a.byDay[d].items[k] = (a.byDay[d].items[k] || 0) + bi[k];
+      });
     });
     Object.keys(b.staffAgg).forEach(function (sid) {
       if (!a.staffAgg[sid]) a.staffAgg[sid] = { prop: 0, won: 0, undone: 0 };
@@ -1256,9 +1261,13 @@
         if (vk !== "_none") visitUsed[vk] = true;
       });
       Object.keys(st.days || {}).forEach(function (d) {
-        if (!byDay[d]) byDay[d] = { prop: 0, won: 0, dow: st.days[d][2] };
+        if (!byDay[d]) byDay[d] = { prop: 0, won: 0, dow: st.days[d][2], items: {} };
         byDay[d].prop += st.days[d][0];
         byDay[d].won += st.days[d][1];
+        var di = st.days[d][3] || {};   // 1.82.0 までの確定には内訳が無い
+        Object.keys(di).forEach(function (k) {
+          byDay[d].items[k] = (byDay[d].items[k] || 0) + di[k];
+        });
       });
     });
     return { items: items, visitUsed: visitUsed, vpAgg: vpAgg,
@@ -1487,24 +1496,43 @@
       h += "</table></div>";
     }
 
-    /* ---- 日別（折りたたみ） ---- */
+    /* ---- 日別（折りたたみ）----
+     * その日に何が成約になったかまで出す。あとから振り返るときに、
+     * 日付と件数だけでは中身が思い出せないため。 */
     var dayRows = [];
     if (mFil !== "all") {
       var dKeys = Object.keys(byDay).sort();
       var DOW = ["日", "月", "火", "水", "木", "金", "土"];
+      var dCat = statsCatalog();
+      function dItemName(k) { return (items[k] && items[k].name) || dCat[k] || k; }
+      // その日の成約内訳を「機種変更 3・dカード GOLD 1」の形に
+      function dItemText(bag) {
+        var ks = Object.keys(bag || {});
+        if (!ks.length) return "";
+        ks.sort(function (x, y) {
+          return (rank(x) - rank(y)) || (bag[y] - bag[x])
+            || (dItemName(x) < dItemName(y) ? -1 : 1);
+        });
+        return ks.map(function (k) {
+          return dItemName(k) + (bag[k] > 1 ? " " + bag[k] : "");
+        }).join("・");
+      }
       var dTot = { prop: 0, won: 0 };
       var dHtml = "";
       dKeys.forEach(function (k5) {
         var v5 = byDay[k5];
         dTot.prop += v5.prop; dTot.won += v5.won;
         var label = k5.slice(5) + "（" + DOW[v5.dow] + "）";
-        dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won });
+        var txt5 = dItemText(v5.items);
+        dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won, items: txt5 });
         dHtml += '<tr class="' + (v5.dow === 0 ? "d-sun" : (v5.dow === 6 ? "d-sat" : "")) + '"><td>'
-          + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td></tr>";
+          + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td>"
+          + '<td class="day-items">' + (txt5 ? esc(txt5) : "－") + "</td></tr>";
       });
       if (dKeys.length) {
         h += '<details class="stats-days"><summary>日別（応対 ' + dTot.prop + "・成約 " + dTot.won + "）</summary>"
-          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th><th>成約</th></tr>'
+          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th><th>成約</th>'
+          + "<th>成約した内容</th></tr>"
           + dHtml + "</table></div></details>";
       }
     }
@@ -1631,9 +1659,9 @@
     if (L.days && L.days.length) {
       lines.push("");
       lines.push("日別");
-      lines.push("日付,応対,成約");
+      lines.push("日付,応対,成約,成約した内容");
       L.days.forEach(function (d3) {
-        lines.push([d3.date, d3.prop, d3.won].map(csvCell).join(","));
+        lines.push([d3.date, d3.prop, d3.won, d3.items || ""].map(csvCell).join(","));
       });
     }
     if (L.admin && L.staff && L.staff.length) {
