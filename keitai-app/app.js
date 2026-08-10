@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.70.1";
+  var APP_VERSION = "1.71.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -728,6 +728,24 @@
    * 担当（＝保存リストの持ち主）が決めたものとして扱う。 */
   function resStaffOf(it, ownerId) { return it.resultStaff || ownerId; }
 
+  /* 件数の手修正（管理者）。数え違い・二重計上を直すための補正値を
+   * 「担当×月」で持つ。MASTER に入れるので全端末で揃う。
+   * 例: MASTER.statsAdjust["s1"]["2026/08"] = {prop: -1, won: 1, lost: 0} */
+  function statsAdjOf(sid, month) {
+    var a = ((MASTER.statsAdjust || {})[sid] || {})[month];
+    return a ? { prop: num(a.prop), won: num(a.won), lost: num(a.lost) } : { prop: 0, won: 0, lost: 0 };
+  }
+  // 期間ぶんの補正を足す（「全期間」のときは登録されている月をすべて足す）
+  function statsAdjSum(sid, month) {
+    if (month !== "all") return statsAdjOf(sid, month);
+    var per = (MASTER.statsAdjust || {})[sid] || {};
+    var out = { prop: 0, won: 0, lost: 0 };
+    Object.keys(per).forEach(function (m) {
+      out.prop += num(per[m].prop); out.won += num(per[m].won); out.lost += num(per[m].lost);
+    });
+    return out;
+  }
+
   // 全担当の保存リストを集める。クラウド利用時は最新を読みにいく
   var statsLists = null; // {staffId: list}
   var statsLast = null;  // 直近に表示した集計（CSV出力用）
@@ -834,9 +852,15 @@
           dec++; rev += itemRev(it);
         });
       });
-      totals.prop += a.length; totals.won += won; totals.lost += lost; totals.dec += dec;
+      // 手修正の補正を足す（マイナスにはしない）
+      var ad = statsAdjSum(s.id, mFil);
+      var prop2 = Math.max(0, a.length + ad.prop);
+      var won2 = Math.max(0, won + ad.won);
+      var lost2 = Math.max(0, lost + ad.lost);
+      totals.prop += prop2; totals.won += won2; totals.lost += lost2; totals.dec += dec;
       totals.rev = (totals.rev || 0) + rev;
-      rows.push({ id: s.id, name: s.name, prop: a.length, won: won, lost: lost, dec: dec, rev: rev });
+      rows.push({ id: s.id, name: s.name, prop: prop2, won: won2, lost: lost2, dec: dec, rev: rev,
+        adj: (ad.prop || ad.won || ad.lost) ? ad : null });
     });
     function rate(w, p2) { return p2 ? Math.round(w * 100 / p2) + "%" : "－"; }
 
@@ -868,10 +892,13 @@
       var prev = { prop: 0, won: 0, lost: 0 };
       config.staff.forEach(function (s2) {
         if (sFil !== "all" && s2.id !== sFil) return;
-        var a2 = (lists[s2.id] || []).filter(function (it) { return statsMonthOf(it.savedAt) === pm; });
-        prev.prop += a2.length;
-        prev.won += a2.filter(function (it) { return it.result === "won"; }).length;
-        prev.lost += a2.filter(function (it) { return it.result === "lost"; }).length;
+        var a2 = (lists[s2.id] || []).filter(function (it) {
+          return statsMonthOf(it.savedAt) === pm && !isSent(it);
+        });
+        var ad2 = statsAdjOf(s2.id, pm);
+        prev.prop += Math.max(0, a2.length + ad2.prop);
+        prev.won += Math.max(0, a2.filter(function (it) { return it.result === "won"; }).length + ad2.won);
+        prev.lost += Math.max(0, a2.filter(function (it) { return it.result === "lost"; }).length + ad2.lost);
       });
       function scBox(label, cur, pv, unit) {
         var d2 = cur - pv;
@@ -891,6 +918,11 @@
         + "</div>";
     }
 
+    var sName = "全員";
+    if (sFil !== "all") {
+      var ssNow = config.staff.filter(function (s2) { return s2.id === sFil; })[0];
+      sName = (ssNow && ssNow.name) || sFil;
+    }
     var h = head + '<h3>担当別</h3><table class="stats-table"><tr><th>担当</th><th>提案</th><th>成約</th><th>見送り</th><th>成約率</th>'
       + (anySplit ? "<th>決定</th>" : "") + "<th>収益</th></tr>";
     rows.forEach(function (r2) {
@@ -902,6 +934,32 @@
         + (anySplit ? "<td>" + totals.dec + "</td>" : "") + "<td>" + yen(totals.rev || 0) + "</td></tr>";
     }
     h += "</table>";
+    // 手修正が入っている行の目印
+    if (rows.some(function (r3) { return r3.adj; })) {
+      h += '<p class="hint">' + rows.filter(function (r3) { return r3.adj; }).map(function (r3) {
+        function sg(n) { return n > 0 ? "＋" + n : String(n); }
+        var ps = [];
+        if (r3.adj.prop) ps.push("提案 " + sg(r3.adj.prop));
+        if (r3.adj.won) ps.push("成約 " + sg(r3.adj.won));
+        if (r3.adj.lost) ps.push("見送り " + sg(r3.adj.lost));
+        return esc(r3.name) + " は手修正を含みます（" + ps.join("・") + "）";
+      }).join("／") + "</p>";
+    }
+    /* 件数の手修正。数え違い・二重計上を直すためのもので、管理者が
+     * 月と担当を選んでいるときだけ出す（どの月の誰の数字かが決まらないため）。 */
+    if (admin) {
+      if (mFil !== "all" && sFil !== "all") {
+        var adNow = statsAdjOf(sFil, mFil);
+        h += '<div class="stats-adj"><b>件数の修正（' + esc(mFil) + "・" + esc(sName) + "）</b>"
+          + '<p class="hint">数え違いや二重計上を直すときだけ使ってください。ここに入れた数が、上の件数に足し引きされます（0で元に戻ります）。</p>'
+          + '<label>提案 <input type="number" data-adj="prop" value="' + (adNow.prop || "") + '" placeholder="0"></label>'
+          + '<label>成約 <input type="number" data-adj="won" value="' + (adNow.won || "") + '" placeholder="0"></label>'
+          + '<label>見送り <input type="number" data-adj="lost" value="' + (adNow.lost || "") + '" placeholder="0"></label>'
+          + "</div>";
+      } else {
+        h += '<p class="hint">件数を修正するときは、<strong>期間で月を、担当でその担当者</strong>を選んでください。</p>';
+      }
+    }
     if (anySplit) {
       h += '<p class="hint"><strong>提案・成約・見送り・成約率</strong>は、その担当が<strong>応対した件</strong>の結果です。'
         + '<strong>決定</strong>は、その担当が「成約」を記録した件数（他の担当の応対を決めた分も入ります）。'
@@ -971,11 +1029,6 @@
     }
     body.innerHTML = h;
     // CSV出力用に、いま表示した集計を控えておく
-    var sName = "全員";
-    if (sFil !== "all") {
-      var ss = config.staff.filter(function (s) { return s.id === sFil; })[0];
-      sName = (ss && ss.name) || sFil;
-    }
     /* 管理者向けCSVの明細（担当×項目）。スプレッドシートに貼って
      * ピボット・SUMIFで収益や生産性を出せるようにする長い形式。 */
     var detail = [];
@@ -7799,6 +7852,25 @@
           var v2 = Math.max(0, Math.round(num(e.target.value)));
           if (v2) MASTER.statsUnitPrices[upKey] = v2;
           else delete MASTER.statsUnitPrices[upKey];
+          saveMaster();
+          renderStats(false);
+          return;
+        }
+        var adjKey = e.target.getAttribute && e.target.getAttribute("data-adj");
+        if (adjKey) {
+          // 件数の手修正。いま選んでいる月と担当に対して保存する
+          var mSel = $("statsMonth").value, sSel = $("statsStaff").value;
+          if (mSel === "all" || sSel === "all") return;
+          if (!MASTER.statsAdjust) MASTER.statsAdjust = {};
+          if (!MASTER.statsAdjust[sSel]) MASTER.statsAdjust[sSel] = {};
+          var cur = MASTER.statsAdjust[sSel][mSel] || { prop: 0, won: 0, lost: 0 };
+          cur[adjKey] = Math.round(num(e.target.value));
+          if (!cur.prop && !cur.won && !cur.lost) {
+            delete MASTER.statsAdjust[sSel][mSel];
+            if (!Object.keys(MASTER.statsAdjust[sSel]).length) delete MASTER.statsAdjust[sSel];
+          } else {
+            MASTER.statsAdjust[sSel][mSel] = cur;
+          }
           saveMaster();
           renderStats(false);
           return;
