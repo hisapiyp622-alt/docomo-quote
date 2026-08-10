@@ -1,9 +1,10 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "kq-v140";
+var CACHE = "kq-v141";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "changelog.js",
   "data.js", "qr.js", "ienaka.js", "firebase-config.js",
   "manifest.webmanifest", "icon.svg",
   "img/mitsumorin-hello.png", "img/mitsumorin-sheet.png",
+  "img/icon-192.png", "img/icon-512.png", "img/icon-maskable-512.png", "img/apple-touch-icon.png",
   "TERMS.md", "LICENSE.md", "PRIVACY.md", "SUPPORT.md", "STATS_GUIDE.md"];
 
 self.addEventListener("install", function (e) {
