@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.68.0";
+  var APP_VERSION = "1.68.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5167,7 +5167,17 @@
        * （店舗の指定・2026-08-10）。金額はお客様向けの見積書で確認する。 */
       var ieOpts = ir.rows.slice(1).filter(function (x) { return x.amount >= 0; });
       h += row("オプション", ieOpts.length
-        ? ieOpts.map(function (x) { return esc(x.name) + "（" + yen(x.amount) + "）"; }).join("　／　")
+        ? ieOpts.map(function (x) {
+            /* 光電話は、登録作業に要るのは金額ではなく「番号をどうするか」。
+             * 新規は番ポの有無、転用・事業者変更は番号がそのまま移ることを出す。 */
+            if (/光電話/.test(x.name)) {
+              var bp = store.ienaka.applyType === "shinki"
+                ? (store.ienaka.denwaBanpo === "mnp" ? "<b>番ポあり</b>" : "新規発番")
+                : "番号はそのまま引き継ぎ";
+              return esc(x.name) + "（" + bp + "）";
+            }
+            return esc(x.name) + "（" + yen(x.amount) + "）";
+          }).join("　／　")
         : "なし");
       if (KQ_IENAKA.isHikari() && store.ienaka.provider) {
         h += row("プロバイダ", esc(store.ienaka.provider)
