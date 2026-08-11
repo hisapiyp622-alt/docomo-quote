@@ -45,13 +45,13 @@
   <section id="tab-quote" class="tab-page active no-print">
 
     <div class="pattern-bar">
-      <span class="lbl">見積もりパターン：</span>
-      <button class="pat" data-pat="0" type="button">A</button>
-      <button class="pat" data-pat="1" type="button">B</button>
-      <button class="pat" data-pat="2" type="button">C</button>
-      <button class="btn-sub" id="copyPattern" type="button">現在の内容を次のパターンへコピー</button>
+      <span class="lbl">お手続きする番号：</span>
+      <button class="pat" data-pat="0" type="button">回線1</button>
+      <button class="pat" data-pat="1" type="button">回線2</button>
+      <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="btn-sub" id="copyPattern" type="button">現在の内容を次の回線へコピー</button>
     </div>
-    <p class="hint">A・B・Cは<strong>1商談の中の別の番号（回線）</strong>です。実績は使ったパターンのぶんだけ数えます（2台の機種変更なら機種変更2件）。</p>
+    <p class="hint">回線1・2・3は<strong>1商談の中の別の番号</strong>です。ご家族の複数台は分けて入れてください。実績は使った回線のぶんだけ数えます（2台の機種変更なら機種変更2件）。</p>
 
     <div class="pattern-bar">
       <span class="lbl" title="長押しで削除できます">テンプレート：</span>
@@ -402,7 +402,7 @@
     <div class="card full ie-head">
       <label class="check"><input type="checkbox" id="ieEnabled"> <b>この見積もりに ドコモ光／home 5G を含める</b></label>
       <p class="hint">チェックを入れると、見積書に<strong>スマホと光を合わせた世帯の合計</strong>が出せるようになります。
-        光は<strong>世帯に1本</strong>のため、見積もりパターンA・B・Cで共通です。</p>
+        光は<strong>世帯に1本</strong>のため、回線1・2・3で共通です。</p>
       <p class="hint ie-summary" id="ieSummary"></p>
       <p class="hint ie-warn" id="ieSetWarn" hidden></p>
     </div>
@@ -627,10 +627,10 @@
   <!-- ============ 見積書タブ ============ -->
   <section id="tab-sheet" class="tab-page">
     <div class="pattern-bar no-print">
-      <span class="lbl">見積もりパターン：</span>
-      <button class="pat" data-pat="0" type="button">A</button>
-      <button class="pat" data-pat="1" type="button">B</button>
-      <button class="pat" data-pat="2" type="button">C</button>
+      <span class="lbl">お手続きする番号：</span>
+      <button class="pat" data-pat="0" type="button">回線1</button>
+      <button class="pat" data-pat="1" type="button">回線2</button>
+      <button class="pat" data-pat="2" type="button">回線3</button>
     </div>
     <div class="sheet-scope no-print" id="sheetScopeWrap" hidden>
       <span class="lbl">見積書に出す内容：</span>
@@ -667,7 +667,7 @@
   <section id="tab-saved" class="tab-page no-print">
     <div class="card">
       <h2>見積もりの保存</h2>
-      <p class="hint">いま入力している3パターン（A・B・C）を、1商談ぶんとしてまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
+      <p class="hint">いま入力している3回線ぶんを、1商談としてまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
       <div class="field">
         <label for="saveQuoteName">名前</label>
         <input type="text" id="saveQuoteName" maxlength="40" placeholder="2026/07/28 ドコモ MAX">
