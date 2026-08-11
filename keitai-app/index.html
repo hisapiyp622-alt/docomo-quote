@@ -816,7 +816,7 @@
     </div>
     <div class="card">
       <h2>端末マスタ（商品マスタ）</h2>
-      <p class="hint">代理店からもらった<strong>商品マスタ（機種名と本体価格の一覧）</strong>を取り込むと、見積もりの<strong>機種名がプルダウンになり、本体代金が自動で入ります</strong>。取り込まなくても、これまでどおり手入力で使えます。</p>
+      <p class="hint">機種を登録しておくと、見積もりの<strong>機種名がプルダウンになり、本体代金が自動で入ります</strong>。入れかたは2つあり、代理店からもらった<strong>商品マスタ（機種名と本体価格の一覧）を丸ごと取り込む</strong>か、下の<strong>「よく出る機種を登録する」で1つずつ入れる</strong>かを選べます。登録しなくても、これまでどおり手入力で使えます。</p>
       <p class="hint" id="devMasterCount"></p>
       <div class="actions">
         <label class="btn-sub file-btn">ファイルから取り込む（CSV）
@@ -837,6 +837,16 @@
         <table class="stats-table" id="devMasterTable"><!-- JSで生成 --></table>
       </div>
       <p class="hint" id="devMasterMsg" hidden></p>
+
+      <div id="devMasterEdit">
+        <h3>よく出る機種を登録する</h3>
+        <p class="hint">商品マスタを丸ごと取り込まなくても、<strong>よくご案内する機種だけ</strong>をここに登録できます。見積もりの「機種を選ぶ」から選ぶと<strong>本体代金が自動で入ります</strong>。価格が変わったら、この金額を直すだけです。</p>
+        <table class="stats-table dev-edit" id="devMasterEditTable"><!-- JSで生成 --></table>
+        <p class="hint" id="devMasterEditNote" hidden></p>
+        <div class="actions">
+          <button class="btn-sub" id="devMasterAdd" type="button">機種を追加</button>
+        </div>
+      </div>
     </div>
     <div class="card">
       <h2>バックアップ</h2>
