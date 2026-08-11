@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.89.1";
+  var APP_VERSION = "1.89.3";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -726,6 +726,18 @@
     var v = visitPurposesOf(st);
     return VISIT_ORDER.filter(function (k) { return !!v[k]; });
   }
+  /* もともと実績に数えないもの。
+   * ・ドコモメールオプション … プランに付いてくるかどうかの選択で、獲得ではない
+   * ・無料データ移行 … 無料でお付けするサービス（有料の初期設定サポートは数える）
+   * （店舗の指定・2026-08-11） */
+  function statsSkipOpt(o) {
+    if (!o) return false;
+    return o.id === "docomomail" || (o.name || "").indexOf("ドコモメール") >= 0;
+  }
+  function statsSkipFee(f) {
+    if (!f) return false;
+    return !!f.dataMove && !num(f.price);
+  }
   /* Amazonプライムのように「もともとご自身で入っていたものをドコモ経由に移す」
    * ことがあるオプションは、区分に「既存」を足す。マスタで kubunExist を
    * 立てたもの（＋名前にAmazonが入るもの）が対象。 */
@@ -815,6 +827,7 @@
       var kb2 = (pt.optionKubun || {})[id];
       if (kb2 === "keep") return; // 継続は提案に数えない
       var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
+      if (statsSkipOpt(def)) return;
       /* 店舗独自サービス（マスタ設定で「店舗独自」にしたもの）は
        * 「独自: 」として別のまとまりで集計する */
       if (def && def.own) out["own:o:" + id] = "独自: " + def.name;
@@ -831,7 +844,7 @@
     Object.keys(pt.feeItems || {}).forEach(function (id) {
       if (!pt.feeItems[id] || cfg.feeSkip[id]) return;
       var def = MASTER.feeItems.filter(function (o) { return o.id === id; })[0];
-      if (!def) return;
+      if (!def || statsSkipFee(def)) return;
       if (def.own) {
         /* 独自商材は名前に「手数料」と付いていても数える（店の商品なので）。
          * 請求書払い（bill）のものだけは対象外 */
@@ -972,13 +985,13 @@
       out["ie:home5g"] = "光・5G: home 5G";
     }
     (MASTER.options || []).forEach(function (o) {
-      if (cfg.optSkip[o.id]) return;
+      if (cfg.optSkip[o.id] || statsSkipOpt(o)) return;
       if (o.own) { out["own:o:" + o.id] = "独自: " + o.name; return; }
       out["opt:" + o.id] = "オプション: " + o.name + (optHasExist(o) ? "（新規）" : "");
       if (optHasExist(o)) out["opt:" + o.id + ":exist"] = "オプション: " + o.name + "（既存）";
     });
     (MASTER.feeItems || []).forEach(function (o) {
-      if (cfg.feeSkip[o.id]) return;
+      if (cfg.feeSkip[o.id] || statsSkipFee(o)) return;
       if (o.own) { if (o.pay !== "bill") out["own:f:" + o.id] = "独自: " + o.name; return; }
       if (o.pay === "bill" || /手数料|再発行/.test(o.name || "")) return;
       out["fee:" + o.id] = o.name;
@@ -1547,13 +1560,15 @@
         var label = k5.slice(5) + "（" + DOW[v5.dow] + "）";
         var txt5 = dItemText(v5.items);
         dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won, items: txt5 });
+        /* 成約の件数は出さない。何が決まったかは右の内訳で読めるため
+         * （店舗の指定・2026-08-11）。 */
         dHtml += '<tr class="' + (v5.dow === 0 ? "d-sun" : (v5.dow === 6 ? "d-sat" : "")) + '"><td>'
-          + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td>"
+          + esc(label) + "</td><td>" + v5.prop + "</td>"
           + '<td class="day-items">' + (txt5 ? esc(txt5) : "－") + "</td></tr>";
       });
       if (dKeys.length) {
         h += '<details class="stats-days"><summary>日別（応対 ' + dTot.prop + "・成約 " + dTot.won + "）</summary>"
-          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th><th>成約</th>'
+          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th>'
           + "<th>成約した内容</th></tr>"
           + dHtml + "</table></div></details>";
       }
@@ -6286,6 +6301,7 @@
 
     h += '<div class="plan-sec"><span class="plan-lbl">オプション（チェックを外すと数えません）</span><div class="sub-checks">';
     MASTER.options.forEach(function (o) {
+      if (statsSkipOpt(o)) return;   // もともと数えないものは出さない
       h += '<label class="check"><input type="checkbox" data-sc-opt="' + esc(o.id) + '"'
         + (sc.optSkip[o.id] ? "" : " checked") + "> " + esc(o.name)
         + (o.own ? "（独自）" : "") + "</label>";
@@ -6294,7 +6310,7 @@
 
     // もともと数えない商材（手数料・再発行・請求書払い）は一覧に出さない
     var countableFees = (MASTER.feeItems || []).filter(function (o) {
-      if (o.pay === "bill") return false;
+      if (o.pay === "bill" || statsSkipFee(o)) return false;
       return o.own || !/手数料|再発行/.test(o.name || "");
     });
     if (countableFees.length) {
