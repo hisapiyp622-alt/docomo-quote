@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.86.0";
+  var APP_VERSION = "1.87.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -8836,16 +8836,29 @@
       });
     });
 
+    /* 次のお客様の応対として仕切り直すので、回線1〜3をまとめて消す。
+     * 1回線しか使っていないときは今までどおり黙って消し、
+     * ほかの回線にも入力があるときだけ、消してよいか確かめる。 */
     $("clearQuote").addEventListener("click", function () {
-      resetPropTracking(); // 次のお客様の応対として仕切り直す
+      var others = [];
+      store.patterns.forEach(function (pt, i) {
+        if (i === (store.active | 0)) return;
+        var m = Object.assign(defaultState(), pt || {});
+        if (isPatternUsed(m) || m.planId || m.procType) others.push("回線" + (i + 1));
+      });
+      if (others.length && !window.confirm(
+            others.join("・") + " にも入力があります。\n回線1〜3をすべて消してよろしいですか？")) return;
+      resetPropTracking();
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
-      store.patterns[store.active] = defaultState();
-      state = store.patterns[store.active];
+      store.patterns = [defaultState(), defaultState(), defaultState()];
+      store.active = 0;
+      state = store.patterns[0];
       state.shopName = keep.shopName;
       state.staffName = keep.staffName;
       state.shopTel = keep.shopTel;
       state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
       state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
+      renderPatternTabs();
       syncFormFromState();
       recalc();
     });
