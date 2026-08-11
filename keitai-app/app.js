@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.87.0";
+  var APP_VERSION = "1.87.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -8839,7 +8839,8 @@
     /* 次のお客様の応対として仕切り直すので、回線1〜3をまとめて消す。
      * 1回線しか使っていないときは今までどおり黙って消し、
      * ほかの回線にも入力があるときだけ、消してよいか確かめる。 */
-    $("clearQuote").addEventListener("click", function () {
+    /* 入力をクリアは、回線のバー（上）と操作の並び（下）の両方に置いてある。 */
+    function clearQuoteAll() {
       var others = [];
       store.patterns.forEach(function (pt, i) {
         if (i === (store.active | 0)) return;
@@ -8861,7 +8862,9 @@
       renderPatternTabs();
       syncFormFromState();
       recalc();
-    });
+    }
+    $("clearQuote").addEventListener("click", clearQuoteAll);
+    $("clearQuoteTop").addEventListener("click", clearQuoteAll);
 
     // マスタ編集
     $("masterBody").addEventListener("input", function (e) {
