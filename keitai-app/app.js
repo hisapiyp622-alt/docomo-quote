@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.89.1";
+  var APP_VERSION = "1.89.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1547,13 +1547,15 @@
         var label = k5.slice(5) + "（" + DOW[v5.dow] + "）";
         var txt5 = dItemText(v5.items);
         dayRows.push({ date: k5, label: label, prop: v5.prop, won: v5.won, items: txt5 });
+        /* 成約の件数は出さない。何が決まったかは右の内訳で読めるため
+         * （店舗の指定・2026-08-11）。 */
         dHtml += '<tr class="' + (v5.dow === 0 ? "d-sun" : (v5.dow === 6 ? "d-sat" : "")) + '"><td>'
-          + esc(label) + "</td><td>" + v5.prop + "</td><td>" + v5.won + "</td>"
+          + esc(label) + "</td><td>" + v5.prop + "</td>"
           + '<td class="day-items">' + (txt5 ? esc(txt5) : "－") + "</td></tr>";
       });
       if (dKeys.length) {
         h += '<details class="stats-days"><summary>日別（応対 ' + dTot.prop + "・成約 " + dTot.won + "）</summary>"
-          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th><th>成約</th>'
+          + '<div class="stats-scroll"><table class="stats-table"><tr><th>日付</th><th>応対</th>'
           + "<th>成約した内容</th></tr>"
           + dHtml + "</table></div></details>";
       }
