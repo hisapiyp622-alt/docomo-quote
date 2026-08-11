@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.89.0";
+  var APP_VERSION = "1.89.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -821,7 +821,12 @@
       else if (kb2 === "exist") {
         // 既存（もともとご加入のものをドコモ経由へ）は新規と分けて数える
         out["opt:" + id + ":exist"] = "オプション: " + (def ? def.name : id) + "（既存）";
-      } else out["opt:" + id] = "オプション: " + (def ? def.name : id);
+      } else {
+        /* 既存の区分がある商材（Amazonプライム）は、どちらの行か分かるように
+         * 新規にも区分を付ける。区分の無い商材はこれまでどおり名前だけ。 */
+        out["opt:" + id] = "オプション: " + (def ? def.name : id)
+          + (optHasExist(def) ? "（新規）" : "");
+      }
     });
     Object.keys(pt.feeItems || {}).forEach(function (id) {
       if (!pt.feeItems[id] || cfg.feeSkip[id]) return;
@@ -969,7 +974,7 @@
     (MASTER.options || []).forEach(function (o) {
       if (cfg.optSkip[o.id]) return;
       if (o.own) { out["own:o:" + o.id] = "独自: " + o.name; return; }
-      out["opt:" + o.id] = "オプション: " + o.name;
+      out["opt:" + o.id] = "オプション: " + o.name + (optHasExist(o) ? "（新規）" : "");
       if (optHasExist(o)) out["opt:" + o.id + ":exist"] = "オプション: " + o.name + "（既存）";
     });
     (MASTER.feeItems || []).forEach(function (o) {
@@ -1415,8 +1420,19 @@
       return (rank(a2) - rank(b2)) || (items[b2].won - items[a2].won)
         || (items[b2].prop - items[a2].prop) || (items[a2].name < items[b2].name ? -1 : 1);
     });
-    /* 「（再掲）新プラン × Amazon Prime」は Amazon プライムの行の直後に置く */
+    /* Amazonプライムは「新規 → 既存 →（再掲）新プラン × Amazon Prime」の順で
+     * 固めて出す。件数の多い順に並べると3つが離れてしまい読みにくいため
+     * （店舗の指定・2026-08-11）。 */
     var azIds = amazonOptIds();
+    azIds.forEach(function (id) {
+      var kNew = "opt:" + id, kEx = kNew + ":exist";
+      var iEx = iKeys.indexOf(kEx);
+      if (iEx < 0) return;
+      var iNew = iKeys.indexOf(kNew);
+      if (iNew < 0) return;                 // 新規の行が無いときはそのまま
+      iKeys.splice(iEx, 1);
+      iKeys.splice(iKeys.indexOf(kNew) + 1, 0, kEx);
+    });
     var lastAz = -1;
     iKeys.forEach(function (k, i) {
       azIds.forEach(function (id) {
