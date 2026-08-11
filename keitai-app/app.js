@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.91.0";
+  var APP_VERSION = "1.92.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1718,6 +1718,100 @@
     v = String(v == null ? "" : v);
     return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
   }
+  /* ---------- 分析用CSV（1行1件のたて長） ----------
+   * 店舗責任者がスプレッドシートに貼り付けて、SUMIFS やピボットで
+   * 自由に集計するための形。画面の表と違い、1枚のまっすぐな表にする。
+   *   日付 / 曜日 / 担当 / 来店目的 / 種別 / 項目 / 件数
+   * 種別は「応対」「成約応対」「提案」「成約」の4つ。
+   *   応対     … その目的で応対した件数（分母。項目は空）
+   *   成約応対 … そのうち成約になった件数（項目は空）
+   *   提案・成約 … 項目ごとの件数
+   * 担当は、応対・提案は応対した担当、成約応対・成約は成約を決めた担当。
+   * 目的を2つ以上選んだ応対は、目的ごとに行を作る（足すと二重になる）。 */
+  var CSV_DOW = ["日", "月", "火", "水", "木", "金", "土"];
+  function statsFlatRows(lists, mFil, sFil, mineOnlyFn) {
+    var rows = [];
+    function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
+    function vLabel(k) { return k === "_none" ? "（未選択）" : VISIT_NAMES[k]; }
+    Object.keys(lists).forEach(function (sid) {
+      (lists[sid] || []).filter(inPeriod).forEach(function (it) {
+        if (it.sentTo || !mineOnlyFn(it, sid)) return;
+        var decider = resStaffOf(it, sid);
+        var ownMatch = (sFil === "all" || sid === sFil);
+        var decMatch = (sFil === "all" || decider === sFil);
+        if (!ownMatch && !decMatch) return;
+
+        var pats0 = ((it.data || {}).patterns) || [];
+        var pt0 = pats0[0] || pats0[((it.data || {}).active | 0)] || {};
+        var vks = visitKeys(pt0);
+        if (!vks.length) vks = visitKeys(pats0[((it.data || {}).active | 0)] || {});
+        if (!vks.length) vks = ["_none"];
+        var dt = new Date(it.savedAt || 0);
+        var dk = dt.getFullYear() + "/" + ("0" + (dt.getMonth() + 1)).slice(-2)
+          + "/" + ("0" + dt.getDate()).slice(-2);
+        var dow = CSV_DOW[dt.getDay()];
+        function put(staffId, vk, kind, name, n) {
+          rows.push([dk, dow, staffName(staffId) || staffId, vLabel(vk), kind, name || "", n]);
+        }
+        if (ownMatch) {
+          var propI = statsSavedItems(it, false);
+          vks.forEach(function (vk) {
+            put(sid, vk, "応対", "", 1);
+            Object.keys(propI).forEach(function (k) {
+              put(sid, vk, "提案", propI[k].name, propI[k].n);
+            });
+          });
+        }
+        if (it.result === "won" && decMatch) {
+          var wonI = statsSavedItems(it, true);
+          vks.forEach(function (vk) {
+            put(decider, vk, "成約応対", "", 1);
+            Object.keys(wonI).forEach(function (k) {
+              put(decider, vk, "成約", wonI[k].name, wonI[k].n);
+            });
+          });
+        }
+      });
+    });
+    rows.sort(function (a2, b2) {
+      return (a2[0] < b2[0] ? -1 : a2[0] > b2[0] ? 1 : 0)
+        || (a2[2] < b2[2] ? -1 : a2[2] > b2[2] ? 1 : 0)
+        || (a2[3] < b2[3] ? -1 : a2[3] > b2[3] ? 1 : 0);
+    });
+    return rows;
+  }
+  function downloadStatsFlatCsv() {
+    var L = statsLast;
+    if (!L) return;
+    var mFil = L.month;
+    var admin = statsAdminOk();
+    var me = activeStaff().id;
+    var sFil = admin ? ($("statsStaff") || {}).value || "all" : me;
+    var rows = statsFlatRows(statsLists, mFil, sFil, function (it, sid) {
+      return admin || sid === me || resStaffOf(it, sid) === me;
+    });
+    var lines = ["日付,曜日,担当,来店目的,種別,項目,件数"];
+    rows.forEach(function (r) { lines.push(r.map(csvCell).join(",")); });
+    var csv = "\uFEFF" + lines.join("\r\n");
+    var store2 = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
+    var fname = "実績_分析用_" + store2 + "_"
+      + (mFil === "all" ? "全期間" : mFil.replace("/", "")) + ".csv";
+    csvDownload(csv, fname);
+  }
+  // Blobを作ってダウンロードさせる（2つのCSVで同じ処理を使う）
+  function csvDownload(csv, fname) {
+    try {
+      var blob = new Blob([csv], { type: "text/csv" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (e) {}
+  }
   function downloadStatsCsv() {
     var L = statsLast;
     if (!L) return;
@@ -1778,17 +1872,7 @@
     function z(n) { return ("0" + n).slice(-2); }
     var fname = "実績_" + store2 + "_" + (L.month === "all" ? "全期間" : L.month.replace("/", "")) + "_"
       + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + ".csv";
-    try {
-      var blob = new Blob([csv], { type: "text/csv" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = fname;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    } catch (e) {}
+    csvDownload(csv, fname);
   }
 
   /* 端末内モードの店舗ログイン
@@ -8784,6 +8868,7 @@
         showMasterGate(true);
       });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
+      $("statsCsvFlat").addEventListener("click", downloadStatsFlatCsv);
       $("statsPrint").addEventListener("click", function () {
         document.body.classList.add("print-stats");
         window.print();
