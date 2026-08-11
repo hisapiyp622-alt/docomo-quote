@@ -74,7 +74,7 @@
 
     <div class="card full">
       <h2>ご来店の目的</h2>
-      <div class="proc-checks">
+      <div class="proc-checks" id="visitChecks">
         <label class="check"><input type="checkbox" data-visit="buy"> ① 端末購入（新規・MNP・機種変更など）</label>
         <label class="check"><input type="checkbox" data-visit="plan"> ② プラン見直し</label>
         <label class="check"><input type="checkbox" data-visit="repair"> ③ 故障</label>
@@ -82,6 +82,7 @@
         <label class="check"><input type="checkbox" data-visit="ask"> ⑤ 問合せ</label>
         <label class="check"><input type="checkbox" data-visit="other"> ⑥ その他</label>
       </div>
+      <p class="hint" id="visitOnLine1" hidden></p>
       <label class="check" id="kaimashiField" hidden><input type="checkbox" id="kaimashi"> 買い増しあり（お手持ちに追加でご購入）</label>
       <p class="hint" id="kaimashiNote" hidden></p>
     </div>
