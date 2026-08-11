@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.89.3";
+  var APP_VERSION = "1.90.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -181,7 +181,7 @@
   var SAVED_FULL = 60;
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
   var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose",
-    "kaimashi", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "kaimashi", "u15", "devicePrice", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
   function slimData(d) {
     if (!d) return d;
@@ -678,12 +678,17 @@
     if (!c.denki) c.denki = "type";           // off / one / type=メニューごと
     if (!c.gas) c.gas = "one";                // off / one
     if (typeof c.hikari === "undefined") c.hikari = true;
+    if (typeof c.highend === "undefined") c.highend = true;      // （再掲）機種ハイエンド
+    if (typeof c.highendYen !== "number") c.highendYen = 100000; // ハイエンドとみなす端末代金
+    if (typeof c.u15 === "undefined") c.u15 = true;              // （再掲）U15
     if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
     if (!c.feeSkip) c.feeSkip = {};
     if (typeof c.accs === "undefined") c.accs = true;
     return c;
   }
   // 「Pixel、iPhone」のように読点・カンマ区切りで複数キーワードを許す
+  /* U15のプラン。新規・MNPでこれを選んでいたら「（再掲）U15」に数える */
+  var U15_PLANS = { u15_debut: true, u15: true };
   function statsKwTest(kw, name) {
     var n = String(name || "").toLowerCase();
     return String(kw || "").split(/[、,]/).some(function (w) {
@@ -799,10 +804,21 @@
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
     }
+    /* （再掲）U15: 新規・MNPのご契約で、U15のプランを選んだか
+     * 「U15」にチェックしたとき。機種変更のときは数えない。 */
+    if (cfg.u15) {
+      var newLine = !!(todo.shinki || todo.mnp) || pt.procType === "shinki" || pt.procType === "mnp";
+      if (newLine && (U15_PLANS[pt.planId] || pt.u15)) out["u15"] = "（再掲）U15";
+    }
+    /* （再掲）機種ハイエンド: 端末代金がしきい値以上のとき。
+     * 機種販売の行はそのまま数えたうえで、再掲として別に1件数える。 */
+    if (cfg.highend && num(pt.devicePrice) >= num(cfg.highendYen)) {
+      out["highend"] = "（再掲）機種ハイエンド";
+    }
     if (pt.deviceName) {
       if (cfg.device === "all") out["device"] = "機種販売";
       else if (cfg.device === "kw" && statsKwTest(cfg.deviceKw, pt.deviceName)) {
-        out["device"] = "機種販売（" + cfg.deviceKw + "）";
+        out["device"] = "（再掲）" + cfg.deviceKw;
       }
     }
     if (pt.todoDcard && cfg.dcard !== "off") {
@@ -962,12 +978,14 @@
       if (cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
     if (cfg.kaimashi) out["kaimashi"] = "買い増し（再掲）";
+    if (cfg.u15) out["u15"] = "（再掲）U15";
+    if (cfg.highend) out["highend"] = "（再掲）機種ハイエンド";
     (MASTER.plans || []).forEach(function (pl) {
       if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
     });
     out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     if (cfg.device === "all") out["device"] = "機種販売";
-    else if (cfg.device === "kw") out["device"] = "機種販売（" + cfg.deviceKw + "）";
+    else if (cfg.device === "kw") out["device"] = "（再掲）" + cfg.deviceKw;
     if (cfg.dcard === "one") out["dcard"] = "dカード";
     else if (cfg.dcard === "type") {
       var dcN = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
@@ -1422,7 +1440,7 @@
     var catalog = statsCatalog();
 
     /* ---- 並び順 ---- */
-    var order = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+    var order = ["proc:", "kaimashi", "u15", "plan:", "highend", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
@@ -3079,7 +3097,7 @@
       // 手続き内容（引き継ぎシートに記載）
       /* ご来店の目的。①端末購入 以外で来店されて機種変更が入った場合は
        * 「買い増し」として実績に再掲する。①のときは買い増しの有無をチェックで持つ。 */
-      visitPurposes: {}, kaimashi: false,
+      visitPurposes: {}, kaimashi: false, u15: false,
       procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
       todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
@@ -4846,6 +4864,22 @@
     }
   }
 
+  /* U15の欄は、新規・MNPのときだけ出す。U15のプランを選んでいれば
+   * チェックが無くても実績に入るので、その旨を出しておく。 */
+  function renderU15() {
+    var f = $("u15Field"), n = $("u15Note"), cb = $("u15");
+    if (!f || !cb) return;
+    var todo = state.procTodo || {};
+    var newLine = !!(todo.shinki || todo.mnp) || state.procType === "shinki" || state.procType === "mnp";
+    f.hidden = !newLine;
+    cb.checked = !!state.u15;
+    var byPlan = newLine && !!U15_PLANS[state.planId];
+    if (n) {
+      n.hidden = !byPlan;
+      if (byPlan) n.textContent = "U15のプランを選んでいるので、チェックが無くても実績の「（再掲）U15」に入ります。";
+    }
+  }
+
   function renderPatternTabs() {
     document.querySelectorAll(".pat").forEach(function (b) {
       var i = +b.dataset.pat;
@@ -5253,6 +5287,7 @@
     document.querySelectorAll("[data-proc]").forEach(function (cb) {
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
+    renderU15();
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptBakuage").value = state.pointBakuage || "";
@@ -6299,6 +6334,18 @@
       + (sc.accs ? " checked" : "") + "> アクセサリ（登録品）</label>";
     h += "</div></div>";
 
+    h += '<div class="plan-sec"><span class="plan-lbl">再掲の項目</span><div class="sub-checks">';
+    h += '<label class="check"><input type="checkbox" data-sc-flag="highend"'
+      + (sc.highend ? " checked" : "") + "> （再掲）機種ハイエンド</label>";
+    h += '<label class="check">この金額以上 <input type="number" id="scHighendYen" min="0" inputmode="numeric" value="'
+      + (num(sc.highendYen) || 0) + '"' + (sc.highend ? "" : " hidden") + "> 円</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="u15"'
+      + (sc.u15 ? " checked" : "") + "> （再掲）U15（新規・MNPのとき）</label>";
+    h += "</div>"
+      + '<p class="hint"><strong>機種ハイエンド</strong>は、端末代金総額がこの金額以上のときに、機種販売とは別に1件数えます。'
+      + '<strong>U15</strong>は、新規・MNPで<strong>U15のプランを選んだとき</strong>か、手続き内容の'
+      + '<strong>「U15（15歳以下）」にチェックしたとき</strong>に数えます。</p></div>';
+
     h += '<div class="plan-sec"><span class="plan-lbl">オプション（チェックを外すと数えません）</span><div class="sub-checks">';
     MASTER.options.forEach(function (o) {
       if (statsSkipOpt(o)) return;   // もともと数えないものは出さない
@@ -6721,6 +6768,7 @@
     renderPointUse(r);
     renderSummary(r);
     renderVisitPurpose();
+    renderU15();
     renderPatternTabs();
     renderIenakaWarn(r);
     saveState();
@@ -8064,6 +8112,7 @@
     var sc;
     if (kind === "input") {
       if (t.id === "scDeviceKw") { statsCfg().deviceKw = t.value; markEdited(); return true; }
+      if (t.id === "scHighendYen") { statsCfg().highendYen = Math.max(0, num(t.value)); markEdited(); return true; }
       return false;
     }
     if (t.hasAttribute("data-sc-proc")) {
@@ -8101,6 +8150,10 @@
     }
     if (t.hasAttribute("data-sc-flag")) {
       statsCfg()[t.getAttribute("data-sc-flag")] = t.checked;
+      if (t.getAttribute("data-sc-flag") === "highend") {
+        var hy = $("scHighendYen");
+        if (hy) hy.hidden = !t.checked;
+      }
       markEdited(); return true;
     }
     if (t.id === "scDevice") {
@@ -8991,8 +9044,13 @@
         if (!state.procTodo) state.procTodo = {};
         state.procTodo[cb.getAttribute("data-proc")] = cb.checked;
         applyProcType(procTypeFromTodo());
+        renderU15();
         recalc();
       });
+    });
+    $("u15").addEventListener("change", function () {
+      state.u15 = this.checked;
+      recalc();
     });
 
     /* 次のお客様の応対として仕切り直すので、回線1〜3をまとめて消す。
