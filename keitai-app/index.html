@@ -237,6 +237,18 @@
 
     <div class="card c5">
       <h2>⑤ 端末代金</h2>
+      <div class="field">
+        <label for="payMethod">支払い方法</label>
+        <select id="payMethod">
+          <option value="none">端末購入なし</option>
+          <option value="ikkatsu">一括払い</option>
+          <option value="b12">分割12回</option>
+          <option value="b24">分割24回</option>
+          <option value="b36">分割36回</option>
+          <option value="b48">分割48回</option>
+          <option value="kaedoki">いつでもカエドキプログラム（24回・残価設定）</option>
+        </select>
+      </div>
       <div class="field" id="deviceSelectField" hidden>
         <label for="deviceSelect">機種を選ぶ（端末マスタ）</label>
         <select id="deviceSelect"><!-- JSで生成 --></select>
@@ -254,18 +266,6 @@
         <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
       </div>
       <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
-      <div class="field">
-        <label for="payMethod">支払い方法</label>
-        <select id="payMethod">
-          <option value="none">端末購入なし</option>
-          <option value="ikkatsu">一括払い</option>
-          <option value="b12">分割12回</option>
-          <option value="b24">分割24回</option>
-          <option value="b36">分割36回</option>
-          <option value="b48">分割48回</option>
-          <option value="kaedoki">いつでもカエドキプログラム（24回・残価設定）</option>
-        </select>
-      </div>
       <div class="field" id="kaedoki23Field" hidden>
         <label for="kaedoki23">23回分の総額（頭金込み）</label>
         <input type="number" id="kaedoki23" inputmode="numeric" placeholder="0" min="0"> 円
