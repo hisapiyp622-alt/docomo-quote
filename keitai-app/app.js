@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.92.0";
+  var APP_VERSION = "1.92.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1750,24 +1750,28 @@
         var dk = dt.getFullYear() + "/" + ("0" + (dt.getMonth() + 1)).slice(-2)
           + "/" + ("0" + dt.getDate()).slice(-2);
         var dow = CSV_DOW[dt.getDay()];
-        function put(staffId, vk, kind, name, n) {
-          rows.push([dk, dow, staffName(staffId) || staffId, vLabel(vk), kind, name || "", n]);
+        /* 目的を2つ選んだ応対は目的ごとに行を作るので、目的をまたいで足すと
+         * 二重に数えてしまう。全体の数を出すための「（全体）」の行を別に作り、
+         * 集計するときは目的で絞れば済むようにする。 */
+        var vLabels = ["（全体）"].concat(vks.map(vLabel));
+        function put(staffId, vl, kind, name, n) {
+          rows.push([dk, dow, staffName(staffId) || staffId, vl, kind, name || "", n]);
         }
         if (ownMatch) {
           var propI = statsSavedItems(it, false);
-          vks.forEach(function (vk) {
-            put(sid, vk, "応対", "", 1);
+          vLabels.forEach(function (vl) {
+            put(sid, vl, "応対", "", 1);
             Object.keys(propI).forEach(function (k) {
-              put(sid, vk, "提案", propI[k].name, propI[k].n);
+              put(sid, vl, "提案", propI[k].name, propI[k].n);
             });
           });
         }
         if (it.result === "won" && decMatch) {
           var wonI = statsSavedItems(it, true);
-          vks.forEach(function (vk) {
-            put(decider, vk, "成約応対", "", 1);
+          vLabels.forEach(function (vl) {
+            put(decider, vl, "成約応対", "", 1);
             Object.keys(wonI).forEach(function (k) {
-              put(decider, vk, "成約", wonI[k].name, wonI[k].n);
+              put(decider, vl, "成約", wonI[k].name, wonI[k].n);
             });
           });
         }
