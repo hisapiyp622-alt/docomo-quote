@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.83.0";
+  var APP_VERSION = "1.84.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -594,11 +594,10 @@
     it.upAt = Date.now();
     if (result === "won") {
       it.wonData = JSON.parse(JSON.stringify(store));
-      it.wonPattern = store.active;
     } else {
       delete it.wonData;
-      delete it.wonPattern;
     }
+    delete it.wonPattern;
     persistSaved();
     renderSaved();
     /* 同じ応対でもう一度押したら「記録し直し」になるように紐づけたままにする。
@@ -637,26 +636,14 @@
         + "OK：いま画面に開いている見積もりを『成約した内容』として記録します\n"
         + "（保存したときの提案内容と分けて実績に集計されます）\n\n"
         + "キャンセル：保存したときの内容のまま成約にします");
+      /* A・B・C は1商談の中の別の番号（回線）なので、どれか1つを選ばせない。
+       * 使っているパターンぶんがそのまま成約として数えられる。 */
       if (useCurrent) {
         it.wonData = JSON.parse(JSON.stringify(store));
-        it.wonPattern = store.active;
       } else {
         delete it.wonData;
-        // どのパターンで成約したか。2つ以上使っていたら聞く
-        var used = [];
-        ((it.data && it.data.patterns) || []).forEach(function (pt, i) {
-          var m = Object.assign(defaultState(), pt || {});
-          if (isPatternUsed(m) || m.planId || m.procType) used.push(i);
-        });
-        var idx = (it.data && it.data.active) | 0;
-        if (used.length > 1) {
-          var ans = window.prompt("どのパターンで成約しましたか？（" + used.map(function (i) { return i + 1; }).join("・") + "）", String(idx + 1));
-          if (ans === null) return; // やめた
-          var n2 = (parseInt(ans, 10) || 0) - 1;
-          if (used.indexOf(n2) >= 0) idx = n2;
-        }
-        it.wonPattern = idx;
       }
+      delete it.wonPattern;
     } else {
       delete it.wonData;
       delete it.wonPattern;
@@ -853,31 +840,39 @@
   }
 
   // 3パターン一式＋光・5G（store のクローン）から項目を拾う
-  function statsDataItems(d, onlyPattern, won) {
+  /* 見積もり1件（＝1商談）から項目を数える。返す形は {キー: {name, n}}。
+   * A・B・C のパターンは「1商談の中の、別の番号（回線）の手続き」なので、
+   * 使っているパターンのぶんを足し上げる。2台の機種変更なら 機種変更 2件。
+   * 光・5G は1商談に1つなので、パターン数にかかわらず1件。 */
+  function statsDataItems(d, won) {
     var out = {};
-    var pats = (d && d.patterns) || [];
-    if (typeof onlyPattern === "number") {
-      Object.assign(out, statsPatternItems(pats[onlyPattern], won));
-    } else {
-      pats.forEach(function (pt) {
-        var m = Object.assign(defaultState(), pt || {});
-        if (!(isPatternUsed(m) || m.planId || m.procType)) return;
-        Object.assign(out, statsPatternItems(pt, won));
+    function add(map) {
+      Object.keys(map).forEach(function (k) {
+        if (!out[k]) out[k] = { name: map[k], n: 0 };
+        out[k].n++;
       });
     }
+    var pats = (d && d.patterns) || [];
+    var used = [];
+    pats.forEach(function (pt, i) {
+      var m = Object.assign(defaultState(), pt || {});
+      if (isPatternUsed(m) || m.planId || m.procType) used.push(i);
+    });
+    /* 手続き内容だけを入れた（金額を触っていない）成約は、
+     * 上の判定では拾えないので、開いていたパターンを1つ数える。 */
+    if (won && !used.length && pats.length) used = [(d.active | 0)];
+    used.forEach(function (i) { add(statsPatternItems(pats[i], won)); });
+
     var ie = d && d.ienaka;
     if (ie && ie.enabled && ie.product && statsCfg().hikari) {
       /* 成約として数えるのは「光申し込み」にチェックがあるときだけ。
        * 金額をお見せしただけ（提案）と、実際にお申込みいただいた（成約）を
        * 分けるため（店舗の指定・2026-08-10）。 */
       var applied = true;
-      if (won) {
-        applied = typeof onlyPattern === "number"
-          ? !!(pats[onlyPattern] && pats[onlyPattern].todoHikari)
-          : pats.some(function (pt) { return pt && pt.todoHikari; });
-      }
+      if (won) applied = pats.some(function (pt) { return pt && pt.todoHikari; });
       if (applied) {
-        out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] = "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
+        out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] =
+          { name: "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product), n: 1 };
       }
     }
     return out;
@@ -892,17 +887,13 @@
       var cat0 = statsCatalog();
       var outNQ = {};
       Object.keys(it.noQuoteItems || {}).forEach(function (k) {
-        if (it.noQuoteItems[k]) outNQ[k] = cat0[k] || k;
+        if (it.noQuoteItems[k]) outNQ[k] = { name: cat0[k] || k, n: 1 };
       });
       return outNQ;
     }
     if (!wonOnly) return statsDataItems(it.data);
-    // 成約時に記録した内容があればそれを、無ければ保存内容の成約パターンを使う
-    if (it.wonData) {
-      return statsDataItems(it.wonData, (it.wonData.active | 0), true);
-    }
-    var wi = typeof it.wonPattern === "number" ? it.wonPattern : (it.data && it.data.active) | 0;
-    return statsDataItems(it.data, wi, true);
+    // 成約時に記録した内容があればそれを、無ければ保存した内容を使う
+    return statsDataItems(it.wonData || it.data, true);
   }
 
   /* 成約・見送りを決めた担当。入っていない古い保存は、その保存を作った
@@ -1107,7 +1098,9 @@
           byDay[dk].prop++;
           // 提案した項目
           var propI = statsSavedItems(it, false);
-          Object.keys(propI).forEach(function (k) { bagItem(k, propI[k]).prop++; });
+          Object.keys(propI).forEach(function (k) {
+            bagItem(k, propI[k].name).prop += propI[k].n;
+          });
           vks.forEach(function (vk) {
             if (!vpAgg[vk]) vpAgg[vk] = { prop: 0, won: 0 };
             vpAgg[vk].prop++;
@@ -1124,12 +1117,13 @@
             if (vk !== "_none") visitUsed[vk] = true;
           });
           Object.keys(wonI).forEach(function (k) {
-            var b = bagItem(k, wonI[k]);
-            b.won++;
-            byDay[dk].items[k] = (byDay[dk].items[k] || 0) + 1;   // その日の成約内訳
+            var n = wonI[k].n;
+            var b = bagItem(k, wonI[k].name);
+            b.won += n;
+            byDay[dk].items[k] = (byDay[dk].items[k] || 0) + n;   // その日の成約内訳
             // どの来店目的からの成約か（目的が複数なら按分せず両方に立てる）
-            vks.forEach(function (vk) { b.byVisit[vk] = (b.byVisit[vk] || 0) + 1; });
-            if (cross[decider]) cross[decider][k] = (cross[decider][k] || 0) + 1;
+            vks.forEach(function (vk) { b.byVisit[vk] = (b.byVisit[vk] || 0) + n; });
+            if (cross[decider]) cross[decider][k] = (cross[decider][k] || 0) + n;
           });
         }
       });
