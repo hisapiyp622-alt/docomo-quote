@@ -1043,3 +1043,10 @@ body.present .sheet{box-shadow:none}
 .kubun-swap .sw-arrow { color: var(--red); font-weight: 700;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .kubun-swap .sw-new { font-weight: 700; }
+
+/* 端末マスタ: よく出る機種を1つずつ登録する表 */
+.dev-edit td{vertical-align:middle}
+.dev-edit input[type=text]{width:100%;min-width:120px}
+.dev-edit input[type=number]{width:110px;text-align:right}
+.dev-edit td.dev-del{white-space:nowrap;text-align:center}
+.dev-edit tr.dev-empty td{color:var(--muted);text-align:center}

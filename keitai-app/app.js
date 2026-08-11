@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.87.1";
+  var APP_VERSION = "1.88.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -7341,12 +7341,14 @@
     if (cnt) {
       cnt.textContent = list.length
         ? "いま登録されている機種: " + list.length + "件"
-        : "まだ取り込んでいません（機種名は手入力です）";
+        : "まだ登録がありません（機種名は手入力です）";
     }
+    /* 一覧の下見は、件数が多くて1つずつの編集を出せないときだけ。
+     * 少ないときは下の編集の表と同じ中身になり、二重に出てしまう。 */
     var wrap = $("devMasterPreview"), tb = $("devMasterTable");
     if (wrap && tb) {
-      wrap.hidden = !list.length;
-      if (list.length) {
+      wrap.hidden = list.length <= DEV_EDIT_MAX;
+      if (!wrap.hidden) {
         var head = "<tr><th>機種名</th><th>本体価格</th></tr>";
         var rows = list.slice(0, 8).map(function (d) {
           return "<tr><td>" + esc(d.name) + "</td><td>" + yen(d.price) + "</td></tr>";
@@ -7357,7 +7359,41 @@
         tb.innerHTML = head + rows;
       }
     }
+    renderDeviceEdit();
     renderDeviceSelect();
+  }
+  /* 「よく出る機種」を1つずつ登録する表。
+   * 商品マスタを丸ごと取り込むと、価格が変わるたびに入れ替えが要る。
+   * よくご案内する機種だけを手で持てるようにして、金額はここで直す。
+   * 取り込みで件数が多くなっている店舗では、1つずつの編集は出さない
+   * （入力欄が数百個になり、設定画面が重くなるため）。 */
+  var DEV_EDIT_MAX = 60;
+  function renderDeviceEdit() {
+    var tb = $("devMasterEditTable"), note = $("devMasterEditNote"), add = $("devMasterAdd");
+    if (!tb) return;
+    var list = deviceMaster();
+    var many = list.length > DEV_EDIT_MAX;
+    if (note) {
+      note.hidden = !many;
+      note.textContent = many
+        ? "登録が " + list.length + "件と多いため、ここでの1つずつの編集は出していません。"
+          + "入れ替えるときは、上の取り込みをお使いください。"
+        : "";
+    }
+    if (add) add.hidden = many;
+    if (many) { tb.innerHTML = ""; tb.hidden = true; return; }
+    tb.hidden = false;
+    var h = "<tr><th>機種名</th><th>本体代金</th><th></th></tr>";
+    if (!list.length) {
+      h += '<tr class="dev-empty"><td colspan="3">まだ登録がありません。「機種を追加」から入れてください。</td></tr>';
+    }
+    list.forEach(function (d, i) {
+      h += "<tr><td>"
+        + '<input type="text" data-devfield="name" data-devi="' + i + '" value="' + esc(d.name || "") + '" placeholder="例) iPhone 17 128GB"></td>'
+        + '<td><input type="number" data-devfield="price" data-devi="' + i + '" min="0" inputmode="numeric" value="' + (num(d.price) || 0) + '"> 円</td>'
+        + '<td class="dev-del"><button class="btn-sub" type="button" data-devdel="' + i + '">削除</button></td></tr>';
+    });
+    tb.innerHTML = h;
   }
   // 見積もり画面の機種プルダウン（端末マスタがあるときだけ出す）
   function renderDeviceSelect() {
@@ -7449,6 +7485,49 @@
         histMark();
         renderDeviceMaster();
         say("削除しました。");
+      });
+    }
+    /* よく出る機種の表。打っている最中に描き直すと入力欄から
+     * カーソルが外れるので、文字の入力では描き直さない。 */
+    var edit = $("devMasterEdit");
+    if (edit) {
+      edit.addEventListener("input", function (e) {
+        var t = e.target, f = t.getAttribute && t.getAttribute("data-devfield");
+        if (!f) return;
+        var i = parseInt(t.getAttribute("data-devi"), 10);
+        var list = MASTER.devices || (MASTER.devices = []);
+        if (!list[i]) return;
+        if (f === "name") list[i].name = t.value;
+        else list[i].price = Math.max(0, num(t.value));
+        markEdited();
+        renderDeviceSelect();
+      });
+      edit.addEventListener("click", function (e) {
+        var t = e.target;
+        var del = t.getAttribute && t.getAttribute("data-devdel");
+        if (del !== null && del !== undefined) {
+          var i2 = parseInt(del, 10);
+          var l2 = MASTER.devices || [];
+          if (!l2[i2]) return;
+          if (!window.confirm("「" + (l2[i2].name || "（名前なし）") + "」を削除します。よろしいですか？")) return;
+          l2.splice(i2, 1);
+          if (!l2.length) delete MASTER.devices;
+          markEdited();
+          renderDeviceMaster();
+          return;
+        }
+        if (t.id === "devMasterAdd") {
+          var l3 = MASTER.devices || (MASTER.devices = []);
+          if (l3.length >= DEV_EDIT_MAX) {
+            window.alert("登録できるのは " + DEV_EDIT_MAX + "件までです。");
+            return;
+          }
+          l3.push({ name: "", price: 0 });
+          markEdited();
+          renderDeviceMaster();
+          var ins = edit.querySelectorAll('[data-devfield="name"]');
+          if (ins.length) ins[ins.length - 1].focus();
+        }
       });
     }
     if (sel) {
