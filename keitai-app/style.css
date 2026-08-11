@@ -91,8 +91,10 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
 }
 .pattern-bar .lbl{font-size:13px;color:var(--muted)}
 .pat{
-  width:40px;height:36px;border:1px solid var(--red);background:#fff;color:var(--red);
-  border-radius:8px;font:inherit;font-weight:700;cursor:pointer;
+  min-width:56px;height:36px;padding:0 10px;
+  border:1px solid var(--red);background:#fff;color:var(--red);
+  border-radius:8px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+  white-space:nowrap;
 }
 .pat.active{background:var(--red);color:#fff}
 .pat.filled:not(.active)::after{content:"●";font-size:7px;vertical-align:top;margin-left:2px}
