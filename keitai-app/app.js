@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.90.0";
+  var APP_VERSION = "1.90.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -181,7 +181,7 @@
   var SAVED_FULL = 60;
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
   var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose",
-    "kaimashi", "u15", "devicePrice", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "kaimashi", "u15", "devicePrice", "atamakin", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
   function slimData(d) {
     if (!d) return d;
@@ -679,7 +679,8 @@
     if (!c.gas) c.gas = "one";                // off / one
     if (typeof c.hikari === "undefined") c.hikari = true;
     if (typeof c.highend === "undefined") c.highend = true;      // （再掲）機種ハイエンド
-    if (typeof c.highendYen !== "number") c.highendYen = 100000; // ハイエンドとみなす端末代金
+    if (typeof c.highendYen !== "number") c.highendYen = 100000; // Androidでハイエンドとみなす金額
+    if (typeof c.highendIpKw !== "string") c.highendIpKw = "Pro、Air";  // iPhoneでハイエンドとみなす機種名
     if (typeof c.u15 === "undefined") c.u15 = true;              // （再掲）U15
     if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
     if (!c.feeSkip) c.feeSkip = {};
@@ -687,6 +688,17 @@
     return c;
   }
   // 「Pixel、iPhone」のように読点・カンマ区切りで複数キーワードを許す
+  /* ハイエンドの判定（店舗の指定・2026-08-11）。
+   * ・iPhone … 機種名に Pro / Air が入っていればハイエンド（金額は見ない）
+   * ・それ以外（Android）… 元値が決めた金額以上。元値は「端末代金総額 − 店頭頭金」
+   *   （端末代金総額は頭金を含んだ金額を入れる決まりのため）。
+   *   割引（クーポン・店舗独自・ダイレクト割）は元値なので引かない。 */
+  function statsIsHighEnd(pt, cfg) {
+    if (num(pt.devicePrice) <= 0) return false;
+    var name = String(pt.deviceName || "");
+    if (/iphone/i.test(name)) return statsKwTest(cfg.highendIpKw, name);
+    return (num(pt.devicePrice) - num(pt.atamakin)) >= num(cfg.highendYen);
+  }
   /* U15のプラン。新規・MNPでこれを選んでいたら「（再掲）U15」に数える */
   var U15_PLANS = { u15_debut: true, u15: true };
   function statsKwTest(kw, name) {
@@ -810,9 +822,9 @@
       var newLine = !!(todo.shinki || todo.mnp) || pt.procType === "shinki" || pt.procType === "mnp";
       if (newLine && (U15_PLANS[pt.planId] || pt.u15)) out["u15"] = "（再掲）U15";
     }
-    /* （再掲）機種ハイエンド: 端末代金がしきい値以上のとき。
-     * 機種販売の行はそのまま数えたうえで、再掲として別に1件数える。 */
-    if (cfg.highend && num(pt.devicePrice) >= num(cfg.highendYen)) {
+    /* （再掲）機種ハイエンド。機種販売の行はそのまま数えたうえで、
+     * 再掲として別に1件数える。 */
+    if (cfg.highend && statsIsHighEnd(pt, cfg)) {
       out["highend"] = "（再掲）機種ハイエンド";
     }
     if (pt.deviceName) {
@@ -6337,12 +6349,17 @@
     h += '<div class="plan-sec"><span class="plan-lbl">再掲の項目</span><div class="sub-checks">';
     h += '<label class="check"><input type="checkbox" data-sc-flag="highend"'
       + (sc.highend ? " checked" : "") + "> （再掲）機種ハイエンド</label>";
-    h += '<label class="check">この金額以上 <input type="number" id="scHighendYen" min="0" inputmode="numeric" value="'
+    h += '<label class="check">Android はこの金額以上 <input type="number" id="scHighendYen" min="0" inputmode="numeric" value="'
       + (num(sc.highendYen) || 0) + '"' + (sc.highend ? "" : " hidden") + "> 円</label>";
+    h += '<label class="check">iPhone はこの言葉を含む <input type="text" id="scHighendIpKw" value="'
+      + esc(sc.highendIpKw) + '" placeholder="例）Pro、Air（読点区切り）"' + (sc.highend ? "" : " hidden") + "></label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="u15"'
       + (sc.u15 ? " checked" : "") + "> （再掲）U15（新規・MNPのとき）</label>";
     h += "</div>"
-      + '<p class="hint"><strong>機種ハイエンド</strong>は、端末代金総額がこの金額以上のときに、機種販売とは別に1件数えます。'
+      + '<p class="hint"><strong>機種ハイエンド</strong>は、機種販売とは別に1件数えます。'
+      + '<strong>iPhone</strong>（機種名に iPhone を含むもの）は、上の言葉（Pro・Air）が機種名に入っていればハイエンドです（金額は見ません）。'
+      + '<strong>それ以外（Android）</strong>は、<strong>元値（端末代金総額 − 店頭頭金）</strong>がこの金額以上のときです。'
+      + 'クーポンや店舗独自キャンペーンの値引きは引かずに判定します。'
       + '<strong>U15</strong>は、新規・MNPで<strong>U15のプランを選んだとき</strong>か、手続き内容の'
       + '<strong>「U15（15歳以下）」にチェックしたとき</strong>に数えます。</p></div>';
 
@@ -8113,6 +8130,7 @@
     if (kind === "input") {
       if (t.id === "scDeviceKw") { statsCfg().deviceKw = t.value; markEdited(); return true; }
       if (t.id === "scHighendYen") { statsCfg().highendYen = Math.max(0, num(t.value)); markEdited(); return true; }
+      if (t.id === "scHighendIpKw") { statsCfg().highendIpKw = t.value; markEdited(); return true; }
       return false;
     }
     if (t.hasAttribute("data-sc-proc")) {
@@ -8151,8 +8169,10 @@
     if (t.hasAttribute("data-sc-flag")) {
       statsCfg()[t.getAttribute("data-sc-flag")] = t.checked;
       if (t.getAttribute("data-sc-flag") === "highend") {
-        var hy = $("scHighendYen");
-        if (hy) hy.hidden = !t.checked;
+        ["scHighendYen", "scHighendIpKw"].forEach(function (id9) {
+          var el9 = $(id9);
+          if (el9) el9.hidden = !t.checked;
+        });
       }
       markEdited(); return true;
     }
