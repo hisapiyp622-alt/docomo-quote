@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.88.1";
+  var APP_VERSION = "1.89.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -7284,38 +7284,64 @@
     return (MASTER && Array.isArray(MASTER.devices)) ? MASTER.devices : [];
   }
   /* CSV・TSVを1行1機種で読む。列は「機種名」と「本体価格」があればよい。
-   * 見出し行・「円」・カンマ・全角数字は自動で外す。 */
+   * 見出し行・「円」・カンマ・全角数字は自動で外す。
+   * 1行目が見出しで「頭金」「23回」などの列があれば、それも読む。
+   * 見出しが無いときは、代理店のCSVに在庫数などの数字が入っていることが
+   * あるので、本体価格（最初の数字）だけを読む。 */
+  function devDigits(v) {
+    return String(v).replace(/[，,円\s]/g, "")
+      .replace(/[０-９]/g, function (z) { return String.fromCharCode(z.charCodeAt(0) - 0xFEE0); });
+  }
   function parseDeviceText(text) {
     var out = [], skipped = 0;
+    var head = null;   // 見出しがあれば {price, atamakin, kaedoki23} の列番号
     String(text || "").split(/\r\n|\r|\n/).forEach(function (line, i) {
       if (!line.trim()) return;
       var cols = (line.indexOf("\t") >= 0 ? line.split("\t") : splitCsvLine(line))
         .map(function (c) { return String(c).replace(/^"|"$/g, "").trim(); });
       if (cols.length < 2) { skipped++; return; }
-      // 見出し行は読み飛ばす
-      if (i === 0 && !/\d/.test(cols.join(""))) return;
-      function digits(v) {
-        return String(v).replace(/[，,円\s]/g, "")
-          .replace(/[０-９]/g, function (z) { return String.fromCharCode(z.charCodeAt(0) - 0xFEE0); });
+      // 見出し行は読み飛ばす（どの列が何かはここで覚える）
+      if (i === 0 && !/\d/.test(cols.join("").replace(/23/g, ""))) {
+        head = {};
+        cols.forEach(function (c, j) {
+          if (j === 0) return;
+          if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
+          else if (head.kaedoki23 === undefined && /(23|カエドキ|残価)/.test(c)) head.kaedoki23 = j;
+          else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
+        });
+        return;
       }
       var name = cols[0];
       var price = 0, found = false;
-      for (var j = 1; j < cols.length; j++) {
-        var v = digits(cols[j]);
-        if (!/^\d+$/.test(v)) continue;
-        /* 「145,200」のように、桁区切りのカンマで列が割れている場合をつなぎ直す。
-         * 先頭が1〜3桁で、続く列がちょうど3桁の数字なら同じ金額とみなす。 */
-        while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(digits(cols[j + 1]))) {
-          v += digits(cols[j + 1]);
-          j++;
-        }
-        price = parseInt(v, 10);
+      if (head && head.price !== undefined && /^\d+$/.test(devDigits(cols[head.price] || ""))) {
+        price = parseInt(devDigits(cols[head.price]), 10);
         found = true;
-        break;
+      } else {
+        for (var j = 1; j < cols.length; j++) {
+          var v = devDigits(cols[j]);
+          if (!/^\d+$/.test(v)) continue;
+          /* 「145,200」のように、桁区切りのカンマで列が割れている場合をつなぎ直す。
+           * 先頭が1〜3桁で、続く列がちょうど3桁の数字なら同じ金額とみなす。 */
+          while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
+            v += devDigits(cols[j + 1]);
+            j++;
+          }
+          price = parseInt(v, 10);
+          found = true;
+          break;
+        }
       }
       if (!name || !found) { skipped++; return; }
       if (name.length > 60) name = name.slice(0, 60);
-      out.push({ name: name, price: price });
+      var rec = { name: name, price: price };
+      if (head) {
+        ["atamakin", "kaedoki23"].forEach(function (k) {
+          if (head[k] === undefined) return;
+          var v2 = devDigits(cols[head[k]] || "");
+          if (/^\d+$/.test(v2)) rec[k] = parseInt(v2, 10);
+        });
+      }
+      out.push(rec);
     });
     return { list: out, skipped: skipped };
   }
@@ -7349,12 +7375,14 @@
     if (wrap && tb) {
       wrap.hidden = list.length <= DEV_EDIT_MAX;
       if (!wrap.hidden) {
-        var head = "<tr><th>機種名</th><th>本体価格</th></tr>";
+        var head = "<tr><th>機種名</th><th>本体価格</th><th>店頭頭金</th><th>23回分の総額</th></tr>";
+        function cell9(v) { return "<td>" + (typeof v === "number" ? yen(v) : "－") + "</td>"; }
         var rows = list.slice(0, 8).map(function (d) {
-          return "<tr><td>" + esc(d.name) + "</td><td>" + yen(d.price) + "</td></tr>";
+          return "<tr><td>" + esc(d.name) + "</td><td>" + yen(d.price) + "</td>"
+            + cell9(d.atamakin) + cell9(d.kaedoki23) + "</tr>";
         }).join("");
         if (list.length > 8) {
-          rows += '<tr><td colspan="2">ほか ' + (list.length - 8) + "件</td></tr>";
+          rows += '<tr><td colspan="4">ほか ' + (list.length - 8) + "件</td></tr>";
         }
         tb.innerHTML = head + rows;
       }
@@ -7383,14 +7411,24 @@
     if (add) add.hidden = many;
     if (many) { tb.innerHTML = ""; tb.hidden = true; return; }
     tb.hidden = false;
-    var h = "<tr><th>機種名</th><th>本体代金</th><th></th></tr>";
+    var h = "<tr><th>機種名</th><th>本体代金</th><th>店頭頭金</th>"
+      + "<th>23回分の総額<br><small>（カエドキ）</small></th><th></th></tr>";
     if (!list.length) {
-      h += '<tr class="dev-empty"><td colspan="3">まだ登録がありません。「機種を追加」から入れてください。</td></tr>';
+      h += '<tr class="dev-empty"><td colspan="5">まだ登録がありません。「機種を追加」から入れてください。</td></tr>';
+    }
+    /* 頭金・23回分の総額は、入れたときだけ見積もりに入る。
+     * 空のままなら、機種を選んでもその欄はいまの入力のまま。 */
+    function devCell(d, i, k) {
+      var v = (typeof d[k] === "number") ? d[k] : "";
+      return '<td><input type="number" data-devfield="' + k + '" data-devi="' + i + '"'
+        + ' min="0" inputmode="numeric" placeholder="未設定" value="' + v + '"> 円</td>';
     }
     list.forEach(function (d, i) {
       h += "<tr><td>"
         + '<input type="text" data-devfield="name" data-devi="' + i + '" value="' + esc(d.name || "") + '" placeholder="例) iPhone 17 128GB"></td>'
         + '<td><input type="number" data-devfield="price" data-devi="' + i + '" min="0" inputmode="numeric" value="' + (num(d.price) || 0) + '"> 円</td>'
+        + devCell(d, i, "atamakin")
+        + devCell(d, i, "kaedoki23")
         + '<td class="dev-del"><button class="btn-sub" type="button" data-devdel="' + i + '">削除</button></td></tr>';
     });
     tb.innerHTML = h;
@@ -7498,7 +7536,9 @@
         var list = MASTER.devices || (MASTER.devices = []);
         if (!list[i]) return;
         if (f === "name") list[i].name = t.value;
-        else list[i].price = Math.max(0, num(t.value));
+        else if (f === "price") list[i].price = Math.max(0, num(t.value));
+        else if (String(t.value).trim() === "") delete list[i][f];   // 空欄は「未設定」
+        else list[i][f] = Math.max(0, num(t.value));
         markEdited();
         renderDeviceSelect();
       });
@@ -7539,6 +7579,14 @@
         state.devicePrice = num(d.price);
         $("deviceName").value = state.deviceName;
         $("devicePrice").value = state.devicePrice || "";
+        /* 頭金・23回分の総額は、その機種の条件として入れ直す。
+         * 端末マスタが空のときは既定に戻す（前に選んだ機種の頭金が
+         * そのまま残ると、別の機種の金額として出てしまうため）。 */
+        state.atamakin = (typeof d.atamakin === "number") ? num(d.atamakin)
+          : (autoFeeProc(state.procType) ? num(MASTER.fees.atamakin_default) : 0);
+        $("atamakin").value = state.atamakin || "";
+        state.kaedoki23 = (typeof d.kaedoki23 === "number") ? num(d.kaedoki23) : 0;
+        $("kaedoki23").value = state.kaedoki23 || "";
         saveState();
         recalc();
       });

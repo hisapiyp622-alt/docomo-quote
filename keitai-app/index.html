@@ -826,13 +826,13 @@
         <button class="btn-sub" id="devMasterClear" type="button">端末マスタを削除</button>
       </div>
       <div id="devMasterPasteWrap" hidden>
-        <textarea id="devMasterBox" class="export-box" placeholder="機種名,本体価格&#10;iPhone 17 128GB,145200&#10;Galaxy S26,132000&#10;&#10;※ Excel・スプレッドシートからそのままコピーして貼り付けられます"></textarea>
+        <textarea id="devMasterBox" class="export-box" placeholder="機種名,本体価格,頭金,23回分の総額&#10;iPhone 17 128GB,145200,0,96800&#10;Galaxy S26,132000,0,88000&#10;&#10;※ 頭金と23回分の総額は無くても構いません&#10;※ Excel・スプレッドシートからそのままコピーして貼り付けられます"></textarea>
         <div class="actions">
           <button class="btn-main" id="devMasterGo" type="button">この内容で取り込む</button>
           <button class="btn-sub" id="devMasterCancel" type="button">キャンセル</button>
         </div>
       </div>
-      <p class="hint">1行1機種で、<strong>機種名と本体価格</strong>の2列があれば取り込めます（カンマ区切り・タブ区切りのどちらでも可）。1行目が「機種名,本体価格」などの見出しでも大丈夫です。価格の「円」やカンマは自動で外します。</p>
+      <p class="hint">1行1機種で、<strong>機種名と本体価格</strong>の2列があれば取り込めます（カンマ区切り・タブ区切りのどちらでも可）。1行目に<strong>「機種名,本体価格,頭金,23回分の総額」</strong>のような見出しを付けておくと、<strong>頭金と23回分の総額も一緒に</strong>読み込みます。価格の「円」やカンマは自動で外します。</p>
       <div id="devMasterPreview" hidden>
         <table class="stats-table" id="devMasterTable"><!-- JSで生成 --></table>
       </div>
@@ -840,8 +840,9 @@
 
       <div id="devMasterEdit">
         <h3>よく出る機種を登録する</h3>
-        <p class="hint">商品マスタを丸ごと取り込まなくても、<strong>よくご案内する機種だけ</strong>をここに登録できます。見積もりの「機種を選ぶ」から選ぶと<strong>本体代金が自動で入ります</strong>。価格が変わったら、この金額を直すだけです。</p>
-        <table class="stats-table dev-edit" id="devMasterEditTable"><!-- JSで生成 --></table>
+        <p class="hint">商品マスタを丸ごと取り込まなくても、<strong>よくご案内する機種だけ</strong>をここに登録できます。見積もりの「機種を選ぶ」から選ぶと<strong>本体代金・店頭頭金・23回分の総額が自動で入ります</strong>。価格が変わったら、この金額を直すだけです。</p>
+        <div class="stats-scroll"><table class="stats-table dev-edit" id="devMasterEditTable"><!-- JSで生成 --></table></div>
+        <p class="hint"><strong>店頭頭金</strong>と<strong>23回分の総額（カエドキ）</strong>は、入れておくと機種を選んだときに一緒に入ります。空のままにした機種を選んだときは、頭金は既定の金額に、23回分は0円に戻ります（前に選んだ機種の金額が残らないようにするためです）。</p>
         <p class="hint" id="devMasterEditNote" hidden></p>
         <div class="actions">
           <button class="btn-sub" id="devMasterAdd" type="button">機種を追加</button>
