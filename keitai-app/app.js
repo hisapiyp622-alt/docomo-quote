@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.85.1";
+  var APP_VERSION = "1.86.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -743,7 +743,14 @@
    * チェックが入っているときだけにする。手続きの種類（新規・機種変更など）は問わない
    * （店舗の指定・2026-08-10）。提案はこれまでどおり、選んだ時点で数える。 */
   var PLAN_WON_NEEDS_CHANGE = { max: true, poikatsu_max: true };
-  function statsPatternItems(ptRaw, won) {
+  /* ご来店の目的は「1商談に1つ」なので、回線1（patterns[0]）のものを使う。
+   * 古い保存はパターンごとに入っていることがあるので、回線1が空なら
+   * そのパターン自身のものを見る。 */
+  function visitStateOf(d, pt) {
+    var p0 = ((d && d.patterns) || [])[0];
+    return (p0 && visitKeys(p0).length) ? p0 : pt;
+  }
+  function statsPatternItems(ptRaw, won, vpSt) {
     var pt = Object.assign(defaultState(), ptRaw || {});
     var cfg = statsCfg();
     var out = {};
@@ -753,7 +760,7 @@
     });
     /* 来店目的そのものは項目別に混ぜない（「何を成約したか」の一覧ではないため）。
      * 目的ごとの応対数は「来店目的別」の表で見る（店舗の指定・2026-08-10）。 */
-    var vks = visitKeys(pt);
+    var vks = visitKeys(vpSt || pt);
     /* 買い増し: 端末購入以外のご用件で来店されて機種変更が入った場合と、
      * 端末購入で来店されて「買い増しあり」にチェックした場合。
      * 機種変更の実績はそのまま数え、これは再掲として別に数える。 */
@@ -862,7 +869,8 @@
     /* 手続き内容だけを入れた（金額を触っていない）成約は、
      * 上の判定では拾えないので、開いていたパターンを1つ数える。 */
     if (won && !used.length && pats.length) used = [(d.active | 0)];
-    used.forEach(function (i) { add(statsPatternItems(pats[i], won)); });
+    var vpSt = visitStateOf(d, null);
+    used.forEach(function (i) { add(statsPatternItems(pats[i], won, vpSt || pats[i])); });
 
     var ie = d && d.ienaka;
     if (ie && ie.enabled && ie.product && statsCfg().hikari) {
@@ -1082,8 +1090,11 @@
         var decMatch = (sFil === "all" || decider === sFil);   // 成約を決めた担当
         if (!ownMatch && !decMatch) return;
 
-        var pt0 = (((it.data || {}).patterns) || [])[((it.data || {}).active | 0)] || {};
+        /* ご来店の目的は1商談に1つ。回線1（patterns[0]）に入っている。 */
+        var pats0 = ((it.data || {}).patterns) || [];
+        var pt0 = pats0[0] || pats0[((it.data || {}).active | 0)] || {};
         var vks = visitKeys(pt0);
+        if (!vks.length) vks = visitKeys(pats0[((it.data || {}).active | 0)] || {});
         if (!vks.length) vks = ["_none"];
         var wonI = it.result === "won" ? statsSavedItems(it, true) : null;
         var dt = new Date(it.savedAt || 0);
@@ -4774,11 +4785,24 @@
   function renderVisitPurpose() {
     var f = $("kaimashiField"), n = $("kaimashiNote");
     if (!f || !n) return;
-    var v = state.visitPurposes || {};
+    /* ご来店の目的は1商談に1つなので、回線1（patterns[0]）に持つ。
+     * 回線2・3ではチェック欄を出さず、回線1の内容を文で出す。 */
+    var vst = store.patterns[0] || state;
+    var v = visitPurposesOf(vst);
     document.querySelectorAll("[data-visit]").forEach(function (cb) {
       cb.checked = !!v[cb.getAttribute("data-visit")];
     });
-    var vks = visitKeys(state);
+    var vks = visitKeys(vst);
+    var onL1 = (store.active | 0) === 0;
+    var chk = $("visitChecks"), n1 = $("visitOnLine1");
+    if (chk) chk.hidden = !onL1;
+    if (n1) {
+      n1.hidden = onL1;
+      n1.innerHTML = "ご来店の目的は<b>回線1</b>でまとめて入力します。"
+        + (vks.length
+            ? "（回線1：" + esc(vks.map(function (k) { return VISIT_NAMES[k]; }).join("・")) + "）"
+            : "（回線1でまだ選んでいません）");
+    }
     var buy = vks.indexOf("buy") >= 0;
     f.hidden = !buy;
     $("kaimashi").checked = !!state.kaimashi;
@@ -5597,7 +5621,7 @@
     ["kishu", "shinki", "mnp", "plan"].forEach(function (k) {
       if ((state.procTodo || {})[k]) procs.push(PROC_LABEL[k]);
     });
-    var vkS = visitKeys(state);
+    var vkS = visitKeys(store.patterns[0] || state);   // 目的は回線1に持つ
     if (vkS.length) {
       anyTodo = true;
       var buyS = vkS.indexOf("buy") >= 0;
@@ -8092,6 +8116,8 @@
     $("copyPattern").addEventListener("click", function () {
       var next = (store.active + 1) % 3;
       store.patterns[next] = JSON.parse(JSON.stringify(state));
+      store.patterns[next].visitPurposes = {};   // 目的は回線1のものだけ
+      delete store.patterns[next].visitPurpose;
       switchPattern(next);
     });
     $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
@@ -8374,10 +8400,13 @@
     });
     document.querySelectorAll("[data-visit]").forEach(function (cb) {
       cb.addEventListener("change", function () {
-        if (!state.visitPurposes) state.visitPurposes = {};
+        var vst = store.patterns[0] || state;   // 目的は回線1に持つ
+        if (!vst.visitPurposes) vst.visitPurposes = {};
         var k = cb.getAttribute("data-visit");
-        if (cb.checked) state.visitPurposes[k] = true; else delete state.visitPurposes[k];
-        if (visitKeys(state).indexOf("buy") < 0) state.kaimashi = false;
+        if (cb.checked) vst.visitPurposes[k] = true; else delete vst.visitPurposes[k];
+        if (visitKeys(vst).indexOf("buy") < 0) {
+          store.patterns.forEach(function (pt) { pt.kaimashi = false; });
+        }
         renderVisitPurpose();
         recalc();
       });
