@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.90.1";
+  var APP_VERSION = "1.91.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1549,16 +1549,53 @@
       }
     }
 
-    /* ---- 来店目的ごとの応対 ---- */
+    /* 成約の内訳を「機種変更 3・dカード GOLD 1」の形にする。
+     * 来店目的ごとの表と、日別の表の両方で使う。 */
+    var dCat = statsCatalog();
+    function dItemName(k) { return (items[k] && items[k].name) || dCat[k] || k; }
+    function dItemText(bag) {
+      var ks = Object.keys(bag || {});
+      if (!ks.length) return "";
+      ks.sort(function (x, y) {
+        return (rank(x) - rank(y)) || (bag[y] - bag[x])
+          || (dItemName(x) < dItemName(y) ? -1 : 1);
+      });
+      return ks.map(function (k) {
+        return dItemName(k) + (bag[k] > 1 ? " " + bag[k] : "");
+      }).join("・");
+    }
+
+    /* ---- 来店目的ごとの応対と、そこから決まったもの ----
+     * 「操作で12件応対して、そこから機種変更が3件」を1行で読めるようにする
+     * （店舗の指定・2026-08-11）。 */
     var vpKeys = VISIT_ORDER.filter(function (k) { return vpAgg[k]; });
     if (vpAgg["_none"]) vpKeys.push("_none");
+    var vpItemBag = {};   // 目的 -> {項目キー: 成約件数}
+    iKeys.forEach(function (k) {
+      var bv = (items[k] || {}).byVisit || {};
+      Object.keys(bv).forEach(function (vk) {
+        if (!vpItemBag[vk]) vpItemBag[vk] = {};
+        vpItemBag[vk][k] = (vpItemBag[vk][k] || 0) + bv[vk];
+      });
+    });
+    var vpRows = [];
     if (statsCfg().visit && vpKeys.length) {
       h += "<h3>ご来店の目的</h3>";
-      h += '<div class="stats-scroll"><table class="stats-table"><tr><th>目的</th><th>応対</th><th>成約</th></tr>';
+      h += '<div class="stats-scroll"><table class="stats-table"><tr><th>目的</th><th>応対</th>'
+        + "<th>成約</th><th>成約率</th><th>成約した内容</th></tr>";
       vpKeys.forEach(function (k) {
-        h += "<tr><td>" + esc(vName(k)) + "</td><td>" + vpAgg[k].prop + "</td><td>" + vpAgg[k].won + "</td></tr>";
+        var pr = vpAgg[k].prop, wn = vpAgg[k].won;
+        var rate = pr ? Math.round(wn * 100 / pr) + "%" : "－";
+        var txt = dItemText(vpItemBag[k]);
+        vpRows.push({ name: vName(k), prop: pr, won: wn, rate: rate, items: txt });
+        h += "<tr><td>" + esc(vName(k)) + "</td><td>" + pr + "</td><td>" + wn + "</td>"
+          + "<td>" + rate + "</td>"
+          + '<td class="day-items">' + (txt ? esc(txt) : "－") + "</td></tr>";
       });
       h += "</table></div>";
+      h += '<p class="hint"><strong>応対</strong>はその目的で来店されたお客様の数、'
+        + "<strong>成約</strong>はそのうち成約になった数です。"
+        + "目的を2つ以上選んだ応対は、それぞれの行に数えます。</p>";
     }
 
     /* ---- 日別（折りたたみ）----
@@ -1568,20 +1605,6 @@
     if (mFil !== "all") {
       var dKeys = Object.keys(byDay).sort();
       var DOW = ["日", "月", "火", "水", "木", "金", "土"];
-      var dCat = statsCatalog();
-      function dItemName(k) { return (items[k] && items[k].name) || dCat[k] || k; }
-      // その日の成約内訳を「機種変更 3・dカード GOLD 1」の形に
-      function dItemText(bag) {
-        var ks = Object.keys(bag || {});
-        if (!ks.length) return "";
-        ks.sort(function (x, y) {
-          return (rank(x) - rank(y)) || (bag[y] - bag[x])
-            || (dItemName(x) < dItemName(y) ? -1 : 1);
-        });
-        return ks.map(function (k) {
-          return dItemName(k) + (bag[k] > 1 ? " " + bag[k] : "");
-        }).join("・");
-      }
       var dTot = { prop: 0, won: 0 };
       var dHtml = "";
       dKeys.forEach(function (k5) {
@@ -1679,9 +1702,7 @@
     statsLast = {
       month: mFil, staffName: sName, admin: admin,
       items: items, iKeys: iKeys, vCols: vCols, vName: vName,
-      visits: vpKeys.map(function (k) {
-        return { name: vName(k), prop: vpAgg[k].prop, won: vpAgg[k].won };
-      }),
+      visits: vpRows,
       days: dayRows,
       staff: config.staff.filter(function (s) { return sFil === "all" || s.id === sFil; }).map(function (s) {
         var a5 = staffAgg[s.id] || { prop: 0, won: 0, undone: 0 };
@@ -1718,9 +1739,9 @@
     if (L.visits && L.visits.length) {
       lines.push("");
       lines.push("ご来店の目的");
-      lines.push("目的,応対,成約");
+      lines.push("目的,応対,成約,成約率,成約した内容");
       L.visits.forEach(function (v2) {
-        lines.push([v2.name, v2.prop, v2.won].map(csvCell).join(","));
+        lines.push([v2.name, v2.prop, v2.won, v2.rate, v2.items || ""].map(csvCell).join(","));
       });
     }
     if (L.days && L.days.length) {
