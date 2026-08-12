@@ -121,6 +121,7 @@
             <option value="andline">andline</option>
           </select>
         </div>
+        <label class="check" id="visitWrap" hidden><input type="checkbox" id="visit"> 訪問設定サポートを希望（@niftyフォローコールで日程を調整）</label>
         <div class="field" id="providerTypeField" hidden>
           <label for="providerType">プロバイダの扱い</label>
           <select id="providerType">
@@ -333,6 +334,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="../keitai-app/qr.js"></script>
 <script src="app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

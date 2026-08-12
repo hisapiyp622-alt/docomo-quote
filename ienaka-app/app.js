@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.3.0";
+  var APP_VERSION = "2.4.0";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -841,6 +841,9 @@
      * 申込区分によらず、プロバイダを選んだら聞く。 */
     var ptOn = !$("providerField").hidden && !!state.provider;
     $("providerTypeField").hidden = !ptOn;
+    // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す
+    $("visitWrap").hidden = $("providerField").hidden || state.provider !== "@nifty";
+    $("visit").checked = !!state.visitSupport;
     if (!ptOn && state.providerType !== "shinki") state.providerType = "shinki";
     $("providerType").value = state.providerType || "shinki";
     // プロバイダ無料無線ルーターレンタルは1ギガのみ（10ギガは対象プロバイダなし・別途購入）
@@ -1340,6 +1343,57 @@
   }
 
   /* ---------- 登録スタッフ引き継ぎシート ---------- */
+  /* 手続きに要るページのQR。図形は ../keitai-app/qr.js に持っているので、
+   * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。
+   * どのQRを出すかの決まりはミツモリンと同じ。直すときは両方に。
+   *   toss        … ドコモ光のとき（工事日を確定させるのに毎回入力が要る）
+   *   router1g:*  … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
+   *   niftyFollow … ドコモ光×@niftyのとき（フォローコールを光と同時に申込できる）
+   *   router10g:* … 10ギガでルーターを買っていただくとき（プロバイダごと）
+   * GMOとくとくBBは、IDとパスワードが届いてからお客様ご自身でのお申し込みに
+   * なるため、QRを持たない。申込区分（新規・転用・事業者変更）では変わらない。 */
+  var ROUTER_QR = {
+    "OCN インターネット": "router1gOcn",
+    "@nifty": "router1gNifty",
+    "andline": "router1gAndline"
+  };
+  var ROUTER10G_QR = {
+    "OCN インターネット": "router10gOcn",
+    "@nifty": "router10gNifty"
+  };
+  function isDocomoHikari() {
+    return state.product === "hikari1g" || state.product === "hikari10g";
+  }
+  function qrCardsHtml() {
+    if (typeof KEITAI_QR === "undefined") return "";
+    var keys = [];
+    if (isDocomoHikari()) keys.push("toss");
+    if (state.product === "hikari1g" && state.routerRental !== "nashi" && ROUTER_QR[state.provider]) {
+      keys.push(ROUTER_QR[state.provider]);
+    }
+    if (isDocomoHikari() && state.provider === "@nifty") keys.push("niftyFollow");
+    if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0
+      && ROUTER10G_QR[state.provider]) {
+      keys.push(ROUTER10G_QR[state.provider]);
+    }
+    /* スカパーが絡む受付では、申込フォームのQRを出す */
+    var opts = state.opts || {};
+    var skySvc = !!(opts.skyp && (opts.vsSkyBase || opts.vsSkyBasic || opts.vsSelect5 || opts.vsSelect10));
+    var skyKoji = !!(opts.tv && state.product !== "home5g" && state.applyType === "shinki"
+      && (state.tvKoji || "sky").indexOf("sky") === 0);
+    if (skySvc || skyKoji) keys.push("skyperForm");
+    return keys.map(function (k) {
+      var q = KEITAI_QR[k];
+      if (!q) return "";
+      return '<span style="display:inline-block;vertical-align:top;text-align:center;margin-right:12px">'
+        + '<a href="' + esc(q.url) + '" target="_blank" rel="noopener"'
+        + ' style="width:28mm;height:28mm;display:block;border:1px solid #ddd">'
+        + q.svg + "</a>"
+        + '<span style="display:block;width:28mm;margin-top:2px;font-size:.8em;line-height:1.25">'
+        + esc(q.label) + "</span></span>";
+    }).join("");
+  }
+
   function renderStaffSheet() {
     var r = calc();
     var p = PRODUCTS[state.product];
@@ -1371,7 +1425,9 @@
         if (state.provider) {
           pvNote = "（" + (state.providerType === "keizoku" ? "<b>継続</b>" : "新規") + "・タイプ" + esc(state.ptype) + "）";
         }
-        h += row("プロバイダ", (state.provider ? "<b>" + esc(state.provider) + "</b>" : "（未定）") + pvNote);
+        h += row("プロバイダ", (state.provider
+          ? "<b>" + esc(state.provider) + "</b>"
+          : '<b style="color:#C62828">未選択</b>　※ 申込ページのQRは、プロバイダを選ぶと出ます') + pvNote);
       }
       if (state.product === "hikari1g") {
         h += row("プロバイダ無料無線ルーターレンタル", state.routerRental === "nashi" ? "なし" : "<b>あり</b>（無料レンタル利用）");
@@ -1383,6 +1439,8 @@
     }
     h += row("月額基本料", yen(num(state.baseMonthly)));
     if (is10g() && state.onecoin) h += row("ワンコインキャンペーン", "適用（開通〜6か月目 基本料500円）");
+    var qrCards = qrCardsHtml();
+    if (qrCards) h += row("QR（スマホで読み取り）", qrCards);
     h += "</tbody></table>";
 
     h += "<h3>お申込みオプション</h3><table><tbody>";
@@ -1521,6 +1579,7 @@
     if (canBuy10gRouter()) applyRouter10gDefault();
     syncForm(); recalc();
   });
+  $("visit").addEventListener("change", function () { state.visitSupport = this.checked; recalc(); });
   $("providerType").addEventListener("change", function () { state.providerType = this.value; recalc(); });
   $("routerRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
