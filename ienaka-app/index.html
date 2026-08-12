@@ -25,6 +25,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="quote" type="button">見積もり</button>
     <button class="tab" data-tab="sheet" type="button">見積書</button>
+    <button class="tab" data-tab="flow" type="button">開通の流れ</button>
     <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
     <button class="tab" data-tab="config" type="button">設定</button>
   </nav>
@@ -35,7 +36,48 @@
     <div class="qcols">
       <div class="qcol">
 <div class="step">
-      <h2 data-t="商材">① 商材</h2>
+      <h2 data-t="現在の固定回線（ヒアリング）">① 現在の固定回線（ヒアリング）</h2>
+      <div class="ie-cur" id="ieCurCard">
+        <div class="field">
+          <label for="ieCurLine">ネット</label>
+          <select id="ieCurLine"><!-- JSで生成 --></select>
+        </div>
+        <div class="field" id="ieCurLineOtherField" hidden>
+          <label for="ieCurLineOther">回線名（その他）</label>
+          <input type="text" id="ieCurLineOther" maxlength="30" placeholder="例：○○光">
+        </div>
+        <p class="hint" id="ieCurLineHint" hidden></p>
+        <div class="field">
+          <label for="ieCurPhone">固定電話</label>
+          <select id="ieCurPhone">
+            <option value="">（未ヒアリング）</option>
+            <option value="set">回線とセット（あり）</option>
+            <option value="analog">アナログ電話（NTT加入電話）</option>
+            <option value="none">なし</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ieCurTv">テレビ</label>
+          <select id="ieCurTv">
+            <option value="">（未ヒアリング）</option>
+            <option value="yes">あり（回線でご視聴）</option>
+            <option value="no">なし（アンテナで視聴）</option>
+          </select>
+        </div>
+        <div class="sub-checks" id="ieCurTvBands" hidden>
+          <span class="sub-label">ご視聴</span>
+          <label class="check"><input type="checkbox" id="ieCurTvDigi"> 地デジ</label>
+          <label class="check"><input type="checkbox" id="ieCurTvBs"> BS</label>
+          <label class="check"><input type="checkbox" id="ieCurTvCs"> CS</label>
+        </div>
+        <label class="check" id="ieCurTvKeepField" hidden>
+          <input type="checkbox" id="ieCurTvKeep"> J:COMのテレビを残してご契約（解約はネットのみ）
+        </label>
+        <p class="hint" id="ieCurTvKeepHint" hidden></p>
+      </div>
+</div>
+<div class="step">
+      <h2 data-t="商材">② 商材</h2>
       <div class="field">
         <label for="product">商材</label>
         <select id="product">
@@ -222,6 +264,14 @@
     <div class="actions no-print">
       <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
       <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <section id="tab-flow" class="tab-page">
+    <div class="sheet" id="flowBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printFlowBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuoteFlow" type="button">見積もりに戻る</button>
     </div>
   </section>
 
