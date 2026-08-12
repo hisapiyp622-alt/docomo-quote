@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.92.1";
+  var APP_VERSION = "1.93.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -850,8 +850,13 @@
       }
     }
     if (pt.todoGas && cfg.gas !== "off") out["gas"] = "ドコモガス";
+    /* ドコモ MAX・ポイ活 MAX の「選べる特典」（対象サービスから毎月2つ無料）で
+     * 無料になっているものは、お客様のご負担が無く獲得ではないため数えない。
+     * 3つ目以降（通常料金でお支払いいただくもの）はこれまでどおり数える
+     * （店舗の指定・2026-08-11）。 */
+    var bonusFree = maxBonusFree(pt, pt.planId);
     Object.keys(pt.options || {}).forEach(function (id) {
-      if (!pt.options[id] || cfg.optSkip[id]) return;
+      if (!pt.options[id] || cfg.optSkip[id] || bonusFree[id]) return;
       var kb2 = (pt.optionKubun || {})[id];
       if (kb2 === "keep") return; // 継続は提案に数えない
       var def = MASTER.options.filter(function (o) { return o.id === id; })[0];
