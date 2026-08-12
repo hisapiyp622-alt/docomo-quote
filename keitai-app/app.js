@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.93.0";
+  var APP_VERSION = "1.93.1";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -6067,9 +6067,13 @@
             return esc(x.name) + "（" + yen(x.amount) + "）";
           }).join("　／　")
         : "なし");
-      if (KQ_IENAKA.isHikari() && store.ienaka.provider) {
-        h += row("プロバイダ", esc(store.ienaka.provider)
-          + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）");
+      /* プロバイダは、選ばれていないときも行を出す。
+       * 選ばないとルーター申込・フォローコールのQRが出ないため、
+       * 出ていない理由がその場で分かるようにする（店頭の指摘・2026-08-11）。 */
+      if (KQ_IENAKA.isHikari()) {
+        h += row("プロバイダ", store.ienaka.provider
+          ? esc(store.ienaka.provider) + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）"
+          : '<b style="color:var(--red)">未選択</b>　※ 申込ページのQRは、プロバイダを選ぶと出ます');
       }
       // 無料レンタルでも申し込みの手続きが要るため、あり/なしを必ず出す
       var rr = KQ_IENAKA.routerRental();
