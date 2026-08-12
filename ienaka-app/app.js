@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.2.2";
+  var APP_VERSION = "2.3.0";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -115,7 +115,13 @@
       denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780, router10gPay: "once",
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
-      dpoint: 20000, custName: "", staffName: "", quoteMemo: ""
+      dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
+      visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
+      curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング）
+      /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
+       * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
+      curPhone: "", curTv: "", curTvDigi: false, curTvBs: false, curTvCs: false, curTvKeep: false,
+      flowDates: {}                    // 開通までの流れ（1枚）の予定日メモ {工程番号: 文字}
     };
   }
   /* ---------- 店舗設定・担当者 ----------
@@ -389,6 +395,306 @@
       initRows: initRows, initial: Math.max(0, initial)
     };
   }
+  /* ---------- 現在お使いの回線（ヒアリング） ----------
+   * 将来の「奪還比較ツール」への入口として、どの回線から乗り換えるかを記録する。
+   * 開通までの流れに解約のご案内を出すのにも使う。
+   * tel は一次情報で確認できたものだけ載せる（誤った番号のご案内は事故になるため。
+   * 確認でき次第、ここに追加する）。 */
+  var CUR_LINES = [
+    { id: "", name: "（未ヒアリング）" },
+    { id: "none", name: "利用なし（固定回線なし）" },
+    { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
+    { id: "eo", name: "eo光", tel: "0120-919-151", telNote: "eoサポートダイヤル" },
+    { id: "nuro", name: "NURO光" },
+    /* jgTel は事業者変更承諾番号の専用窓口。解約の窓口（tel）とは別 */
+    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料",
+      jgTel: "0800-111-6710", jgTelNote: "事業者変更承諾番号 専用窓口" },
+    { id: "biglobe", name: "BIGLOBE光", tel: "0120-86-0962", telNote: "ビッグローブ カスタマーサポート" },
+    { id: "ocn", name: "OCN光", tel: "0120-506-506", telNote: "OCNカスタマーズフロント・日祝は休み" },
+    { id: "collabo", name: "その他コラボ光（So-net光・@nifty光 など）" },
+    { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
+    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
+    { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
+    { id: "rakuten", name: "楽天ひかり" },
+    { id: "cable", name: "ケーブルテレビのネット" },
+    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
+    { id: "other", name: "その他" }
+  ];
+  var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
+  /* ヒアリング内容を1行にまとめる（引き継ぎシート用） */
+  function curHearingText() {
+    if (!state) return "";
+    var a2 = [];
+    if (state.curLine) a2.push("ネット: " + curLineLabel());
+    if (state.curPhone) a2.push("電話: " + (CUR_PHONE_NAMES[state.curPhone] || state.curPhone));
+    if (state.curTv) {
+      var tv = state.curTv === "yes" ? "あり" : "なし（アンテナ）";
+      if (state.curTv === "yes") {
+        var b2 = [];
+        if (state.curTvDigi) b2.push("地デジ");
+        if (state.curTvBs) b2.push("BS");
+        if (state.curTvCs) b2.push("CS");
+        if (b2.length) tv += "（" + b2.join("・") + "）";
+      }
+      a2.push("テレビ: " + tv);
+    }
+    if (state.curTvKeep) a2.push("J:COMのテレビを残す（解約はネットのみ）");
+    return a2.join(" ／ ");
+  }
+  function curLineDef() {
+    if (!state.curLine) return null;
+    return CUR_LINES.filter(function (c) { return c.id === state.curLine; })[0] || null;
+  }
+  function curLineLabel() {
+    var d = curLineDef();
+    if (!d) return "";
+    return d.id === "other" ? (state.curLineOther || "その他") : d.name;
+  }
+
+  /* ---------- 開通までの流れ（見積書のお客様説明用） ----------
+   * 商材と申込区分で工程が変わる。日数は「目安」として書く
+   * （工事の混み具合・地域で前後するため、断定しない）。 */
+  /* 流れの中身。見積書の下の枠と、A4・1枚もの（flowSheetHtml）で共用する */
+  function flowData(r) {
+    var steps = [];
+    function step(t, d, icon, when) { steps.push({ t: t, d: d || "", icon: icon || "", when: when || "", notes: [] }); }
+    /* 注意事項は末尾にまとめず、関係する工程の中に書く（店舗の指定・2026-08-09）。
+     * match は工程名の一部。見つからないときは最後の工程に付ける。 */
+    function noteTo(match, text) {
+      for (var i = steps.length - 1; i >= 0; i--) {
+        if (steps[i].t.indexOf(match) >= 0) { steps[i].notes.push(text); return; }
+      }
+      if (steps.length) steps[steps.length - 1].notes.push(text);
+    }
+    if (state.product === "home5g") {
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
+      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug", "本日から");
+    } else if (state.applyType === "shinki") {
+      /* 公式の「新規ご契約までの流れ」STEP1〜5 に合わせた5工程
+       * （出典: docomo.ne.jp ドコモ光お申込みページ・2026-08-07確認） */
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc", "7〜10日後");
+      // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
+      if (state.provider === "@nifty" && state.visitSupport) {
+        step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
+      }
+      /* 工事の前にルーターを手元にそろえておく工程。
+       * レンタルまたは購入があるときだけ出す（お手持ちの持ち込みのときは出さない） */
+      var rentalS = (state.product === "hikari1g" && state.routerRental !== "nashi")
+        || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
+      if (rentalS) {
+        step("ルーターのお受け取り", "レンタルの無線ルーターが、プロバイダから郵送で届きます。工事の日まで大切に保管してください", "box", "工事日まで");
+      } else if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
+        step("ルーターのご準備", "ご購入の10ギガ対応ルーターを、工事の日までにご用意ください", "box", "工事日まで");
+      }
+      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools", "2週間〜1か月後");
+      step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router", "工事の当日");
+      step("ご利用開始", "", "start", "工事の当日から");
+      if (r.tvOn) noteTo("開通工事", "テレビオプションの接続工事は、開通工事と同じ日に行います");
+      if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
+        noteTo("ルーターなど", "ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
+      }
+    } else {
+      /* 事業者変更は「事業者変更承諾番号」が要る。
+       * ドコモ光側はダミーの番号で先に登録できる（お客様には開示しない）ため、
+       * 「お申込み → 承諾番号の取得 → ドコモ光サービスセンターへご連絡」で回せる。
+       * 番号の取り方は事業者で違うので、そこだけ分ける（店舗の指定・2026-08-09）。 */
+      var jgLine = curLineDef();
+      var jg = state.applyType === "jigyosha" ? ((jgLine && jgLine.id) || "") : "";
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      if (jg) {
+        if (jg === "ocn") {
+          // OCNはその場でお電話して承諾番号を受け取れる
+          step("事業者変更承諾番号の取得（OCNへお電話）",
+            "店頭でOCNへお電話し、事業者変更承諾番号をお受け取りいただきます", "phone", "本日・店頭");
+          noteTo("承諾番号の取得", "OCNのご連絡先: 0120-506-506（OCNカスタマーズフロント）");
+          noteTo("承諾番号の取得", "**日曜・祝日はお電話がつながりません。**その場合は後日、お客様からお電話いただき、承諾番号を店舗へお知らせください");
+        } else if (jg === "biglobe") {
+          /* BIGLOBEは「折り返しのお電話の日程を予約 → その日のお電話で承諾番号の
+           * 発行手続き → 後日お手元に届く」の順。 */
+          step("BIGLOBEからのお電話のご予約",
+            "店頭でお時間があれば、BIGLOBEへお電話し、BIGLOBEから折り返しお電話がかかってくる日程をこの場でお取りします", "phone", "本日・店頭");
+          noteTo("ご予約", "BIGLOBEのご連絡先: 0120-86-0962（ビッグローブ カスタマーサポート）");
+          noteTo("ご予約", "店頭でお時間がないときは、後日お客様からお電話いただいてご予約ください");
+          step("BIGLOBEからのお電話で承諾番号のお手続き",
+            "ご予約の日にBIGLOBEからお電話があります。そこで事業者変更承諾番号の発行手続きをしていただきます", "phone", "ご予約の日");
+          noteTo("承諾番号のお手続き", "承諾番号は、このお電話のあと**後日お手元に届きます**（その場では分かりません）");
+        } else {
+          step("事業者変更承諾番号の取得（いまのご契約先へお電話）",
+            "いまご契約の事業者へお電話し、事業者変更承諾番号をお受け取りください", "phone", "本日・店頭");
+          /* 承諾番号の専用窓口が分かっていればそちらを、無ければ契約先の窓口を出す */
+          var jgT = jgLine && (jgLine.jgTel || jgLine.tel);
+          var jgN = jgLine && (jgLine.jgTel ? jgLine.jgTelNote : jgLine.telNote);
+          noteTo("承諾番号の取得", jgT
+            ? (jgLine.jgTel ? "承諾番号のご連絡先: " : "いまのご契約先: ")
+              + jgLine.name + " " + jgT + (jgN ? "（" + jgN + "）" : "")
+            : "ご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください");
+        }
+        step("承諾番号をドコモ光サービスセンターへご連絡",
+          "承諾番号を受け取ったら、ドコモ光サービスセンターへお伝えいただくと切替日が確定します", "phone", "承諾番号のお受け取り後");
+        noteTo("ドコモ光サービスセンター", "ドコモ光サービスセンター: 0120-766-156（ドコモのケータイからは **15715**）");
+        noteTo("ドコモ光サービスセンター", "**承諾番号には有効期限があります。**受け取ったらお早めにご連絡ください");
+      }
+      step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc", "数日〜1週間後");
+      // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
+      if (state.provider === "@nifty" && state.visitSupport) {
+        step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
+      }
+      // レンタルがあるときは、切替日の前にルーターを受け取っておく工程を入れる
+      var rentalT = (state.product === "hikari1g" && state.routerRental !== "nashi")
+        || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
+      if (rentalT) {
+        step("ルーターのお受け取り", "レンタルの無線ルーターが、プロバイダから郵送で届きます。切替日まで大切に保管してください", "box", "切替日まで");
+      }
+      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です", "switchi", "1〜2週間後");
+      step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください", "router", "切替日の当日");
+      step("ご利用開始", "", "start", "切替日の当日から");
+    }
+    /* レンタルルーターの到着案内は、新規・転用・事業者変更とも
+     * 「ルーターのお受け取り」の工程として流れに入れたので、注記は無し */
+    if (isHikari() && state.provider === "@nifty") {
+      if (state.visitSupport) {
+        // 訪問設定サポートを希望した場合は、設定の工程に「訪問が来る」ことを書く
+        noteTo("ルーターなど", "@niftyの訪問設定サポートのスタッフがご自宅へ伺い、"
+          + "ルーターの接続・設定を行います（日程は事前のお電話で調整します）");
+      } else {
+        noteTo("ルーターなど", "設定でお困りのときは、@niftyのフォローコール（電話サポート）でご相談いただけます");
+      }
+    }
+    // いまの回線の解約。転用・事業者変更は解約が不要なので、案内だけ変える
+    var cl = curLineDef();
+    if (cl && cl.id !== "none") {
+      if (state.product === "home5g" || state.applyType === "shinki") {
+        var jcKeep = cl.id === "jcom" && state.curTvKeep;
+        step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "**（ネットのみ）**" : ""),
+          "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
+        noteTo("の解約", cl.tel
+          ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
+          : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
+        /* J:COMはテレビ・お電話を残したままネットだけ乗り換えるご案内がある。
+         * まとめて解約されると事故になるため、連絡時の言い方を必ず載せる。 */
+        if (cl.id === "jcom") {
+          noteTo("の解約", "J:COMへのご連絡では、**解約するのはインターネットのみ**と必ずお伝えください。まとめて解約されると、テレビ・お電話も止まってしまいます");
+          if (jcKeep) {
+            noteTo("の解約", "**テレビはJ:COMに残します。**お電話もJ:COMに残されたほうが、お客様のご負担は安くなります");
+          }
+        }
+        noteTo("の解約", "開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
+      } else if (state.applyType === "tenyo") {
+        noteTo("切替", "転用では、フレッツ光の回線契約はそのまま移行するため解約は不要です。プロバイダ（OCN・So-netなど）は別途解約が必要な場合があります");
+      } else if (state.applyType === "jigyosha") {
+        noteTo("切替", "事業者変更では、いまの光コラボ（" + curLineLabel() + "）の解約手続きは不要です（自動で切り替わります）。メールアドレスなどのオプションだけ残る場合があります");
+        /* ソフトバンク光からの事業者変更は、レンタル機器（光BBユニットなど）の
+         * 返却が必要。返却先は公式ページで確認した住所（2026-08確認）。 */
+        if (cl.id === "sbhikari") {
+          step("レンタル機器（光BBユニットなど）の返却",
+            "ソフトバンクからのレンタル機器がある場合は、切替を確認してから梱包して返却してください（送料はお客様のご負担・利用停止月の翌月20日まで）",
+            "box", "切替の確認後");
+          noteTo("の返却", "返却先: 〒272-0001 千葉県市川市二俣678-55 "
+            + "ESR市川ディストリビューションセンター 3階 北棟N8 ソフトバンク返品センター宛");
+        }
+      }
+    }
+    /* ドコモ光 乗り換え特典（他社の解約金・撤去工事費・端末残債をdポイントで還元）。
+     * 対象は「事業者変更」と「他社回線からの新規」。フレッツ光からの転用は対象外。
+     * 解約金の請求書などが要るため、解約の工程よりあとに置く。
+     * （出典: ドコモ光 乗り換え特典の案内・2026-08確認） */
+    var otherLine = cl && cl.id !== "none" && cl.id !== "flets";
+    var needCancel = otherLine && (state.product === "home5g" || state.applyType === "shinki");
+    if (isHikari() && (state.applyType === "jigyosha" || (state.applyType === "shinki" && otherLine))) {
+      step("ドコモ光 乗り換え特典のお申込み",
+        "他社の解約金・撤去工事費・端末の残債が、dポイント（期間・用途限定）で還元される特典です。お客様ご自身でのお申込みが必要です",
+        "doc", needCancel ? "解約金のご請求後" : "開通の確認後");
+      noteTo("乗り換え特典", "お申込みには、他社の解約金などが分かる書面（請求書・利用明細など）が必要です。捨てずに保管してください");
+      noteTo("乗り換え特典", "利用開始月の4か月後の月末時点でドコモ光をご契約中であることなどの条件があります。金額の上限・お申込みの締切は公式の案内をご確認ください");
+    }
+    // 店舗独自特典があるときは、来店してのお申込みが必要
+    if (num(state.storeCash) > 0 || num(state.storePt) > 0) {
+      step("店舗特典のお申込み（ご来店）",
+        "開通日から7日以降に、当店へご来店のうえ特典のお申し込みをお願いします",
+        "shop", "開通の7日後以降");
+      noteTo("店舗特典", "ご来店の際は、ご契約者さまの本人確認書類をお持ちください");
+    }
+    return { steps: steps };
+  }
+  // 見積書の下に出す小さい枠
+  /* 見積書の下に出していた小さい枠。いまは使っていない（別紙の1枚ものに一本化）。
+   * また見積書に入れたくなったら、hikariSheetHtml の末尾で呼び出す。 */
+  function flowHtml(r) {
+    var fd = flowData(r);
+    var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
+      + fd.steps.map(function (st2) {
+          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + noteHtml(st2.t) + (st2.d ? "。" + esc(st2.d) : "")
+            + (st2.notes.length ? "<br>" + st2.notes.map(function (n2) { return "※ " + noteHtml(n2); }).join("<br>") : "")
+            + "</li>";
+        }).join("") + "</ol>";
+    return fh + "</div>";
+  }
+  /* A4・1枚の「開通までの流れ」。お客様へお渡しする説明用の紙。
+   * 公式の流れ図と同じく、アイコン＋STEP＋赤い▼の縦並び。
+   * 右側に「予定日」の書き込み欄を付ける（画面ではタップして入力もできる） */
+  var FLOW_ICONS = {
+    shop: '<path d="M4 9.5l1.6-4.5h12.8L20 9.5v1.3a2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0z" fill="#2a6df4"/><path d="M5.8 13.2V19h12.4v-5.8" fill="none" stroke="#38507a" stroke-width="1.8"/><rect x="10.2" y="14.6" width="3.6" height="4.4" fill="#38507a"/>',
+    doc: '<rect x="3.5" y="8" width="14" height="11" rx="1.2" fill="#f5cf87"/><path d="M3.5 9l7 4.6L17.5 9" fill="none" stroke="#d3a94f" stroke-width="1.3"/><rect x="11" y="3.5" width="9.5" height="11.5" rx="1" fill="#eaf3ff" stroke="#2a6df4" stroke-width="1.2"/><path d="M13 7h5.5M13 9.4h5.5M13 11.8h3.8" stroke="#2a6df4" stroke-width="1.1"/>',
+    tools: '<path d="M5.2 18.8l6.8-6.8" stroke="#38507a" stroke-width="2.6" stroke-linecap="round"/><path d="M11.6 8.9a4.3 4.3 0 0 1 5.5-5.2l-2.3 2.3 1 2.5 2.5 1 2.3-2.3a4.3 4.3 0 0 1-5.2 5.5z" fill="#2a6df4"/><path d="M14.6 14.6l4.4 4.4" stroke="#2a6df4" stroke-width="2.6" stroke-linecap="round"/>',
+    router: '<rect x="8.4" y="9.5" width="7.2" height="10.5" rx="1" fill="#38507a"/><circle cx="12" cy="13" r="1" fill="#fff"/><path d="M12 7.2V4.4M8.5 6.4a5.2 5.2 0 0 1 7 0" fill="none" stroke="#2a6df4" stroke-width="1.7" stroke-linecap="round"/>',
+    start: '<rect x="4.8" y="5.2" width="14.4" height="9.4" rx="1" fill="#38507a"/><rect x="6.2" y="6.6" width="11.6" height="6.6" fill="#bfe0ff"/><path d="M3.4 17.4h17.2l-1.5 2.4H4.9z" fill="#38507a"/><path d="M20.6 4.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" fill="#e8a33d"/>',
+    switchi: '<path d="M6.5 8.5h9.5l-2.6-2.6M17.5 15.5H8l2.6 2.6" fill="none" stroke="#2a6df4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>',
+    box: '<path d="M4 8l8-4 8 4v9l-8 4-8-4z" fill="#dca763"/><path d="M4 8l8 4 8-4M12 12v9" fill="none" stroke="#aa7b40" stroke-width="1.4"/>',
+    plug: '<path d="M9 3.8v4.7M15 3.8v4.7" stroke="#38507a" stroke-width="2" stroke-linecap="round"/><path d="M7 8.5h10v3.2a5 5 0 0 1-4 4.9v3.6h-2v-3.6a5 5 0 0 1-4-4.9z" fill="#2a6df4"/>',
+    phone: '<path d="M4.6 8.4C4.6 6.5 7.9 5 12 5s7.4 1.5 7.4 3.4l-.8 2.4c-.2.6-.8 1-1.4.8l-2.4-.5c-.5-.1-.9-.5-1-1l-.2-1.3a9.8 9.8 0 0 0-3.2 0l-.2 1.3c-.1.5-.5.9-1 1l-2.4.5c-.6.2-1.2-.2-1.4-.8z" fill="#38507a"/><rect x="10.4" y="12.4" width="3.2" height="7" rx="1.3" fill="#2a6df4"/>'
+  };
+  /* 注意書きの中の電話番号は、お客様が見て分かるように本文と同じ大きさ＋太字＋赤にする
+   * （小さい字のままだと解約のご連絡先が読めない、という店頭の指摘・2026-08-09） */
+  function noteHtml(t) {
+    /* **…** で囲んだところは、電話番号と同じく本文と同じ大きさ＋太字＋赤にする
+     * （J:COMの「解約はインターネットのみ」のように、読み飛ばされると事故になる箇所） */
+    return esc(t)
+      .replace(/0\d{1,3}[-‐−ー]\d{2,4}[-‐−ー]\d{3,4}/g, function (m) {
+        return '<span class="f2-tel">' + m + "</span>";
+      })
+      .replace(/\*\*([^*]+)\*\*/g, function (m, in1) {
+        return '<span class="f2-em">' + in1 + "</span>";
+      });
+  }
+
+  function flowSheetHtml() {
+    var r = calc();
+    var fd = flowData(r);
+    /* 工程が多いときもA4・1枚に収める。
+     * 8工程以上は余白と文字を詰め（flow2-dense）、9工程以上はさらに全体を縮小する。 */
+    var nStep = fd.steps.length;
+    var dense = nStep >= 8 ? " flow2-dense" : "";
+    var zoom = nStep >= 9 ? Math.max(0.62, 8.4 / nStep) : 0;
+    var h = '<div class="flow-sheet flow2' + dense + '"'
+      + (zoom ? ' style="zoom:' + zoom.toFixed(2) + '"' : "") + ">";
+    h += '<div class="flow-target">' + esc(PRODUCTS[state.product].name + productLabel()) + "</div>";
+    h += '<div class="flow2-list">';
+    fd.steps.forEach(function (st2, i) {
+      if (i > 0) h += '<div class="f2-sep" aria-hidden="true">▼</div>';
+      h += '<div class="f2-row">'
+        + '<span class="f2-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (FLOW_ICONS[st2.icon] || "") + "</svg></span>"
+        + '<div class="f2-body">'
+        + '<span class="f2-step">STEP ' + (i + 1) + "</span>"
+        + (st2.when ? '<span class="f2-when">' + esc(st2.when) + "</span>" : "")
+        + '<div class="f2-t">' + noteHtml(st2.t) + "</div>"
+        + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
+        + (st2.notes.length
+            ? '<ul class="f2-n">' + st2.notes.map(function (n2) { return "<li>" + noteHtml(n2) + "</li>"; }).join("") + "</ul>"
+            : "")
+        + "</div>"
+        + '<div class="f2-date"><span class="f2-date-label">予定日</span>'
+        + '<span class="f2-date-line" contenteditable="true" data-fi="' + i + '">'
+        + esc((state.flowDates || {})[i] || "") + "</span></div>"
+        + "</div>";
+    });
+    h += "</div>";
+    // 注意事項は各工程の中に書くため、末尾の「ご注意・ご案内」の枠は出さない
+    return h + "</div>";
+  }
+
+
   function segLabel(sg) {
     if (sg.to == null) return sg.from === 1 ? "毎月" : sg.from + "か月目以降";
     return (sg.from === 1 ? "〜" : sg.from + "〜") + sg.to + "か月目";
@@ -473,6 +779,53 @@
     });
     el.innerHTML = h;
   }
+  /* 現在の固定回線ヒアリングの表示。
+   * ミツモリン（keitai-app/ienaka.js）と同じ作りにしてある。直すときは両方に。 */
+  function syncCurForm() {
+    var clSel = $("ieCurLine");
+    if (!clSel) return;
+    if (!clSel.options.length) {
+      CUR_LINES.forEach(function (c) {
+        var o = document.createElement("option");
+        o.value = c.id; o.textContent = c.name;
+        clSel.appendChild(o);
+      });
+    }
+    clSel.value = state.curLine || "";
+    $("ieCurLineOtherField").hidden = state.curLine !== "other";
+    $("ieCurLineOther").value = state.curLineOther || "";
+    var clh = $("ieCurLineHint");
+    var cd = curLineDef();
+    if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
+      clh.hidden = false;
+      clh.textContent = (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
+        + (state.applyType === "jigyosha" && cd.jgTel
+            ? "　／　承諾番号の窓口: " + cd.jgTel + (cd.jgTelNote ? "（" + cd.jgTelNote + "）" : "")
+            : "")
+        + "　※「開通の流れ」に解約のご案内が載ります";
+    } else {
+      clh.hidden = true;
+    }
+    $("ieCurPhone").value = state.curPhone || "";
+    $("ieCurTv").value = state.curTv || "";
+    $("ieCurTvBands").hidden = state.curTv !== "yes";
+    $("ieCurTvDigi").checked = !!state.curTvDigi;
+    $("ieCurTvBs").checked = !!state.curTvBs;
+    $("ieCurTvCs").checked = !!state.curTvCs;
+    /* J:COMはテレビを残したままネットだけ乗り換えるご案内がある。
+     * その場合、お電話もJ:COMに残したほうがお客様のご負担が安くなる。 */
+    var jc = state.curLine === "jcom";
+    $("ieCurTvKeepField").hidden = !jc;
+    if (!jc && state.curTvKeep) state.curTvKeep = false;
+    $("ieCurTvKeep").checked = !!state.curTvKeep;
+    var kh = $("ieCurTvKeepHint");
+    kh.hidden = !(jc && state.curTvKeep);
+    if (!kh.hidden) {
+      kh.textContent = "テレビを残す場合、お電話もJ:COMに残したほうがお客様のご負担が安くなります。"
+        + "J:COMへのご連絡では「解約するのはインターネットのみ」と必ずお伝えください（開通の流れにも記載されます）。";
+    }
+  }
+
   function syncForm() {
     $("product").value = state.product;
     $("housing").value = state.housing;
@@ -536,6 +889,7 @@
     $("storePt").value = state.storePt || "";
     $("setWariTotal").value = state.setWariTotal || "";
     if (num(state.storeCash) > 0 || num(state.storePt) > 0) $("storeTokutenBox").hidden = false;
+    syncCurForm();
     renderOpts();
     renderExtras("extraMonthlyList", "extraMonthly");
     renderExtras("extraInitialList", "extraInitial");
@@ -999,6 +1353,14 @@
       + (staffLabel() ? "受付担当: " + esc(staffLabel()) : "") + "</span></div>";
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
 
+    /* ヒアリングした現在の回線。登録スタッフが乗り換え元を把握できるように上に置く */
+    var curH = curHearingText();
+    if (curH) {
+      h += "<h3>現在の固定回線（ヒアリング）</h3><table><tbody>";
+      h += row("お使いの回線", "<b>" + esc(curH) + "</b>");
+      h += "</tbody></table>";
+    }
+
     h += "<h3>ご契約内容</h3><table><tbody>";
     h += row("商材", esc(p.name));
     if (isHikari()) {
@@ -1101,6 +1463,7 @@
     document.querySelectorAll(".tab").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
     document.querySelectorAll(".tab-page").forEach(function (s) { s.classList.toggle("active", s.id === "tab-" + name); });
     if (name === "sheet") renderSheet();
+    if (name === "flow") renderFlow();
     if (name === "staff") renderStaffSheet();
     $("summaryBar").style.display = name === "quote" ? "" : "none";
   }
@@ -1110,12 +1473,38 @@
   $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
   $("backToQuote").addEventListener("click", function () { switchTab("quote"); });
   $("backToQuoteStaff").addEventListener("click", function () { switchTab("quote"); });
+  $("backToQuoteFlow").addEventListener("click", function () { switchTab("quote"); });
   $("printBtn").addEventListener("click", function () { window.print(); });
   $("printStaffBtn").addEventListener("click", function () { window.print(); });
+  $("printFlowBtn").addEventListener("click", function () { window.print(); });
   window.addEventListener("beforeprint", function () {
     if ($("tab-staff").classList.contains("active")) renderStaffSheet();
+    else if ($("tab-flow").classList.contains("active")) renderFlow();
     else renderSheet();
   });
+  /* 開通の流れ（A4・1枚）。予定日はその場で書き込めて、見積もりと一緒に残る。 */
+  function renderFlow() {
+    $("flowBody").innerHTML = flowSheetHtml();
+  }
+  $("flowBody").addEventListener("input", function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var fi = t.getAttribute("data-fi");
+    if (fi === null) return;
+    if (!state.flowDates) state.flowDates = {};
+    state.flowDates[fi] = t.textContent.trim();
+    save();
+  });
+
+  /* 現在の固定回線ヒアリング。ミツモリンと同じ作り。 */
+  $("ieCurLine").addEventListener("change", function () { state.curLine = this.value; syncForm(); recalc(); });
+  $("ieCurLineOther").addEventListener("input", function () { state.curLineOther = this.value; recalc(); });
+  $("ieCurPhone").addEventListener("change", function () { state.curPhone = this.value; recalc(); });
+  $("ieCurTv").addEventListener("change", function () { state.curTv = this.value; syncForm(); recalc(); });
+  [["ieCurTvDigi", "curTvDigi"], ["ieCurTvBs", "curTvBs"], ["ieCurTvCs", "curTvCs"]].forEach(function (pr) {
+    $(pr[0]).addEventListener("change", function () { state[pr[1]] = this.checked; recalc(); });
+  });
+  $("ieCurTvKeep").addEventListener("change", function () { state.curTvKeep = this.checked; syncForm(); recalc(); });
 
   $("product").addEventListener("change", function () {
     var prevDef = dpointDefaultFor(state.product, state.applyType);
