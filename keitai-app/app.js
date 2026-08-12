@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.93.1";
+  var APP_VERSION = "1.93.2";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1527,26 +1527,21 @@
       h += '<div class="stats-scroll"><table class="stats-table stats-main"><tr><th>項目</th><th>提案</th><th>成約</th>'
         + vCols.map(function (k) { return "<th>" + esc(vShort(k)) + "</th>"; }).join("")
         + (canAdj ? "<th>修正</th>" : "") + "</tr>";
-      var tProp = 0, tWon = 0, tByV = {};
+      /* 縦の合計は出さない。「（再掲）」の行が二重に足されるので、
+       * 足した数字に意味がないため（応対数・成約数は「担当別」の表で見る）。 */
       iKeys.forEach(function (k) {
         var x = items[k];
-        tProp += x.prop; tWon += x.won;
         h += "<tr><td>" + esc(x.name) + "</td>"
           + '<td class="n-prop">' + (x.prop || "－") + "</td>"
           + '<td class="n-won">' + (x.won || "－") + "</td>"
-          + vCols.map(function (vk) {
-              tByV[vk] = (tByV[vk] || 0) + (x.byVisit[vk] || 0);
-              return "<td>" + (x.byVisit[vk] || "") + "</td>";
-            }).join("")
+          + vCols.map(function (vk) { return "<td>" + (x.byVisit[vk] || "") + "</td>"; }).join("")
           + (canAdj
               ? '<td class="adj-cell"><button type="button" class="adjb" data-adjk="' + esc(k) + '" data-adjd="-1">−</button>'
                 + '<button type="button" class="adjb" data-adjk="' + esc(k) + '" data-adjd="1">＋</button></td>'
               : "")
           + "</tr>";
       });
-      h += '<tr class="stats-total"><td>合計</td><td>' + tProp + "</td><td>" + tWon + "</td>"
-        + vCols.map(function (vk) { return "<td>" + (tByV[vk] || "") + "</td>"; }).join("")
-        + (canAdj ? "<td></td>" : "") + "</tr></table></div>";
+      h += "</table></div>";
       if (canAdj) {
         h += '<p class="hint">数え違いがあれば「修正」の <b>＋ −</b> で直せます'
           + (adjScope === "day" ? "（今日の記録として足し引きされます）" : "（" + esc(mFil) + " の調整として足し引きされます）")
