@@ -726,6 +726,24 @@ body.sorting .sort-chip{cursor:grabbing}
 .stats-scroll{overflow-x:auto;margin-bottom:6px}
 .stats-scroll .stats-table{margin-bottom:0}
 
+/* 見積書のサービス名（タップすると説明の小窓が出る）。
+   お客様にお見せする紙なので、印刷では下線を消して普通の文字にする。 */
+.svc-link{
+  font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;
+  border-bottom:1px dotted #9AA3AA;cursor:pointer;text-align:inherit
+}
+.svc-link:hover,.svc-link:focus{color:var(--blue,#0B62B5);border-bottom-color:currentColor}
+.svc-box{max-width:420px}
+.btn-link{display:inline-block;text-decoration:none;text-align:center;line-height:1.4}
+.svc-dlg-desc{margin:4px 0 10px;font-size:14px;line-height:1.7;white-space:pre-wrap}
+.svc-dlg-note{margin:4px 0 10px;font-size:12.5px;color:var(--muted)}
+/* マスタ設定: 各サービスの「ご案内文」 */
+.svc-desc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-2px 0 8px 0;padding-left:2px}
+.svc-desc-row label{display:flex;align-items:center;gap:6px;flex:1 1 320px;font-size:12px;color:var(--muted)}
+.svc-desc-row input{flex:1 1 auto;min-width:160px}
+.svc-desc-url{font-size:11.5px;color:var(--muted);word-break:break-all}
+.plan-desc{display:flex;align-items:center;gap:6px}
+
 /* 実績: 成約の早見表 */
 .stats-main td.n-won{font-weight:700}
 /* 早見表を3つに分けたときの、2つ目以降の見出し */
@@ -1052,3 +1070,8 @@ body.present .sheet{box-shadow:none}
 .dev-edit th small{font-weight:400;color:var(--muted)}
 .dev-edit td.dev-del{white-space:nowrap;text-align:center}
 .dev-edit tr.dev-empty td{color:var(--muted);text-align:center}
+
+@media print{
+  /* 見積書を印刷したときは、タップの目印を消して普通の文字にする */
+  .svc-link{border-bottom:0 !important;color:inherit !important}
+}

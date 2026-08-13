@@ -1051,6 +1051,20 @@
   </div>
 </div>
 
+<!-- 見積書のサービス名をタップしたときに出る小窓。
+     ドコモの公式ページは埋め込みが禁止されているので、中には表示せずボタンで開く。 -->
+<div class="login-overlay no-print" id="svcDlg" hidden>
+  <div class="login-box svc-box">
+    <h2 id="svcDlgTitle">サービスのご案内</h2>
+    <p class="svc-dlg-desc" id="svcDlgDesc" hidden></p>
+    <p class="svc-dlg-note" id="svcDlgUrlNote" hidden>詳しい内容は、ドコモの公式ページでご確認いただけます。</p>
+    <div class="row-btns">
+      <button class="btn-sub" id="svcDlgClose" type="button">閉じる</button>
+      <a class="btn-main btn-link" id="svcDlgOpen" href="#" target="_blank" rel="noopener noreferrer" hidden>公式ページを開く</a>
+    </div>
+  </div>
+</div>
+
 <div class="tour-overlay no-print" id="tourOverlay" hidden>
   <div class="tour-box">
     <div class="tour-mascot" id="tourMascot"><!-- JSで生成 --></div>

@@ -21,6 +21,7 @@ const DEFAULT_DATA = {
   "plans": [
     {
       "id": "max",
+      "url": "https://www.docomo.ne.jp/charge/docomo_max/",
       "group": "current",
       "name": "ドコモ MAX",
       "tiers": [
@@ -55,6 +56,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "poikatsu_max",
+      "url": "https://www.docomo.ne.jp/charge/docomo_poikatsu_max/",
       "group": "current",
       "name": "ドコモ ポイ活 MAX",
       "tiers": [
@@ -109,6 +111,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "mini",
+      "url": "https://www.docomo.ne.jp/charge/docomo_mini/",
       "group": "current",
       "name": "ドコモ mini",
       "tiers": [
@@ -196,6 +199,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "u15",
+      "url": "https://www.docomo.ne.jp/charge/u15_hajimete_plan/",
       "group": "legacy",
       "name": "U15はじめてスマホプラン",
       "tiers": [
@@ -269,6 +273,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "kids",
+      "url": "https://www.docomo.ne.jp/charge/kidskeitaiplan-2/",
       "group": "current",
       "name": "キッズケータイプラン",
       "tiers": [
@@ -292,6 +297,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "dataplus",
+      "url": "https://www.docomo.ne.jp/charge/dataplus-2/",
       "group": "current",
       "name": "データプラス",
       "tiers": [
@@ -315,6 +321,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "eximo",
+      "url": "https://www.docomo.ne.jp/charge/eximo/",
       "group": "legacy",
       "name": "eximo",
       "tiers": [
@@ -410,6 +417,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "gigaho_premier",
+      "url": "https://www.docomo.ne.jp/charge/5g-gigaho-premier/",
       "group": "legacy",
       "name": "5Gギガホ プレミア",
       "tiers": [
@@ -437,6 +445,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "gigalite",
+      "url": "https://www.docomo.ne.jp/charge/5g-gigalite/",
       "group": "legacy",
       "name": "5Gギガライト／ギガライト",
       "tiers": [
@@ -485,11 +494,13 @@ const DEFAULT_DATA = {
     },
     {
       "id": "v5",
+      "url": "https://www.docomo.ne.jp/charge/kakeho_light/",
       "name": "5分通話無料オプション",
       "price": 880
     },
     {
       "id": "kake",
+      "url": "https://www.docomo.ne.jp/charge/kakeho/",
       "name": "かけ放題オプション",
       "price": 1980
     },
@@ -502,6 +513,7 @@ const DEFAULT_DATA = {
   "options": [
     {
       "id": "smart_hosho",
+      "url": "https://www.docomo.ne.jp/service/smart_anshin_hoshou/",
       "name": "smartあんしん補償",
       "price": 990,
       "priceChoices": [
@@ -523,6 +535,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "anshin_pack",
+      "url": "https://www.docomo.ne.jp/service/anshin_pack/",
       "name": "smartあんしんパック",
       "price": 792,
       "priceChoices": [
@@ -544,6 +557,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "dvaluepass",
+      "url": "https://www.docomo.ne.jp/service/dvaluepass/",
       "name": "dバリューパス パック",
       "price": 682,
       "note": "旧いちおしパック（2026年3月改定・初回31日無料）",
@@ -553,6 +567,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "op_1784460515071",
+      "url": "https://www.docomo.ne.jp/service/anshin_security/",
       "name": "あんしんセキュリティ詐欺電話対策",
       "price": 999,
       "category": "セキュリティ",
@@ -562,6 +577,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "op_1784460542023",
+      "url": "https://www.docomo.ne.jp/service/anshin_security/",
       "name": "あんしんセキュリティ スタンダード",
       "price": 550,
       "category": "セキュリティ",
@@ -603,6 +619,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_disney",
+      "url": "https://www.docomo.ne.jp/service/disneyplus/",
       "name": "ディズニープラス",
       "price": 1250,
       "priceChoices": [
@@ -622,6 +639,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "bk_lemino",
+      "url": "https://www.docomo.ne.jp/service/lemino/",
       "name": "Leminoプレミアム",
       "price": 1540,
       "category": "エンタメ",
@@ -633,6 +651,7 @@ const DEFAULT_DATA = {
     },
     {
       "id": "dazn",
+      "url": "https://www.docomo.ne.jp/service/dazn/",
       "name": "DAZN for docomo",
       "price": 4200,
       "category": "エンタメ",
