@@ -728,6 +728,8 @@ body.sorting .sort-chip{cursor:grabbing}
 
 /* 実績: 成約の早見表 */
 .stats-main td.n-won{font-weight:700}
+/* 早見表を3つに分けたときの、2つ目以降の見出し */
+h3.stats-sub{font-size:15px;margin:14px 0 0}
 .stats-table td.adj-cell{white-space:nowrap;text-align:center}
 .adjb{
   min-width:30px;padding:3px 0;margin:0 2px;font-size:15px;line-height:1.2;
