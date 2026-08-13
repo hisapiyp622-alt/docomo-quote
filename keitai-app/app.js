@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.99.4";
+  var APP_VERSION = "1.99.5";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -375,6 +375,9 @@
    * 店頭の流れ: コンデザが提案の見積もりを作る → 商談する担当者へ渡す →
    * 担当者が自分の保存一覧から開いて商談し、実際の成約内容を記録する。
    * 実績は「提案＝作った担当（コンデザ）」「成約・収益＝渡された担当」。
+   * すでに成約・見送りが付いている場合は記録ごと渡す（渡した元は実績に
+   * 数えないため、消すと成約が実績から消えてしまう）。成約・収益は
+   * resultStaff（記録を付けた担当）のまま変わらない。
    * お客様名は端末内だけの情報なので渡さない。 */
   function forwardSaved(id) {
     var it = savedList.filter(function (x) { return x.id === id; })[0];
@@ -383,7 +386,11 @@
     if (!others.length) { savedNote("渡せる担当がいません。マスタ設定で担当者を追加してください。"); return; }
     pickStaff({
       title: "担当へ渡す",
-      lead: "「" + it.name + "」を担当の保存一覧に渡します。実績（提案・成約・収益）はすべて渡した担当に付き、この見積もりはあなたの実績には数えません。お客様名は渡りません（端末内だけの情報のため）。",
+      lead: "「" + it.name + "」を担当の保存一覧に渡します。実績（提案・成約・収益）はすべて渡した担当に付き、この見積もりはあなたの実績には数えません。"
+        + (it.result
+            ? "すでに付いている成約・見送りの記録は消えずに一緒に渡ります（成約・収益は記録を付けた担当のままです）。"
+            : "")
+        + "お客様名は渡りません（端末内だけの情報のため）。",
       label: "渡す担当", choices: others, value: others[0].id, okText: "渡す"
     }, function (to) {
       if (!to) return;
@@ -391,15 +398,23 @@
       var copy = JSON.parse(JSON.stringify(it));
       copy.id = "q" + now + "x" + Math.floor(Math.random() * 10000);
       copy.savedAt = now; copy.upAt = now;
-      copy.result = ""; copy.resultAt = 0;
-      delete copy.resultStaff; delete copy.wonData; delete copy.wonPattern;
+      /* 成約・見送りの記録は消さずに控えごと渡す。渡した元は「渡し済み」で
+       * 実績に数えないため、ここで消すと付けた成約が実績から消えてしまう。
+       * 決めた担当（resultStaff）を必ず入れておき、渡した先の実績と混ざらないようにする。 */
+      if (copy.result) {
+        if (!copy.resultStaff) copy.resultStaff = activeStaff().id;
+      } else {
+        copy.result = ""; copy.resultAt = 0;
+        delete copy.resultStaff; delete copy.wonData; delete copy.wonPattern;
+      }
       delete copy.sentTo; delete copy.sentAt; delete copy.sentId;
       copy.fromStaff = activeStaff().id;
       copy.srcId = it.id;
       copy.custName = "";
       ((copy.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+      // 成約時の控え（wonData）にもお客様名が入っている
+      ((copy.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
       it.sentTo = to; it.sentAt = now; it.sentId = copy.id; it.upAt = now;
-      it.result = ""; it.resultAt = 0; delete it.resultStaff;
       persistSaved();
       renderSaved();
       sendSavedTo(to, copy, it);
@@ -493,7 +508,11 @@
             : "")
         + (it.fromStaff
             ? '<div class="saved-wonnote">' + esc(staffName(it.fromStaff))
-              + " から受け取った見積もりです（提案・成約・収益はすべてあなたの実績になります）</div>"
+              + " から受け取った見積もりです"
+              + (it.result && it.resultStaff && it.resultStaff !== activeStaff().id
+                  ? "（成約・見送りの記録ごと受け取りました）"
+                  : "（提案・成約・収益はすべてあなたの実績になります）")
+              + "</div>"
             : "")
         + (it.sentTo
             ? '<div class="saved-wonnote">' + esc(staffName(it.sentTo))
@@ -687,6 +706,9 @@
     if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
     if (!c.feeSkip) c.feeSkip = {};
     if (typeof c.accs === "undefined") c.accs = true;
+    /* 全担当の実績を全員に公開するか（店舗の方針で選ぶ）。
+     * 初期値は「公開しない」＝管理者だけが全担当を見られる。 */
+    if (typeof c.openAll === "undefined") c.openAll = false;
     return c;
   }
   // 「Pixel、iPhone」のように読点・カンマ区切りで複数キーワードを許す
@@ -1397,10 +1419,11 @@
       return;
     }
     var lists = statsLists;
-    var admin = statsAdminOk();
+    var admin = statsAdminOk();          // 件数の修正など、管理の操作ができるか
+    var viewAll = statsViewAll();        // 全担当の実績を見られるか（公開設定を含む）
     var me = activeStaff().id;
     /* 担当者の画面に出すのは、自分が応対した件と、自分が成約・見送りを決めた件だけ */
-    function mineOnly(it, sid) { return admin || sid === me || resStaffOf(it, sid) === me; }
+    function mineOnly(it, sid) { return viewAll || sid === me || resStaffOf(it, sid) === me; }
     /* 引き渡した元（コンデザが作って担当へ渡した見積もり）は数えない。
      * 渡した先の控えが1件として数えられる。 */
     function isSent(it) { return !!it.sentTo; }
@@ -1424,17 +1447,17 @@
     monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : curMonth;
 
     var unlockBtn = $("statsUnlockBtn");
-    if (unlockBtn) unlockBtn.hidden = admin;
+    if (unlockBtn) unlockBtn.hidden = viewAll;
     var mornBtn = $("statsMorning");
-    if (mornBtn) mornBtn.hidden = !admin;
-    if (staffSel.parentElement) staffSel.parentElement.style.display = admin ? "" : "none";
+    if (mornBtn) mornBtn.hidden = !viewAll;
+    if (staffSel.parentElement) staffSel.parentElement.style.display = viewAll ? "" : "none";
     var sPrev = staffSel.value || "all";
     staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
       return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>";
     }).join("");
     staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
     // 管理者以外は、常に自分（ログイン中の担当）の実績だけ
-    var mFil = monthSel.value, sFil = admin ? staffSel.value : me;
+    var mFil = monthSel.value, sFil = viewAll ? staffSel.value : me;
     var settled = snaps[mFil] || null;   // 確定済みの月は、この数字を出す
     var sName = "全員";
     if (sFil !== "all") {
@@ -1512,6 +1535,21 @@
     var adjScope = (admin && mFil !== curMonth) ? "month" : "day";
 
     var h = "";
+
+    /* ---- ロック未設定のお知らせ ----
+     * 店舗ログインもマスタ設定のパスワードも無い店舗では、仕切りようが無く
+     * 全員が全担当の実績を見られる。気づかないまま公開されないよう、
+     * その状態であることと、分けたいときの設定場所を知らせる。
+     * 店舗の判断で「公開する」を選んだ場合（openAll）は出さない。 */
+    if (viewAll && !statsUnlocked && !statsCfg().openAll
+        && !adminLockEnabled() && !lockEnabled() && !cloudOn()
+        && config.staff.length > 1) {
+      h += '<div class="stats-undone"><b style="color:var(--red)">いまは全担当の実績が全員に見えています。</b>'
+        + "店舗ログインもマスタ設定のパスワードも設定していないため、担当者ごとに仕切れない状態です。"
+        + "担当者ごとに分けたいときは、マスタ設定で「マスタ設定のパスワード」を設定してください。"
+        + "全員で見る運用のままでよいときは、マスタ設定の「実績で追う項目」で「全担当の実績を全員に公開する」にチェックを入れると、このお知らせは出なくなります。"
+        + '<button type="button" class="btn-sub" id="statsLockHintBtn">マスタ設定を開く</button></div>';
+    }
 
     /* ---- 結果が未記録の応対 ---- */
     var myUndone = (!settled && staffAgg[sFil]) ? staffAgg[sFil].undone : 0;
@@ -1659,8 +1697,8 @@
       }
     }
 
-    /* ---- ここから管理者だけ ---- */
-    if (admin) {
+    /* ---- ここから管理者（または公開設定の店舗では全員）だけ ---- */
+    if (viewAll) {
       // 担当別（担当を選んでいるときは1行だけになるので出さない）
       var sRows = (sFil === "all" ? config.staff : []).map(function (s) {
         var a3 = staffAgg[s.id] || { prop: 0, won: 0, undone: 0 };
@@ -1732,7 +1770,7 @@
 
     // CSV出力用に、いま表示した集計を控えておく
     statsLast = {
-      month: mFil, staffName: sName, admin: admin,
+      month: mFil, staffName: sName, admin: viewAll,
       items: items, iKeys: iKeys, vCols: vCols, vName: vName,
       visits: vpRows,
       days: dayRows,
@@ -1820,11 +1858,11 @@
     var L = statsLast;
     if (!L) return;
     var mFil = L.month;
-    var admin = statsAdminOk();
+    var viewAll = statsViewAll();
     var me = activeStaff().id;
-    var sFil = admin ? ($("statsStaff") || {}).value || "all" : me;
+    var sFil = viewAll ? ($("statsStaff") || {}).value || "all" : me;
     var rows = statsFlatRows(statsLists, mFil, sFil, function (it, sid) {
-      return admin || sid === me || resStaffOf(it, sid) === me;
+      return viewAll || sid === me || resStaffOf(it, sid) === me;
     });
     var lines = ["日付,曜日,担当,来店目的,種別,項目,件数"];
     rows.forEach(function (r) { lines.push(r.map(csvCell).join(",")); });
@@ -6519,6 +6557,13 @@
       + '設定は保存済みの見積もりには手を加えず、<strong>集計するときに数え直す</strong>ため、'
       + 'あとから変えても過去の分に新しい設定が効きます。店舗内の全端末で共通です。</p>';
 
+    h += '<div class="plan-sec"><span class="plan-lbl">実績の公開範囲</span><div class="sub-checks">'
+      + '<label class="check"><input type="checkbox" data-sc-flag="openAll"' + (sc.openAll ? " checked" : "")
+      + "> 全担当の実績を全員に公開する</label></div>"
+      + '<p class="hint">チェックすると、担当者コードだけの人も実績タブで<strong>全担当・担当別の表・目標と進捗</strong>を見られます（店舗の方針に合わせてお選びください）。'
+      + 'チェックしないときは、マスタ設定のパスワードを通った管理者だけが全担当を見られます。'
+      + '件数の「修正」は、これまでどおり自分の当月ぶんと管理者だけです。</p></div>';
+
     h += '<div class="plan-sec"><span class="plan-lbl">手続き</span><div class="sub-checks">';
     [["shinki", "新規契約"], ["mnp", "のりかえ（MNP）"], ["kishu", "機種変更"], ["plan", "プラン変更"]].forEach(function (p) {
       h += '<label class="check"><input type="checkbox" data-sc-proc="' + p[0] + '"'
@@ -7039,6 +7084,12 @@
   function statsAdminOk() {
     // ロックを何も設定していない店舗では仕切りようがないので、従来どおり全員に見せる
     return statsUnlocked || !masterGateOn();
+  }
+  /* 全担当の実績を「見られる」か。管理者のほかに、店舗の設定
+   * （実績で追う項目 → 全担当の実績を全員に公開する）を入れた店舗では
+   * 全員が見られる。件数の修正など管理の操作は statsAdminOk のまま。 */
+  function statsViewAll() {
+    return statsAdminOk() || !!statsCfg().openAll;
   }
   var masterGateFrom = null; // キャンセルしたときに戻る先
   /* マスタ設定のパスワードを忘れたときは、店舗ID＋店舗のパスワードで開けるようにする。
@@ -9029,6 +9080,11 @@
        * 管理者が過去の月を直すときは、その月の調整として足し引きする（月キー）。 */
       $("statsBody").addEventListener("click", function (e) {
         var t = e.target;
+        if (t.id === "statsLockHintBtn") {
+          // ロック未設定のお知らせから。この状態ではマスタ設定の関門は無いのでそのまま開く
+          switchTab("master");
+          return;
+        }
         if (t.id === "statsUndoneBtn") {
           var st2 = $("savedStatus");
           if (st2) { st2.value = ""; renderSaved(); }
