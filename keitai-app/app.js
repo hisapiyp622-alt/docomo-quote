@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.93.3";
+  var APP_VERSION = "1.94.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1528,19 +1528,28 @@
     var iShow = iKeys.filter(function (k) {
       return items[k].won > 0 || (canAdj && items[k].prop > 0);
     });
-    if (!iShow.length) {
-      h += '<p class="hint">'
-        + (iKeys.length ? "この期間はまだ成約の記録がありません。" : "この期間の記録がまだありません。")
-        + "</p>";
-    } else {
-      h += '<div class="stats-scroll"><table class="stats-table stats-main"><tr><th>項目</th><th>成約</th>'
+    /* 表は3つに分ける（店舗の指定・2026-08-13）。
+     *   ① 手続き・プラン・オプションなど
+     *   ② 独自商材（月額のもの＝マスタで「店舗独自」にしたオプション）
+     *   ③ アクセサリ（キャリアのものも店舗のものも一緒）
+     * 数が多くて種類も違うので、1つの表に混ぜると見づらいため。
+     * 一括払いの独自商材（own:f:）は①に残す。 */
+    var iOwn = iShow.filter(function (k) { return k.indexOf("own:o:") === 0; });
+    var iAcc = iShow.filter(function (k) { return k.indexOf("acc:") === 0; });
+    var iMain = iShow.filter(function (k) {
+      return k.indexOf("own:o:") !== 0 && k.indexOf("acc:") !== 0;
+    });
+
+    /* 3つとも同じ列（項目・成約・ご来店の目的・修正）で出す */
+    function mainTable(keys) {
+      var t = '<div class="stats-scroll"><table class="stats-table stats-main"><tr><th>項目</th><th>成約</th>'
         + vCols.map(function (k) { return "<th>" + esc(vShort(k)) + "</th>"; }).join("")
         + (canAdj ? "<th>修正</th>" : "") + "</tr>";
       /* 縦の合計は出さない。「（再掲）」の行が二重に足されるので、
        * 足した数字に意味がないため（応対数・成約数は「担当別」の表で見る）。 */
-      iShow.forEach(function (k) {
+      keys.forEach(function (k) {
         var x = items[k];
-        h += "<tr><td>" + esc(x.name) + "</td>"
+        t += "<tr><td>" + esc(x.name) + "</td>"
           + '<td class="n-won">' + (x.won || "－") + "</td>"
           + vCols.map(function (vk) { return "<td>" + (x.byVisit[vk] || "") + "</td>"; }).join("")
           + (canAdj
@@ -1549,7 +1558,19 @@
               : "")
           + "</tr>";
       });
-      h += "</table></div>";
+      return t + "</table></div>";
+    }
+
+    if (!iShow.length) {
+      h += '<p class="hint">'
+        + (iKeys.length ? "この期間はまだ成約の記録がありません。" : "この期間の記録がまだありません。")
+        + "</p>";
+    } else {
+      if (iMain.length) h += mainTable(iMain);
+      /* 見出しは h3 のまま（朝礼の印刷が h3 と表だけを拾うため）。
+       * 小さく見せるのは stats-sub のスタイルで行う。 */
+      if (iOwn.length) h += '<h3 class="stats-sub">独自商材（月額）</h3>' + mainTable(iOwn);
+      if (iAcc.length) h += '<h3 class="stats-sub">アクセサリ</h3>' + mainTable(iAcc);
       if (canAdj) {
         h += '<p class="hint">数え違いがあれば「修正」の <b>＋ −</b> で直せます'
           + (adjScope === "day" ? "（今日の記録として足し引きされます）" : "（" + esc(mFil) + " の調整として足し引きされます）")
