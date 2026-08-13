@@ -545,3 +545,6 @@ body.present .sheet{box-shadow:none}
 @media (max-width:600px){
   #ienakaOptList .tile-grid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* オプションのタイル群を出し入れするチェック */
+.ie-more{margin:6px 0 2px;font-size:13px;color:var(--muted)}
