@@ -16,7 +16,7 @@ const DEFAULT_DATA = {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
     "jimu_kishu": 4950,
-    "atamakin_default": 19800
+    "atamakin_default": 0
   },
   "plans": [
     {
@@ -810,60 +810,9 @@ const DEFAULT_DATA = {
       "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
       "carrier": true,
       "own": false
-    },
-    {
-      "id": "op_1785221584602",
-      "name": "店頭あんしんサポート定額プラン",
-      "price": 990,
-      "category": "その他",
-      "note": "",
-      "own": false,
-      "carrier": true
-    },
-    {
-      "id": "op_1785221644318",
-      "name": "店頭あんしんサポートミニプラン",
-      "price": 550,
-      "category": "その他",
-      "note": "",
-      "own": false,
-      "carrier": true
     }
   ],
-  "feeItems": [
-    {
-      "id": "fi_free_datamove",
-      "name": "無料データ移行",
-      "price": 0,
-      "pay": "store",
-      "own": true,
-      "dataMove": true
-    },
-    {
-      "id": "fi_1785221683603",
-      "name": "初期設定・データ移行サポート",
-      "price": 2200,
-      "own": false,
-      "pay": "bill",
-      "dataMove": true
-    },
-    {
-      "id": "fi_1785221704936",
-      "name": "初期設定・データ移行サポート(持ち込み)",
-      "price": 3300,
-      "own": false,
-      "pay": "bill",
-      "dataMove": true
-    },
-    {
-      "id": "fi_1785221719101",
-      "name": "あんしん店頭サポート",
-      "price": 3300,
-      "own": false,
-      "pay": "bill",
-      "dataMove": true
-    }
-  ],
+  "feeItems": [],
   "kaedoki": {
     "note": "23か月目までに返却で残価（24回目分）が不要。返却しない場合は残価を24回に再分割。2026年3月5日以降の加入分は返却時に「プログラム利用料」（機種・手続きにより0〜22,000円）が発生する場合あり。ドコモでの買い替え（機種変更等）なら「ドコモで買替えおトク割」で免除。"
   },
@@ -967,23 +916,7 @@ const DEFAULT_DATA = {
       "note": "親子割（U15）適用回線と同一ファミリー割引グループ内・最大12か月。ahamoも対象"
     }
   ],
-  "accessories": [
-    {
-      "id": "acc_charger",
-      "name": "AC09(充電器)",
-      "price": 3720
-    },
-    {
-      "id": "acc_1784460319154",
-      "name": "ACアダプタ(apple)",
-      "price": 2728
-    },
-    {
-      "id": "acc_1784850167723",
-      "name": "ACアダプタ",
-      "price": 2420
-    }
-  ],
+  "accessories": [],
   "energyCompanies": {
     "denki": [
       {
