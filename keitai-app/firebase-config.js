@@ -22,7 +22,7 @@ var KEITAI_FIREBASE = {
  * 空のあいだは「ご契約の際にご案内します」と表示されます。 */
 var KEITAI_VENDOR = {
   name: "株式会社Curacon",
-  contact: "",              // 例）support@example.com　※決定待ち
+  contact: "w-ogawa@curacon.co.jp",
   hours: "10:00〜18:00（土日祝・年末年始を除く）"
 };
 
