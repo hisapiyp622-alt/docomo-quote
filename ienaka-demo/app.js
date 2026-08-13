@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.6.0-demo";
+  var APP_VERSION = "2.6.1-demo";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -90,7 +90,10 @@
     { id: "vsSkyBasic", name: "スカパー！基本プラン", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSelect5", name: "スカパー！セレクト5", price: 1980, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "vsSelect10", name: "スカパー！セレクト10", price: 2860, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g", "hikari10g"] },
+    /* 無線LANのレンタルは回線の速さで品目と月額が違う（公式の機器使用料の表・2026-08-14 確認）。
+     * 1ギガは330円、10ギガは「10ギガ対応無線LANルーター」550円。 */
+    { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g"] },
+    { id: "lanRouter10g", name: "10ギガ対応無線LANルーター（レンタル）", price: 550, for: ["hikari10g"] },
     /* ahamo光はプロバイダ一体型で、OCNバーチャルコネクト対応ルーターが要る。
      * ドコモからの月額レンタルか、お客様の持込になる（優待購入の取り扱いは無い）。
      * 1ギガ330円／10ギガ550円。
@@ -736,7 +739,7 @@
     { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true, videoToggleAfter: true },
     { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"], needsVideo: true },
     { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"], needsVideo: true },
-    { title: "そのほかのオプション", ids: ["lanCard", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
+    { title: "そのほかのオプション", ids: ["lanCard", "lanRouter10g", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
   ];
   function ieOptById(id) {
     return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
