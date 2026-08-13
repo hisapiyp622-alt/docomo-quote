@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.94.0";
+  var APP_VERSION = "1.95.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -2000,6 +2000,7 @@
   ];
   var HIST_FIELD_LABELS = {
     price: "の金額", note: "の説明", category: "の置き場所",
+    url: "の公式ページ", desc: "のご案内文",
     carrier: "のdカードGOLD10%対象", own: "の店舗独自",
     pay: "の支払い先", defaultPay: "の支払い方法（初期値）",
     dataMove: "の「データ移行」の印",
@@ -2854,6 +2855,61 @@
    * 更新するのはドコモの料金だけ。店舗が登録したもの（独自サービス・アクセサリ・
    * 頭金の初期値・並び順・カテゴリ・担当者）はそのまま残す。
    * 適用前の内容は履歴に残るので、あとから戻せる。 */
+  /* ---------- 見積書のサービス名をタップして出す小窓 ----------
+   * マスタに「説明（desc）」か「公式ページ（url）」があるサービスだけ押せるようにする。
+   * ドコモの公式ページは x-frame-options: SAMEORIGIN で外部サイトへの埋め込みを
+   * 禁止しているため、小窓の中にサイトを表示することはできない。
+   * 小窓には説明を出し、ボタンで別のタブに開く。
+   *
+   * url は標準マスタから配信する（料金改定で最新に入れ替わる）。
+   * desc は店舗が書くものなので、配信では上書きしない。 */
+  var DCM_URL = "https://www.docomo.ne.jp/";
+  /* マスタに項目が無い、組み込みの割引・サービス。 */
+  var SVC_FIXED = {
+    "x:minna":    { name: "みんなドコモ割", url: DCM_URL + "charge/minna_docomo/" },
+    "x:hikari":   { name: "ドコモ光／home 5G セット割", url: DCM_URL + "charge/hikari_set/" },
+    "x:dcardpay": { name: "dカードお支払割", url: DCM_URL + "charge/dcard_oshiharai/" },
+    "x:denki":    { name: "ドコモでんき", url: DCM_URL + "denki/" },
+    "x:dcard":    { name: "dカード", url: DCM_URL + "service/dcard/" }
+  };
+  var SVC_LISTS = { pl: "plans", vo: "voiceOptions", op: "options",
+    fi: "feeItems", ac: "accessories" };
+  function svcFind(key) {
+    if (!key) return null;
+    if (SVC_FIXED[key]) return SVC_FIXED[key];
+    var i = key.indexOf(":");
+    if (i < 0) return null;
+    var arr = MASTER[SVC_LISTS[key.slice(0, i)]] || [];
+    var id = key.slice(i + 1);
+    for (var k = 0; k < arr.length; k++) if (arr[k].id === id) return arr[k];
+    return null;
+  }
+  function svcHas(key) {
+    var o = svcFind(key);
+    return !!(o && (o.url || o.desc));
+  }
+  /* 見積書に出す名前。説明かリンクがあるときだけボタンにする（印刷では普通の文字）。 */
+  function svcName(name, key) {
+    if (!svcHas(key)) return esc(name);
+    return '<button type="button" class="svc-link" data-svc="' + esc(key) + '">' + esc(name) + "</button>";
+  }
+  function openSvcDlg(key) {
+    var o = svcFind(key), dlg = $("svcDlg");
+    if (!o || !dlg) return;
+    $("svcDlgTitle").textContent = o.name || "サービスのご案内";
+    var d = $("svcDlgDesc");
+    d.textContent = o.desc || "";
+    d.hidden = !o.desc;
+    var btn = $("svcDlgOpen"), note = $("svcDlgUrlNote");
+    btn.hidden = !o.url;
+    note.hidden = !o.url;
+    /* window.open はブラウザやPWAの設定で塞がれることがあるので、
+     * ふつうのリンクとして開く（別のタブになる）。 */
+    btn.setAttribute("href", o.url || "#");
+    if (!o.desc && !o.url) return;
+    dlg.hidden = false;
+  }
+
   function masterUpdateAvailable() {
     return num(DEFAULT_DATA.masterVersion) > num(MASTER.masterVersion);
   }
@@ -2861,10 +2917,10 @@
   var FEE_KEEP = { atamakin_default: true };
   // 標準から引き継ぐ項目（金額と、計算に効く条件だけ。名前・置き場所は店舗のまま）
   var PLAN_TAKE = ["tiers", "discounts", "includes5min", "dcard10",
-    "bakuageTier", "poikatsuPt", "maxBonus", "voiceOverrides", "group"];
+    "bakuageTier", "poikatsuPt", "maxBonus", "voiceOverrides", "group", "url"];
   var OPT_TAKE = ["price", "priceChoices", "priceLabels", "carrier",
-    "bakuage", "bakuage2", "bakuageFixed", "note", "kubunExist"];
-  var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove"];
+    "bakuage", "bakuage2", "bakuageFixed", "note", "kubunExist", "url"];
+  var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove", "url"];
   var CAMP_TAKE = ["months", "plans", "amountChoices", "note"];
 
   function takeFields(dst, src, keys) {
@@ -2902,6 +2958,7 @@
         return;
       }
       cur.price = dv.price;
+      if (dv.url) cur.url = dv.url;
     });
 
     [["options", OPT_TAKE], ["feeItems", FEE_ITEM_TAKE]].forEach(function (pair) {
@@ -4466,7 +4523,7 @@
         bonusRows.push({ name: o.name + "（" + MAX_BONUS_NOTE + "）", base: o.name.replace("（爆アゲ）", ""), price: 0 });
         return;
       }
-      optRows.push({ name: o.name + (lb ? "（" + lb + "）" : ""), price: pr });
+      optRows.push({ id: o.id, name: o.name + (lb ? "（" + lb + "）" : ""), price: pr });
       optTotal += pr;
     });
 
@@ -4642,10 +4699,10 @@
       if (/^b\d+$/.test(pay)) {
         var an2 = parseInt(pay.slice(1), 10);
         var am2 = Math.floor(a.price / an2);
-        accMonthlyRows.push({ name: a.name, monthly: am2, months: an2 });
+        accMonthlyRows.push({ svc: "ac:" + a.id, name: a.name, monthly: am2, months: an2 });
         accFirstExtra += a.price - am2 * an2;
       } else {
-        accOnceRows.push({ name: a.name, amount: a.price });
+        accOnceRows.push({ svc: "ac:" + a.id, name: a.name, amount: a.price });
       }
     });
 
@@ -4785,10 +4842,10 @@
       }
     }
     (MASTER.feeItems || []).forEach(function (f) {
-      if (st.feeItems[f.id]) initialRows.push({ name: f.name, amount: f.price, where: feeItemPayOf(st, f) });
+      if (st.feeItems[f.id]) initialRows.push({ svc: "fi:" + f.id, name: f.name, amount: f.price, where: feeItemPayOf(st, f) });
     });
     accOnceRows.forEach(function (a) {
-      initialRows.push({ name: a.name + "（アクセサリ・一括）", amount: a.amount, where: "store" });
+      initialRows.push({ svc: a.svc, name: a.name + "（アクセサリ・一括）", amount: a.amount, where: "store" });
     });
     st.adhocInitial.forEach(function (a) {
       if (a.name || a.amount) initialRows.push({ name: a.name || "その他", amount: num(a.amount), where: "store" });
@@ -6207,20 +6264,20 @@
     if (state.procType) h += row("手続き種別", procLabel, false);
     if (hasPlan()) {
       var bonus = r.bonusRows || [];
-      h += row(esc(r.plan.name) + "（" + esc(r.tier.label) + "）"
+      h += row(svcName(r.plan.name, "pl:" + r.plan.id) + "（" + esc(r.tier.label) + "）"
         + (bonus.length ? "（" + bonus.map(function (x) { return esc(x.base); }).join("・") + "）" : ""),
         yen(r.tier.price), true);
     }
     // プランの割引は「セット割」1行にまとめ、内訳を横並びで小さく表記
     var setWari = [];
-    if (r.dMinna) setWari.push({ name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
-    if (r.dSet) setWari.push({ name: "ドコモ光／home 5G", amt: r.dSet });
-    if (r.dCard) setWari.push({ name: "dカードお支払割" + (isGoldCard(state.dCard) ? "（GOLD系）" : ""), amt: r.dCard });
-    if (r.dDenki) setWari.push({ name: "ドコモでんき", amt: r.dDenki });
+    if (r.dMinna) setWari.push({ key: "x:minna", name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
+    if (r.dSet) setWari.push({ key: "x:hikari", name: "ドコモ光／home 5G", amt: r.dSet });
+    if (r.dCard) setWari.push({ key: "x:dcardpay", name: "dカードお支払割" + (isGoldCard(state.dCard) ? "（GOLD系）" : ""), amt: r.dCard });
+    if (r.dDenki) setWari.push({ key: "x:denki", name: "ドコモでんき", amt: r.dDenki });
     if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", amt: r.dChoki });
     if (setWari.length) {
       var setTotal = 0, setDetail = [];
-      setWari.forEach(function (w) { setTotal += w.amt; setDetail.push(w.name + " −" + yen(w.amt)); });
+      setWari.forEach(function (w) { setTotal += w.amt; setDetail.push(svcName(w.name, w.key) + " −" + yen(w.amt)); });
       h += "<tr><td>セット割・各種割引"
         + '<div class="subrow">' + setDetail.join("／") + "</div>"
         + '</td><td class="amt">−' + yen(setTotal) + "</td></tr>";
@@ -6235,7 +6292,7 @@
     }
     var netIncl = (r.netRows || []).filter(function (n) { return n.incl; });
     if (r.voice.id !== "none") {
-      h += row(esc(r.voice.name) + esc(r.voiceNote)
+      h += row(svcName(r.voice.name, "vo:" + r.voice.id) + esc(r.voiceNote)
         + (netIncl.length ? "（" + netIncl.map(function (n) { return esc(n.base); }).join("・") + "）" : ""),
         yen(r.voicePrice), true);
     }
@@ -6243,7 +6300,7 @@
       if (n.incl) return;   // 通話オプションの行に含めたので単独では出さない
       h += row(esc(n.name), yen(n.price), true);
     });
-    r.optRows.forEach(function (o) { h += row(esc(o.name), yen(o.price), true); });
+    r.optRows.forEach(function (o) { h += row(svcName(o.name, o.id ? "op:" + o.id : ""), yen(o.price), true); });
     state.adhocMonthly.forEach(function (a) {
       if (!a.name && !a.amount) return;
       var label2 = esc(a.name || "調整") + (num(a.months) > 0 ? "（" + num(a.months) + "か月間）" : "");
@@ -6331,7 +6388,7 @@
         p2 += row(dLabel, yen(r.device.monthly), true);
       }
       r.accMonthlyRows.forEach(function (a) {
-        p2 += row(esc(a.name) + "（アクセサリ・分割" + a.months + "回）", yen(a.monthly), true);
+        p2 += row(svcName(a.name, a.svc) + "（アクセサリ・分割" + a.months + "回）", yen(a.monthly), true);
       });
       p2 += '<tr class="total"><td>分割支払金 月額合計</td><td class="amt">' + yen(devAccSum) + "</td></tr>";
       p2 += '<tr class="total"><td>お支払い月額合計（プラン・オプション＋分割支払金' + (lbl0 ? "・" + lbl0 : "")
@@ -6372,7 +6429,7 @@
     if (r.storeRows.length) {
       p2 += "<h3>店頭お支払い金額</h3><table><tbody>";
       r.storeRows.forEach(function (x) {
-        p2 += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
+        p2 += row(svcName(x.name, x.svc), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
       });
       p2 += '<tr class="total"><td>店頭お支払い合計</td><td class="amt">' + yen(r.storeTotal) + "</td></tr>";
       p2 += "</tbody></table>";
@@ -6380,7 +6437,7 @@
     if (r.billRows.length) {
       p2 += "<h3>翌月合算払い（携帯料金と合算請求）</h3><table><tbody>";
       r.billRows.forEach(function (x) {
-        p2 += row(esc(x.name), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
+        p2 += row(svcName(x.name, x.svc), (x.amount < 0 ? "−" : "") + yen(Math.abs(x.amount)), true);
       });
       p2 += '<tr class="total"><td>翌月合算払い合計</td><td class="amt">' + yen(r.billTotal) + "</td></tr>";
       p2 += "</tbody></table>";
@@ -6644,7 +6701,10 @@
       h += '<label class="plan-f chk"><input type="checkbox" data-pl-maxbonus="' + pi + '"' + (pl.maxBonus ? " checked" : "") + ">"
         + "<span>「選べる特典」（対象サービスから毎月2つ無料）の対象</span></label>";
       h += '<label class="plan-f"><span>メモ</span>'
-        + '<input type="text" value="' + esc(pl.note || "") + '" placeholder="社内用。お客様には出ません" data-pl-note="' + pi + '"></label>';
+        + '<input type="text" value="' + esc(pl.note || "") + '" placeholder="社内用。お客様には出ません" data-pl-note="' + pi + '"></label>'
+        + '<label class="plan-desc">ご案内文'
+        + '<input type="text" value="' + esc(pl.desc || "") + '" placeholder="見積書で名前を押すと出ます（任意）" data-pl-desc="' + pi + '"></label>'
+        + (pl.url ? '<span class="svc-desc-url">公式ページ: ' + esc(pl.url) + "</span>" : "");
       h += "</div></details>";
       h += "</div>";
     });
@@ -6865,6 +6925,11 @@
           + extra(o)
           + '<label class="own-flag"><input type="checkbox" data-' + prefix + '-own="' + i + '"' + (o.own ? " checked" : "") + ">店舗独自</label>"
           + '<button class="del" data-' + prefix + '-del="' + i + '" type="button" aria-label="削除">×</button>'
+          + "</div>"
+          /* 見積書で名前をタップしたときに出る小窓の中身。空なら押せないままになる。 */
+          + '<div class="svc-desc-row"><label>ご案内文'
+          + '<input type="text" value="' + esc(o.desc || "") + '" placeholder="見積書で名前を押すと出ます（任意）" data-' + prefix + '-desc="' + i + '"></label>'
+          + (o.url ? '<span class="svc-desc-url">公式ページ: ' + esc(o.url) + "</span>" : "")
           + "</div>"
           + (after ? after(o) : "");
       }).join("");
@@ -8167,6 +8232,7 @@
     if (evType === "input") {
       if ((v = g("name")) != null) { MASTER.plans[+v].name = t.value; planTouch(); return true; }
       if ((v = g("note")) != null) { MASTER.plans[+v].note = t.value; markEdited(); return true; }
+      if ((v = g("desc")) != null) { MASTER.plans[+v].desc = t.value; markEdited(); return true; }
       if ((v = g("poi")) != null) { MASTER.plans[+v].poikatsuPt = Math.max(0, num(t.value)); planTouch(); return true; }
       if ((v = g("tlabel")) != null) {
         parts = v.split(":");
@@ -8339,6 +8405,8 @@
         list[+attr("name")].name = t.value;
       } else if (evType === "input" && attr("price") != null) {
         list[+attr("price")].price = num(t.value);
+      } else if (evType === "input" && attr("desc") != null) {
+        list[+attr("desc")].desc = t.value;
       } else if (evType === "change" && prefix === "op" && attr("cat") != null) {
         list[+attr("cat")].category = t.value;
       } else if (prefix === "op" && attr("choices") != null && evType === "click") {
@@ -9429,6 +9497,18 @@
     var m = $("recMenu");
     if (!m || m.hidden) return;
     if (!e.target.closest || !e.target.closest(".sum-rec")) m.hidden = true;
+  });
+  /* 見積書のサービス名をタップしたら、その説明の小窓を出す */
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest) return;
+    var b = e.target.closest(".svc-link");
+    if (b) { openSvcDlg(b.getAttribute("data-svc")); return; }
+    var dlg = $("svcDlg");
+    if (dlg && !dlg.hidden && (e.target === dlg || e.target.id === "svcDlgClose")) dlg.hidden = true;
+  });
+  document.addEventListener("keydown", function (e) {
+    var dlg = $("svcDlg");
+    if (dlg && !dlg.hidden && e.key === "Escape") dlg.hidden = true;
   });
   $("recWonBtn").addEventListener("click", function () { $("recMenu").hidden = true; recordOutcome("won"); });
   $("recLostBtn").addEventListener("click", function () { $("recMenu").hidden = true; recordOutcome("lost"); });
