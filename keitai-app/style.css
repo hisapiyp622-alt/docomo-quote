@@ -734,6 +734,8 @@ body.sorting .sort-chip{cursor:grabbing}
 }
 .svc-link:hover,.svc-link:focus{color:var(--blue,#0B62B5);border-bottom-color:currentColor}
 .svc-box{max-width:420px}
+/* 重ねられない割引を選んだときの注意書き */
+.warn-hint{color:#C62828}
 .btn-link{display:inline-block;text-decoration:none;text-align:center;line-height:1.4}
 .svc-dlg-desc{margin:4px 0 10px;font-size:14px;line-height:1.7;white-space:pre-wrap}
 .svc-dlg-note{margin:4px 0 10px;font-size:12.5px;color:var(--muted)}
