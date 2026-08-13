@@ -10,8 +10,8 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 5,
-  "updated": "2026-08-10",
+  "masterVersion": 6,
+  "updated": "2026-08-13",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -265,6 +265,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 407,
         "minna2": 0,
         "minna3": 0,
         "set": 0,
