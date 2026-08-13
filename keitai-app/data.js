@@ -810,9 +810,54 @@ const DEFAULT_DATA = {
       "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
       "carrier": true,
       "own": false
+    },
+    {
+      "id": "op_1785221584602",
+      "url": "https://www.docomo.ne.jp/info/news_release/2024/08/13_01.html",
+      "name": "あんしん店頭サポート 定額プラン",
+      "price": 990,
+      "category": "その他",
+      "note": "ドコモショップ店頭での対面サポート・月内何度でも（1日1回・1回最大30分）",
+      "own": false,
+      "carrier": true
+    },
+    {
+      "id": "op_1785221644318",
+      "url": "https://www.docomo.ne.jp/info/news_release/2024/08/13_01.html",
+      "name": "あんしん店頭サポート 定額ミニプラン",
+      "price": 550,
+      "category": "その他",
+      "note": "ドコモショップ店頭での対面サポート・月2回まで（1日1回・1回最大30分）",
+      "own": false,
+      "carrier": true
     }
   ],
-  "feeItems": [],
+  "feeItems": [
+    {
+      "id": "fi_1785221683603",
+      "name": "初期設定・データ移行サポート",
+      "price": 2200,
+      "own": false,
+      "pay": "bill",
+      "dataMove": true
+    },
+    {
+      "id": "fi_1785221704936",
+      "name": "初期設定・データ移行サポート(持ち込み)",
+      "price": 3300,
+      "own": false,
+      "pay": "bill",
+      "dataMove": true
+    },
+    {
+      "id": "fi_1785221719101",
+      "name": "あんしん店頭サポート（1回プラン）",
+      "price": 3300,
+      "own": false,
+      "pay": "bill",
+      "dataMove": true
+    }
+  ],
   "kaedoki": {
     "note": "23か月目までに返却で残価（24回目分）が不要。返却しない場合は残価を24回に再分割。2026年3月5日以降の加入分は返却時に「プログラム利用料」（機種・手続きにより0〜22,000円）が発生する場合あり。ドコモでの買い替え（機種変更等）なら「ドコモで買替えおトク割」で免除。"
   },
