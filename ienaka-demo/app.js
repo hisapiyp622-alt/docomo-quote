@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.5.0-demo";
+  var APP_VERSION = "2.6.0-demo";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -68,10 +68,17 @@
   var IENAKA_OPTS = [
     { id: "denwa", name: "ドコモ光電話", price: 550, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
-    { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 電話の付加サービス。金額と「バリューに含まれるか（inBV）」は
+     * docomo.ne.jp/internet/hikari/tell_service/service/ の表のとおり（2026-08-14 確認）。
+     * inBV の6つはバリュー選択中はタイルを出さない（含まれているため）。 */
+    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, inBV: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpCatch", name: "通話中着信", price: 330, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpNumReq", name: "ナンバー・リクエスト", price: 220, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpMeiwaku", name: "迷惑電話ストップサービス", price: 220, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpChakushin", name: "着信お知らせメール", price: 110, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     { id: "skyp", name: "映像サービス", price: 0, sumOf: "needsVideo", for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
     /* 映像サービスの内訳（「映像サービス」にチェックしたときだけ表示）。金額は見積もりごとに変更可。
@@ -715,19 +722,24 @@
    *   → ひかりTV → そのほか
    * 「映像サービス」の見出し（skyp）はタイルに出さず、内訳が選ばれているか
    * どうかで自動で付ける（計算と見積書の互換のため）。 */
+  /* 出番の少ないものは畳んでおく（店舗の指定・2026-08-14）。
+   *   でんわ追加 … 表に出すのは発信者番号表示だけ。「その他のでんわオプション」
+   *                 のチェックで残りが出る（state.opts.phoneMore）
+   *   スカパー！・ひかりTV … 「映像系サービス」のチェックで出る（state.opts.skyp。
+   *                 昔の「映像サービス」見出しと同じキーなので、計算・見積書・
+   *                 保存済みデータとの互換はそのまま） */
   var IE_OPT_GROUPS = [
     { title: "でんわオプション（基本）", ids: ["denwa", "denwaBV"], phoneBase: true },
-    { title: "でんわ追加オプション", ids: ["dpNumDisp", "dpTensou", "dpWch", "dpAddNum"], needsPhone: true },
-    { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true },
-    { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"] },
-    { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"] },
+    { title: "でんわ追加オプション",
+      ids: ["dpNumDisp", "dpCatch", "dpNumReq", "dpMeiwaku", "dpChakushin", "dpTensou", "dpWch", "dpAddNum"],
+      needsPhone: true, moreToggle: true },
+    { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true, videoToggleAfter: true },
+    { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"], needsVideo: true },
+    { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"], needsVideo: true },
     { title: "そのほかのオプション", ids: ["lanCard", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
   ];
   function ieOptById(id) {
     return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
-  }
-  function syncSkyp() {
-    state.opts.skyp = IENAKA_OPTS.some(function (o) { return o.needsVideo && state.opts[o.id]; });
   }
   function toggleIeOpt(id) {
     var od = ieOptById(id);
@@ -739,32 +751,41 @@
     if (on && id === "denwa") delete state.opts.denwaBV;
     if (on && id === "denwaBV") {
       delete state.opts.denwa;
-      delete state.opts.dpNumDisp;
-      delete state.opts.dpTensou;
+      IENAKA_OPTS.forEach(function (o) { if (o.inBV) delete state.opts[o.id]; });
     }
     if (!state.opts.denwa && !state.opts.denwaBV) {
       IENAKA_OPTS.forEach(function (o) { if (o.needsPhone) delete state.opts[o.id]; });
     }
     if (id === "vsHikariTv" && !on) delete state.opts.vsHikariHajime;
-    syncSkyp();
     renderOpts();
     recalc();
   }
   function renderOpts() {
-    syncSkyp();
     var shinki = state.applyType === "shinki" && state.product !== "home5g";
     var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
     var h = "";
     IE_OPT_GROUPS.forEach(function (g) {
       if (g.needsPhone && !phoneOn) return;
+      if (g.needsVideo && !state.opts.skyp) return;
       var items = g.ids.map(ieOptById).filter(function (o) {
         if (!o || o.for.indexOf(state.product) < 0) return false;
         if (o.needsHikariTv && !state.opts.vsHikariTv) return false;
         /* バリューに含まれるものは、バリュー選択中は出さない */
-        if (state.opts.denwaBV && (o.id === "dpNumDisp" || o.id === "dpTensou")) return false;
+        if (state.opts.denwaBV && o.inBV) return false;
+        /* 出番の少ない電話オプションは「その他」を開いたときだけ */
+        if (o.phoneMore && !state.opts.phoneMore) return false;
         return true;
       });
-      if (!items.length) return;
+      var toggles = "";
+      if (g.moreToggle) {
+        toggles += '<label class="check ie-more"><input type="checkbox" data-opt="phoneMore"'
+          + (state.opts.phoneMore ? " checked" : "") + "> その他のでんわオプションを表示</label>";
+      }
+      if (g.videoToggleAfter) {
+        toggles += '<label class="check ie-more"><input type="checkbox" data-opt="skyp"'
+          + (state.opts.skyp ? " checked" : "") + "> 映像系サービス（スカパー！・ひかりTV）を表示</label>";
+      }
+      if (!items.length && !toggles) return;
       h += '<div class="opt-cat">' + esc(g.title) + "</div>";
       h += '<div class="tile-grid ie-grid">' + items.map(function (o) {
         var on = !!state.opts[o.id];
@@ -776,14 +797,14 @@
         return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
           + '" tabindex="0" data-ietile="' + o.id + '">'
           + '<span class="t-name">' + esc(o.name) + "</span>" + priceHtml + "</div>";
-      }).join("") + "</div>";
+      }).join("") + "</div>" + toggles;
 
       /* グループ直下の付帯UI（従来のまま） */
       if (g.phoneBase) {
         if (shinki && phoneOn) {
           h += '<div class="field tv-koji"><label>電話番号</label><select data-banpo="1">'
-            + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番（工事料1,100円のみ）</option>'
-            + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり（＋同番移行2,200円）</option>'
+            + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番</option>'
+            + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり</option>'
             + "</select></div>"
             + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
         }
@@ -1723,7 +1744,17 @@
   });
   $("ienakaOptList").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-opt");
-    if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
+    if (id) {
+      state.opts[id] = e.target.checked;
+      /* 畳んだら、見えなくなる項目の選択も外す（見えない金額が乗らないように） */
+      if (id === "skyp" && !e.target.checked) {
+        IENAKA_OPTS.forEach(function (o) { if (o.needsVideo) delete state.opts[o.id]; });
+      }
+      if (id === "phoneMore" && !e.target.checked) {
+        IENAKA_OPTS.forEach(function (o) { if (o.phoneMore) delete state.opts[o.id]; });
+      }
+      renderOpts(); recalc(); return;
+    }
     if (e.target.getAttribute("data-tvkoji")) { state.tvKoji = e.target.value; state.tvKojiFee = null; state.tvOnsiteFee = null; renderOpts(); recalc(); return; }
     if (e.target.getAttribute("data-banpo")) { state.denwaBanpo = e.target.value; recalc(); }
   });

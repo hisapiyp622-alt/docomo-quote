@@ -1087,3 +1087,6 @@ body.present .sheet{box-shadow:none}
   /* 見積書を印刷したときは、タップの目印を消して普通の文字にする */
   .svc-link{border-bottom:0 !important;color:inherit !important}
 }
+
+/* オプションのタイル群を出し入れするチェック */
+.ie-more{margin:6px 0 2px;font-size:13px;color:var(--muted)}
