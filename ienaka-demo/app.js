@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.5.0";
+  var APP_VERSION = "2.5.0-demo";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -1391,7 +1391,7 @@
 
     h += '<p class="memo">※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（本見積もりの月額には含まれません）。</p>';
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
-    h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。詳細は店頭スタッフへご確認ください。<br>イエナカ見積もり 版 ' + APP_VERSION + "</div>";
+    h += '<div class="disclaimer">【デモ版】本見積もりはデモ用のサンプルで、実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。本書は当ツールが作成した概算のご案内であり、NTTドコモが発行するものではありません。<br>イエナカ見積もり 版 ' + APP_VERSION + "</div>";
     $("sheetBody").innerHTML = h;
   }
 

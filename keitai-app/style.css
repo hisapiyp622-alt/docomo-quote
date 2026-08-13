@@ -153,6 +153,16 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
 .tile.on .t-name{color:var(--red)}
 .tile .t-price{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .tile.on .t-price{color:var(--red)}
+/* イエナカの月額オプションのタイル */
+#ieOptList .tile-grid{grid-template-columns:repeat(4,1fr)}
+#ieOptList .opt-cat{margin-top:12px}
+.tile .t-price input{
+  width:4.6em;text-align:right;padding:2px 4px;margin-right:2px;
+  border:1px solid var(--line);border-radius:5px;font:inherit;font-size:11px;
+}
+@media (max-width:600px){
+  #ieOptList .tile-grid{grid-template-columns:repeat(2,1fr)}
+}
 .tile select{
   font-size:10.5px;padding:2px 1px;border:1px solid var(--line);border-radius:5px;
   width:100%;background:#fff;font-family:inherit;

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#CC0033">
+<meta name="description" content="ドコモ光・ahamo光・home 5G の店頭見積もりデモ版。工事費・特典・実質価格まで自動計算します。">
+<meta name="robots" content="noindex">
+<title>イエナカ見積もり（デモ版）｜ドコモ光・home 5G</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header no-print">
+  <h1>イエナカ見積もり <span class="demo-badge">デモ版</span>
+    <span class="sync-status" id="storeLabel"></span>
+    <label class="staff-pick"><span>担当</span>
+      <select id="staffSelect" title="担当者を切り替えます（担当ごとに見積もりが分かれます）"></select>
+    </label>
+    <span class="sync-status" id="cloudStatus"></span>
+  </h1>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="quote" type="button">見積もり</button>
+    <button class="tab" data-tab="sheet" type="button">見積書</button>
+    <button class="tab" data-tab="flow" type="button">開通の流れ</button>
+    <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
+    <button class="tab" data-tab="config" type="button">設定</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-quote" class="tab-page active no-print">
+    <div class="qcols">
+      <div class="qcol">
+<div class="step">
+      <h2 data-t="現在の固定回線（ヒアリング）">① 現在の固定回線（ヒアリング）</h2>
+      <div class="ie-cur" id="ieCurCard">
+        <div class="field">
+          <label for="ieCurLine">ネット</label>
+          <select id="ieCurLine"><!-- JSで生成 --></select>
+        </div>
+        <div class="field" id="ieCurLineOtherField" hidden>
+          <label for="ieCurLineOther">回線名（その他）</label>
+          <input type="text" id="ieCurLineOther" maxlength="30" placeholder="例：○○光">
+        </div>
+        <p class="hint" id="ieCurLineHint" hidden></p>
+        <div class="field">
+          <label for="ieCurPhone">固定電話</label>
+          <select id="ieCurPhone">
+            <option value="">（未ヒアリング）</option>
+            <option value="set">回線とセット（あり）</option>
+            <option value="analog">アナログ電話（NTT加入電話）</option>
+            <option value="none">なし</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ieCurTv">テレビ</label>
+          <select id="ieCurTv">
+            <option value="">（未ヒアリング）</option>
+            <option value="yes">あり（回線でご視聴）</option>
+            <option value="no">なし（アンテナで視聴）</option>
+          </select>
+        </div>
+        <div class="sub-checks" id="ieCurTvBands" hidden>
+          <span class="sub-label">ご視聴</span>
+          <label class="check"><input type="checkbox" id="ieCurTvDigi"> 地デジ</label>
+          <label class="check"><input type="checkbox" id="ieCurTvBs"> BS</label>
+          <label class="check"><input type="checkbox" id="ieCurTvCs"> CS</label>
+        </div>
+        <label class="check" id="ieCurTvKeepField" hidden>
+          <input type="checkbox" id="ieCurTvKeep"> J:COMのテレビを残してご契約（解約はネットのみ）
+        </label>
+        <p class="hint" id="ieCurTvKeepHint" hidden></p>
+      </div>
+</div>
+<div class="step">
+      <h2 data-t="商材">② 商材</h2>
+      <div class="field">
+        <label for="product">商材</label>
+        <select id="product">
+          <option value="hikari1g">ドコモ光 1ギガ</option>
+          <option value="hikari10g">ドコモ光 10ギガ</option>
+          <option value="ahamo1g">ahamo光 1ギガ</option>
+          <option value="ahamo10g">ahamo光 10ギガ</option>
+          <option value="home5g">home 5G</option>
+        </select>
+      </div>
+      <div class="field" id="applyTypeField">
+        <label for="applyType">申込区分</label>
+        <select id="applyType">
+          <option value="shinki">新規</option>
+          <option value="tenyo">転用（フレッツ光から）</option>
+          <option value="jigyosha">事業者変更（他社光コラボから）</option>
+        </select>
+      </div>
+      <div id="hikariFields">
+        <div class="field">
+          <label for="housing">住居タイプ</label>
+          <select id="housing">
+            <option value="ht">戸建</option>
+            <option value="ms">マンション</option>
+          </select>
+        </div>
+        <div class="field" id="ptypeField">
+          <label for="ptype">プロバイダ料金タイプ</label>
+          <select id="ptype">
+            <option value="A">タイプA</option>
+            <option value="B">タイプB</option>
+          </select>
+        </div>
+        <div class="field" id="providerField">
+          <label for="provider">プロバイダ</label>
+          <select id="provider">
+            <option value="">未定</option>
+            <option value="OCN インターネット">OCN インターネット</option>
+            <option value="@nifty">@nifty</option>
+            <option value="GMOとくとくBB">GMOとくとくBB</option>
+            <option value="andline">andline</option>
+          </select>
+        </div>
+        <label class="check" id="visitWrap" hidden><input type="checkbox" id="visit"> 訪問設定サポートを希望（@niftyフォローコールで日程を調整）</label>
+        <div class="field" id="providerTypeField" hidden>
+          <label for="providerType">プロバイダの扱い</label>
+          <select id="providerType">
+            <option value="shinki">新規（このプロバイダを新しく契約）</option>
+            <option value="keizoku">継続（いまのプロバイダを継続・メールアドレスを残す）</option>
+          </select>
+        </div>
+        <div class="field" id="routerRentalField">
+          <label for="routerRental">プロバイダ無料無線ルーターレンタル</label>
+          <select id="routerRental">
+            <option value="ari">あり（無料レンタル利用）</option>
+            <option value="nashi">なし</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="baseMonthly">月額基本料</label>
+        <input type="number" id="baseMonthly" inputmode="numeric" min="0"> 円
+      </div>
+      <label class="check" id="onecoinWrap" hidden><input type="checkbox" id="onecoin"> 10ギガ ワンコインキャンペーン（開通〜6か月目は基本料500円・新規/転用/事業者変更対象）</label>
+      <p class="hint">商材・住居タイプ・プロバイダを選ぶと標準料金が入ります。実際の料金に合わせて自由に変更できます。</p>
+    </div>
+
+    <div class="step" id="home5gStep" hidden>
+      <h2 data-t="home 5G 端末">② home 5G 端末</h2>
+      <div class="field">
+        <label for="h5DeviceName">端末名</label>
+        <input type="text" id="h5DeviceName" placeholder="例）home 5G HR02">
+      </div>
+      <div class="field">
+        <label for="h5DevicePrice">端末代金（税込）</label>
+        <input type="number" id="h5DevicePrice" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="h5Pay">お支払い方法</label>
+        <select id="h5Pay">
+          <option value="b48">分割48回</option>
+          <option value="ikkatsu">一括払い</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="h5Support"> 月々サポートを適用（48か月・分割なら端末実質負担0円）</label>
+      <p class="hint" id="h5Hint"></p>
+    </div>
+
+    <div class="step">
+      <h2 data-t="月額オプション">③ 月額オプション</h2>
+      <div id="ienakaOptList"></div>
+      <div class="adhoc-list" id="extraMonthlyList"></div>
+      <button class="btn-sub" id="addExtraMonthly" type="button">＋ 月額の追加項目（オプション・割引など）</button>
+      <p class="hint">割引を入れる場合は金額をマイナスで入力してください（例: −550）。光電話・テレビオプションにチェックを入れると、対応する工事料が「初期費用」セクションへ自動で加算されます。</p>
+    </div>
+
+          </div>
+      <div class="qcol">
+<div class="step">
+      <h2 data-t="初期費用">④ 初期費用</h2>
+      <div class="field" id="kojiPayField">
+        <label for="kojiPay">工事費の支払い</label>
+        <select id="kojiPay">
+          <option value="b24">分割24回</option>
+          <option value="ikkatsu">一括払い</option>
+        </select>
+      </div>
+      <label class="check" id="kojiFreeWrap"><input type="checkbox" id="kojiFree"> 実質0円特典を適用（エントリー不要・工事費相当のdポイントを利用開始月の7か月後の月から24か月間分割で進呈・料金充当想定）</label>
+      <label class="check" id="router10gWrap" hidden><input type="checkbox" id="router10g"> 10Gルーター購入費用</label>
+      <div class="field" id="router10gPriceField" hidden>
+        <label for="router10gPrice">ルーター価格</label>
+        <input type="number" id="router10gPrice" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field" id="router10gPayField" hidden>
+        <label for="router10gPay">ルーターのお支払い</label>
+        <select id="router10gPay">
+          <option value="once">一括（初期費用）</option>
+          <option value="b48">48回分割（月額に加算）</option>
+        </select>
+      </div>
+      <p class="hint" id="router10gHint" hidden></p>
+      <div class="hint koji-summary" id="kojiSummary" hidden></div>
+      <p class="hint" id="kojiHint">契約事務手数料（4,950円）と工事費は商材・申込区分から自動判定して下のまとめに表示します（新規=28,600円＋オプション工事料／転用・事業者変更=0円）。テレビ視聴サービス登録料（3,080円）は手数料のため分割対象外で常に一括です。特殊なケースは「追加項目」で調整してください。</p>
+      <div class="adhoc-list" id="extraInitialList"></div>
+      <button class="btn-sub" id="addExtraInitial" type="button">＋ 初期費用の追加項目</button>
+    </div>
+
+    <div class="step">
+      <h2 data-t="特典・見積書情報">⑤ 特典・見積書情報</h2>
+      <div class="field" id="dcardField">
+        <label for="dcard">dカード</label>
+        <select id="dcard">
+          <option value="none">なし・その他</option>
+          <option value="gold">GOLD（利用料金の10%還元）</option>
+          <option value="platinum">PLATINUM（利用料金の20%還元）</option>
+        </select>
+      </div>
+      <div class="field" id="dcardPtField" hidden>
+        <label for="dcardPt">毎月の還元ポイント</label>
+        <input type="number" id="dcardPt" inputmode="numeric" min="0"> pt/月
+      </div>
+      <p class="hint" id="dcardHint" hidden></p>
+      <div class="field" id="dpointField">
+        <label for="dpoint">お申込みdポイント進呈</label>
+        <input type="number" id="dpoint" inputmode="numeric" min="0"> pt
+      </div>
+      <p class="hint" id="dpointHint" hidden>【公式】ドコモショップのドコモ光申込特典: 東日本は1G/10Gとも10,000pt（新規・光回線再利用・事業者変更）。西日本は1G新規20,000pt／10G新規15,000pt／事業者変更10,000pt。転用は対象外。利用開始4か月後の月末にdポイント（期間・用途限定）進呈。</p>
+      <label class="check" id="tvPointWrap" hidden><input type="checkbox" id="tvPoint"> テレビオプション同時申込特典 ＋5,000pt（転用は除く・店頭案内の特典）</label>
+      <label class="check" id="h5MigWrap" hidden><input type="checkbox" id="h5Mig"> 「home 5G」→「ドコモ光」移行特典 ＋20,000pt（1ギガ 2年定期のみ・前月末時点でhome 5G契約があること）</label>
+      <button class="btn-sub" id="storeTokutenBtn" type="button">＋</button>
+      <div id="storeTokutenBox" hidden>
+        <div class="field">
+          <label for="storeCash">現金キャッシュバック</label>
+          <input type="number" id="storeCash" inputmode="numeric" min="0" placeholder="0"> 円
+        </div>
+        <div class="field">
+          <label for="storePt">店舗独自特典ポイント還元</label>
+          <input type="number" id="storePt" inputmode="numeric" min="0" placeholder="0"> pt
+        </div>
+        <p class="hint">相対対応用。金額・ポイントが入力されているときだけ、見積書・引き継ぎシートに「店舗独自特典」として記載されます（0なら記載されません）。</p>
+      </div>
+      <p class="hint" id="kojiPointInfo" hidden></p>
+      <div class="field">
+        <label for="setWariTotal">光セット割 合計額</label>
+        <input type="number" id="setWariTotal" inputmode="numeric" min="0" placeholder="0"> 円/月
+      </div>
+      <p class="hint">ご家族のスマホに掛かるセット割（−1,210円/月×回線数など）の合計。入力すると見積書に「実質お支払い目安」として差引後の金額が表示されます。</p>
+      <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
+      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）工事希望日は今月末以降"></div>
+      <p class="hint">担当者は画面上部で切り替えます（名前の追加・変更は「設定」タブ）。</p>
+      <p class="hint">※ ドコモ光／home 5G セット割はご家族のスマホ料金から割引されます。上の「光セット割 合計額」に入力すると、実質価格として見積書に表示されます。</p>
+    </div>
+
+          </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-main" id="toSheet" type="button">見積書を表示する</button>
+      <button class="btn-sub" id="clearQuote" type="button">入力をクリア</button>
+    </div>
+  </section>
+
+  <section id="tab-sheet" class="tab-page">
+    <div class="sheet" id="sheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <section id="tab-flow" class="tab-page">
+    <div class="sheet" id="flowBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printFlowBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuoteFlow" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <section id="tab-staff" class="tab-page">
+    <div class="sheet" id="staffSheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printStaffBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuoteStaff" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <section id="tab-config" class="tab-page no-print">
+    <div class="qcols">
+      <div class="qcol">
+        <div class="step">
+          <h2>店舗情報</h2>
+          <div class="field">
+            <label for="storeName">店舗名</label>
+            <input type="text" id="storeName" placeholder="例）ドコモショップ○○店">
+          </div>
+          <p class="hint">入力すると見積書・引き継ぎシートに表示されます。</p>
+        </div>
+      </div>
+      <div class="qcol">
+        <div class="step" id="accountStep" hidden>
+          <h2>アカウント</h2>
+          <p class="hint" id="accountInfo"></p>
+          <div class="actions"><button class="btn-sub" id="logoutBtn" type="button">ログアウト</button></div>
+          <p class="hint">同じアカウントでログインした端末どうしで、店舗名・担当者・見積もりが自動的に同期されます。お客様名は端末内にのみ保存され、クラウドへは送信されません。</p>
+        </div>
+        <div class="step">
+          <h2>担当者</h2>
+          <div class="adhoc-list" id="staffList"></div>
+          <button class="btn-sub" id="addStaff" type="button">＋ 担当者を追加</button>
+          <p class="hint">画面上部の「担当」で切り替えます。見積もりの入力内容は担当者ごとに保存されるため、別の担当者の作業中の見積もりに影響しません。担当者を削除すると、その担当者の見積もりも削除されます。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="summary-bar no-print" id="summaryBar">
+    <div class="sum-item"><span class="sum-label">月額</span><span class="sum-value" id="sumMonthly">0円</span></div>
+    <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
+  </div>
+</main>
+
+<div class="login-overlay no-print" id="loginOverlay" hidden>
+  <form class="login-box" id="loginForm">
+    <h2>イエナカ見積もり</h2>
+    <p class="login-lead">店舗アカウントでログインしてください。</p>
+    <div class="field"><label for="loginEmail">メールアドレス</label><input type="email" id="loginEmail" autocomplete="username" required></div>
+    <div class="field"><label for="loginPass">パスワード</label><input type="password" id="loginPass" autocomplete="current-password" required></div>
+    <p class="login-err" id="loginErr" hidden></p>
+    <button class="btn-main" id="loginBtn" type="submit">ログイン</button>
+  </form>
+</div>
+
+<!-- デモ版: クラウド同期は使わないため Firebase は読み込まない -->
+<script src="../keitai-app/qr.js"></script>
+<script src="app.js"></script>
+/* デモ版: オンライン専用のため Service Worker は登録しない（オフラインでは使えません） */
+
+</body>
+</html>
