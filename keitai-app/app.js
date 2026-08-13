@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.93.2";
+  var APP_VERSION = "1.93.3";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -1521,18 +1521,26 @@
     h += "<h3>" + (mFil === "all" ? "全期間" : esc(mFil)) + "の成約"
       + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）")
       + (settled ? '<span class="settled-mark">確定済み</span>' : "") + "</h3>";
-    if (!iKeys.length) {
-      h += '<p class="hint">この期間の記録がまだありません。</p>';
+    /* この表は「何の応対から何が成約したか」を見るためのもの。
+     * 提案の数は出さない（店舗の指定・2026-08-13）。
+     * そのぶん、成約が0の項目は行ごと落とす。ただし「修正」が使える画面
+     * （担当と月を選んでいるとき）では、＋で足せるように提案だけの行も残す。 */
+    var iShow = iKeys.filter(function (k) {
+      return items[k].won > 0 || (canAdj && items[k].prop > 0);
+    });
+    if (!iShow.length) {
+      h += '<p class="hint">'
+        + (iKeys.length ? "この期間はまだ成約の記録がありません。" : "この期間の記録がまだありません。")
+        + "</p>";
     } else {
-      h += '<div class="stats-scroll"><table class="stats-table stats-main"><tr><th>項目</th><th>提案</th><th>成約</th>'
+      h += '<div class="stats-scroll"><table class="stats-table stats-main"><tr><th>項目</th><th>成約</th>'
         + vCols.map(function (k) { return "<th>" + esc(vShort(k)) + "</th>"; }).join("")
         + (canAdj ? "<th>修正</th>" : "") + "</tr>";
       /* 縦の合計は出さない。「（再掲）」の行が二重に足されるので、
        * 足した数字に意味がないため（応対数・成約数は「担当別」の表で見る）。 */
-      iKeys.forEach(function (k) {
+      iShow.forEach(function (k) {
         var x = items[k];
         h += "<tr><td>" + esc(x.name) + "</td>"
-          + '<td class="n-prop">' + (x.prop || "－") + "</td>"
           + '<td class="n-won">' + (x.won || "－") + "</td>"
           + vCols.map(function (vk) { return "<td>" + (x.byVisit[vk] || "") + "</td>"; }).join("")
           + (canAdj
