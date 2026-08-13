@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.6.1";
+  var APP_VERSION = "2.6.2";
   var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
@@ -760,6 +760,9 @@
       IENAKA_OPTS.forEach(function (o) { if (o.needsPhone) delete state.opts[o.id]; });
     }
     if (id === "vsHikariTv" && !on) delete state.opts.vsHikariHajime;
+    /* 10ギガのルーターは、レンタルと購入のどちらか一方。
+     * レンタルを選んだら購入のチェックを外す（店舗の指定・2026-08-14） */
+    if (id === "lanRouter10g" && on) { state.router10g = false; syncForm(); }
     renderOpts();
     recalc();
   }
@@ -1695,7 +1698,12 @@
   $("setWariTotal").addEventListener("input", function () { state.setWariTotal = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
-  $("router10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
+  $("router10g").addEventListener("change", function () {
+      state.router10g = this.checked;
+      /* 購入に切り替えたら、レンタルのタイルを外す（どちらか一方のため） */
+      if (this.checked && state.opts.lanRouter10g) { delete state.opts.lanRouter10g; renderOpts(); }
+      syncForm(); recalc();
+    });
   $("router10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); syncForm(); recalc(); });
   $("router10gPay").addEventListener("change", function () { state.router10gPay = this.value; syncForm(); recalc(); });
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });

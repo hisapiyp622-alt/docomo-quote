@@ -433,6 +433,9 @@
       IENAKA_OPTS.forEach(function (o) { if (o.needsPhone) delete state.opts[o.id]; });
     }
     if (id === "vsHikariTv" && !on) delete state.opts.vsHikariHajime;
+    /* 10ギガのルーターは、レンタルと購入のどちらか一方。
+     * レンタルを選んだら購入のチェックを外す（店舗の指定・2026-08-14） */
+    if (id === "lanRouter10g" && on) { state.router10g = false; syncForm(); }
     renderOpts();
     recalc();
   }
@@ -821,7 +824,12 @@
     $("ieStorePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
     $("ieDcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
     $("ieDcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
-    $("ieRouter10g").addEventListener("change", function () { state.router10g = this.checked; syncForm(); recalc(); });
+    $("ieRouter10g").addEventListener("change", function () {
+      state.router10g = this.checked;
+      /* 購入に切り替えたら、レンタルのタイルを外す（どちらか一方のため） */
+      if (this.checked && state.opts.lanRouter10g) { delete state.opts.lanRouter10g; renderOpts(); }
+      syncForm(); recalc();
+    });
     $("ieRouter10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); syncForm(); recalc(); });
     $("ieRouter10gPay").addEventListener("change", function () { state.router10gPay = this.value; syncForm(); recalc(); });
     $("ieKojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
