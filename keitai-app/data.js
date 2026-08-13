@@ -10,7 +10,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 4,
+  "masterVersion": 5,
   "updated": "2026-08-10",
   "fees": {
     "jimu_shinki": 4950,
@@ -39,6 +39,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1980,
         "minna2": 550,
         "minna3": 1210,
         "set": 1210,
@@ -66,6 +67,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1980,
         "minna2": 550,
         "minna3": 1210,
         "set": 1210,
@@ -96,6 +98,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1980,
         "minna2": 550,
         "minna3": 1210,
         "set": 1210,
@@ -185,6 +188,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 770,
         "minna2": 0,
         "minna3": 0,
         "set": 0,
@@ -213,6 +217,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 572,
         "minna2": 0,
         "minna3": 0,
         "set": 0,
@@ -236,6 +241,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 572,
         "minna2": 0,
         "minna3": 0,
         "set": 0,
@@ -307,6 +313,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 220,
         "minna2": 0,
         "minna3": 0,
         "set": 0,
@@ -339,6 +346,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,
         "set": 1100,
@@ -362,6 +370,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,
         "set": 1100,
@@ -431,6 +440,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,
         "set": 1100,
@@ -473,6 +483,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,
         "set": 1100,
@@ -552,6 +563,16 @@ const DEFAULT_DATA = {
       ],
       "note": "機種により792〜2,182円（smartあんしん補償の月額＋462円）。公式ページで機種の額をご確認ください",
       "category": "補償",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "imadoco",
+      "url": "https://www.docomo.ne.jp/service/imadoco/",
+      "name": "イマドコサーチ",
+      "price": 330,
+      "note": "見守る方に月額がかかります（初回31日間無料）",
+      "category": "その他",
       "carrier": true,
       "own": false
     },

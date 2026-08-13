@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.95.0";
+  var APP_VERSION = "1.96.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -180,7 +180,8 @@
   var SAVED_MAX = 300;
   var SAVED_FULL = 60;
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
-  var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose",
+  var HEARTY_VOICE_OFF = 880;   // ハーティ割引の通話オプション割引（税込）
+  var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty",
     "kaimashi", "u15", "devicePrice", "atamakin", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
   function slimData(d) {
@@ -2870,7 +2871,9 @@
     "x:hikari":   { name: "ドコモ光／home 5G セット割", url: DCM_URL + "charge/hikari_set/" },
     "x:dcardpay": { name: "dカードお支払割", url: DCM_URL + "charge/dcard_oshiharai/" },
     "x:denki":    { name: "ドコモでんき", url: DCM_URL + "denki/" },
-    "x:dcard":    { name: "dカード", url: DCM_URL + "service/dcard/" }
+    "x:dcard":    { name: "dカード", url: DCM_URL + "service/dcard/" },
+    "x:hearty":   { name: "ハーティ割引", url: DCM_URL + "charge/hearty/",
+      desc: "障がい者手帳などをお持ちの方向けの割引です。基本使用料と通話オプションが安くなり、各種手数料も無料になります。みんなドコモ割・dカードお支払割とは重ねてご利用いただけません。" }
   };
   var SVC_LISTS = { pl: "plans", vo: "voiceOptions", op: "options",
     fi: "feeItems", ac: "accessories" };
@@ -3273,7 +3276,7 @@
   function defaultState() {
     return {
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
-      minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none",
+      minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false,
       voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
@@ -4495,20 +4498,33 @@
 
     // 割引（段階ごとの上書き dOverride を反映）
     var d = Object.assign({}, plan.discounts, tier.dOverride || {});
-    var dMinna = st.minna === "2" ? (d.minna2 || 0)
+    /* ハーティ割引は「みんなドコモ割」「dカードお支払割」と重ねられない
+     * （docomo.ne.jp/charge/hearty/about.html に明記）。
+     * 選ばれていたら、その2つは当たらないものとして計算する。 */
+    var dHearty = st.hearty ? (d.hearty || 0) : 0;
+    var dMinna = dHearty ? 0
+               : st.minna === "2" ? (d.minna2 || 0)
                : st.minna === "3" ? (d.minna3 || 0) : 0;
     var dSet = st.dSet ? (d.set || 0) : 0;
-    var dCard = st.dCard === "normal" ? (d.dcard || 0)
+    var dCard = dHearty ? 0
+              : st.dCard === "normal" ? (d.dcard || 0)
               : isGoldCard(st.dCard) ? (d.dcardGold || 0) : 0;
     var dDenki = st.dDenki ? (d.denki || 0) : 0;
     var dChoki = st.choki === "y10" ? (d.choki10 || 0)
                : st.choki === "y20" ? (d.choki20 || 0) : 0;
-    var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki);
+    var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki - dHearty);
 
     // 通話オプション
     var vo = MASTER.voiceOptions.filter(function (v) { return v.id === st.voice; })[0]
              || MASTER.voiceOptions[0];
     var voicePrice = voicePriceFor(plan, vo);
+    /* ハーティ割引は通話オプションも 880円 引く（5分は無料、かけ放題は1,100円）。
+     * 「はじめてスマホプラン」は通話オプションの割引対象外。 */
+    var dHeartyVoice = 0;
+    if (dHearty && plan.id !== "hajimete" && (vo.id === "v5" || vo.id === "kake")) {
+      dHeartyVoice = Math.min(HEARTY_VOICE_OFF, voicePrice);
+      voicePrice -= dHeartyVoice;
+    }
     var voiceNote = (plan.includes5min && vo.id === "v5") ? "（プランに標準込み）" : "";
 
     // オプション・サービス（すべて月額・金額選択対応）
@@ -4859,6 +4875,7 @@
     return {
       plan: plan, tier: tier, tierIdx: tierIdx,
       dMinna: dMinna, dSet: dSet, dCard: dCard, dDenki: dDenki, dChoki: dChoki,
+      dHearty: dHearty, dHeartyVoice: dHeartyVoice,
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
@@ -4892,7 +4909,7 @@
   }
   function isPatternUsed(st) {
     var d = defaultState();
-    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointPoikatsuFamily", "pointDcard"];
+    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "hearty", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointPoikatsuFamily", "pointDcard"];
     if (keys.some(function (k) { return st[k] !== d[k]; })) return true;
     function anyOn(map) { return Object.keys(map || {}).some(function (k) { return map[k]; }); }
     if (anyOn(st.options) || anyOn(st.feeItems) || anyOn(st.accSel)) return true;
@@ -5391,12 +5408,16 @@
     { wrap: "dSetWrap", name: "ドコモ光／home 5G セット割", on: function (d) { return !!d.set; } },
     { wrap: "dCardWrap", name: "dカードお支払割", on: function (d) { return !!(d.dcard || d.dcardGold); } },
     { wrap: "dDenkiWrap", name: "ドコモでんきセット割", on: function (d) { return !!d.denki; } },
-    { wrap: "chokiWrap", name: "長期利用割", on: function (d) { return !!d.choki10; } }
+    { wrap: "chokiWrap", name: "長期利用割", on: function (d) { return !!d.choki10; } },
+    { wrap: "heartyWrap", name: "ハーティ割引", on: function (d) { return !!d.hearty; } }
   ];
   function renderDiscountHint() {
     var plan = currentPlan();
     var shown = hasPlan();
     var offs = [];
+    /* ハーティ割引を選んでいるときは、重ねられない割引をその場で知らせる */
+    var hw = $("heartyNote");
+    if (hw) hw.hidden = !(state.hearty && (plan.discounts || {}).hearty);
     DISCOUNT_FIELDS.forEach(function (f) {
       var el = $(f.wrap);
       if (!el) return;
@@ -5428,6 +5449,7 @@
     $("dSet").checked = state.dSet;
     $("dCardSel").value = state.dCard;
     $("dDenki").checked = state.dDenki;
+    $("hearty").checked = state.hearty;
     $("choki").value = state.choki;
     renderVoiceSelect();
     renderMailOpt();
@@ -6275,6 +6297,8 @@
     if (r.dCard) setWari.push({ key: "x:dcardpay", name: "dカードお支払割" + (isGoldCard(state.dCard) ? "（GOLD系）" : ""), amt: r.dCard });
     if (r.dDenki) setWari.push({ key: "x:denki", name: "ドコモでんき", amt: r.dDenki });
     if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", amt: r.dChoki });
+    if (r.dHearty) setWari.push({ key: "x:hearty", name: "ハーティ割引", amt: r.dHearty });
+    if (r.dHeartyVoice) setWari.push({ key: "x:hearty", name: "ハーティ割引（通話オプション）", amt: r.dHeartyVoice });
     if (setWari.length) {
       var setTotal = 0, setDetail = [];
       setWari.forEach(function (w) { setTotal += w.amt; setDetail.push(svcName(w.name, w.key) + " −" + yen(w.amt)); });
@@ -8627,6 +8651,10 @@
     $("dSet").addEventListener("change", function () { state.dSet = this.checked; recalc(); });
     $("dCardSel").addEventListener("change", function () { state.dCard = this.value; recalc(); });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
+    /* 重ねられない割引の注意書きを出し直すため、ここだけ renderDiscountHint も呼ぶ */
+    $("hearty").addEventListener("change", function () {
+      state.hearty = this.checked; recalc(); renderDiscountHint();
+    });
     $("choki").addEventListener("change", function () { state.choki = this.value; recalc(); });
     $("campaignList").addEventListener("change", function (e) {
       var cid = e.target.getAttribute("data-cp");
