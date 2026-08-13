@@ -381,36 +381,91 @@
     return "（" + parts.join("・") + "）";
   }
 
-  /* ---------- 画面描画 ---------- */
+  /* ---------- 画面描画 ----------
+   * 月額オプションは、スマホの補償・セキュリティと同じタイルで選ぶ
+   * （小川さんの指定・2026-08-13）。グループはスケッチの構成に合わせる。
+   *   でんわ（基本・排他）→ でんわ追加 → TV（地デジ・BS）→ スカパー！（CS）
+   *   → ひかりTV → そのほか
+   * 「映像サービス」の見出し（skyp）はタイルに出さず、内訳が選ばれているか
+   * どうかで自動で付ける（計算と見積書の互換のため）。 */
+  var IE_OPT_GROUPS = [
+    { title: "でんわオプション（基本）", ids: ["denwa", "denwaBV"], phoneBase: true },
+    { title: "でんわ追加オプション", ids: ["dpNumDisp", "dpTensou", "dpWch", "dpAddNum"], needsPhone: true },
+    { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true },
+    { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"] },
+    { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"] },
+    { title: "そのほかのオプション", ids: ["lanCard", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
+  ];
+  function ieOptById(id) {
+    return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
+  }
+  function syncSkyp() {
+    state.opts.skyp = IENAKA_OPTS.some(function (o) { return o.needsVideo && state.opts[o.id]; });
+  }
+  function toggleIeOpt(id) {
+    var od = ieOptById(id);
+    if (!od) return;
+    var on = !state.opts[id];
+    state.opts[id] = on;
+    /* でんわの基本は排他。バリューを選んだら、含まれている
+     * 発信者番号表示・転送でんわの単品も外す（二重にならないように） */
+    if (on && id === "denwa") delete state.opts.denwaBV;
+    if (on && id === "denwaBV") {
+      delete state.opts.denwa;
+      delete state.opts.dpNumDisp;
+      delete state.opts.dpTensou;
+    }
+    if (!state.opts.denwa && !state.opts.denwaBV) {
+      IENAKA_OPTS.forEach(function (o) { if (o.needsPhone) delete state.opts[o.id]; });
+    }
+    if (id === "vsHikariTv" && !on) delete state.opts.vsHikariHajime;
+    syncSkyp();
+    renderOpts();
+    recalc();
+  }
   function renderOpts() {
     if (!state) return;
-    var h = "", banpoShown = false;
-    IENAKA_OPTS.forEach(function (o) {
-      if (o.for.indexOf(state.product) < 0) return;
-      var shinki = state.applyType === "shinki" && state.product !== "home5g";
-      if (o.needsPhone && !(state.opts.denwa || state.opts.denwaBV)) return; // 光電話チェック時のみ表示
-      if (o.needsVideo && !state.opts.skyp) return; // 映像サービスチェック時のみ表示
-      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
-      var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
-      // 見出し行は金額の入力欄を持たず、選んだ内訳の合計を出す
-      var priceHtml = o.sumOf
-        ? (state.opts[o.id] ? ' <span class="opt-price">合計 ' + yen(groupTotal(o)) + "/月</span>" : "")
-        : ' <span class="opt-price"><input type="number" data-ieoptprice="' + o.id + '" value="' + pr + '" style="width:5.5em;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit">円/月</span>';
-      h += '<label class="check ienaka-opt' + (o.needsPhone || o.needsVideo ? " sub" : "") + '"><input type="checkbox" data-ieopt="' + o.id + '"' + (state.opts[o.id] ? " checked" : "") + "> "
-        + esc(o.name) + priceHtml
-        + (o.koji && shinki && !o.phone ? ' <span class="opt-price">工事料+' + o.koji.toLocaleString("ja-JP") + "円</span>" : "")
-        + "</label>";
-      // 光電話: 番号ポータビリティの選択（新規のみ・チェック時に1回だけ表示）
-      if (shinki && o.phone && state.opts[o.id] && !banpoShown) {
-        banpoShown = true;
-        h += '<div class="field tv-koji"><label>電話番号</label><select data-iebanpo="1">'
-          + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番</option>'
-          + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり</option>'
-          + "</select></div>"
-          + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
+    syncSkyp();
+    var shinki = state.applyType === "shinki" && state.product !== "home5g";
+    var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var h = "";
+    IE_OPT_GROUPS.forEach(function (g) {
+      if (g.needsPhone && !phoneOn) return;
+      var items = g.ids.map(ieOptById).filter(function (o) {
+        if (!o || o.for.indexOf(state.product) < 0) return false;
+        if (o.needsHikariTv && !state.opts.vsHikariTv) return false;
+        /* バリューに含まれるものは、バリュー選択中は出さない */
+        if (state.opts.denwaBV && (o.id === "dpNumDisp" || o.id === "dpTensou")) return false;
+        return true;
+      });
+      if (!items.length) return;
+      h += '<div class="opt-cat">' + esc(g.title) + "</div>";
+      h += '<div class="tile-grid ie-grid">' + items.map(function (o) {
+        var on = !!state.opts[o.id];
+        var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
+        var months = o.timedMonths ? "・" + o.timedMonths + "か月" : "";
+        var priceHtml = on
+          ? '<span class="t-price"><input type="number" data-ieoptprice="' + o.id + '" value="' + pr + '">円/月' + months + "</span>"
+          : '<span class="t-price">' + yen(pr) + "/月" + months + "</span>";
+        return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
+          + '" tabindex="0" data-ietile="' + o.id + '">'
+          + '<span class="t-name">' + esc(o.name) + "</span>" + priceHtml + "</div>";
+      }).join("") + "</div>";
+
+      /* グループ直下の付帯UI（従来のまま） */
+      if (g.phoneBase) {
+        if (shinki && phoneOn) {
+          h += '<div class="field tv-koji"><label>電話番号</label><select data-iebanpo="1">'
+            + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番</option>'
+            + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり</option>'
+            + "</select></div>"
+            + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
+        }
+        if (state.opts.denwaBV) {
+          h += '<p class="hint">※ 光電話バリューには発信者番号表示・転送でんわ・迷惑電話ストップなど6つの付加サービスと528円分の無料通話が含まれます（含まれるサービスの個別追加は不要です）。</p>';
+        }
       }
-      // テレビオプション: 工事方法の選択＋工事費（新規のみ・金額は編集可・チェック時のみ表示）
-      if (shinki && o.tvKoji && state.opts[o.id]) {
+      if (g.tvBase && shinki && state.opts.tv) {
         var curTk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
         var curFee = state.tvKojiFee != null ? state.tvKojiFee : curTk.koji;
         h += '<div class="field tv-koji"><label>テレビ工事</label><select data-ietvkoji="1">'
@@ -427,9 +482,6 @@
         }
       }
     });
-    if (state.opts.denwaBV) {
-      h += '<p class="hint">※ 光電話バリューには発信者番号表示・転送でんわ・迷惑電話ストップなど6つの付加サービスと528円分の無料通話が含まれます（含まれるサービスの個別追加は不要です）。</p>';
-    }
     $("ieOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
   }
 
@@ -751,7 +803,17 @@
     $("ieKojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
     $("ieDpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
     $("ieOnecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
-  $("ieOptList").addEventListener("change", function (e) {
+  $("ieOptList").addEventListener("click", function (e) {
+      if (e.target.closest("input,select,a,label")) return;
+      var t = e.target.closest("[data-ietile]");
+      if (t) toggleIeOpt(t.getAttribute("data-ietile"));
+    });
+    $("ieOptList").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var t = e.target.closest && e.target.closest("[data-ietile]");
+      if (t) { e.preventDefault(); toggleIeOpt(t.getAttribute("data-ietile")); }
+    });
+    $("ieOptList").addEventListener("change", function (e) {
       var id = e.target.getAttribute("data-ieopt");
       if (id) { state.opts[id] = e.target.checked; renderOpts(); recalc(); return; }
       if (e.target.getAttribute("data-ietvkoji")) { state.tvKoji = e.target.value; state.tvKojiFee = null; state.tvOnsiteFee = null; renderOpts(); recalc(); return; }
