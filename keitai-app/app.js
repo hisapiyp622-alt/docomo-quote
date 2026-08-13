@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.96.1";
+  var APP_VERSION = "1.97.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -316,7 +316,8 @@
       return '<label class="check"><input type="checkbox" data-nqv="' + k + '"> ' + esc(VISIT_NAMES[k]) + "</label>";
     }).join("");
     var cat = statsCatalog();
-    var nqOrder = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "highend", "device",
+      "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function nqRank(k) {
       for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
       return nqOrder.length;
@@ -671,7 +672,7 @@
     var c = MASTER.statsCfg;
     if (!c.procs) c.procs = { shinki: true, mnp: true, kishu: true, plan: false };
     if (typeof c.visit === "undefined") c.visit = true;        // 来店目的
-    if (typeof c.kaimashi === "undefined") c.kaimashi = true;  // 買い増し（再掲）
+    if (typeof c.kaimashi === "undefined") c.kaimashi = true;  // プラスワン（再掲）
     if (!c.plans) c.plans = { max: true, poikatsu_max: true };
     if (!c.device) c.device = "kw";           // off=追わない / all=全機種 / kw=キーワード
     if (typeof c.deviceKw !== "string") c.deviceKw = "Pixel";
@@ -810,7 +811,7 @@
     if (cfg.kaimashi) {
       var buyOn = vks.indexOf("buy") >= 0;
       var kaimashiOn = buyOn ? !!pt.kaimashi : !!(vks.length && todo.kishu);
-      if (kaimashiOn) out["kaimashi"] = "買い増し（再掲）";
+      if (kaimashiOn) out["kaimashi"] = "プラスワン（再掲）";
     }
     if (pt.planId && cfg.plans[pt.planId]
         && !(won && PLAN_WON_NEEDS_CHANGE[pt.planId] && !pt.planChange)) {
@@ -995,7 +996,7 @@
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
       if (cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
-    if (cfg.kaimashi) out["kaimashi"] = "買い増し（再掲）";
+    if (cfg.kaimashi) out["kaimashi"] = "プラスワン（再掲）";
     if (cfg.u15) out["u15"] = "（再掲）U15";
     if (cfg.highend) out["highend"] = "（再掲）機種ハイエンド";
     (MASTER.plans || []).forEach(function (pl) {
@@ -1458,7 +1459,8 @@
     var catalog = statsCatalog();
 
     /* ---- 並び順 ---- */
-    var order = ["proc:", "kaimashi", "u15", "plan:", "highend", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "highend", "device",
+      "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
@@ -5084,7 +5086,7 @@
     if (auto) {
       n.textContent = "「" + vks.map(function (k) { return VISIT_NAMES[k]; }).join("・")
         + "」でのご来店から機種変更になったため、"
-        + "実績では機種変更に加えて「買い増し（再掲）」としても数えます。";
+        + "実績では機種変更に加えて「プラスワン（再掲）」としても数えます。";
     }
   }
 
@@ -6524,12 +6526,12 @@
     });
     h += "</div></div>";
 
-    h += '<div class="plan-sec"><span class="plan-lbl">ご来店の目的・買い増し</span><div class="sub-checks">'
+    h += '<div class="plan-sec"><span class="plan-lbl">ご来店の目的・プラスワン</span><div class="sub-checks">'
       + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
       + "> 「来店目的別」の表を出す（目的ごとの応対数・成約・成約になった内容）</label>"
       + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
-      + "> 買い増し（再掲）</label></div>"
-      + '<p class="hint">買い増しは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
+      + "> プラスワン（再掲）</label></div>"
+      + '<p class="hint">プラスワンは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
       + '<strong>端末購入で「買い増しあり」にチェックした場合</strong>に数えます。'
       + '機種変更の実績はそのまま数えたうえで、<strong>再掲</strong>として別に1件数えます。</p></div>';
 
@@ -6615,7 +6617,8 @@
     /* 月の目標。入れた項目だけが実績の「目標と進捗」に出る（管理者だけに見えます）。 */
     var goals = MASTER.statsGoalItems || {};
     var cat = statsCatalog();
-    var gOrder = ["proc:", "kaimashi", "plan:", "device", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "highend", "device",
+      "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function gRank(k) {
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
       return gOrder.length;
