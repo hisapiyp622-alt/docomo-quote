@@ -155,7 +155,7 @@
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
-      denwaBanpo: "new", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
+      denwaBanpo: "mnp", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780, router10gPay: "once",
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
