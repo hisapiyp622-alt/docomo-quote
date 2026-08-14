@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.100.6";
+  var APP_VERSION = "1.101.0";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -2979,6 +2979,39 @@
     for (var k = 0; k < arr.length; k++) if (arr[k].id === id) return arr[k];
     return null;
   }
+  /* 商材の写真。説明のサイトが無い独自商材でも、パンフレットの写真などを
+   * 見積書の小窓でお見せできるようにする。
+   * 料金マスタと一緒に保存・同期するため、そのままでは重すぎる。
+   * 長辺900pxまで縮めてJPEGにし、それでも大きいときは段階的に落とす。 */
+  var SVC_IMG_MAX_CHARS = 160000;   // 1枚あたりの上限（データURLの長さ・約120KB）
+  var MASTER_SOFT_LIMIT = 700000;   // 料金マスタ全体の目安（クラウドの1件上限900KBの手前）
+  function shrinkImageFile(file, cb) {
+    var fr = new FileReader();
+    fr.onerror = function () { cb(null, "写真を読み込めませんでした。"); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { cb(null, "写真の形式に対応していません（JPEG・PNGなどをお選びください）。"); };
+      img.onload = function () {
+        var steps = [[900, 0.72], [760, 0.66], [640, 0.6], [520, 0.55]];
+        for (var i = 0; i < steps.length; i++) {
+          var max = steps[i][0], q = steps[i][1];
+          var sc = Math.min(1, max / Math.max(img.width, img.height));
+          var cw = Math.max(1, Math.round(img.width * sc));
+          var ch = Math.max(1, Math.round(img.height * sc));
+          var cv = document.createElement("canvas");
+          cv.width = cw; cv.height = ch;
+          try {
+            cv.getContext("2d").drawImage(img, 0, 0, cw, ch);
+            var out = cv.toDataURL("image/jpeg", q);
+          } catch (e) { cb(null, "写真を変換できませんでした。"); return; }
+          if (out.length <= SVC_IMG_MAX_CHARS) { cb(out, ""); return; }
+        }
+        cb(null, "写真が大きすぎます。少し小さい写真をお選びください。");
+      };
+      img.src = String(fr.result);
+    };
+    fr.readAsDataURL(file);
+  }
   /* リンクとして開いてよいURLか。店舗が自分で入力できるようになったため、
    * javascript: のような危険な指定を弾き、http/https だけを通す。 */
   function svcUrlOk(u) {
@@ -2986,7 +3019,7 @@
   }
   function svcHas(key) {
     var o = svcFind(key);
-    return !!(o && (svcUrlOk(o.url) || o.desc));
+    return !!(o && (svcUrlOk(o.url) || o.desc || o.img));
   }
   /* 見積書に出す名前。説明かリンクがあるときだけボタンにする（印刷では普通の文字）。 */
   function svcName(name, key) {
@@ -3000,6 +3033,13 @@
     var d = $("svcDlgDesc");
     d.textContent = o.desc || "";
     d.hidden = !o.desc;
+    /* 写真（店舗が登録したもの）。説明サイトが無い独自商材でも、
+     * パンフレットの写真などをそのままお見せできる。 */
+    var im = $("svcDlgImg");
+    if (im) {
+      if (o.img) { im.src = o.img; im.hidden = false; }
+      else { im.removeAttribute("src"); im.hidden = true; }
+    }
     var btn = $("svcDlgOpen"), note = $("svcDlgUrlNote");
     var urlOk = svcUrlOk(o.url);
     btn.hidden = !urlOk;
@@ -3014,7 +3054,7 @@
     /* window.open はブラウザやPWAの設定で塞がれることがあるので、
      * ふつうのリンクとして開く（別のタブになる）。 */
     btn.setAttribute("href", urlOk ? o.url : "#");
-    if (!o.desc && !urlOk) return;
+    if (!o.desc && !urlOk && !o.img) return;
     dlg.hidden = false;
   }
 
@@ -7044,7 +7084,8 @@
       h += '<label class="plan-f"><span>メモ</span>'
         + '<input type="text" value="' + esc(pl.note || "") + '" placeholder="社内用。お客様には出ません" data-pl-note="' + pi + '"></label>'
         + '<label class="plan-desc">ご案内文'
-        + '<input type="text" value="' + esc(pl.desc || "") + '" placeholder="見積書で名前を押すと出ます（任意）" data-pl-desc="' + pi + '"></label>'
+        + '<textarea rows="2" placeholder="見積書で名前を押すと出ます（任意・改行できます）" data-pl-desc="' + pi + '">'
+        + esc(pl.desc || "") + "</textarea></label>"
         + (pl.url ? '<span class="svc-desc-url">公式ページ: ' + esc(pl.url) + "</span>" : "");
       h += "</div></details>";
       h += "</div>";
@@ -7271,10 +7312,17 @@
            * リンク先は店舗独自の商材だけ入力できる（ドコモの商材のURLは
            * 料金表の配信で入れ替わるため、手で書いても次の更新で戻ってしまう）。 */
           + '<div class="svc-desc-row"><label>ご案内文'
-          + '<input type="text" value="' + esc(o.desc || "") + '" placeholder="見積書で名前を押すと出ます（任意）" data-' + prefix + '-desc="' + i + '"></label>'
+          + '<textarea rows="2" placeholder="見積書で名前を押すと出ます（任意・改行できます）" data-' + prefix + '-desc="' + i + '">'
+          + esc(o.desc || "") + "</textarea></label>"
           + (o.own || prefix === "ac"
               ? '<label>リンク先<input type="url" value="' + esc(o.url || "")
                 + '" placeholder="https://… （任意）" data-' + prefix + '-url="' + i + '"></label>'
+                + '<label class="svc-img-pick">写真'
+                + '<input type="file" accept="image/*" data-' + prefix + '-img="' + i + '"></label>'
+                + (o.img
+                    ? '<span class="svc-img-has"><img src="' + esc(o.img) + '" alt="">'
+                      + '<button class="btn-sub" data-' + prefix + '-imgdel="' + i + '" type="button">写真を消す</button></span>'
+                    : "")
               : (o.url ? '<span class="svc-desc-url">公式ページ: ' + esc(o.url) + "</span>" : ""))
           + "</div>"
           + (after ? after(o) : "");
@@ -8760,6 +8808,33 @@
         list[+attr("price")].price = num(t.value);
       } else if (evType === "input" && attr("desc") != null) {
         list[+attr("desc")].desc = t.value;
+      } else if (evType === "change" && attr("img") != null) {
+        var io = list[+attr("img")];
+        var f = t.files && t.files[0];
+        t.value = "";
+        if (!f) return true;
+        shrinkImageFile(f, function (data, err) {
+          if (!data) { window.alert(err || "写真を登録できませんでした。"); return; }
+          var before = io.img;
+          io.img = data;
+          // 料金マスタ全体が大きくなりすぎると、端末間の同期に失敗する
+          var size = 0;
+          try { size = JSON.stringify(MASTER).length; } catch (e) {}
+          if (size > MASTER_SOFT_LIMIT) {
+            if (before) io.img = before; else delete io.img;
+            window.alert("写真の合計が大きすぎるため登録できませんでした。\n"
+              + "ほかの商材の写真を減らしてから、もう一度お試しください。");
+            return;
+          }
+          markEdited();
+          renderMasterTab();
+        });
+        return true;
+      } else if (evType === "click" && attr("imgdel") != null) {
+        delete list[+attr("imgdel")].img;
+        markEdited();
+        renderMasterTab();
+        return true;
       } else if (evType === "input" && attr("url") != null) {
         // 店舗独自の商材のリンク先。開けるのは http/https だけにする
         var uo = list[+attr("url")];

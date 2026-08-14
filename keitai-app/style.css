@@ -752,7 +752,14 @@ body.sorting .sort-chip{cursor:grabbing}
 /* マスタ設定: 各サービスの「ご案内文」 */
 .svc-desc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-2px 0 8px 0;padding-left:2px}
 .svc-desc-row label{display:flex;align-items:center;gap:6px;flex:1 1 320px;font-size:12px;color:var(--muted)}
-.svc-desc-row input{flex:1 1 auto;min-width:160px}
+.svc-desc-row input,.svc-desc-row textarea{flex:1 1 auto;min-width:160px}
+.svc-desc-row textarea{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;resize:vertical}
+.svc-img-pick{flex:0 1 auto}
+.svc-img-pick input[type=file]{font-size:12px;max-width:190px}
+.svc-img-has{display:flex;align-items:center;gap:8px}
+.svc-img-has img{height:44px;width:auto;border:1px solid var(--line);border-radius:6px;object-fit:cover}
+/* 見積書の小窓に出す写真 */
+.svc-dlg-img{display:block;max-width:100%;max-height:46vh;margin:2px 0 12px;border:1px solid var(--line);border-radius:10px}
 .svc-desc-url{font-size:11.5px;color:var(--muted);word-break:break-all}
 .plan-desc{display:flex;align-items:center;gap:6px}
 
