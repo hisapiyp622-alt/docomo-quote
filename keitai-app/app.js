@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.99.8";
+  var APP_VERSION = "1.100.0";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -170,6 +170,23 @@
   function persistTemplates() {
     lsSet(tplKey(), JSON.stringify(templates));
     if (typeof pushTemplates === "function") pushTemplates();
+  }
+  /* 店舗共通テンプレート（3枠）。担当者の3枠とは別に、店の「鉄板構成」を
+   * 全担当で共有する。誰でも保存・削除できる（枠が別なので、担当者ごとの
+   * テンプレートが上書きされる昔の事故は起きない）。
+   * 端末内は kq-tpl-v1:_store、クラウドは templates/_store に持つ。 */
+  var STORE_TPL_ID = "_store";
+  var storeTemplates = [null, null, null];
+  function loadStoreTemplates() {
+    storeTemplates = [null, null, null];
+    try {
+      var a = JSON.parse(localStorage.getItem(tplKey(STORE_TPL_ID)) || "null");
+      if (a && a.length === 3) storeTemplates = a;
+    } catch (e) {}
+  }
+  function persistStoreTemplates() {
+    lsSet(tplKey(STORE_TPL_ID), JSON.stringify(storeTemplates));
+    if (typeof pushStoreTemplates === "function") pushStoreTemplates();
   }
 
   var SAVED_KEY = "kq-saved-v1";
@@ -2658,6 +2675,9 @@
       var tp = readJson(TPL_KEY + ":" + s.id);
       if (tp && tp.length) tpl[s.id] = tp;
     });
+    // 店舗共通テンプレートも控えに入れる（復元時も同じ鍵に戻る）
+    var tpStore = readJson(TPL_KEY + ":" + STORE_TPL_ID);
+    if (tpStore && tpStore.length) tpl[STORE_TPL_ID] = tpStore;
     return {
       kind: BACKUP_KIND,
       version: 1,
@@ -3503,6 +3523,7 @@
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
     savedTimer: null, unsubSaved: null, watchingSavedId: null,
     tplTimer: null, unsubTpl: null, watchingTplId: null,
+    tplStoreTimer: null, unsubTplStore: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
   function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
@@ -3522,9 +3543,104 @@
     return o;
   }
 
+  /* ---------- 契約の器（お試し・本契約・停止） ----------
+   * 契約状態は contracts/{店舗UID} に販売側が入れる（Firebaseコンソールから。
+   * アプリからは読み取りだけで、書き込みはルールで禁止）。
+   *   status: "trial"=お試し（trialEndsAt まで）／ "active"=本契約 ／ "suspended"=停止
+   * ドキュメントが無い店舗は従来どおり動く（既存店舗を壊さないため）。
+   * オフラインでも効くように、最後に読めた内容を端末に控えて起動時はそれを使う。
+   * 手順は _internal/OPERATIONS.md「契約の器」を参照。 */
+  var CONTRACT_KEY = "kq-contract-v1";
+  var contractInfo = null;   // { uid, status, trialEndsAt(ms), fetchedAt }
+  function loadContractCache() {
+    try { contractInfo = JSON.parse(localStorage.getItem(CONTRACT_KEY) || "null"); } catch (e) { contractInfo = null; }
+  }
+  function saveContractCache() {
+    try {
+      if (contractInfo) localStorage.setItem(CONTRACT_KEY, JSON.stringify(contractInfo));
+      else localStorage.removeItem(CONTRACT_KEY);
+    } catch (e) {}
+  }
+  function contractsDoc() { return CLOUD.db.collection("contracts").doc(CLOUD.user.uid); }
+  function fetchContract() {
+    if (!cloudOn()) return Promise.resolve(false);
+    var uid = CLOUD.user.uid;
+    return contractsDoc().get().then(function (snap) {
+      if (!snap.exists) {
+        contractInfo = null;
+      } else {
+        var d = snap.data() || {};
+        var t = d.trialEndsAt, ends = 0;
+        if (t && typeof t.toMillis === "function") ends = t.toMillis();
+        else if (t) ends = num(t);
+        contractInfo = { uid: uid, status: String(d.status || ""), trialEndsAt: ends, fetchedAt: Date.now() };
+      }
+      saveContractCache();
+      renderContract();
+      return true;
+    }, function () { renderContract(); return false; });  // 読めないときは手元の控えのまま
+  }
+  /* 使えない状態か。"" = 使える ／ "trialEnded"=お試し終了 ／ "suspended"=停止 */
+  function contractBlocked() {
+    var c = contractInfo;
+    if (!c) return "";
+    if (c.status === "suspended") return "suspended";
+    if (c.status === "trial" && c.trialEndsAt && Date.now() > c.trialEndsAt) return "trialEnded";
+    return "";
+  }
+  function contractDateStr(ms) {
+    var d = new Date(ms);
+    return (d.getMonth() + 1) + "月" + d.getDate() + "日";
+  }
+  function renderContract() {
+    var bar = $("trialBar"), ov = $("contractOverlay");
+    if (!bar || !ov) return;
+    var blocked = contractBlocked();
+    var c = contractInfo;
+    var showBar = !!(c && c.status === "trial" && c.trialEndsAt && !blocked);
+    bar.hidden = !showBar;
+    if (showBar) {
+      var left = Math.max(0, Math.ceil((c.trialEndsAt - Date.now()) / 86400000));
+      bar.innerHTML = "無料お試し期間中です（<b>" + contractDateStr(c.trialEndsAt) + "まで・残り" + left + "日</b>）。"
+        + "続けてお使いいただく場合のお申し込みは " + esc(vendorInfo().contact) + " へ。";
+    }
+    ov.hidden = !blocked;
+    if (!blocked) return;
+    var v = vendorInfo();
+    $("contractTitle").textContent = blocked === "suspended"
+      ? "ご利用が停止されています" : "無料お試し期間が終了しました";
+    $("contractMsg").innerHTML =
+      (blocked === "suspended"
+        ? "ご契約状況をご確認ください。お心当たりがない場合は、お手数ですが下記までご連絡ください。"
+        : "お試しをご利用いただきありがとうございました。続けてお使いいただくには、ご利用のお申し込みが必要です。")
+      + "<br>入力済みの見積もり・料金マスタは消えていません。お手続きが済むと、そのままの内容でお使いいただけます。";
+    $("contractContact").textContent = "お問い合わせ: " + v.name + "　" + v.contact + (v.hours ? "（" + v.hours + "）" : "");
+  }
+  function initContract() {
+    loadContractCache();
+    renderContract();
+    var btn = $("contractRecheck");
+    if (btn) btn.addEventListener("click", function () {
+      var msgEl = $("contractRecheckMsg");
+      if (msgEl) msgEl.hidden = true;
+      btn.disabled = true;
+      fetchContract().then(function (ok) {
+        btn.disabled = false;
+        if (msgEl && (!ok || contractBlocked())) {
+          msgEl.textContent = ok
+            ? "ご契約状態は変わっていません。お手続き済みの場合は、少し時間をおいてもう一度お試しください。"
+            : "確認できませんでした。通信できる場所でもう一度お試しください。";
+          msgEl.hidden = false;
+        }
+      });
+    });
+    // 開きっぱなしの端末でも、お試し期限が来たら気づけるようにする
+    setInterval(renderContract, 60 * 60 * 1000);
+  }
+
   // 店舗設定（店舗名・担当者一覧）の送信
   function pushConfig() {
-    if (!cloudOn() || CLOUD.suppress) return;
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     syncStatus("同期中…", "");
     CLOUD.cfgTimer = setTimeout(function () {
@@ -3541,7 +3657,7 @@
   }
   // 料金マスタ（店舗で共通）の送信
   function markMasterEdit() {
-    if (!cloudOn() || CLOUD.suppress) return;
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
     syncStatus("同期中…", "");
     CLOUD.masterTimer = setTimeout(function () {
@@ -3560,7 +3676,7 @@
     } catch (e) { return ""; }
   }
   function markLocalEdit() {
-    if (!cloudOn() || CLOUD.suppress) return;
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     /* ログイン・担当切替の直後、クラウドの見積もりを受け取る前は送らない。
      * ここで送ると、この端末に残っていた古い（空の）見積もりが予約され、
      * その予約がある間はクラウドから届く内容も無視されるため、
@@ -3607,7 +3723,7 @@
 
   function tplDoc(staffId) { return storeDoc().collection("templates").doc(staffId || activeStaff().id); }
   function pushTemplates() {
-    if (!cloudOn() || CLOUD.suppress) return;
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     var sid = activeStaff().id;
     if (CLOUD.tplTimer) clearTimeout(CLOUD.tplTimer);
     syncStatus("同期中…", "");
@@ -3637,10 +3753,37 @@
       } catch (e) {}
     }, function () {});
   }
+  // 店舗共通テンプレート（templates/_store）。担当者に関係なく店舗で1つ
+  function pushStoreTemplates() {
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (CLOUD.tplStoreTimer) clearTimeout(CLOUD.tplStoreTimer);
+    syncStatus("同期中…", "");
+    CLOUD.tplStoreTimer = setTimeout(function () {
+      CLOUD.tplStoreTimer = null;
+      if (!cloudOn()) return;
+      tplDoc(STORE_TPL_ID).set(stamp({ list: JSON.stringify(storeTemplates) })).then(cloudOk, cloudNg);
+    }, 1000);
+  }
+  function watchStoreTemplates() {
+    if (!cloudOn() || CLOUD.unsubTplStore) return;
+    CLOUD.unsubTplStore = tplDoc(STORE_TPL_ID).onSnapshot(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      if (!d || !d.list) return;
+      if (d.clientId === CLOUD.clientId) return;
+      if (CLOUD.tplStoreTimer) return; // 送信待ちのローカル変更がある間は上書きしない
+      try {
+        var a = JSON.parse(d.list);
+        if (!a || a.length !== 3) return;
+        storeTemplates = a;
+        lsSet(tplKey(STORE_TPL_ID), JSON.stringify(storeTemplates));
+        renderTplBar();
+      } catch (e) {}
+    }, function () {});
+  }
 
   function savedDoc(staffId) { return storeDoc().collection("saved").doc(staffId || activeStaff().id); }
   function pushSaved() {
-    if (!cloudOn() || CLOUD.suppress) return;
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     var sid = activeStaff().id;
     if (CLOUD.savedTimer) clearTimeout(CLOUD.savedTimer);
     syncStatus("同期中…", "");
@@ -3994,7 +4137,7 @@
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         if (!k) continue;
-        if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY
+        if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
           || k.indexOf(STATE_KEY + ":") === 0
           || k.indexOf(SAVED_KEY + ":") === 0
           || k.indexOf(TPL_KEY + ":") === 0) kill.push(k);
@@ -4019,6 +4162,9 @@
       state = store.patterns[store.active];
       loadSaved();
       loadTemplates();
+      loadStoreTemplates();
+      loadContractCache();
+      renderContract();
       renderStoreConfig();
       renderLockConfig();
       renderAdminLock();
@@ -4042,6 +4188,8 @@
     if (ai) ai.textContent = "ログイン中の店舗: " + String(user.email || "").replace(/@.*$/, "");
     var lo = $("logoutBtn"); if (lo) lo.hidden = false;
     watchStore();
+    watchStoreTemplates();
+    fetchContract();   // 契約状態（お試し・本契約・停止）を確かめる
     // 店舗の担当者一覧を受け取ってから担当者コードを聞く
     storeDoc().get().then(function (snap) {
       var d = snap.exists ? snap.data() : null;
@@ -4061,6 +4209,7 @@
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
     if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
+    if (CLOUD.unsubTplStore) { CLOUD.unsubTplStore(); CLOUD.unsubTplStore = null; }
     CLOUD.watchingStaffId = null;
     CLOUD.watchingSavedId = null;
     CLOUD.watchingTplId = null;
@@ -4963,26 +5112,42 @@
 
   /* ---------- 見積もりフォーム描画 ---------- */
   var tplSaveMode = false;
+  var tplStoreSaveMode = false;
   function renderTplBar() {
-    document.querySelectorAll(".tpl").forEach(function (b) {
+    document.querySelectorAll(".tpl[data-tpl]").forEach(function (b) {
       var t = templates[+b.dataset.tpl];
       b.textContent = t ? t.name : "未設定";
       b.classList.toggle("filled", !!t);
       b.classList.toggle("empty", !t);
     });
-    var bar = document.querySelector(".tpl").closest(".pattern-bar");
+    document.querySelectorAll(".tpl[data-tplst]").forEach(function (b) {
+      var t = storeTemplates[+b.dataset.tplst];
+      b.textContent = t ? t.name : "未設定";
+      b.classList.toggle("filled", !!t);
+      b.classList.toggle("empty", !t);
+    });
+    var bar = document.querySelector(".tpl[data-tpl]").closest(".pattern-bar");
     bar.classList.toggle("tpl-saving", tplSaveMode);
+    var sbar = document.querySelector(".tpl-store-bar");
+    if (sbar) sbar.classList.toggle("tpl-saving", tplStoreSaveMode);
     closeTplMenu();
     $("saveTplBtn").textContent = tplSaveMode ? "保存先のテンプレボタンをタップ（ここを押すとキャンセル）" : "現在の内容をテンプレに保存";
+    var ssb = $("saveStoreTplBtn");
+    if (ssb) ssb.textContent = tplStoreSaveMode ? "保存先の店舗共通ボタンをタップ（ここを押すとキャンセル）" : "現在の内容を店舗共通に保存";
   }
   function tplSnapshot() {
     var snap = JSON.parse(JSON.stringify(state));
     delete snap.custName; delete snap.shopName; delete snap.staffName; delete snap.shopTel;
     return snap;
   }
-  function tplApply(i) {
-    var t = templates[i];
-    if (!t) { tplMsg("テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください"); return; }
+  function tplApply(i, isStore) {
+    var t = (isStore ? storeTemplates : templates)[i];
+    if (!t) {
+      tplMsg(isStore
+        ? "店舗共通" + (i + 1) + "は未設定です。「現在の内容を店舗共通に保存」から登録してください"
+        : "テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください");
+      return;
+    }
     var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     migratePattern(store.patterns[store.active]);
@@ -4993,19 +5158,20 @@
   /* テンプレートの長押し削除
    * 長押し（またはPCの右クリック）で、そのテンプレートを消すかどうかを聞く。
    * 長押しのあとに click が続けて発生するため、直後の1回は無視する。 */
-  var tplHold = { timer: null, fired: false, slot: -1 };
+  var tplHold = { timer: null, fired: false, slot: -1, store: false };
   function closeTplMenu() {
     var m = $("tplMenu");
     if (m) m.hidden = true;
     tplHold.slot = -1;
   }
-  function openTplMenu(i, btn) {
-    var t = templates[i];
+  function openTplMenu(i, btn, isStore) {
+    var t = (isStore ? storeTemplates : templates)[i];
     if (!t) return;                      // 未設定の枠では出さない
-    if (tplSaveMode) return;             // 保存先を選んでいる最中は出さない
+    if (tplSaveMode || tplStoreSaveMode) return;  // 保存先を選んでいる最中は出さない
     tplHold.slot = i;
+    tplHold.store = !!isStore;
     var m = $("tplMenu");
-    $("tplMenuName").textContent = t.name;
+    $("tplMenuName").textContent = (isStore ? "店舗共通: " : "") + t.name;
     m.hidden = false;
     // ボタンのすぐ下に出す（画面からはみ出さないように寄せる）
     var r = btn.getBoundingClientRect();
@@ -5016,14 +5182,15 @@
   }
   function initTplHold() {
     document.querySelectorAll(".tpl").forEach(function (b) {
-      var i = +b.dataset.tpl;
+      var isStore = b.hasAttribute("data-tplst");
+      var i = isStore ? +b.dataset.tplst : +b.dataset.tpl;
       function start(e) {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         tplHold.fired = false;
         clearTimeout(tplHold.timer);
         tplHold.timer = setTimeout(function () {
           tplHold.fired = true;
-          openTplMenu(i, b);
+          openTplMenu(i, b, isStore);
         }, 550);
       }
       function cancel() { clearTimeout(tplHold.timer); }
@@ -5035,18 +5202,19 @@
       b.addEventListener("contextmenu", function (e) {
         e.preventDefault();
         tplHold.fired = true;
-        openTplMenu(i, b);
+        openTplMenu(i, b, isStore);
       });
     });
     $("tplMenuDel").addEventListener("click", function () {
       var i = tplHold.slot;
-      if (i < 0 || !templates[i]) { closeTplMenu(); return; }
-      var nm = templates[i].name;
-      templates[i] = null;
-      persistTemplates();
+      var list = tplHold.store ? storeTemplates : templates;
+      if (i < 0 || !list[i]) { closeTplMenu(); return; }
+      var nm = list[i].name;
+      list[i] = null;
+      if (tplHold.store) persistStoreTemplates(); else persistTemplates();
       renderTplBar();
       closeTplMenu();
-      tplMsg("「" + nm + "」を削除しました");
+      tplMsg((tplHold.store ? "店舗共通の" : "") + "「" + nm + "」を削除しました");
     });
     $("tplMenuCancel").addEventListener("click", closeTplMenu);
     // ほかの場所を触ったら閉じる
@@ -5062,34 +5230,48 @@
   }
 
   var tplPendingSlot = null;
+  var tplPendingStore = false;
   function tplMsg(text) {
     $("tplMsg").textContent = text;
     if (text) setTimeout(function () { if ($("tplMsg").textContent === text) $("tplMsg").textContent = ""; }, 4000);
   }
-  function tplSave(i) {
+  function tplSave(i, isStore) {
     // iPadのホーム画面起動(PWA)ではprompt()が使えないため、画面内の入力欄で名前を付ける
     var plan = currentPlan();
     var procLabel = { shinki: "新規", mnp: "MNP", kishu: "機種変更", plan_only: "プラン変更" }[state.procType] || "";
-    var cur = templates[i];
+    var cur = (isStore ? storeTemplates : templates)[i];
     tplPendingSlot = i;
+    tplPendingStore = !!isStore;
     $("tplNameInput").value = cur ? cur.name
       : ((state.planId ? plan.name + " " : "") + procLabel).trim().slice(0, 20);
     $("tplNameBox").hidden = false;
     $("saveTplBtn").hidden = true;
+    var ssb = $("saveStoreTplBtn"); if (ssb) ssb.hidden = true;
     tplMsg("");
     $("tplNameInput").focus();
   }
   function tplSaveDone(ok) {
     if (ok && tplPendingSlot != null) {
-      var name = $("tplNameInput").value.trim() || ("テンプレ" + (tplPendingSlot + 1));
-      templates[tplPendingSlot] = { name: name.slice(0, 20), state: tplSnapshot() };
-      persistTemplates();
-      tplMsg("「" + name.slice(0, 20) + "」を保存しました");
+      var name = $("tplNameInput").value.trim()
+        || ((tplPendingStore ? "店舗共通" : "テンプレ") + (tplPendingSlot + 1));
+      var entry = { name: name.slice(0, 20), state: tplSnapshot() };
+      if (tplPendingStore) {
+        storeTemplates[tplPendingSlot] = entry;
+        persistStoreTemplates();
+        tplMsg("店舗共通に「" + entry.name + "」を保存しました（全担当で使えます）");
+      } else {
+        templates[tplPendingSlot] = entry;
+        persistTemplates();
+        tplMsg("「" + entry.name + "」を保存しました");
+      }
     }
     tplPendingSlot = null;
+    tplPendingStore = false;
     tplSaveMode = false;
+    tplStoreSaveMode = false;
     $("tplNameBox").hidden = true;
     $("saveTplBtn").hidden = false;
+    var ssb = $("saveStoreTplBtn"); if (ssb) ssb.hidden = false;
     renderTplBar();
   }
   /* ご来店の目的まわりの表示。
@@ -7564,7 +7746,7 @@
     try { done = localStorage.getItem(TOUR_KEY) || ""; } catch (e) {}
     if (done) return;
     // ログイン・初期設定・担当者コードなどの画面が出ている間は出さない
-    var busy = ["loginOverlay", "setupOverlay", "staffOverlay", "masterGate", "tourOverlay"].some(function (id) {
+    var busy = ["loginOverlay", "setupOverlay", "staffOverlay", "masterGate", "tourOverlay", "contractOverlay"].some(function (id) {
       var el = $(id);
       return el && !el.hidden;
     });
@@ -8617,17 +8799,32 @@
     document.querySelectorAll(".pat").forEach(function (b) {
       b.addEventListener("click", function () { switchPattern(+b.dataset.pat); });
     });
-    document.querySelectorAll(".tpl").forEach(function (b) {
+    document.querySelectorAll(".tpl[data-tpl]").forEach(function (b) {
       b.addEventListener("click", function () {
         if (tplHold.fired) { tplHold.fired = false; return; } // 長押しで開いた直後は反応させない
         closeTplMenu();
         var i = +b.dataset.tpl;
-        if (tplSaveMode) tplSave(i);
-        else tplApply(i);
+        if (tplSaveMode) tplSave(i, false);
+        else tplApply(i, false);
+      });
+    });
+    document.querySelectorAll(".tpl[data-tplst]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (tplHold.fired) { tplHold.fired = false; return; }
+        closeTplMenu();
+        var i = +b.dataset.tplst;
+        if (tplStoreSaveMode) tplSave(i, true);
+        else tplApply(i, true);
       });
     });
     $("saveTplBtn").addEventListener("click", function () {
       tplSaveMode = !tplSaveMode;
+      tplStoreSaveMode = false;
+      renderTplBar();
+    });
+    $("saveStoreTplBtn").addEventListener("click", function () {
+      tplStoreSaveMode = !tplStoreSaveMode;
+      tplSaveMode = false;
       renderTplBar();
     });
     $("tplNameOk").addEventListener("click", function () { tplSaveDone(true); });
@@ -9621,6 +9818,8 @@
   loadSaved();
   renderSaved();
   loadTemplates();
+  loadStoreTemplates();
+  renderTplBar();
   renderStoreConfig();
   applyStoreDefaults(false);
   renderLockConfig();
@@ -9633,6 +9832,7 @@
   initMasterGate();
   initAbout();
   initDocs();
+  initContract();
   initIenaka();
   initWizard();
   initBackup();
