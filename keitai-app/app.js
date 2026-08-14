@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.100.3";
+  var APP_VERSION = "1.100.4";
   /* 社内版（阪南店用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -225,7 +225,7 @@
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
   var HEARTY_VOICE_OFF = 880;   // ハーティ割引の通話オプション割引（税込）
   var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty",
-    "kaimashi", "u15", "devicePrice", "atamakin", "deviceName", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "kaimashi", "u15", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
   function slimData(d) {
     if (!d) return d;
@@ -891,10 +891,16 @@
     }
     /* （再掲）機種ハイエンド。機種販売の行はそのまま数えたうえで、
      * 再掲として別に1件数える。 */
-    if (cfg.highend && statsIsHighEnd(pt, cfg)) {
+    /* 支払い方法が「端末購入なし」のときは、機種名・端末代金が残っていても
+     * 端末は売れていないので数えない（見積もりの金額にも入っていない）。
+     * 判定は保存された内容（ptRaw）で行う。既定値とまぜた pt を見ると、
+     * 支払い方法を持たない古い保存まで「端末購入なし」になり、
+     * 過去の実績から機種販売が消えてしまう。 */
+    var devBought = !ptRaw || !("payMethod" in ptRaw) || ptRaw.payMethod !== "none";
+    if (cfg.highend && devBought && statsIsHighEnd(pt, cfg)) {
       out["highend"] = "（再掲）機種ハイエンド";
     }
-    if (pt.deviceName) {
+    if (pt.deviceName && devBought) {
       if (cfg.device === "all") out["device"] = "機種販売";
       else if (cfg.device === "kw" && statsKwTest(cfg.deviceKw, pt.deviceName)) {
         out["device"] = "（再掲）" + cfg.deviceKw;
@@ -4839,7 +4845,11 @@
      * クーポン値引きと店舗独自キャンペーンは、店頭でのお支払いが軽くなるよう
      * 「頭金 → 分割する分 → 残価」の順に引く。
      * ダイレクト割は頭金からは引かず、分割する分（あふれたら残価）から引く。 */
-    var deviceList = num(st.devicePrice);
+    /* 「端末購入なし」のときは、機種名・端末代金・頭金・値引きが入力に残っていても
+     * 端末のお支払いは一切計上しない（端末代金総額を0として扱うと、頭金・値引きも
+     * 0にそろう）。機種を選んだあとに「端末購入なし」へ戻したとき、店頭頭金だけが
+     * 初期費用に残ってしまうのを防ぐ。入力が残っていること自体は payWarn で知らせる。 */
+    var deviceList = st.payMethod === "none" ? 0 : num(st.devicePrice);
     var devOffCoupon = Math.min(Math.max(0, num(st.couponOff)), deviceList);
     var devOffTebiki = Math.min(Math.max(0, num(st.tebikiOff)), Math.max(0, deviceList - devOffCoupon));
     var devOffDirect = Math.min(Math.max(0, num(st.directOff)),
