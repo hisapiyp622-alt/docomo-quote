@@ -1008,6 +1008,11 @@ h3.stats-sub{font-size:15px;margin:14px 0 0}
 .storage-warn{position:sticky;top:0;z-index:80;background:#c62828;color:#fff;
   font-size:13px;font-weight:700;padding:8px 14px;text-align:center}
 
+/* 無料お試し期間中のお知らせ（契約の器） */
+.trial-bar{background:#fff8e1;color:#7a5c00;border-bottom:1px solid #f2dfa0;
+  font-size:13px;padding:7px 14px;text-align:center}
+.trial-bar b{color:#8a5a00}
+
 /* 保存タブの検索・絞り込み */
 .saved-filter{display:flex;gap:8px;margin-bottom:10px}
 .saved-filter input[type=search]{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13.5px}

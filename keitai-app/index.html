@@ -34,6 +34,9 @@
   </nav>
 </header>
 
+<!-- 無料お試し期間中のお知らせ（契約状態が trial のときだけ出る） -->
+<div class="trial-bar no-print" id="trialBar" hidden></div>
+
 <button class="present-exit no-print" id="presentExit" type="button" hidden>✕ 提示モードを終了</button>
 
 <div class="storage-warn no-print" id="storageWarn" hidden>
@@ -66,6 +69,13 @@
         <button class="btn-sub" id="tplNameCancel" type="button">キャンセル</button>
       </span>
       <span class="hint" id="tplMsg"></span>
+    </div>
+    <div class="pattern-bar tpl-store-bar">
+      <span class="lbl" title="長押しで削除できます">店舗共通：</span>
+      <button class="tpl" data-tplst="0" type="button">未設定</button>
+      <button class="tpl" data-tplst="1" type="button">未設定</button>
+      <button class="tpl" data-tplst="2" type="button">未設定</button>
+      <button class="btn-sub" id="saveStoreTplBtn" type="button">現在の内容を店舗共通に保存</button>
     </div>
     <div class="tpl-menu no-print" id="tplMenu" hidden>
       <div class="tpl-menu-name" id="tplMenuName"></div>
@@ -891,6 +901,18 @@
     </div>
   </div>
 </main>
+
+<!-- 契約の器: お試し終了・利用停止のご案内（contracts/{uid} の状態で出る） -->
+<div class="login-overlay no-print" id="contractOverlay" hidden>
+  <div class="login-box">
+    <img class="login-mascot" src="img/mitsumorin-hello.png" alt="ミツモリン" onerror="this.hidden=true">
+    <h2 id="contractTitle"></h2>
+    <p class="login-lead" id="contractMsg"></p>
+    <p class="login-lead" id="contractContact"></p>
+    <p class="login-err" id="contractRecheckMsg" hidden></p>
+    <button class="btn-main" id="contractRecheck" type="button">ご契約状態を再確認</button>
+  </div>
+</div>
 
 <div class="login-overlay no-print" id="loginOverlay" hidden>
   <form class="login-box" id="loginForm">
