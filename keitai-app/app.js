@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.100.5";
+  var APP_VERSION = "1.100.6";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -2979,9 +2979,14 @@
     for (var k = 0; k < arr.length; k++) if (arr[k].id === id) return arr[k];
     return null;
   }
+  /* リンクとして開いてよいURLか。店舗が自分で入力できるようになったため、
+   * javascript: のような危険な指定を弾き、http/https だけを通す。 */
+  function svcUrlOk(u) {
+    return /^https?:\/\/\S+$/i.test(String(u || "").trim());
+  }
   function svcHas(key) {
     var o = svcFind(key);
-    return !!(o && (o.url || o.desc));
+    return !!(o && (svcUrlOk(o.url) || o.desc));
   }
   /* 見積書に出す名前。説明かリンクがあるときだけボタンにする（印刷では普通の文字）。 */
   function svcName(name, key) {
@@ -2996,12 +3001,20 @@
     d.textContent = o.desc || "";
     d.hidden = !o.desc;
     var btn = $("svcDlgOpen"), note = $("svcDlgUrlNote");
-    btn.hidden = !o.url;
-    note.hidden = !o.url;
+    var urlOk = svcUrlOk(o.url);
+    btn.hidden = !urlOk;
+    note.hidden = !urlOk;
+    /* 店舗独自の商材は、ドコモのページではなくお店が決めたリンク先なので、
+     * 「公式」とは書かない（ドコモ公式と誤解されないようにする）。 */
+    var own = !!o.own || String(key).indexOf("ac:") === 0;   // アクセサリは全て店舗の商品
+    btn.textContent = own ? "ページを開く" : "公式ページを開く";
+    note.textContent = own
+      ? "詳しい内容は、当店のご案内ページでご確認いただけます。"
+      : "詳しい内容は、ドコモの公式ページでご確認いただけます。";
     /* window.open はブラウザやPWAの設定で塞がれることがあるので、
      * ふつうのリンクとして開く（別のタブになる）。 */
-    btn.setAttribute("href", o.url || "#");
-    if (!o.desc && !o.url) return;
+    btn.setAttribute("href", urlOk ? o.url : "#");
+    if (!o.desc && !urlOk) return;
     dlg.hidden = false;
   }
 
@@ -7254,10 +7267,15 @@
           + '<label class="own-flag"><input type="checkbox" data-' + prefix + '-own="' + i + '"' + (o.own ? " checked" : "") + ">店舗独自</label>"
           + '<button class="del" data-' + prefix + '-del="' + i + '" type="button" aria-label="削除">×</button>'
           + "</div>"
-          /* 見積書で名前をタップしたときに出る小窓の中身。空なら押せないままになる。 */
+          /* 見積書で名前をタップしたときに出る小窓の中身。空なら押せないままになる。
+           * リンク先は店舗独自の商材だけ入力できる（ドコモの商材のURLは
+           * 料金表の配信で入れ替わるため、手で書いても次の更新で戻ってしまう）。 */
           + '<div class="svc-desc-row"><label>ご案内文'
           + '<input type="text" value="' + esc(o.desc || "") + '" placeholder="見積書で名前を押すと出ます（任意）" data-' + prefix + '-desc="' + i + '"></label>'
-          + (o.url ? '<span class="svc-desc-url">公式ページ: ' + esc(o.url) + "</span>" : "")
+          + (o.own || prefix === "ac"
+              ? '<label>リンク先<input type="url" value="' + esc(o.url || "")
+                + '" placeholder="https://… （任意）" data-' + prefix + '-url="' + i + '"></label>'
+              : (o.url ? '<span class="svc-desc-url">公式ページ: ' + esc(o.url) + "</span>" : ""))
           + "</div>"
           + (after ? after(o) : "");
       }).join("");
@@ -8742,6 +8760,11 @@
         list[+attr("price")].price = num(t.value);
       } else if (evType === "input" && attr("desc") != null) {
         list[+attr("desc")].desc = t.value;
+      } else if (evType === "input" && attr("url") != null) {
+        // 店舗独自の商材のリンク先。開けるのは http/https だけにする
+        var uo = list[+attr("url")];
+        var uv = String(t.value || "").trim();
+        if (!uv) delete uo.url; else uo.url = uv;
       } else if (evType === "change" && prefix === "op" && attr("cat") != null) {
         list[+attr("cat")].category = t.value;
       } else if (prefix === "op" && attr("choices") != null && evType === "click") {
