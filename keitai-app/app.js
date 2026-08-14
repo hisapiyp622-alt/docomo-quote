@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.99.7";
+  var APP_VERSION = "1.99.8";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -8945,6 +8945,15 @@
     ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
       $(id).addEventListener("change", function () {
         state[id] = this.checked;
+        /* 光申込にチェック＝光の見積もりを作る流れなので、「この見積もりに含める」を自動で入れる。
+         * ③割引のセット割では入れない（ご家族の既契約回線で割引だけ受ける場合があるため）。
+         * 外すときは自動で外さない（入力済みの光の内容を勝手に消さないため）。 */
+        if (id === "todoHikari" && this.checked && !store.ienaka.enabled) {
+          store.ienaka.enabled = true;
+          var ieb = $("ieBody"); if (ieb) ieb.hidden = false;
+          var iec = $("ieEnabled"); if (iec) iec.checked = true;
+          recalc();
+        }
         if (id === "todoDcard") { $("dcardTypeWrap").hidden = !this.checked; if (!this.checked) state.todoDcardType = ""; }
         if (id === "todoDenki" && !this.checked) {
           state.todoDenkiType = ""; state.todoDenkiNow = "";
@@ -9390,6 +9399,9 @@
       resetPropTracking();
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.patterns = [defaultState(), defaultState(), defaultState()];
+      /* 光・5Gもリセットする。パターンの外（store.ienaka）にあるため、ここで消さないと
+       * 前のお客様の光が次の見積もりに残り、「含める」が勝手に入っているように見える。 */
+      applyIenaka(null);
       store.active = 0;
       state = store.patterns[0];
       state.shopName = keep.shopName;
