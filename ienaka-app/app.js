@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.6.5";
+  var APP_VERSION = "2.6.6";
   /* 社内版（阪南店用・/ienaka/）から読み込まれたときの印。
    * 中身は単体版と同じで、ログインを使わず、保存領域だけを分ける。
    * /ienaka/ の index.html・sw.js は tools/build-internal.js が生成する。 */
@@ -1032,7 +1032,12 @@
     var el = $("cloudStatus");
     if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
   }
-  function storeDoc() { return CLOUD.db.collection("stores").doc(CLOUD.user.uid); }
+  function storeDoc() {
+    /* 社内版（阪南店）はログインを使わないため、決め打ちの置き場と同期する。
+     * ケータイ見積もりの社内版（settings/docomoQuoteStore）とは別のドキュメント。 */
+    if (INTERNAL) return CLOUD.db.collection("settings").doc("ienakaHannanStore");
+    return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
+  }
   function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
   function stamp(extra) {
     var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
@@ -1160,6 +1165,21 @@
     return "ログインできませんでした。時間をおいて再度お試しください。";
   }
   function initCloud() {
+    /* 社内版: ログインは使わず、読み込めていればそのまま同期を始める。
+     * 店舗名・担当者一覧と、担当者ごとの見積もりが端末間で揃う。 */
+    if (INTERNAL) {
+      if (!(typeof firebase !== "undefined" && firebase.apps && firebase.apps.length)) return;
+      try {
+        CLOUD.db = firebase.firestore();
+        CLOUD.user = { uid: "internal", email: "" };
+        CLOUD.enabled = true;
+      } catch (eI) { return; }
+      showLogin(false);
+      cloudStatus("同期中…", "");
+      watchStore();
+      watchQuote();
+      return;
+    }
     var configured = typeof IENAKA_FIREBASE !== "undefined" && IENAKA_FIREBASE.projectId
       && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
     if (!configured) return; // 未設定 → 端末内保存のみで動作
