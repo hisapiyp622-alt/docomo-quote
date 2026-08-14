@@ -12,3 +12,10 @@ if (typeof firebase !== "undefined") {
     });
   } catch (e) {}
 }
+
+/* 提供元の表示（アプリ内の「このアプリについて」に出ます）。社内版用 */
+var KEITAI_VENDOR = {
+  name: "ドコモショップ阪南店（社内版）",
+  contact: "開発者（安藤）まで",
+  hours: ""
+};

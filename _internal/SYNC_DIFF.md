@@ -1,55 +1,26 @@
-# 社内版 ⇄ 製品版 の差分（同期するときに維持すること）
+# 社内版と製品版の違い（2026-08-14 全面改訂）
 
-CLAUDE.md から切り出した詳細です。**社内版へ同期する指示を受けたときだけ**読めば足ります。
-ふだんの修正は製品版（`keitai-app/` / `ienaka-app/`）だけで完結します。
+**手作業での同期は廃止しました。** 社内版（リポジトリ直下）は
+`tools/build-internal.js` が製品版（`keitai-app/`）から生成する薄いラッパーで、
+本体コードは `keitai-app/` のファイルをそのまま読み込みます。
+ケータイ見積もりの修正は `keitai-app/` にだけ入れれば、社内版は自動で同じになります。
 
-### ケータイ見積もり（`/keitai-app/` ⇄ ルート）
+## 意図的に異なる箇所（すべて INTERNAL フラグと生成物に集約）
 
-2026-07-28 に、社内版（ルート）を製品版の内容で置き換えた。**中身は同じで、ルートはログインの仕組みだけ外してある。**
-ふだんの修正は製品版のみ（上記）。**社内版へ同期する指示を受けたとき**に、
-上書きしてはいけない差分は次のとおり。
+| 項目 | 製品版 | 社内版 |
+|---|---|---|
+| 店舗ログイン | 店舗ID＋パスワード（Firebase Auth） | 無し（開いたら担当者から） |
+| localStorage 接頭辞 | `kq-` | `dq-`（旧データは初回に v3→v1 へ自動引っ越し・旧キーは残す） |
+| 同期先 | `keitai-quote` プロジェクト `stores/{uid}` | `recipe-box` プロジェクト `settings/docomoQuoteStore`（認証なし・従来どおり） |
+| firebase-config.js | `keitai-app/` の製品用 | ルートの社内用（このファイルだけ手書き） |
+| 契約の器（お試し・停止） | あり | 無し（INTERNAL では読まない） |
+| マスタ設定の関門 | クラウド利用時は店舗パスワード | 掛けない（従来どおり素通し。adminLock を設定すれば掛かる） |
+| 自動ログアウト | ロック/クラウド利用時にあり | 無し |
+| キャッシュ名 | `kq-vNNN` | `dq-vNNN`（ビルドが製品版の番号に追従） |
 
-1. `app.js`
-   - `APP_VERSION` … 製品版は `1.x.y`、社内版は日付採番（`2026.07.28-72`）
-   - 保存領域は必ず分ける（**同じドメインに同居するため**）
-     製品版 `kq-*` / 社内版 `dq-*`（`MASTER_KEY` `STATE_KEY` `CFG_KEY` `TPL_KEY` `SAVED_KEY` `HIST_KEY` `STORE_UID_KEY`）
-   - 社内版はログインの仕組みを使わない。関数は残したまま入口だけ閉じている
-     `lockEnabled()` `adminLockEnabled()` `anyStaffCode()` `masterGateOn()` … すべて `false` を返す
-     `armIdle()` … 何もしない（自動ログアウトなし）
-     `initCloud()` … Firebase Auth を使わず Firestore を直接使う
-     `storeDoc()` … 製品版 `stores/{UID}` / 社内版 `settings/docomoQuoteStore`
-     `cloudOn()` … 社内版は `CLOUD.syncOn`（ヘッダの「同期OFF」）で判定
-   - 社内版はヘッダの担当者セレクタ（`#staffSelect` / `renderStaffSelect()` / `initStaffSelect()`）で担当を切り替える
-   - 社内版の `config.staff` 初期値は 担当A/B/C（旧・同期グループと同じ考え方）
-   - 社内版の「情報」は提供元・規約を出さない（代理店向けの文書は製品版のみ）
-   - **社内版の旧キー（`dq-master-v2` / `dq-state-v1`）からの移行処理は製品版に持ち込まない**
-2. `index.html`
-   - 社内版のみ … イエナカ見積もりへのリンク（`.app-link`）、`#staffSelect`、タブに「マスタ設定」
-   - 製品版のみ … `#staffBar` `#switchStaffBtn` `#logoutBtn`、「情報」の規約リンク（`.about-links`）
-   - ログイン用のオーバーレイ（`#loginOverlay` `#staffOverlay` `#masterGate`）は**両方のHTMLに残してある**。社内版では表示されないだけ
-3. `changelog.js` … 版の付け方が違うので共有しない（それぞれ別内容）
-4. `firebase-config.js`
-   - 製品版 … `keitai-quote` プロジェクト＋ `KEITAI_VENDOR` `KEITAI_STORE_DOMAIN`
-   - 社内版 … `recipe-box-bd642`（レシピアプリと共用）
-5. `data.js`
-   - 製品版 … ドコモ商材のみ（店舗独自は各店舗が登録する）
-   - 社内版 … 阪南店の独自商材（コネクトα・ハルトコーティング・photocube など）を含む
-6. `sw.js`（製品版 `kq-v*` / 社内版 `dq-v*`）、`manifest.webmanifest`、`icon.svg`、`README.md`、`firestore.rules`、
-   `TERMS.md` `LICENSE.md` `SUPPORT.md` は製品版専用。社内用の手順書は `_internal/`（GitHub Pages では公開されない）
-7. `style.css` … 共通（そのままコピーでよい）
-
-### イエナカ見積もり（`/ienaka/` → `/ienaka-app/`）
-
-`ienaka-app/` は `ienaka/` のコピーではなく、以下の点を変えている。同期時はこれらを上書きしないこと。
-
-1. `app.js`（社内版の `ienaka.js` に相当）
-   - `APP_VERSION` は製品版の採番（`1.0.0` 系）。社内版の日付採番は持ち込まない
-   - `KEY = "ienaka-app-v1"`（保存領域を分離）
-   - 見積書の注記: 「※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（本見積もりの月額には含まれません）。」
-2. `index.html`
-   - ケータイ見積もりへのリンク（`.app-link`）なし
-   - `manifest.webmanifest` / `icon.svg` / `theme-color` を読み込む
-   - スタイルは `style.css` 1枚、スクリプトは `app.js`、Service Worker は同フォルダの `sw.js`
-   - ⑤末尾の注記とメモ欄プレースホルダーが単体アプリ向けの文言
-3. `style.css` = ルートの `style.css` ＋ `ienaka/ienaka.css` を連結したもの（この順序を守る）
-4. `sw.js`（`CACHE = "ienaka-v1"` 系・アセットは同フォルダのみ）、`manifest.webmanifest`、`icon.svg`、`README.md` は製品版専用
+- 分岐の実体は `keitai-app/app.js` 冒頭の `INTERNAL` / `NS` と、`initCloud`・`storeDoc`・
+  `masterGateOn`・`afterStoreLogin`・`fetchContract` の各分岐だけ。これ以外に差はない
+- 担当の切り替えも製品版と同じ**担当者コード方式**になった（コード未設定の担当は名前タップで入れる。
+  全員未設定だと「担当切替」はマスタ設定へ誘導するので、コードか名前入りの担当者を登録しておくこと）
+- 旧・社内単体イエナカ（`/ienaka/`）はブックマーク互換のため残置。ルートのヘッダーからは
+  製品ファミリーの `/ienaka-app/` に飛ぶ
