@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.99.6";
+  var APP_VERSION = "1.99.7";
   var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -5564,6 +5564,8 @@
     $("ptDcard").value = state.pointDcard || "";
     $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
+    // 端末購入なしのときは、購入時にしか使わない入力をまとめて隠す（現在の分割支払金は残す）
+    $("devBuyDetail").hidden = state.payMethod === "none";
     renderCampaigns();
     renderDiscountHint();
   }
@@ -8905,6 +8907,7 @@
       state.payMethod = this.value;
       $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
       $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
+      $("devBuyDetail").hidden = state.payMethod === "none";
       recalc();
     });
     $("kaedoki23").addEventListener("input", function () { state.kaedoki23 = num(this.value); recalc(); });

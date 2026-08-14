@@ -200,6 +200,8 @@
 
     <div class="card c5">
       <h2>⑤ 端末代金</h2>
+      <!-- 端末購入なしのときは、購入時にしか使わない項目をまとめて隠す（devBuyA/devBuyB） -->
+      <div id="devBuyA">
       <div class="field">
         <label for="deviceName">機種名（任意）</label>
         <input type="text" id="deviceName" placeholder="例）iPhone 17 128GB">
@@ -213,6 +215,7 @@
         <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
       </div>
       <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
+      </div>
       <div class="field">
         <label for="payMethod">支払い方法</label>
         <select id="payMethod">
@@ -225,6 +228,7 @@
           <option value="kaedoki">いつでもカエドキプログラム（24回・残価設定）</option>
         </select>
       </div>
+      <div id="devBuyB">
       <div class="field" id="kaedoki23Field" hidden>
         <label for="kaedoki23">23回分の総額（頭金込み）</label>
         <input type="number" id="kaedoki23" inputmode="numeric" placeholder="0" min="0"> 円
@@ -243,6 +247,7 @@
         <input type="number" id="campaignOff" inputmode="numeric" placeholder="0" min="0"> 円
       </div>
       <p class="hint" id="deviceOffHint" hidden></p>
+      </div>
       <div class="field">
         <label for="currentInst">現在の分割支払金</label>
         <input type="number" id="currentInst" inputmode="numeric" placeholder="0" min="0"> 円/月
