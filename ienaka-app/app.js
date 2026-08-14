@@ -1,8 +1,14 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.6.4";
-  var KEY = "ienaka-app-v1"; // 単体アプリ用の保存領域
+  var APP_VERSION = "2.6.5";
+  /* 社内版（阪南店用・/ienaka/）から読み込まれたときの印。
+   * 中身は単体版と同じで、ログインを使わず、保存領域だけを分ける。
+   * /ienaka/ の index.html・sw.js は tools/build-internal.js が生成する。 */
+  var INTERNAL = typeof window !== "undefined" && !!window.IENAKA_INTERNAL;
+  var KEY = INTERNAL ? "ienaka-hannan-v1" : "ienaka-app-v1"; // 単体アプリ用の保存領域
+  // ケータイ見積もりとの引き渡し（社内版どうし・製品版どうしでだけやり取りする）
+  var HANDOFF_KEY = INTERNAL ? "dq-handoff-v1" : "kq-handoff-v1";
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
   var PRODUCTS = {
@@ -137,7 +143,7 @@
   /* ---------- 店舗設定・担当者 ----------
    * 店舗名と担当者リストは端末ごとの設定として保存する。
    * 見積もりの入力内容は担当者ごとに別々の保存領域へ入れ、担当を切り替えても互いに影響しない。 */
-  var CFG_KEY = "ienaka-app-config-v1";
+  var CFG_KEY = INTERNAL ? "ienaka-hannan-config-v1" : "ienaka-app-config-v1";
   function defaultConfig() {
     return { storeName: "", staff: [{ id: "s1", name: "担当1" }], activeStaffId: "s1" };
   }
@@ -1816,9 +1822,9 @@
    * 同一オリジンの localStorage 経由。読んだら消す（次に開いたときに残らないように）。 */
   function takeHandoff() {
     var raw = null;
-    try { raw = localStorage.getItem("kq-handoff-v1"); } catch (e) {}
+    try { raw = localStorage.getItem(HANDOFF_KEY); } catch (e) {}
     if (!raw) return;
-    try { localStorage.removeItem("kq-handoff-v1"); } catch (e) {}
+    try { localStorage.removeItem(HANDOFF_KEY); } catch (e) {}
     var d;
     try { d = JSON.parse(raw); } catch (e) { return; }
     if (!d || d.from === "ienaka") return;   // 自分が書いたものは読まない
@@ -1848,7 +1854,7 @@
   if (backLink) {
     backLink.addEventListener("click", function () {
       try {
-        localStorage.setItem("kq-handoff-v1", JSON.stringify({
+        localStorage.setItem(HANDOFF_KEY, JSON.stringify({
           staffName: (activeStaff() || {}).name || "",
           custName: state.custName || "",
           from: "ienaka", at: Date.now()

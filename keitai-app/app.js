@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.100.2";
+  var APP_VERSION = "1.100.3";
   /* 社内版（阪南店用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -7640,7 +7640,7 @@
    * 同じサイトの別アプリなので、店舗名・担当者名・お客様名を引き渡して、
    * 移った先で入力し直さなくて済むようにする。
    * 受け渡しは localStorage（同一オリジンのため読める）。一度読んだら消える。 */
-  var HANDOFF_KEY = "kq-handoff-v1";
+  var HANDOFF_KEY = NS + "-handoff-v1";
   function initIenakaLink() {
     var a = $("toIenaka");
     if (!a) return;

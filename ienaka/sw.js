@@ -1,6 +1,7 @@
+/* このファイルは tools/build-internal.js が ienaka-app/sw.js から生成します。直接編集しないでください。 */
 /* イエナカ見積もり（単体版）— ネット優先・失敗時キャッシュ */
-var CACHE = "ienaka-v20";
-var ASSETS = ["./", "index.html", "style.css", "app.js", "../keitai-app/qr.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
+var CACHE = "ienaka-hannan-v20";
+var ASSETS = ["./", "index.html", "../ienaka-app/style.css", "../ienaka-app/app.js", "../keitai-app/qr.js", "manifest.webmanifest", "../ienaka-app/icon.svg"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));
@@ -14,7 +15,7 @@ self.addEventListener("activate", function (e) {
        * キャッシュを巻き添えで消していた（別アプリを1回開くだけで、圏外のとき
        * こちらが起動できなくなる）。 */
       return Promise.all(keys.filter(function (k) {
-        return k.indexOf("ienaka-v") === 0 && k !== CACHE;
+        return k.indexOf("ienaka-hannan-v") === 0 && k !== CACHE;
       }).map(function (k) { return caches.delete(k); }));
     })
   );

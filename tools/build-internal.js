@@ -1,16 +1,22 @@
 #!/usr/bin/env node
-/* ── 社内版（リポジトリ直下）を製品版から生成する ──────────────────
+/* ── 社内版（阪南店用）を製品版から生成する ────────────────────────
  * 使い方: node tools/build-internal.js
  *
- * 社内版は「製品版と同じ中身・ログインまわりだけ無し」。仕組みは:
- *   ・root/index.html … keitai-app/index.html のパスを書き換えて生成（このスクリプト）
- *   ・root/sw.js      … keitai-app/sw.js から生成（キャッシュ名 dq-*）
- *   ・app.js などの本体 … keitai-app/ のファイルをそのまま読み込む（複製しない）
- *   ・root/firebase-config.js … 社内用（手書き・このスクリプトは触らない）
- *   ・社内版の分岐は keitai-app/app.js の INTERNAL フラグ（window.KEITAI_INTERNAL）
+ * 社内版は「製品版と同じ中身・ログインまわりだけ無し」。2つ作る:
+ *   ケータイ見積もり（/）
+ *     ・index.html … keitai-app/index.html のパスを書き換えて生成
+ *     ・sw.js      … keitai-app/sw.js から生成（キャッシュ名 dq-*）
+ *     ・本体       … keitai-app/ のファイルをそのまま読み込む（複製しない）
+ *     ・firebase-config.js … 社内用（手書き・このスクリプトは触らない）
+ *     ・分岐は keitai-app/app.js の INTERNAL（window.KEITAI_INTERNAL）
+ *   イエナカ見積もり 単体（/ienaka/）
+ *     ・index.html・sw.js・manifest.webmanifest を ienaka-app/ から生成
+ *     ・本体は ienaka-app/ のファイルを読み込む。ログイン（Firebase）は外す
+ *     ・分岐は ienaka-app/app.js の INTERNAL（window.IENAKA_INTERNAL）
+ *     ・保存領域は ienaka-hannan-*（製品版 ienaka-app-* と混ざらない）
  *
  * 製品版の index.html / sw.js を変えたら、このスクリプトを実行して
- * root を作り直してからコミットする（リリース手順に含める）。 */
+ * 生成物を作り直してからコミットする（リリース手順に含める）。 */
 "use strict";
 var fs = require("fs");
 var path = require("path");
@@ -40,8 +46,8 @@ html = html.split('src="img/').join('src="keitai-app/img/');
 html = html.split('href="img/').join('href="keitai-app/img/');
 html = html.split('data-doc="').join('data-doc="keitai-app/');
 
-// イエナカ単体版へのリンク（root からは1階層下）
-html = html.split('href="../ienaka-app/"').join('href="ienaka-app/"');
+// イエナカ単体版へのリンクは、社内版どうしでつながるように /ienaka/ へ
+html = html.split('href="../ienaka-app/"').join('href="ienaka/"');
 
 // ブラウザのタブで見分けられるように
 html = html.replace(/<title>([^<]*)<\/title>/, "<title>$1（社内版）</title>");
@@ -69,4 +75,66 @@ sw = sw.split('indexOf("kq-")').join('indexOf("dq-")');
 sw = "/* このファイルは tools/build-internal.js が keitai-app/sw.js から生成します。直接編集しないでください。 */\n" + sw;
 write("sw.js", sw);
 
-console.log("完了。root は keitai-app と同じ中身（ログイン無し・dq-* キー・settings/docomoQuoteStore 同期）で動きます。");
+/* ---------- /ienaka/（社内版のイエナカ単体） ---------- */
+var ih = read("ienaka-app/index.html");
+
+// 社内版の印（app.js より先に読ませる）
+var appTag = '<script src="app.js"></script>';
+if (ih.indexOf(appTag) < 0) throw new Error("ienaka-app/index.html の app.js タグが見つかりません");
+ih = ih.replace(appTag, '<script>window.IENAKA_INTERNAL = true;</script>\n<script src="../ienaka-app/app.js"></script>');
+
+// ログイン（Firebase）は社内版では使わないので読み込まない
+["https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js",
+ "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js",
+ "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js",
+ "firebase-config.js"].forEach(function (src) {
+  var tag = '<script src="' + src + '"></script>\n';
+  if (ih.indexOf(tag) < 0) throw new Error("ienaka-app/index.html の " + src + " タグが見つかりません");
+  ih = ih.replace(tag, "");
+});
+
+// 本体は ienaka-app/ のものを読む（../keitai-app/qr.js は同じ階層なのでそのまま）
+ih = ih.replace('href="style.css"', 'href="../ienaka-app/style.css"');
+ih = ih.split('href="icon.svg"').join('href="../ienaka-app/icon.svg"');
+
+// 「← ケータイ見積もり」は社内版のケータイ（ルート）へ戻す
+ih = ih.replace('href="../keitai-app/"', 'href="../"');
+
+ih = ih.replace(/<title>([^<]*)<\/title>/, "<title>$1（社内版）</title>");
+ih = "<!-- このファイルは tools/build-internal.js が ienaka-app/index.html から生成します。直接編集しないでください。 -->\n" + ih;
+write("ienaka/index.html", ih);
+
+var isw = read("ienaka-app/sw.js");
+var im = isw.match(/var CACHE = "ienaka-(v\d+)";/);
+if (!im) throw new Error("ienaka-app/sw.js の CACHE 名が読めません");
+isw = isw.replace(im[0], 'var CACHE = "ienaka-hannan-' + im[1] + '";');
+var iam = isw.match(/var ASSETS = \[[\s\S]*?\];/);
+if (!iam) throw new Error("ienaka-app/sw.js の ASSETS が読めません");
+var iItems = (iam[0].match(/"[^"]+"/g) || []).map(function (q) { return q.slice(1, -1); });
+var IE_ROOT_OWN = { "./": 1, "index.html": 1, "manifest.webmanifest": 1 };
+var iMapped = iItems
+  .filter(function (a) { return a !== "firebase-config.js"; })   // ログインは使わない
+  .map(function (a) {
+    if (IE_ROOT_OWN[a]) return a;
+    if (a.indexOf("../") === 0) return a;                        // ../keitai-app/qr.js はそのまま
+    return "../ienaka-app/" + a;
+  });
+isw = isw.replace(iam[0], "var ASSETS = [" + iMapped.map(function (a) { return '"' + a + '"'; }).join(", ") + "];");
+// 掃除するのは自分の接頭辞だけ（製品版の ienaka-v* を巻き添えにしない）
+if (isw.indexOf('indexOf("ienaka-v")') < 0) throw new Error("ienaka-app/sw.js のキャッシュ掃除の接頭辞が見つかりません");
+isw = isw.split('indexOf("ienaka-v")').join('indexOf("ienaka-hannan-v")');
+isw = "/* このファイルは tools/build-internal.js が ienaka-app/sw.js から生成します。直接編集しないでください。 */\n" + isw;
+write("ienaka/sw.js", isw);
+
+// ホーム画面に置いたときの設定（アイコンは ienaka-app のものを使う）
+var man = JSON.parse(read("ienaka-app/manifest.webmanifest"));
+man.name = man.name + "（社内版）";
+man.scope = "./";
+man.icons = man.icons.map(function (ic) {
+  return { src: "../ienaka-app/" + ic.src, sizes: ic.sizes, type: ic.type, purpose: ic.purpose };
+});
+write("ienaka/manifest.webmanifest",
+  "// このファイルは tools/build-internal.js が生成します。直接編集しないでください。\n".replace(/^\/\/.*\n/, "")
+  + JSON.stringify(man, null, 2) + "\n");
+
+console.log("完了。/ と /ienaka/ は製品版と同じ中身（ログイン無し・保存領域だけ別）で動きます。");
