@@ -32,9 +32,9 @@
 | 項目 | 製品版 | 社内版 |
 |---|---|---|
 | ログイン | 店舗アカウント（Firebase Auth） | 無し |
-| 端末間同期 | 店舗アカウントの `stores/{uid}` | **あり**。`recipe-box` の `settings/ienakaHannanStore`（認証なし・ルートの `firebase-config.js` を共用） |
-| 保存領域 | `ienaka-app-v1` / `ienaka-app-config-v1` | `ienaka-hannan-v1` / `ienaka-hannan-config-v1` |
-| キャッシュ名 | `ienaka-vNN` | `ienaka-hannan-vNN` |
+| 端末間同期 | 店舗アカウントの `stores/{uid}` | **あり**。`recipe-box` の `settings/ienakaInternalStore`（認証なし・ルートの `firebase-config.js` を共用） |
+| 保存領域 | `ienaka-app-v1` / `ienaka-app-config-v1` | `ienaka-internal-v1` / `ienaka-internal-config-v1` |
+| キャッシュ名 | `ienaka-vNN` | `ienaka-internal-vNN` |
 | 「← ケータイ見積もり」 | `/keitai-app/`（製品版） | `/`（社内版） |
 
 ### 社内版の同期先（recipe-box プロジェクト）
@@ -42,7 +42,7 @@
 | アプリ | ドキュメント | 中身 |
 |---|---|---|
 | ケータイ（`/`） | `settings/docomoQuoteStore` | 店舗名・担当者・料金マスタ ＋ サブコレクション `quotes/{担当ID}`・`saved/{担当ID}`・`templates/{担当ID}`・`templates/_store`・`history/{id}` |
-| イエナカ（`/ienaka/`） | `settings/ienakaHannanStore` | 店舗名・担当者 ＋ サブコレクション `quotes/{担当ID}` |
+| イエナカ（`/ienaka/`） | `settings/ienakaInternalStore` | 店舗名・担当者 ＋ サブコレクション `quotes/{担当ID}` |
 
 **お客様名はどちらも送りません**（端末内だけ）。
 
@@ -52,9 +52,9 @@
 
 ```
 match /settings/{doc} {
-  allow read, write: if doc == 'docomoQuoteStore' || doc == 'ienakaHannanStore';
+  allow read, write: if doc == 'docomoQuoteStore' || doc == 'ienakaInternalStore';
   match /{sub}/{id} {
-    allow read, write: if doc == 'docomoQuoteStore' || doc == 'ienakaHannanStore';
+    allow read, write: if doc == 'docomoQuoteStore' || doc == 'ienakaInternalStore';
   }
 }
 ```
@@ -69,3 +69,12 @@ match /settings/{doc} {
   社内版どうしは `dq-handoff-v1`、製品版どうしは `kq-handoff-v1`
 - 旧・社内単体イエナカ（手書きの `/ienaka/ienaka.js`）は 2026-08-14 に廃止。
   同じURLに生成版が入ったので、店舗のブックマーク・ホーム画面はそのまま使える
+
+## デモ版（`/ienaka-demo/`）
+
+営業でお客さまにお見せするデモです。**実際の店舗の内容が出ないよう、次の2つで隔離しています。**
+
+- 保存領域は `ienaka-demo-v1` / `ienaka-demo-config-v1`（製品版・社内版と別）。
+  同じサイトに同居しているため、保存名が同じだと**実店舗で使った内容がデモに出ます**（2026-08-14 に発生）
+- ケータイ見積もりからの引き渡し（店舗名・担当者名・**お客様名**）を受け取らない
+- Firebase の設定を持たないので同期もしない（端末内だけ・開くたびに白紙に近い状態）

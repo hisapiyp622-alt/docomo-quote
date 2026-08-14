@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* ── 社内版（阪南店用）を製品版から生成する ────────────────────────
+/* ── 社内版（当方の店舗用）を製品版から生成する ────────────────────
  * 使い方: node tools/build-internal.js
  *
  * 社内版は「製品版と同じ中身・ログインまわりだけ無し」。2つ作る:
@@ -12,9 +12,9 @@
  *   イエナカ見積もり 単体（/ienaka/）
  *     ・index.html・sw.js・manifest.webmanifest を ienaka-app/ から生成
  *     ・本体は ienaka-app/ のファイルを読み込む。ログインは外し、同期は残す
- *       （ルートの firebase-config.js を共用・settings/ienakaHannanStore）
+ *       （ルートの firebase-config.js を共用・settings/ienakaInternalStore）
  *     ・分岐は ienaka-app/app.js の INTERNAL（window.IENAKA_INTERNAL）
- *     ・保存領域は ienaka-hannan-*（製品版 ienaka-app-* と混ざらない）
+ *     ・保存領域は ienaka-internal-*（製品版 ienaka-app-*・デモ版 ienaka-demo-* と混ざらない）
  *
  * 製品版の index.html / sw.js を変えたら、このスクリプトを実行して
  * 生成物を作り直してからコミットする（リリース手順に含める）。 */
@@ -82,7 +82,16 @@ var ih = read("ienaka-app/index.html");
 // 社内版の印（app.js より先に読ませる）
 var appTag = '<script src="app.js"></script>';
 if (ih.indexOf(appTag) < 0) throw new Error("ienaka-app/index.html の app.js タグが見つかりません");
-ih = ih.replace(appTag, '<script>window.IENAKA_INTERNAL = true;</script>\n<script src="../ienaka-app/app.js"></script>');
+/* 社内版の印と、以前の保存名（ienaka-hannan-*）からの引っ越し。
+ * 引っ越しは社内版だけの事情なので、製品版・デモ版のコードには入れない。 */
+var ieBoot = '<script>window.IENAKA_INTERNAL = true;\n'
+  + '/* 以前の保存名からの引っ越し（一度だけ・古い側は残す） */\n'
+  + '(function(){try{var o=[],i,k;for(i=0;i<localStorage.length;i++){k=localStorage.key(i);'
+  + 'if(k&&k.indexOf("ienaka-hannan-")===0)o.push(k);}'
+  + 'o.forEach(function(x){var n="ienaka-internal-"+x.slice(14);'
+  + 'if(!localStorage.getItem(n))localStorage.setItem(n,localStorage.getItem(x));});}catch(e){}})();'
+  + '</script>';
+ih = ih.replace(appTag, ieBoot + '\n<script src="../ienaka-app/app.js"></script>');
 
 /* 端末間同期は社内版でも使う（ログインは無し）。Firebase の設定は
  * ルートの firebase-config.js（社内用・recipe-box プロジェクト）を共用する。
@@ -108,7 +117,7 @@ write("ienaka/index.html", ih);
 var isw = read("ienaka-app/sw.js");
 var im = isw.match(/var CACHE = "ienaka-(v\d+)";/);
 if (!im) throw new Error("ienaka-app/sw.js の CACHE 名が読めません");
-isw = isw.replace(im[0], 'var CACHE = "ienaka-hannan-' + im[1] + '";');
+isw = isw.replace(im[0], 'var CACHE = "ienaka-internal-' + im[1] + '";');
 var iam = isw.match(/var ASSETS = \[[\s\S]*?\];/);
 if (!iam) throw new Error("ienaka-app/sw.js の ASSETS が読めません");
 var iItems = (iam[0].match(/"[^"]+"/g) || []).map(function (q) { return q.slice(1, -1); });
@@ -121,9 +130,11 @@ var iMapped = iItems
     return "../ienaka-app/" + a;
   });
 isw = isw.replace(iam[0], "var ASSETS = [" + iMapped.map(function (a) { return '"' + a + '"'; }).join(", ") + "];");
-// 掃除するのは自分の接頭辞だけ（製品版の ienaka-v* を巻き添えにしない）
+/* 掃除するのは自分の接頭辞だけ（製品版の ienaka-v* を巻き添えにしない）。
+ * 以前の名前（ienaka-hannan-v*）の残りもここで片付ける。 */
 if (isw.indexOf('indexOf("ienaka-v")') < 0) throw new Error("ienaka-app/sw.js のキャッシュ掃除の接頭辞が見つかりません");
-isw = isw.split('indexOf("ienaka-v")').join('indexOf("ienaka-hannan-v")');
+isw = isw.split('k.indexOf("ienaka-v") === 0')
+  .join('(k.indexOf("ienaka-internal-v") === 0 || k.indexOf("ienaka-hannan-v") === 0)');
 isw = "/* このファイルは tools/build-internal.js が ienaka-app/sw.js から生成します。直接編集しないでください。 */\n" + isw;
 write("ienaka/sw.js", isw);
 
