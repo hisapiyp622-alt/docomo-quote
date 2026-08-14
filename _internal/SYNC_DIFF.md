@@ -31,10 +31,37 @@
 
 | 項目 | 製品版 | 社内版 |
 |---|---|---|
-| ログイン | 店舗アカウント（Firebase Auth） | 無し（Firebaseを読み込まない） |
+| ログイン | 店舗アカウント（Firebase Auth） | 無し |
+| 端末間同期 | 店舗アカウントの `stores/{uid}` | **あり**。`recipe-box` の `settings/ienakaHannanStore`（認証なし・ルートの `firebase-config.js` を共用） |
 | 保存領域 | `ienaka-app-v1` / `ienaka-app-config-v1` | `ienaka-hannan-v1` / `ienaka-hannan-config-v1` |
 | キャッシュ名 | `ienaka-vNN` | `ienaka-hannan-vNN` |
 | 「← ケータイ見積もり」 | `/keitai-app/`（製品版） | `/`（社内版） |
+
+### 社内版の同期先（recipe-box プロジェクト）
+
+| アプリ | ドキュメント | 中身 |
+|---|---|---|
+| ケータイ（`/`） | `settings/docomoQuoteStore` | 店舗名・担当者・料金マスタ ＋ サブコレクション `quotes/{担当ID}`・`saved/{担当ID}`・`templates/{担当ID}`・`templates/_store`・`history/{id}` |
+| イエナカ（`/ienaka/`） | `settings/ienakaHannanStore` | 店舗名・担当者 ＋ サブコレクション `quotes/{担当ID}` |
+
+**お客様名はどちらも送りません**（端末内だけ）。
+
+ヘッダーの表示が「同期:権限エラー」になるときは、recipe-box の Firestore ルールで
+`settings/` 配下が許可されていません。Firebaseコンソール → Firestore Database → ルールに
+次を足してください（社内版は認証を使わないため、この2つのドキュメントだけを開けます）。
+
+```
+match /settings/{doc} {
+  allow read, write: if doc == 'docomoQuoteStore' || doc == 'ienakaHannanStore';
+  match /{sub}/{id} {
+    allow read, write: if doc == 'docomoQuoteStore' || doc == 'ienakaHannanStore';
+  }
+}
+```
+
+> **注意（社内版だけの割り切り）**: 認証なしで読み書きするため、プロジェクトIDを知る第三者が
+> 触れる可能性があります。阪南店の運用データ（お客様名を含まない）に限る前提です。
+> 製品版（`keitai-quote`）は店舗アカウントのログインが必須で、この構成とは無関係です。
 
 - 分岐の実体は `ienaka-app/app.js` 冒頭の `INTERNAL`（`KEY` / `CFG_KEY` / `HANDOFF_KEY`）だけ
 - **社内版と製品版でデータは混ざらない。** 同一オリジンだが保存キーが別

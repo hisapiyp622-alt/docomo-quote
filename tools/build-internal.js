@@ -11,7 +11,8 @@
  *     ・分岐は keitai-app/app.js の INTERNAL（window.KEITAI_INTERNAL）
  *   イエナカ見積もり 単体（/ienaka/）
  *     ・index.html・sw.js・manifest.webmanifest を ienaka-app/ から生成
- *     ・本体は ienaka-app/ のファイルを読み込む。ログイン（Firebase）は外す
+ *     ・本体は ienaka-app/ のファイルを読み込む。ログインは外し、同期は残す
+ *       （ルートの firebase-config.js を共用・settings/ienakaHannanStore）
  *     ・分岐は ienaka-app/app.js の INTERNAL（window.IENAKA_INTERNAL）
  *     ・保存領域は ienaka-hannan-*（製品版 ienaka-app-* と混ざらない）
  *
@@ -83,15 +84,15 @@ var appTag = '<script src="app.js"></script>';
 if (ih.indexOf(appTag) < 0) throw new Error("ienaka-app/index.html の app.js タグが見つかりません");
 ih = ih.replace(appTag, '<script>window.IENAKA_INTERNAL = true;</script>\n<script src="../ienaka-app/app.js"></script>');
 
-// ログイン（Firebase）は社内版では使わないので読み込まない
-["https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js",
- "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js",
- "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js",
- "firebase-config.js"].forEach(function (src) {
-  var tag = '<script src="' + src + '"></script>\n';
-  if (ih.indexOf(tag) < 0) throw new Error("ienaka-app/index.html の " + src + " タグが見つかりません");
-  ih = ih.replace(tag, "");
-});
+/* 端末間同期は社内版でも使う（ログインは無し）。Firebase の設定は
+ * ルートの firebase-config.js（社内用・recipe-box プロジェクト）を共用する。
+ * ログイン用の SDK（auth）は社内版では使わないので読み込まない。 */
+var authTag = '<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>\n';
+if (ih.indexOf(authTag) < 0) throw new Error("ienaka-app/index.html の firebase-auth タグが見つかりません");
+ih = ih.replace(authTag, "");
+var ieCfgTag = '<script src="firebase-config.js"></script>';
+if (ih.indexOf(ieCfgTag) < 0) throw new Error("ienaka-app/index.html の firebase-config.js タグが見つかりません");
+ih = ih.replace(ieCfgTag, '<script src="../firebase-config.js"></script>');
 
 // 本体は ienaka-app/ のものを読む（../keitai-app/qr.js は同じ階層なのでそのまま）
 ih = ih.replace('href="style.css"', 'href="../ienaka-app/style.css"');
@@ -113,8 +114,8 @@ if (!iam) throw new Error("ienaka-app/sw.js の ASSETS が読めません");
 var iItems = (iam[0].match(/"[^"]+"/g) || []).map(function (q) { return q.slice(1, -1); });
 var IE_ROOT_OWN = { "./": 1, "index.html": 1, "manifest.webmanifest": 1 };
 var iMapped = iItems
-  .filter(function (a) { return a !== "firebase-config.js"; })   // ログインは使わない
   .map(function (a) {
+    if (a === "firebase-config.js") return "../firebase-config.js";   // 同期の設定はルートと共用
     if (IE_ROOT_OWN[a]) return a;
     if (a.indexOf("../") === 0) return a;                        // ../keitai-app/qr.js はそのまま
     return "../ienaka-app/" + a;

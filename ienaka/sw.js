@@ -1,7 +1,7 @@
 /* このファイルは tools/build-internal.js が ienaka-app/sw.js から生成します。直接編集しないでください。 */
 /* イエナカ見積もり（単体版）— ネット優先・失敗時キャッシュ */
-var CACHE = "ienaka-hannan-v20";
-var ASSETS = ["./", "index.html", "../ienaka-app/style.css", "../ienaka-app/app.js", "../keitai-app/qr.js", "manifest.webmanifest", "../ienaka-app/icon.svg"];
+var CACHE = "ienaka-hannan-v21";
+var ASSETS = ["./", "index.html", "../ienaka-app/style.css", "../ienaka-app/app.js", "../keitai-app/qr.js", "../firebase-config.js", "manifest.webmanifest", "../ienaka-app/icon.svg"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));
