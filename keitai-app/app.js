@@ -5,9 +5,35 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.100.0";
-  var MASTER_KEY = "kq-master-v1"; // 料金マスタ（全担当・全端末で共通）
-  var STATE_KEY = "kq-state-v1";   // 見積もり（担当グループごとに分かれる）
+  var APP_VERSION = "1.100.1";
+  /* 社内版（阪南店用・リポジトリ直下）から読み込まれたときの印。
+   * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
+   * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
+   * root/index.html と root/sw.js は tools/build-internal.js が生成する。 */
+  var INTERNAL = typeof window !== "undefined" && !!window.KEITAI_INTERNAL;
+  var NS = INTERNAL ? "dq" : "kq";
+  if (INTERNAL) {
+    /* 旧・社内版（〜2026.08.14-85）のデータを新しいキー名へ一回だけ引っ越す。
+     * 旧キーは消さない（前の版に戻しても動くように）。 */
+    try {
+      if (!localStorage.getItem("dq-master-v1") && localStorage.getItem("dq-master-v3")) {
+        localStorage.setItem("dq-master-v1", localStorage.getItem("dq-master-v3"));
+      }
+      var mig = [];
+      for (var mi = 0; mi < localStorage.length; mi++) {
+        var mk = localStorage.key(mi);
+        if (mk && mk.indexOf("dq-state-v3:") === 0) mig.push(mk);
+      }
+      mig.forEach(function (mk2) {
+        var nk = "dq-state-v1:" + mk2.slice("dq-state-v3:".length);
+        if (!localStorage.getItem(nk)) localStorage.setItem(nk, localStorage.getItem(mk2));
+      });
+      // 店舗の切り替え判定で消されないように、社内版の印を入れておく
+      localStorage.setItem("dq-store-uid", "internal");
+    } catch (eMig) {}
+  }
+  var MASTER_KEY = NS + "-master-v1"; // 料金マスタ（全担当・全端末で共通）
+  var STATE_KEY = NS + "-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
   // 見積もりは担当者ごとに別の領域へ保存する
   function quoteKey(staffId) {
@@ -51,7 +77,7 @@
     return (total / 1024 / 1024).toFixed(2) + "MB";
   }
 
-  var CFG_KEY = "kq-config-v1";
+  var CFG_KEY = NS + "-config-v1";
   var config;
   function defaultConfig() {
     return {
@@ -151,7 +177,7 @@
   /* テンプレートは担当者ごとに持つ（3枠）。
    * 以前は料金マスタの中にあり、店舗内の全担当で共有していたため、
    * 誰かが保存すると他の担当のテンプレートが上書きされていた。 */
-  var TPL_KEY = "kq-tpl-v1";
+  var TPL_KEY = NS + "-tpl-v1";
   var templates = [null, null, null];
   function tplKey(staffId) { return TPL_KEY + ":" + (staffId || activeStaff().id); }
   function loadTemplates() {
@@ -189,7 +215,7 @@
     if (typeof pushStoreTemplates === "function") pushStoreTemplates();
   }
 
-  var SAVED_KEY = "kq-saved-v1";
+  var SAVED_KEY = NS + "-saved-v1";
   /* 保存できる件数。1か月をあとから振り返って分析するため多めに持つ。
    * ただしクラウドは1件のデータに上限（約1MB）があるので、
    * 新しい SAVED_FULL 件だけ見積もりの中身をそのまま持ち、
@@ -243,7 +269,7 @@
    * クラウドとは全文の置き換えではなく「統合（マージ）」で揃える。
    * ・同じ保存は、更新時刻（upAt/resultAt/savedAt）の新しい方を採用
    * ・削除だけは下の記録で他の端末へ伝える（無いと削除した保存が復活する） */
-  var SAVED_DEL_KEY = "kq-saved-del-v1";
+  var SAVED_DEL_KEY = NS + "-saved-del-v1";
   function savedDelKey(staffId) { return SAVED_DEL_KEY + ":" + (staffId || activeStaff().id); }
   function loadSavedDel(staffId) {
     try { return JSON.parse(localStorage.getItem(savedDelKey(staffId)) || "null") || {}; } catch (e) { return {}; }
@@ -2013,7 +2039,7 @@
    * ・マスタ設定を開いてから最初の編集で、編集前の内容を自動で1件残す
    * ・「いまの内容を履歴に残す」でメモを付けて任意に残せる
    * クラウド利用時は stores/{UID}/history/{id} に置き、店舗内の全端末で同じ履歴を見る。 */
-  var HIST_KEY = "kq-master-hist-v1";
+  var HIST_KEY = NS + "-master-hist-v1";
   var HIST_MAX = 20;
   var HIST_SETTLE_MS = 60 * 1000; // これだけ編集が途切れたら、ひと区切りとみなす
   var histList = [];
@@ -2423,7 +2449,7 @@
    *
    * すでに使っている店舗には出さない。判定は保存されている内容だけで行い、
    * 別の端末を足したときにも出ないようにする（クラウドの設定を受け取ってから判定する）。 */
-  var WIZ_SKIP_KEY = "kq-setup-skipped";
+  var WIZ_SKIP_KEY = NS + "-setup-skipped";
   var WIZ_LAST = 4;
   var wizStep = 1;
 
@@ -3535,7 +3561,11 @@
   function cloudNg(err) {
     syncStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
   }
-  function storeDoc() { return CLOUD.db.collection("stores").doc(CLOUD.user.uid); }
+  function storeDoc() {
+    // 社内版はログインを使わないため、決め打ちの置き場（従来と同じ）と同期する
+    if (INTERNAL) return CLOUD.db.collection("settings").doc("docomoQuoteStore");
+    return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
+  }
   function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
   function stamp(extra) {
     var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
@@ -3550,7 +3580,7 @@
    * ドキュメントが無い店舗は従来どおり動く（既存店舗を壊さないため）。
    * オフラインでも効くように、最後に読めた内容を端末に控えて起動時はそれを使う。
    * 手順は _internal/OPERATIONS.md「契約の器」を参照。 */
-  var CONTRACT_KEY = "kq-contract-v1";
+  var CONTRACT_KEY = NS + "-contract-v1";
   var contractInfo = null;   // { uid, status, trialEndsAt(ms), fetchedAt }
   function loadContractCache() {
     try { contractInfo = JSON.parse(localStorage.getItem(CONTRACT_KEY) || "null"); } catch (e) { contractInfo = null; }
@@ -3563,6 +3593,7 @@
   }
   function contractsDoc() { return CLOUD.db.collection("contracts").doc(CLOUD.user.uid); }
   function fetchContract() {
+    if (INTERNAL) return Promise.resolve(false);   // 社内版に契約の器は無い
     if (!cloudOn()) return Promise.resolve(false);
     var uid = CLOUD.user.uid;
     return contractsDoc().get().then(function (snap) {
@@ -3983,7 +4014,7 @@
   /* 店舗IDはその端末で最後に使ったものを覚えておき、次から入力済みにする。
    * 秘密の情報ではないので保存してもリスクは増えない。
    * パスワードはアプリに保存しない（ブラウザの保存機能に任せる）。 */
-  var LAST_STORE_ID_KEY = "kq-last-store-id";
+  var LAST_STORE_ID_KEY = NS + "-last-store-id";
   function rememberedStoreId() {
     try { return localStorage.getItem(LAST_STORE_ID_KEY) || ""; } catch (e) { return ""; }
   }
@@ -4130,7 +4161,7 @@
    * 見積もり・料金マスタ・担当者・履歴は端末内にも保存しているため、
    * そのままだと前の店舗の内容が見えてしまう（クラウドには残っているので消えない）。
    * この端末で初めてログインする場合だけは、端末内の内容をその店舗の初期値にする。 */
-  var STORE_UID_KEY = "kq-store-uid";
+  var STORE_UID_KEY = NS + "-store-uid";
   function wipeStoreLocal() {
     try {
       var kill = [];
@@ -4284,8 +4315,9 @@
   function afterStoreLogin() {
     showLogin(false);
     var lo = $("logoutBtn");
-    if (lo) lo.hidden = !(lockEnabled() || cloudOn());
-    armIdle(lockEnabled() || cloudOn());
+    if (lo) lo.hidden = INTERNAL || !(lockEnabled() || cloudOn());
+    // 社内版にはログインが無いので、自動ログアウトも掛けない
+    armIdle(!INTERNAL && (lockEnabled() || cloudOn()));
     if (takeHandoffFromIenaka()) { bootDone(); return; }
     // まだ一度も設定していない店舗は、先に初期設定を出す
     if (wizNeeded()) { wizShow(true); bootDone(); return; }
@@ -4398,6 +4430,36 @@
   }
 
   function initCloud() {
+    /* 社内版: 店舗ログインは使わない。Firebaseが読み込めていれば
+     * 従来どおり settings/docomoQuoteStore とそのまま同期する。 */
+    if (INTERNAL) {
+      var lbI = $("lockBox"); if (lbI) lbI.hidden = true;
+      var abI = $("adminLockBox"); if (abI) abI.hidden = true;
+      showLogin(false);
+      if (typeof firebase !== "undefined" && firebase.apps && firebase.apps.length) {
+        try {
+          CLOUD.db = firebase.firestore();
+          CLOUD.user = { uid: "internal", email: "" };
+          CLOUD.enabled = true;
+        } catch (eIc) {}
+      }
+      if (cloudOn()) {
+        syncStatus("同期中…", "");
+        watchStore();
+        watchStoreTemplates();
+        storeDoc().get().then(function (snap) {
+          var dIc = snap.exists ? snap.data() : null;
+          if (dIc) applyRemoteStore(dIc);
+          afterStoreLogin();
+        }, function () {
+          afterStoreLogin(); // 取得できなくても端末内の内容で続行する
+        });
+      } else {
+        syncStatus("", "");
+        afterStoreLogin();
+      }
+      return;
+    }
     // Firebase未設定のときは端末内モード。店舗ログインを設定していればそちらで守る
     var wantCloud = typeof KEITAI_FIREBASE !== "undefined" && !!KEITAI_FIREBASE.projectId;
     var configured = wantCloud && typeof firebase !== "undefined" && firebase.apps && firebase.apps.length;
@@ -7289,7 +7351,8 @@
   }
   function masterGateAdminMode() { return adminLockEnabled() && !masterGateFallback; }
   function masterGateOn() {
-    return !masterUnlocked && (adminLockEnabled() || lockEnabled() || cloudOn());
+    // 社内版はログインが無いため、クラウド同期中でも関門は掛けない（従来どおり）
+    return !masterUnlocked && (adminLockEnabled() || lockEnabled() || (cloudOn() && !INTERNAL));
   }
   function showMasterGate(show) {
     var el = $("masterGate");
@@ -7431,7 +7494,7 @@
   }
   /* 更新履歴。前回見たときの版を覚えておき、それより新しいものに印を付ける。
    * 何が変わったのかを店舗の方が自分で確かめられるようにするため。 */
-  var SEEN_VER_KEY = "kq-seen-version";
+  var SEEN_VER_KEY = NS + "-seen-version";
   function changelog() {
     return (typeof KEITAI_CHANGELOG !== "undefined" && KEITAI_CHANGELOG) || [];
   }
@@ -7656,7 +7719,7 @@
    * 説明が無いと気づけないため、端末ごとに初回だけ自動で出す。
    * キャラクター画像は mascotSvg() の1か所にまとめてあり、
    * 正式なイラスト（PNG等）ができたらここを差し替えるだけでよい。 */
-  var TOUR_KEY = "kq-tour-done-v1";
+  var TOUR_KEY = NS + "-tour-done-v1";
   var TOUR_STEPS = [
     { pose: "hello", t: "はじめまして、ミツモリンです！ 使い方をぱぱっとご案内しますね。見積もり画面は、①から⑨を上から入れていくだけ。月々のお支払いがその場で出ます。ご家族の複数台は、回線1・回線2・回線3に分けて入れてくださいね。" },
     { pose: "sheet", t: "できあがったら「見積書」タブへ。印刷やPDF保存ができて、文字サイズも大・中・小から選べます。じつは、見積書を開いた時点の内容が「ご提案」として自動で控えられるんです。操作はいりません！" },
@@ -7777,7 +7840,7 @@
   /* ---------- 見積書の文字サイズ（大・中・小） ----------
    * お客様に画面のまま見せるとき・印刷するときの文字の大きさを選べる。
    * 端末ごとの設定（印刷する端末で選べばよいので同期しない）。 */
-  var SHEET_FS_KEY = "kq-sheet-fs";
+  var SHEET_FS_KEY = NS + "-sheet-fs";
   function applySheetFs(v) {
     var el = $("tab-sheet");
     if (!el) return;
