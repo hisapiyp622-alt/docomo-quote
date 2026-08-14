@@ -1,14 +1,21 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.6.6";
-  /* 社内版（阪南店用・/ienaka/）から読み込まれたときの印。
-   * 中身は単体版と同じで、ログインを使わず、保存領域だけを分ける。
-   * /ienaka/ の index.html・sw.js は tools/build-internal.js が生成する。 */
+  var APP_VERSION = "2.6.7";
+  /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
+   * ログインの有無と保存領域だけが違う。
+   *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
+   *   DEMO     … デモ版（/ienaka-demo/）。ログイン無し・同期なし
+   * 生成・コピー元はどちらも このファイル（ienaka-app/app.js）。 */
   var INTERNAL = typeof window !== "undefined" && !!window.IENAKA_INTERNAL;
-  var KEY = INTERNAL ? "ienaka-hannan-v1" : "ienaka-app-v1"; // 単体アプリ用の保存領域
-  // ケータイ見積もりとの引き渡し（社内版どうし・製品版どうしでだけやり取りする）
-  var HANDOFF_KEY = INTERNAL ? "dq-handoff-v1" : "kq-handoff-v1";
+  var DEMO = typeof window !== "undefined" && !!window.IENAKA_DEMO;
+  /* 保存領域は3者で完全に分ける。同じサイト（同一オリジン）に同居しているため、
+   * 同じ名前を使うと、実際の店舗で使った内容がデモ版に出てしまう。 */
+  var KEY = INTERNAL ? "ienaka-internal-v1" : DEMO ? "ienaka-demo-v1" : "ienaka-app-v1";
+  /* ケータイ見積もりとの引き渡し（店舗名・担当者名・お客様名）。
+   * 社内版どうし・製品版どうしでだけやり取りする。デモ版は相手がいないので
+   * 受け取らない（実際のお客様名を拾ってしまわないように）。 */
+  var HANDOFF_KEY = DEMO ? "" : INTERNAL ? "dq-handoff-v1" : "kq-handoff-v1";
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
   var PRODUCTS = {
@@ -143,7 +150,7 @@
   /* ---------- 店舗設定・担当者 ----------
    * 店舗名と担当者リストは端末ごとの設定として保存する。
    * 見積もりの入力内容は担当者ごとに別々の保存領域へ入れ、担当を切り替えても互いに影響しない。 */
-  var CFG_KEY = INTERNAL ? "ienaka-hannan-config-v1" : "ienaka-app-config-v1";
+  var CFG_KEY = INTERNAL ? "ienaka-internal-config-v1" : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
   function defaultConfig() {
     return { storeName: "", staff: [{ id: "s1", name: "担当1" }], activeStaffId: "s1" };
   }
@@ -1033,9 +1040,9 @@
     if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
   }
   function storeDoc() {
-    /* 社内版（阪南店）はログインを使わないため、決め打ちの置き場と同期する。
+    /* 社内版はログインを使わないため、決め打ちの置き場と同期する。
      * ケータイ見積もりの社内版（settings/docomoQuoteStore）とは別のドキュメント。 */
-    if (INTERNAL) return CLOUD.db.collection("settings").doc("ienakaHannanStore");
+    if (INTERNAL) return CLOUD.db.collection("settings").doc("ienakaInternalStore");
     return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
   }
   function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
@@ -1841,6 +1848,7 @@
   /* ケータイ見積もりから移ってきたときは、店舗名・担当者名・お客様名を引き継ぐ。
    * 同一オリジンの localStorage 経由。読んだら消す（次に開いたときに残らないように）。 */
   function takeHandoff() {
+    if (!HANDOFF_KEY) return;   // デモ版は引き継がない
     var raw = null;
     try { raw = localStorage.getItem(HANDOFF_KEY); } catch (e) {}
     if (!raw) return;

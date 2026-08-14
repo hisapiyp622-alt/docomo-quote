@@ -5,8 +5,8 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.100.4";
-  /* 社内版（阪南店用・リポジトリ直下）から読み込まれたときの印。
+  var APP_VERSION = "1.100.5";
+  /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
    * root/index.html と root/sw.js は tools/build-internal.js が生成する。 */

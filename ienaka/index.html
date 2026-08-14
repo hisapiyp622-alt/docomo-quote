@@ -335,7 +335,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="../firebase-config.js"></script>
 <script src="../keitai-app/qr.js"></script>
-<script>window.IENAKA_INTERNAL = true;</script>
+<script>window.IENAKA_INTERNAL = true;
+/* 以前の保存名からの引っ越し（一度だけ・古い側は残す） */
+(function(){try{var o=[],i,k;for(i=0;i<localStorage.length;i++){k=localStorage.key(i);if(k&&k.indexOf("ienaka-hannan-")===0)o.push(k);}o.forEach(function(x){var n="ienaka-internal-"+x.slice(14);if(!localStorage.getItem(n))localStorage.setItem(n,localStorage.getItem(x));});}catch(e){}})();</script>
 <script src="../ienaka-app/app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
