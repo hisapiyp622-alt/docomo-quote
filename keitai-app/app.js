@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.101.1";
+  var APP_VERSION = "1.101.2";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -3982,6 +3982,17 @@
     }, function () {});
   }
 
+  /* その担当の見積もり・保存・テンプレートがこの端末に残っているか。
+   * クラウドの担当者一覧に入っていない担当を、黙って切り捨てないための判定。 */
+  function staffHasLocalData(sid) {
+    if (!sid) return false;
+    try {
+      if (localStorage.getItem(SAVED_KEY + ":" + sid)) return true;
+      if (localStorage.getItem(STATE_KEY + ":" + sid)) return true;
+      if (localStorage.getItem(TPL_KEY + ":" + sid)) return true;
+    } catch (e) {}
+    return false;
+  }
   function applyRemoteStore(d) {
     CLOUD.suppress = true;
     var lostStaff = false;
@@ -3997,10 +4008,20 @@
          * 担当を選び直している最中（activeStaffIdが空）に他の端末から
          * 設定が届くと、そのたびに担当者コードの画面へ引き戻されてしまうため。 */
         var prevId = config.activeStaffId;
+        var prevStaff = config.staff || [];
         config.staff = d.staff;
         if (prevId && !config.staff.some(function (s) { return s.id === prevId; })) {
-          config.activeStaffId = "";
-          lostStaff = true;
+          /* 届いた一覧にこの端末の担当がいない場合、その担当の見積もり・保存は
+           * この端末に残っているのに開けなくなる（担当ごとに分けて持っているため）。
+           * 中身がある担当は消さずに残し、そのまま使い続けられるようにする。
+           * 一覧の整理はマスタ設定で店舗が行う。 */
+          if (staffHasLocalData(prevId)) {
+            var keep = prevStaff.filter(function (s) { return s.id === prevId; })[0];
+            if (keep) config.staff = config.staff.concat([keep]);
+          } else {
+            config.activeStaffId = "";
+            lostStaff = true;
+          }
         }
       }
       saveConfig();
