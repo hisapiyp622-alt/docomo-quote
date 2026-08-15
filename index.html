@@ -847,13 +847,13 @@
         <button class="btn-sub" id="devMasterClear" type="button">端末マスタを削除</button>
       </div>
       <div id="devMasterPasteWrap" hidden>
-        <textarea id="devMasterBox" class="export-box" placeholder="機種名,本体価格,頭金,23回分の総額&#10;iPhone 17 128GB,145200,0,96800&#10;Galaxy S26,132000,0,88000&#10;&#10;※ 頭金と23回分の総額は無くても構いません&#10;※ Excel・スプレッドシートからそのままコピーして貼り付けられます"></textarea>
+        <textarea id="devMasterBox" class="export-box" placeholder="機種名,本体価格,頭金,23回分の総額,MNPの23回分,新規の23回分&#10;iPhone 17 128GB,145200,0,96800,66000,66000&#10;Galaxy S26,132000,0,88000,,&#10;&#10;※ 頭金と23回分の総額は無くても構いません&#10;※ MNP・新規で残価が変わる機種だけ、右の2列に入れてください&#10;※ Excel・スプレッドシートからそのままコピーして貼り付けられます"></textarea>
         <div class="actions">
           <button class="btn-main" id="devMasterGo" type="button">この内容で取り込む</button>
           <button class="btn-sub" id="devMasterCancel" type="button">キャンセル</button>
         </div>
       </div>
-      <p class="hint">1行1機種で、<strong>機種名と本体価格</strong>の2列があれば取り込めます（カンマ区切り・タブ区切りのどちらでも可）。1行目に<strong>「機種名,本体価格,頭金,23回分の総額」</strong>のような見出しを付けておくと、<strong>頭金と23回分の総額も一緒に</strong>読み込みます。価格の「円」やカンマは自動で外します。</p>
+      <p class="hint">1行1機種で、<strong>機種名と本体価格</strong>の2列があれば取り込めます（カンマ区切り・タブ区切りのどちらでも可）。1行目に<strong>「機種名,本体価格,頭金,23回分の総額」</strong>のような見出しを付けておくと、<strong>頭金と23回分の総額も一緒に</strong>読み込みます。価格の「円」やカンマは自動で外します。<br><strong>MNP・新規で残価（カエドキの23回分の総額）が変わる機種</strong>は、見出しに<strong>「MNPの23回分」「新規の23回分」</strong>のように手続き名を入れた列を足すと、手続きに合わせて自動で入れ替わります。</p>
       <div id="devMasterPreview" hidden>
         <table class="stats-table" id="devMasterTable"><!-- JSで生成 --></table>
       </div>
