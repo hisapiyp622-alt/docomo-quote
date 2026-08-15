@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.102.1";
+  var APP_VERSION = "1.103.0";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -7655,6 +7655,108 @@
     });
   }
 
+  /* ---------- 電卓 ----------
+   * 店頭で「これはいくら？」を確かめるための簡単な電卓。
+   * 見積もりの金額とはつながっていない（数字を書き戻すことはしない）。
+   * iPadのホーム画面起動（PWA）ではブラウザの電卓が使えないため、
+   * アプリの中に用意しておく。 */
+  var CALC = { cur: "0", prev: null, op: null, fresh: true };
+  function calcFmt(n) {
+    if (!isFinite(n)) return "エラー";
+    // 小数は最大4桁まで（円の計算で丸めすぎないように）
+    var r = Math.round(n * 10000) / 10000;
+    var s2 = String(r);
+    if (s2.indexOf(".") < 0) return Number(r).toLocaleString("ja-JP");
+    var p2 = s2.split(".");
+    return Number(p2[0]).toLocaleString("ja-JP") + "." + p2[1];
+  }
+  function calcRender() {
+    var o = $("calcOut"), e = $("calcExpr");
+    if (!o || !e) return;
+    var n = parseFloat(CALC.cur);
+    o.textContent = isNaN(n) ? CALC.cur : calcFmt(n);
+    var sign = { "+": "＋", "-": "−", "*": "×", "/": "÷" };
+    e.textContent = CALC.op ? calcFmt(CALC.prev) + " " + sign[CALC.op] : "";
+  }
+  function calcApply() {
+    var a = num(CALC.prev), b = parseFloat(CALC.cur);
+    if (isNaN(b)) b = 0;
+    var r = a;
+    if (CALC.op === "+") r = a + b;
+    else if (CALC.op === "-") r = a - b;
+    else if (CALC.op === "*") r = a * b;
+    else if (CALC.op === "/") r = b === 0 ? NaN : a / b;
+    return r;
+  }
+  function calcKey(k) {
+    if (/^[0-9]$/.test(k)) {
+      CALC.cur = (CALC.fresh || CALC.cur === "0") ? k : CALC.cur + k;
+      CALC.fresh = false;
+    } else if (k === ".") {
+      if (CALC.fresh) { CALC.cur = "0."; CALC.fresh = false; }
+      else if (CALC.cur.indexOf(".") < 0) CALC.cur += ".";
+    } else if (k === "clear") {
+      CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.fresh = true;
+    } else if (k === "back") {
+      if (!CALC.fresh && CALC.cur.length > 1) CALC.cur = CALC.cur.slice(0, -1);
+      else { CALC.cur = "0"; CALC.fresh = true; }
+    } else if (k === "pct") {
+      CALC.cur = String(parseFloat(CALC.cur) / 100);
+      CALC.fresh = true;
+    } else if (k === "+" || k === "-" || k === "*" || k === "/") {
+      if (CALC.op !== null && !CALC.fresh) CALC.cur = String(calcApply());
+      CALC.prev = parseFloat(CALC.cur);
+      CALC.op = k;
+      CALC.fresh = true;
+    } else if (k === "=") {
+      if (CALC.op !== null) {
+        CALC.cur = String(calcApply());
+        CALC.prev = null; CALC.op = null; CALC.fresh = true;
+      }
+    }
+    calcRender();
+  }
+  // 表示中の数字に掛ける・割る（税込・税抜の計算）
+  function calcTimes(v) {
+    var n = parseFloat(CALC.cur);
+    if (isNaN(n)) return;
+    CALC.cur = String(Math.round(n * v * 10000) / 10000);
+    CALC.prev = null; CALC.op = null; CALC.fresh = true;
+    calcRender();
+  }
+  function showCalc(show) {
+    var d = $("calcDlg");
+    if (!d) return;
+    d.hidden = !show;
+    if (show) calcRender();
+  }
+  function initCalc() {
+    var open = $("calcOpenBtn");
+    if (open) open.addEventListener("click", function () { showCalc(true); });
+    var close = $("calcClose");
+    if (close) close.addEventListener("click", function () { showCalc(false); });
+    var pad = $("calcPad");
+    if (pad) pad.addEventListener("click", function (e) {
+      var k = e.target && e.target.getAttribute && e.target.getAttribute("data-calc");
+      if (k) calcKey(k);
+    });
+    var t10 = $("calcTax10");
+    if (t10) t10.addEventListener("click", function () { calcTimes(1.1); });
+    var tex = $("calcTaxEx");
+    if (tex) tex.addEventListener("click", function () { calcTimes(1 / 1.1); });
+    // キーボードでも打てるようにする（PCで使うとき）
+    document.addEventListener("keydown", function (e) {
+      var d = $("calcDlg");
+      if (!d || d.hidden) return;
+      var k = e.key;
+      if (/^[0-9.]$/.test(k)) { calcKey(k); e.preventDefault(); }
+      else if (k === "+" || k === "-" || k === "*" || k === "/") { calcKey(k); e.preventDefault(); }
+      else if (k === "Enter" || k === "=") { calcKey("="); e.preventDefault(); }
+      else if (k === "Backspace") { calcKey("back"); e.preventDefault(); }
+      else if (k === "Escape") { showCalc(false); e.preventDefault(); }
+    });
+  }
+
   /* ---------- このアプリについて ----------
    * 提供元・版・商標・免責をまとめて出す。担当者コードを持たない人でも見られるよう、
    * マスタ設定ではなくヘッダーとログイン画面から開けるようにしている。 */
@@ -10125,6 +10227,7 @@
   initLocalLock();
   initStaffGate();
   initMasterGate();
+  initCalc();
   initAbout();
   initDocs();
   initContract();

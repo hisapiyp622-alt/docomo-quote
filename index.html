@@ -687,6 +687,9 @@
 
   <!-- ============ マスタ設定タブ ============ -->
   <section id="tab-saved" class="tab-page no-print">
+    <div class="actions calc-open-row">
+      <button class="btn-sub" id="calcOpenBtn" type="button">🧮 電卓</button>
+    </div>
     <div class="card">
       <h2>見積もりの保存</h2>
       <p class="hint">いま入力している3回線ぶんを、1商談としてまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
@@ -1107,6 +1110,44 @@
         <button class="btn-sub" id="tourSkip" type="button">とばす</button>
         <button class="btn-main" id="tourNext" type="button">次へ</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 電卓（保存タブの「電卓」ボタンから開く。店頭での軽い計算用） -->
+<div class="login-overlay no-print" id="calcDlg" hidden>
+  <div class="login-box calc-box">
+    <h2>電卓</h2>
+    <div class="calc-view">
+      <div class="calc-expr" id="calcExpr"></div>
+      <div class="calc-out" id="calcOut">0</div>
+    </div>
+    <div class="calc-pad" id="calcPad">
+      <button type="button" class="calc-k calc-fn" data-calc="clear">C</button>
+      <button type="button" class="calc-k calc-fn" data-calc="back">←</button>
+      <button type="button" class="calc-k calc-fn" data-calc="pct">％</button>
+      <button type="button" class="calc-k calc-op" data-calc="/">÷</button>
+      <button type="button" class="calc-k" data-calc="7">7</button>
+      <button type="button" class="calc-k" data-calc="8">8</button>
+      <button type="button" class="calc-k" data-calc="9">9</button>
+      <button type="button" class="calc-k calc-op" data-calc="*">×</button>
+      <button type="button" class="calc-k" data-calc="4">4</button>
+      <button type="button" class="calc-k" data-calc="5">5</button>
+      <button type="button" class="calc-k" data-calc="6">6</button>
+      <button type="button" class="calc-k calc-op" data-calc="-">−</button>
+      <button type="button" class="calc-k" data-calc="1">1</button>
+      <button type="button" class="calc-k" data-calc="2">2</button>
+      <button type="button" class="calc-k" data-calc="3">3</button>
+      <button type="button" class="calc-k calc-op" data-calc="+">＋</button>
+      <button type="button" class="calc-k calc-zero" data-calc="0">0</button>
+      <button type="button" class="calc-k" data-calc=".">.</button>
+      <button type="button" class="calc-k calc-eq" data-calc="=">＝</button>
+    </div>
+    <p class="hint">税込・税抜の計算や、お客様との簡単な計算にお使いください（見積もりの金額には反映しません）。</p>
+    <div class="actions">
+      <button class="btn-sub" id="calcTax10" type="button">×1.1（税込に）</button>
+      <button class="btn-sub" id="calcTaxEx" type="button">÷1.1（税抜に）</button>
+      <button class="btn-main" id="calcClose" type="button">閉じる</button>
     </div>
   </div>
 </div>
