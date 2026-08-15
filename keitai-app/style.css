@@ -1104,9 +1104,12 @@ body.present .sheet{box-shadow:none}
 .ie-more{margin:6px 0 2px;font-size:13px;color:var(--muted)}
 
 
-/* ── 電卓（保存タブの「電卓」ボタンから開く） ───────────────── */
-.calc-open-row{margin:0 0 10px}
-.calc-box{max-width:340px}
+/* ── 電卓（ヘッダーの「🧮 電卓」からいつでも開ける） ───────────── */
+.calc-box{max-width:320px}
+/* 画面を覆い隠さないように、電卓は右下に寄せて出す（背面の見積もりが見える） */
+#calcDlg{background:transparent;justify-content:flex-end;align-items:flex-end;padding:0 14px 14px;pointer-events:none}
+#calcDlg .calc-box{pointer-events:auto;box-shadow:0 10px 30px rgba(0,0,0,.28)}
+@media (max-width:520px){ #calcDlg{justify-content:center} }
 .calc-view{background:#F4F4F5;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .calc-expr{min-height:18px;font-size:13px;color:var(--muted);text-align:right}
 .calc-out{font-size:30px;font-weight:700;text-align:right;line-height:1.2;
