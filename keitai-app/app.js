@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.101.0";
+  var APP_VERSION = "1.101.1";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -3582,12 +3582,22 @@
       delete pt.options[k];
     });
   }
+  /* この端末で見積もりを最後に直した時刻。クラウドの内容と比べて、
+   * 「クラウドの方が古いのに、この端末の入力を消してしまう」のを防ぐために使う。 */
+  function quoteAtKey(sid) { return NS + "-quote-at:" + (sid || activeStaff().id); }
+  function quoteAt(sid) {
+    try { return num(localStorage.getItem(quoteAtKey(sid))); } catch (e) { return 0; }
+  }
+  function markQuoteAt(sid, t) {
+    try { localStorage.setItem(quoteAtKey(sid), String(t || Date.now())); } catch (e) {}
+  }
   function saveState() {
     /* 管理者としてマスタ設定だけを開いているとき（masterOnly）は書かない。
      * この状態は内部的に担当1として動いているため、ここで書くと
      * 担当1の作りかけの見積もりを黙って上書きし、クラウドへも送ってしまう。 */
     if (typeof masterOnly !== "undefined" && masterOnly) return;
     lsSet(quoteKey(), JSON.stringify(store));
+    markQuoteAt(activeStaff().id, Date.now());
     markLocalEdit();
   }
 
@@ -3618,7 +3628,20 @@
   }
   function cloudOk() { syncStatus("同期✓", "ok"); }
   function cloudNg(err) {
-    syncStatus(/permission|insufficient/i.test(String(err)) ? "同期:権限エラー" : "同期:オフライン", "err");
+    var denied = /permission|insufficient/i.test(String(err));
+    syncStatus(denied ? "同期:権限エラー" : "同期:オフライン", "err");
+    /* 権限エラーは通信の一時的な不調と違い、放っておいても直らない。
+     * 気づかないまま使い続けると、この端末の内容がほかの端末へ渡らないので、
+     * 画面の上に出して知らせる（オフラインは復帰するので出さない）。 */
+    if (denied) showCloudDenied();
+  }
+  function showCloudDenied() {
+    var el = $("cloudWarn");
+    if (!el || !el.hidden) return;
+    el.innerHTML = "⚠ クラウドに保存できませんでした（権限エラー）。"
+      + "<b>この端末の内容は残っていますが、ほかの端末には届きません。</b>"
+      + "販売元へご連絡ください。";
+    el.hidden = false;
   }
   function storeDoc() {
     // 社内版はログインを使わないため、決め打ちの置き場（従来と同じ）と同期する
@@ -4024,6 +4047,7 @@
       state = store.patterns[store.active];
       applyIenaka(incoming.ienaka);
       lsSet(quoteKey(), JSON.stringify(store));
+      markQuoteAt(activeStaff().id, num(d.updatedAtMs) || Date.now());
       syncFormFromState();
       recalc();
       cloudOk();
@@ -4053,7 +4077,14 @@
       var d = snap.exists ? snap.data() : null;
       if (!d) { markLocalEdit(); return; } // クラウドに見積もりが無ければ、この端末の内容を初期値にする
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
-      // 初回は必ずクラウドの内容を取り込む（ログイン直後はクラウドが正）
+      /* 初回はクラウドの内容を取り込む（別の端末で続きを開くための動き）。
+       * ただし、この端末の方が新しいときは取り込まない。
+       * クラウドが古いまま（送信できていない・久しぶりに同期を始めた等）だと、
+       * 開き直すたびにこの端末の入力が古い内容へ戻ってしまうため。 */
+      if (first) {
+        var rAt = num(d.updatedAtMs), lAt = quoteAt(sid);
+        if (lAt && rAt && lAt > rAt) { markLocalEdit(); cloudOk(); return; }
+      }
       if (!first && CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
       applyRemoteQuote(d);
     }, function () { syncStatus("同期:接続エラー", "err"); });

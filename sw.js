@@ -1,6 +1,6 @@
 /* このファイルは tools/build-internal.js が keitai-app/sw.js から生成します。直接編集しないでください。 */
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "dq-v196";
+var CACHE = "dq-v197";
 var ASSETS = ["./", "index.html", "keitai-app/style.css", "keitai-app/app.js", "keitai-app/changelog.js", "keitai-app/data.js", "keitai-app/qr.js", "keitai-app/ienaka.js", "firebase-config.js", "manifest.webmanifest", "icon.svg", "keitai-app/img/mitsumorin-hello.png", "keitai-app/img/mitsumorin-sheet.png", "keitai-app/img/icon-192.png", "keitai-app/img/icon-512.png", "keitai-app/img/icon-maskable-512.png", "keitai-app/img/apple-touch-icon.png", "keitai-app/TERMS.md", "keitai-app/LICENSE.md", "keitai-app/PRIVACY.md", "keitai-app/SUPPORT.md", "keitai-app/STATS_GUIDE.md"];
 
 self.addEventListener("install", function (e) {
