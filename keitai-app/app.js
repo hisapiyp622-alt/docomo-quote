@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.102.0";
+  var APP_VERSION = "1.102.1";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -793,6 +793,19 @@
    * ・ドコモの商材の手数料・再発行、請求書払いのものは数えない
    * ・アクセサリは登録品だけ（自由入力は数えない） */
   var STATS_PROC_NAMES = { shinki: "新規契約", mnp: "のりかえ（MNP）", kishu: "機種変更", plan: "プラン変更" };
+  // 手続き種別（procType）から手続き内容（procTodo）の形へ
+  var PROC_TYPE_TO_TODO = { shinki: "shinki", mnp: "mnp", kishu: "kishu", plan_only: "plan" };
+  function procTodoEmpty(todo) {
+    return !Object.keys(todo || {}).some(function (k) { return todo[k]; });
+  }
+  function procTodoOf(pt) {
+    var todo = (pt && pt.procTodo) || {};
+    if (!procTodoEmpty(todo)) return todo;
+    // 手続き内容のチェックが無くても、手続き種別が入っていればそれで数える
+    var k = PROC_TYPE_TO_TODO[(pt && pt.procType) || ""];
+    if (k) { var o = {}; o[k] = true; return o; }
+    return null;
+  }
   var VISIT_NAMES = {
     buy: "端末購入（新規・MNP・機種変更など）", plan: "プラン見直し", repair: "故障",
     howto: "操作", ask: "問合せ", other: "その他"
@@ -846,11 +859,15 @@
     var p0 = ((d && d.patterns) || [])[0];
     return (p0 && visitKeys(p0).length) ? p0 : pt;
   }
-  function statsPatternItems(ptRaw, won, vpSt) {
+  function statsPatternItems(ptRaw, won, vpSt, baseTodo) {
     var pt = Object.assign(defaultState(), ptRaw || {});
     var cfg = statsCfg();
     var out = {};
-    var todo = pt.procTodo || {};
+    /* 手続きは回線ごとに持っているが、店頭では回線1で選んだら
+     * 回線2・3では選び直さないことが多い。中身が入っている回線で
+     * 手続きが選ばれていないときは、回線1と同じ手続きとして数える
+     * （2台の機種変更なら機種変更2件・店舗の指定・2026-08-14）。 */
+    var todo = procTodoOf(pt) || baseTodo || {};
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
       if (todo[k] && cfg.procs[k]) out["proc:" + k] = STATS_PROC_NAMES[k];
     });
@@ -994,7 +1011,9 @@
      * 上の判定では拾えないので、開いていたパターンを1つ数える。 */
     if (won && !used.length && pats.length) used = [(d.active | 0)];
     var vpSt = visitStateOf(d, null);
-    used.forEach(function (i) { add(statsPatternItems(pats[i], won, vpSt || pats[i])); });
+    // 回線1（＝この商談の手続き）。手続きを選んでいない回線はこれで数える
+    var baseTodo = procTodoOf(pats[0]);
+    used.forEach(function (i) { add(statsPatternItems(pats[i], won, vpSt || pats[i], baseTodo)); });
 
     var ie = d && d.ienaka;
     if (ie && ie.enabled && ie.product && statsCfg().hikari) {
