@@ -1105,21 +1105,34 @@ body.present .sheet{box-shadow:none}
 
 
 /* ── 電卓（ヘッダーの「🧮 電卓」からいつでも開ける） ───────────── */
-.calc-box{max-width:320px}
+/* 大きさは元の約2/3。押したまま動かせる（calc-head をつまむ） */
+.calc-box{max-width:214px;padding:10px 10px 12px}
 /* 画面を覆い隠さないように、電卓は右下に寄せて出す（背面の見積もりが見える） */
 #calcDlg{background:transparent;justify-content:flex-end;align-items:flex-end;padding:0 14px 14px;pointer-events:none}
 #calcDlg .calc-box{pointer-events:auto;box-shadow:0 10px 30px rgba(0,0,0,.28)}
-@media (max-width:520px){ #calcDlg{justify-content:center} }
-.calc-view{background:#F4F4F5;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
-.calc-expr{min-height:18px;font-size:13px;color:var(--muted);text-align:right}
-.calc-out{font-size:30px;font-weight:700;text-align:right;line-height:1.2;
+/* 動かしたあとは位置を固定して置く */
+#calcDlg.calc-moved{padding:0}
+#calcDlg.calc-moved .calc-box{position:fixed;margin:0}
+.calc-head{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+  margin:-2px -2px 8px;padding:4px 6px;border-radius:8px;background:#F4F4F5;
+  cursor:grab;touch-action:none;user-select:none}
+.calc-head:active{cursor:grabbing}
+.calc-grip{color:var(--muted);font-size:14px;letter-spacing:-1px}
+.calc-hint-move{margin-left:auto;font-size:10px;font-weight:400;color:var(--muted)}
+.calc-view{background:#F4F4F5;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:7px}
+.calc-expr{min-height:13px;font-size:10px;color:var(--muted);text-align:right}
+.calc-out{font-size:20px;font-weight:700;text-align:right;line-height:1.2;
   word-break:break-all;font-variant-numeric:tabular-nums}
-.calc-pad{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.calc-k{padding:14px 0;font-size:19px;font-weight:600;border:1px solid var(--line);
-  border-radius:10px;background:#fff;cursor:pointer;font-family:inherit}
+.calc-pad{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.calc-k{padding:9px 0;font-size:14px;font-weight:600;border:1px solid var(--line);
+  border-radius:8px;background:#fff;cursor:pointer;font-family:inherit}
 .calc-k:active{background:#EEE}
-.calc-fn{background:#F4F4F5;color:var(--muted);font-size:17px}
-.calc-op{background:#FDECEF;color:var(--red);font-size:20px}
+.calc-fn{background:#F4F4F5;color:var(--muted);font-size:13px}
+.calc-op{background:#FDECEF;color:var(--red);font-size:15px}
 .calc-eq{background:var(--red);color:#fff;border-color:var(--red)}
 .calc-zero{grid-column:span 2}
-@media (max-width:400px){ .calc-k{padding:12px 0;font-size:18px} }
+
+
+.calc-box .hint{font-size:10px;margin:7px 0 6px;line-height:1.5}
+.calc-box .actions{gap:5px;flex-wrap:wrap}
+.calc-box .actions button{padding:6px 8px;font-size:11.5px}
