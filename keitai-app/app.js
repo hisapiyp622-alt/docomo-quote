@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.101.3";
+  var APP_VERSION = "1.101.4";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -6683,13 +6683,11 @@
     if (r.segs.length > 1) {
       h += '<h3>月額の推移</h3><table class="trans-table"><tbody>';
       h += "<tr><th>期間</th>" + r.segs.map(function (sg) { return "<th>" + segLabel(sg) + "</th>"; }).join("") + "</tr>";
-      // カエドキは「返却しない場合」をメインの月額として表記し、返却時を補足行にする
+      /* カエドキは「返却しない場合」を月額として並べる。
+       * 返却した場合の推移は出さない（行が増えて読みにくく、返却時の金額は
+       * 上の月額ボックスと端末代金の明細で分かるため・店舗の指定・2026-08-14）。 */
       h += "<tr><td>月額" + (r.device.kaedoki ? "（返却しない場合）" : "") + "</td>"
         + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthlyKeep != null ? sg.monthlyKeep : sg.monthly) + "</td>"; }).join("") + "</tr>";
-      if (r.device.kaedoki) {
-        h += "<tr><td>23か月目までに端末返却の場合</td>"
-          + r.segs.map(function (sg) { return '<td class="trans-amt">' + yen(sg.monthly) + "</td>"; }).join("") + "</tr>";
-      }
       h += "</tbody></table>";
     }
 
