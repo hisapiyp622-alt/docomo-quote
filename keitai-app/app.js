@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.101.4";
+  var APP_VERSION = "1.102.0";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -4848,6 +4848,19 @@
     if (num(state.atamakin) === num(prevAtama)) {
       state.atamakin = autoAtamaProc(v) ? MASTER.fees.atamakin_default : 0;
     }
+    /* カエドキの「23回分の総額」も手続きで変わることがある（端末マスタに
+     * MNP用・新規用が入っているとき）。前の手続きの金額のままなら入れ替える。
+     * 手で書き換えた金額は、そのまま残す。 */
+    var dev = devByName(state.deviceName);
+    if (dev) {
+      var prevK23 = devKaedoki23(dev, prev);
+      var nextK23 = devKaedoki23(dev, v);
+      if (nextK23 !== null && prevK23 !== null && num(state.kaedoki23) === num(prevK23)) {
+        state.kaedoki23 = nextK23;
+        var k23el = $("kaedoki23");
+        if (k23el) k23el.value = state.kaedoki23 || "";
+      }
+    }
     $("procType").value = v;
     $("jimuFee").value = state.jimuFee;
     $("atamakin").value = state.atamakin;
@@ -8054,6 +8067,23 @@
   function deviceMaster() {
     return (MASTER && Array.isArray(MASTER.devices)) ? MASTER.devices : [];
   }
+  /* いつでもカエドキプログラムの「23回分の総額」は、同じ機種でも
+   * 手続き（機種変更／MNP／新規）で変わることがある。
+   * 端末マスタに手続きごとの金額を入れられるようにし、
+   * 入っていない手続きは共通の値（kaedoki23）を使う。 */
+  var DEV_K23_BY_PROC = { mnp: "kaedoki23Mnp", shinki: "kaedoki23Shinki" };
+  function devKaedoki23(d, proc) {
+    if (!d) return null;
+    var k = DEV_K23_BY_PROC[proc];
+    if (k && typeof d[k] === "number") return num(d[k]);
+    return (typeof d.kaedoki23 === "number") ? num(d.kaedoki23) : null;
+  }
+  // いま入力されている機種名と同じ登録を返す（手続きを変えたときの入れ替えに使う）
+  function devByName(name) {
+    var n = String(name || "").trim();
+    if (!n) return null;
+    return deviceMaster().filter(function (d) { return String(d.name || "").trim() === n; })[0] || null;
+  }
   /* CSV・TSVを1行1機種で読む。列は「機種名」と「本体価格」があればよい。
    * 見出し行・「円」・カンマ・全角数字は自動で外す。
    * 1行目が見出しで「頭金」「23回」などの列があれば、それも読む。
@@ -8076,8 +8106,12 @@
         head = {};
         cols.forEach(function (c, j) {
           if (j === 0) return;
+          var k23col = /(23|カエドキ|残価)/.test(c);
           if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
-          else if (head.kaedoki23 === undefined && /(23|カエドキ|残価)/.test(c)) head.kaedoki23 = j;
+          // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
+          else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
+          else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
+          else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
           else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
         });
         return;
@@ -8106,7 +8140,7 @@
       if (name.length > 60) name = name.slice(0, 60);
       var rec = { name: name, price: price };
       if (head) {
-        ["atamakin", "kaedoki23"].forEach(function (k) {
+        ["atamakin", "kaedoki23", "kaedoki23Mnp", "kaedoki23Shinki"].forEach(function (k) {
           if (head[k] === undefined) return;
           var v2 = devDigits(cols[head[k]] || "");
           if (/^\d+$/.test(v2)) rec[k] = parseInt(v2, 10);
@@ -8183,9 +8217,11 @@
     if (many) { tb.innerHTML = ""; tb.hidden = true; return; }
     tb.hidden = false;
     var h = "<tr><th>機種名</th><th>本体代金</th><th>店頭頭金</th>"
-      + "<th>23回分の総額<br><small>（カエドキ）</small></th><th></th></tr>";
+      + "<th>23回分の総額<br><small>（カエドキ）</small></th>"
+      + "<th>23回分の総額<br><small>MNPのとき</small></th>"
+      + "<th>23回分の総額<br><small>新規のとき</small></th><th></th></tr>";
     if (!list.length) {
-      h += '<tr class="dev-empty"><td colspan="5">まだ登録がありません。「機種を追加」から入れてください。</td></tr>';
+      h += '<tr class="dev-empty"><td colspan="7">まだ登録がありません。「機種を追加」から入れてください。</td></tr>';
     }
     /* 頭金・23回分の総額は、入れたときだけ見積もりに入る。
      * 空のままなら、機種を選んでもその欄はいまの入力のまま。 */
@@ -8200,6 +8236,8 @@
         + '<td><input type="number" data-devfield="price" data-devi="' + i + '" min="0" inputmode="numeric" value="' + (num(d.price) || 0) + '"> 円</td>'
         + devCell(d, i, "atamakin")
         + devCell(d, i, "kaedoki23")
+        + devCell(d, i, "kaedoki23Mnp")
+        + devCell(d, i, "kaedoki23Shinki")
         + '<td class="dev-del"><button class="btn-sub" type="button" data-devdel="' + i + '">削除</button></td></tr>';
     });
     tb.innerHTML = h;
@@ -8356,7 +8394,8 @@
         state.atamakin = (typeof d.atamakin === "number") ? num(d.atamakin)
           : (autoFeeProc(state.procType) ? num(MASTER.fees.atamakin_default) : 0);
         $("atamakin").value = state.atamakin || "";
-        state.kaedoki23 = (typeof d.kaedoki23 === "number") ? num(d.kaedoki23) : 0;
+        var k23 = devKaedoki23(d, state.procType);
+        state.kaedoki23 = (k23 === null) ? 0 : k23;
         $("kaedoki23").value = state.kaedoki23 || "";
         saveState();
         recalc();
