@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.103.1";
+  var APP_VERSION = "1.103.2";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -7728,11 +7728,68 @@
     var d = $("calcDlg");
     if (!d) return;
     d.hidden = !show;
-    if (show) calcRender();
+    if (show) { calcRender(); calcKeepInView(); }
+  }
+  /* 電卓を押したまま動かせるようにする（見積もりの見たい所が隠れたときに逃がす）。
+   * 置いた場所はこの端末に覚えておく（次に開いたときも同じ場所）。 */
+  var CALC_POS_KEY = NS + "-calc-pos";
+  function calcPlace(x, y) {
+    var d = $("calcDlg"), box = $("calcBox");
+    if (!d || !box) return;
+    d.classList.add("calc-moved");
+    box.style.left = Math.round(x) + "px";
+    box.style.top = Math.round(y) + "px";
+  }
+  // 画面の外へ出ないように収める（端末の向きを変えたときにも呼ぶ）
+  function calcKeepInView() {
+    var d = $("calcDlg"), box = $("calcBox");
+    if (!d || !box || !d.classList.contains("calc-moved")) {
+      // 置き場所を覚えていれば、それを使う
+      var sv = null;
+      try { sv = JSON.parse(localStorage.getItem(CALC_POS_KEY) || "null"); } catch (e) {}
+      if (sv && typeof sv.x === "number") calcPlace(sv.x, sv.y);
+      else return;
+    }
+    var r = box.getBoundingClientRect();
+    var maxX = Math.max(0, window.innerWidth - r.width - 6);
+    var maxY = Math.max(0, window.innerHeight - r.height - 6);
+    calcPlace(Math.min(Math.max(6, r.left), maxX), Math.min(Math.max(6, r.top), maxY));
+  }
+  function initCalcDrag() {
+    var head = $("calcHead"), box = $("calcBox");
+    if (!head || !box) return;
+    var drag = null;
+    head.addEventListener("pointerdown", function (e) {
+      var r = box.getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
+      calcPlace(r.left, r.top);   // いまの位置から動かし始める
+      try { head.setPointerCapture(e.pointerId); } catch (e2) {}
+      e.preventDefault();
+    });
+    head.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var x = Math.min(Math.max(6, e.clientX - drag.dx), Math.max(6, window.innerWidth - drag.w - 6));
+      var y = Math.min(Math.max(6, e.clientY - drag.dy), Math.max(6, window.innerHeight - drag.h - 6));
+      calcPlace(x, y);
+      e.preventDefault();
+    });
+    ["pointerup", "pointercancel"].forEach(function (ev) {
+      head.addEventListener(ev, function () {
+        if (!drag) return;
+        drag = null;
+        var r = box.getBoundingClientRect();
+        try { localStorage.setItem(CALC_POS_KEY, JSON.stringify({ x: r.left, y: r.top })); } catch (e3) {}
+      });
+    });
+    window.addEventListener("resize", function () {
+      var d = $("calcDlg");
+      if (d && !d.hidden) calcKeepInView();
+    });
   }
   function initCalc() {
     var open = $("calcOpenBtn");
     if (open) open.addEventListener("click", function () { showCalc(true); });
+    initCalcDrag();
     var close = $("calcClose");
     if (close) close.addEventListener("click", function () { showCalc(false); });
     var pad = $("calcPad");
