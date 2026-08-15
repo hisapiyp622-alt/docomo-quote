@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.101.2";
+  var APP_VERSION = "1.101.3";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -3477,7 +3477,12 @@
   var store = { active: 0, patterns: [defaultState(), defaultState(), defaultState()], ienaka: newIenaka() };
   var state = store.patterns[0];
 
+  /* 見積もりを読み込んだ時点の「最後に直した時刻」。
+   * 画面を開くだけでも自動保存が走って時刻が今に更新されるため、
+   * クラウドと比べるときは“開く前の値”を使う。 */
+  var quoteAtLoaded = {};
   function loadState() {
+    try { quoteAtLoaded[activeStaff().id] = quoteAt(activeStaff().id); } catch (eQ) {}
     try {
       var s = JSON.parse(localStorage.getItem(quoteKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
@@ -4085,6 +4090,14 @@
       cloudOk();
     }, function () { syncStatus("同期:接続エラー", "err"); });
   }
+  /* この端末の見積もりに中身があるか。空のままの端末が
+   * 「こちらの方が新しい」と主張して、ほかの端末の内容を消さないようにする。 */
+  function localQuoteHasContent() {
+    var used = store.patterns.some(function (pt) {
+      return pt && (isPatternUsed(pt) || pt.planId || pt.procType || num(pt.devicePrice) > 0);
+    });
+    return used || !!(store.ienaka && store.ienaka.enabled);
+  }
   function watchQuote() {
     if (!cloudOn() || !config.activeStaffId) return;
     var sid = activeStaff().id;
@@ -4103,8 +4116,11 @@
        * クラウドが古いまま（送信できていない・久しぶりに同期を始めた等）だと、
        * 開き直すたびにこの端末の入力が古い内容へ戻ってしまうため。 */
       if (first) {
-        var rAt = num(d.updatedAtMs), lAt = quoteAt(sid);
-        if (lAt && rAt && lAt > rAt) { markLocalEdit(); cloudOk(); return; }
+        var rAt = num(d.updatedAtMs);
+        var lAt = num(quoteAtLoaded[sid]);   // 開く前の時刻（自動保存で更新される前）
+        if (lAt && rAt && lAt > rAt && localQuoteHasContent()) {
+          markLocalEdit(); cloudOk(); return;
+        }
       }
       if (!first && CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
       applyRemoteQuote(d);
