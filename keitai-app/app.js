@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.103.3";
+  var APP_VERSION = "1.104.0";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -3612,8 +3612,13 @@
   function quoteAt(sid) {
     try { return num(localStorage.getItem(quoteAtKey(sid))); } catch (e) { return 0; }
   }
+  var quoteAtWrote = {};
   function markQuoteAt(sid, t) {
-    try { localStorage.setItem(quoteAtKey(sid), String(t || Date.now())); } catch (e) {}
+    var now = t || Date.now();
+    // 1文字ごとに書かない（1秒に1回で足りる。比べるのは秒単位のため）
+    if (quoteAtWrote[sid] && now - quoteAtWrote[sid] < 1000) return;
+    quoteAtWrote[sid] = now;
+    try { localStorage.setItem(quoteAtKey(sid), String(now)); } catch (e) {}
   }
   function saveState() {
     /* 管理者としてマスタ設定だけを開いているとき（masterOnly）は書かない。
@@ -3673,6 +3678,14 @@
     return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
   }
   function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
+  /* 同じ内容を何度も送らないための控え。送る直前に見比べて、
+   * 変わっていなければ通信しない（電池と通信量の節約）。 */
+  var CLOUD_SENT = {};
+  function cloudSame(key, sig) {
+    if (CLOUD_SENT[key] === sig) return true;
+    CLOUD_SENT[key] = sig;
+    return false;
+  }
   function stamp(extra) {
     var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     for (var k in extra) if (extra.hasOwnProperty(k)) o[k] = extra[k];
@@ -3783,6 +3796,8 @@
     CLOUD.cfgTimer = setTimeout(function () {
       CLOUD.cfgTimer = null;
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
+      var cfgSig = JSON.stringify([config.storeName || "", config.storeTel || "", config.staff, config.adminLock]);
+      if (cloudSame("config", cfgSig)) { cloudOk(); return; }
       storeDoc().set(stamp({
         storeName: config.storeName || "",
         storeTel: config.storeTel || "",
@@ -3800,7 +3815,9 @@
     CLOUD.masterTimer = setTimeout(function () {
       CLOUD.masterTimer = null;
       if (!cloudOn()) return;
-      storeDoc().set(stamp({ master: localStorage.getItem(MASTER_KEY) || "" }), { merge: true })
+      var mSig = localStorage.getItem(MASTER_KEY) || "";
+      if (cloudSame("master", mSig)) { cloudOk(); return; }
+      storeDoc().set(stamp({ master: mSig }), { merge: true })
         .then(cloudOk, cloudNg);
     }, 1200);
   }
@@ -3825,7 +3842,9 @@
     CLOUD.quoteTimer = setTimeout(function () {
       CLOUD.quoteTimer = null;
       if (!cloudOn()) return;
-      quoteDoc(sid).set(stamp({ data: quotePayload() })).then(cloudOk, cloudNg);
+      var qSig = quotePayload();
+      if (cloudSame("quote:" + sid, qSig)) { cloudOk(); return; }
+      quoteDoc(sid).set(stamp({ data: qSig })).then(cloudOk, cloudNg);
     }, 800);
   }
 
@@ -4429,6 +4448,50 @@
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) idleCheck();
     });
+  }
+  /* ---------- 画面を見ていない間は休む（電池の持ちのため） ----------
+   * ほかのアプリに切り替えている間・画面を消している間は、
+   * クラウドの受信（つなぎっぱなしの通信）と30秒ごとの見張りを止める。
+   * 戻ってきたら、その場でつなぎ直して最新を受け取る。
+   * 送りかけの内容は、止める前に必ず送り切る。 */
+  var CLOUD_PAUSED = false;
+  function cloudFlushNow() {
+    // 待ち時間の途中でも、いま送る
+    [["cfgTimer", pushConfig], ["masterTimer", markMasterEdit], ["quoteTimer", markLocalEdit],
+     ["savedTimer", pushSaved], ["tplTimer", pushTemplates], ["tplStoreTimer", pushStoreTemplates]]
+      .forEach(function (pair) {
+        if (!CLOUD[pair[0]]) return;
+        clearTimeout(CLOUD[pair[0]]);
+        CLOUD[pair[0]] = null;
+        try { pair[1](); } catch (e) {}
+      });
+  }
+  function cloudDetach() {
+    ["unsubStore", "unsubQuote", "unsubSaved", "unsubTpl", "unsubTplStore"].forEach(function (k) {
+      if (CLOUD[k]) { try { CLOUD[k](); } catch (e) {} CLOUD[k] = null; }
+    });
+    CLOUD.watchingStaffId = null;
+    CLOUD.watchingSavedId = null;
+    CLOUD.watchingTplId = null;
+  }
+  function cloudReattach() {
+    if (!cloudOn()) return;
+    watchStore();
+    watchStoreTemplates();
+    if (config.activeStaffId) { watchQuote(); watchSaved(); watchTemplates(); }
+  }
+  function initPowerSave() {
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        if (cloudOn()) { cloudFlushNow(); cloudDetach(); CLOUD_PAUSED = true; }
+        if (IDLE.timer) { clearInterval(IDLE.timer); IDLE.timer = null; }   // 見張りは止める（戻ったときに見る）
+      } else {
+        if (CLOUD_PAUSED) { CLOUD_PAUSED = false; cloudReattach(); }
+        if (IDLE.armed && !IDLE.timer) IDLE.timer = setInterval(idleCheck, 30000);
+      }
+    });
+    // 閉じる・別ページへ移るときも、送りかけを送り切る
+    window.addEventListener("pagehide", function () { if (cloudOn()) cloudFlushNow(); });
   }
   // ログアウト（自動・手動の共通処理）
   function doLogout(auto) {
@@ -10284,6 +10347,7 @@
   initLocalLock();
   initStaffGate();
   initMasterGate();
+  initPowerSave();
   initCalc();
   initAbout();
   initDocs();
