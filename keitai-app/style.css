@@ -1136,3 +1136,17 @@ body.present .sheet{box-shadow:none}
 .calc-eq-wide{grid-column:span 4}
 
 
+
+/* ---------- 現在のお支払い（請求内訳の読み取り） ---------- */
+.curbill-table{width:100%;border-collapse:collapse;margin:6px 0}
+.curbill-table td{padding:3px 4px;border-bottom:1px solid var(--line)}
+.curbill-table input{padding:5px 8px;border:1px solid var(--line);border-radius:5px;font:inherit}
+.curbill-table input[type="text"]{width:100%}
+.curbill-table .cb-amt{white-space:nowrap;width:10em;text-align:right;font-variant-numeric:tabular-nums}
+.curbill-table .cb-amt input{width:7em;text-align:right;font-variant-numeric:tabular-nums}
+.curbill-table .cb-x{width:2.4em;text-align:center}
+.curbill-table .cb-x button{border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:4px 7px;border-radius:6px;cursor:pointer}
+.curbill-table .cb-x button:hover{background:#FDECEF;color:var(--red)}
+.cb-warn{color:#C62828;font-weight:600}
+.cb-compare{margin:8px 0 2px;padding:9px 12px;background:#FDECEF;border-radius:8px;font-size:13.5px}
+.cb-compare b{font-size:16px;font-variant-numeric:tabular-nums}

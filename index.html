@@ -411,6 +411,26 @@
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
     </div>
 
+    <div class="card full" id="curBillCard">
+      <h2>現在のお支払い（請求内訳の読み取り・任意）</h2>
+      <p class="hint">お客様の請求書や My docomo の「ご利用料金の内訳」を読み取ると、いまのお支払いとこの見積もりを比べてご案内できます。見積書にも比較が載ります。<strong>このアプリは読み取った内容を外部へ送信せず、この端末の中だけで扱います。</strong></p>
+      <div class="actions">
+        <button class="btn-sub" id="curBillOpenBtn" type="button">請求内訳を読み取る</button>
+        <button class="btn-sub" id="curBillClearBtn" type="button" hidden>読み取りを消す</button>
+      </div>
+      <div id="curBillWrap" hidden>
+        <p class="hint">iPadは、下の欄をタップしてもう一度タップ →「<b>テキストをスキャン</b>」でカメラを請求書にかざすと、そのまま文字が入ります（iPadOS 16以降）。出てこないときは、カメラで請求書を撮影 → 写真アプリで文字を長押し →「すべてを選択」→ コピー → ここに貼り付けてください。Androidは Google レンズでコピーして貼り付けます。</p>
+        <textarea id="curBillBox" class="export-box" placeholder="ここに請求内訳の文字を入れてください（テキストをスキャン・貼り付け）"></textarea>
+        <div class="actions">
+          <button class="btn-main" id="curBillGo" type="button">この内容で読み取る</button>
+          <button class="btn-sub" id="curBillCancel" type="button">キャンセル</button>
+        </div>
+      </div>
+      <p class="hint" id="curBillMsg" hidden></p>
+      <div id="curBillEdit"></div>
+      <p class="hint">※ 読み取った請求内訳は、お客様名と同じく端末間で同期されません（この端末の中だけ）。電話番号などの番号の行は読み取り時に自動で除きます。当月分の読み取り値のため、通話料や日割りで通常月と違うことがあります。</p>
+    </div>
+
     <div class="actions">
       <button class="btn-main" id="toSheet" type="button">見積書を表示する</button>
       <button class="btn-sub" id="quickSaveBtn" type="button">この見積もりを保存</button>
@@ -895,6 +915,7 @@
   <div class="summary-bar no-print" id="summaryBar">
     <div class="sum-item"><span class="sum-label" id="sumMonthlyLabel">月額</span><span class="sum-value" id="sumMonthly">0円</span></div>
     <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
+    <div class="sum-item" id="sumCurBillWrap" hidden><span class="sum-label">現在のお支払い</span><span class="sum-value" id="sumCurBill">0円</span></div>
     <div class="sum-rec">
       <span class="sum-recmsg" id="recOutcomeMsg" hidden></span>
       <div class="rec-pop" id="recMenu" hidden>
