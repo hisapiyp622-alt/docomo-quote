@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.105.0";
+  var APP_VERSION = "1.106.0";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -6186,6 +6186,11 @@
       .replace(/[，]/g, ",")
       .replace(/[￥]/g, "¥")
       .replace(/[−‒–—―▲△]/g, "-")
+      /* OCRの読み癖を直す: 金額の桁区切りカンマは「.」に誤認されやすい
+       * （円の金額に小数は無いので、数字+ピリオド+3桁は桁区切りとみなす）。
+       * 「5, 078」のように区切りの後に空白が入るのも同じくつなぐ */
+      .replace(/(\d)[.]\s?(\d{3})(?!\d)/g, "$1,$2")
+      .replace(/(\d),\s+(\d{3})(?!\d)/g, "$1,$2")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -6301,7 +6306,7 @@
     if (!edit) return;
     var b = state.curBill;
     if (clearBtn) clearBtn.hidden = !b;
-    if (open) open.textContent = b ? "読み取り直す" : "請求内訳を読み取る";
+    if (open) open.textContent = b ? "貼り付けで読み取り直す" : "文字の貼り付けで読み取る";
     if (!b || !b.lines || !b.lines.length) { edit.innerHTML = ""; return; }
     var h = '<table class="curbill-table"><tbody>';
     b.lines.forEach(function (ln, i) {
@@ -6334,27 +6339,111 @@
     el.innerHTML = h;
     el.hidden = false;
   }
+  /* ---------- カメラ読み取り（アプリ内OCR） ----------
+   * 同梱の tesseract.js（keitai-app/ocr/・Apache-2.0）で、撮った写真を
+   * この端末の中だけで文字にする。写真はどこにも保存せず、解析が終わると捨てる
+   * （カメラはOSの撮影画面を使うが、この方式では写真アプリにも残らない）。
+   * 部品（約6.5MB）は初回だけ読み込む。SWが控えるので2回目からはオフラインでも動く。 */
+  var OCR_BASE = (INTERNAL ? "keitai-app/" : "") + "ocr/";
+  var ocrScriptLoading = null;
+  function ocrLoadScript() {
+    if (window.Tesseract) return Promise.resolve();
+    if (ocrScriptLoading) return ocrScriptLoading;
+    ocrScriptLoading = new Promise(function (res, rej) {
+      var s = document.createElement("script");
+      s.src = OCR_BASE + "tesseract.min.js";
+      s.onload = function () { res(); };
+      s.onerror = function () {
+        ocrScriptLoading = null;
+        s.parentNode && s.parentNode.removeChild(s);
+        rej(new Error("ocr-load"));
+      };
+      document.head.appendChild(s);
+    });
+    return ocrScriptLoading;
+  }
+  function ocrRecognize(canvas, onProgress) {
+    // Worker の中では相対パスの起点が変わるため、絶対URLにして渡す
+    var abs = new URL(OCR_BASE, location.href).href.replace(/\/$/, "");
+    var worker = null;
+    return ocrLoadScript().then(function () {
+      return Tesseract.createWorker("jpn", 1, {
+        workerPath: abs + "/worker.min.js",
+        corePath: abs,
+        langPath: abs,
+        gzip: false,
+        logger: function (m) {
+          if (m && m.status === "recognizing text" && onProgress) {
+            onProgress(Math.round((m.progress || 0) * 100));
+          }
+        }
+      });
+    }).then(function (w) {
+      worker = w;
+      // 請求内訳は1かたまりの表として読む（レシート類の定石。行がばらけにくい）
+      return worker.setParameters({ tessedit_pageseg_mode: "6", preserve_interword_spaces: "1" });
+    }).then(function () {
+      return worker.recognize(canvas);
+    }).then(function (r) {
+      var text = (r && r.data && r.data.text) || "";
+      worker.terminate().catch(function () {});
+      return text;
+    }, function (err) {
+      if (worker) worker.terminate().catch(function () {});
+      throw err;
+    });
+  }
+  /* 撮った写真をOCR向けの大きさ（長辺2200px）のcanvasにする。
+   * 写真のファイルはここで使い終わり、どこにも保存しない */
+  function ocrPrepImage(file, cb) {
+    function toCanvas(img, w, h) {
+      var max = 2200, scale = Math.min(1, max / Math.max(w, h));
+      var c = document.createElement("canvas");
+      c.width = Math.round(w * scale);
+      c.height = Math.round(h * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      cb(c, "");
+    }
+    if (window.createImageBitmap) {
+      // 撮影の向き（EXIF）を正しく反映してくれる読み方
+      createImageBitmap(file, { imageOrientation: "from-image" }).then(function (bmp) {
+        toCanvas(bmp, bmp.width, bmp.height);
+        bmp.close && bmp.close();
+      }, function () { legacy(); });
+    } else { legacy(); }
+    function legacy() {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var img = new Image();
+        img.onload = function () { toCanvas(img, img.naturalWidth, img.naturalHeight); };
+        img.onerror = function () { cb(null, "写真を読み込めませんでした。"); };
+        img.src = String(fr.result || "");
+      };
+      fr.onerror = function () { cb(null, "写真を読み込めませんでした。"); };
+      fr.readAsDataURL(file);
+    }
+  }
+
   function initCurBill() {
     var openBtn = $("curBillOpenBtn"), clearBtn = $("curBillClearBtn"),
         wrap = $("curBillWrap"), box = $("curBillBox"),
         go = $("curBillGo"), cancel = $("curBillCancel"),
-        msg = $("curBillMsg"), edit = $("curBillEdit");
+        msg = $("curBillMsg"), edit = $("curBillEdit"),
+        cam = $("curBillCam");
     if (!openBtn) return;
+    var ocrBusy = false;
     function say(t, err) {
       msg.textContent = t;
       msg.hidden = false;
       msg.style.color = err ? "#C62828" : "";
     }
-    openBtn.addEventListener("click", function () {
-      wrap.hidden = !wrap.hidden;
-      msg.hidden = true;
-      if (!wrap.hidden) box.focus();
-    });
-    cancel.addEventListener("click", function () { wrap.hidden = true; box.value = ""; });
-    go.addEventListener("click", function () {
-      var r = parseBillText(box.value);
+    // 文字起こしを行リストに取り込む（カメラ・貼り付け共通の受け口）
+    function takeBillText(text, fromCam) {
+      var r = parseBillText(text);
       if (!r.lines.length) {
-        say("金額の行を読み取れませんでした。請求内訳の「項目名と金額」が写るように読み取ってください。", true);
+        say(fromCam
+          ? "金額の行を読み取れませんでした。請求内訳の「項目名と金額」の部分がはっきり写るように、明るい場所でまっすぐ撮り直してください。"
+          : "金額の行を読み取れませんでした。請求内訳の「項目名と金額」が写るように読み取ってください。", true);
         return;
       }
       state.curBill = { lines: r.lines, total: r.total, month: r.month, gen: store.gen | 0 };
@@ -6362,10 +6451,41 @@
       box.value = "";
       say(r.lines.length + "行を読み取りました。"
         + (r.dropped ? "電話番号などの行は自動で除いています。" : "")
-        + "内容を確かめて、違う行は直すか「×」で消してください。");
+        + "内容を確かめて、違う行は直すか「×」で消してください。"
+        + (fromCam ? "写真は保存していません。" : ""));
       renderCurBill();
       recalc();
+    }
+    if (cam) {
+      cam.addEventListener("change", function () {
+        var f = this.files && this.files[0];
+        this.value = "";
+        if (!f || ocrBusy) return;
+        ocrBusy = true;
+        say("写真をこの端末の中で読み取っています…");
+        ocrPrepImage(f, function (canvas, err) {
+          if (!canvas) { ocrBusy = false; say(err, true); return; }
+          ocrRecognize(canvas, function (pct) {
+            say("写真をこの端末の中で読み取っています… " + pct + "%");
+          }).then(function (text) {
+            ocrBusy = false;
+            takeBillText(text, true);
+          }, function () {
+            ocrBusy = false;
+            say("読み取れませんでした。初めて使うときはネットワークが必要です"
+              + "（読み取りの部品 約6.5MB を一度だけ読み込みます。以後はオフラインでも動きます）。"
+              + "接続を確かめて、もう一度お試しください。", true);
+          });
+        });
+      });
+    }
+    openBtn.addEventListener("click", function () {
+      wrap.hidden = !wrap.hidden;
+      msg.hidden = true;
+      if (!wrap.hidden) box.focus();
     });
+    cancel.addEventListener("click", function () { wrap.hidden = true; box.value = ""; });
+    go.addEventListener("click", function () { takeBillText(box.value, false); });
     clearBtn.addEventListener("click", function () {
       if (!window.confirm("読み取った請求内訳を消します。よろしいですか？")) return;
       state.curBill = null;
