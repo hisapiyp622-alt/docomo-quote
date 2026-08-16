@@ -37,3 +37,5 @@ jobs:
 
       - name: 金額計算のゴールデンテスト
         run: node tests/run-calc-tests.js
+      - name: 請求内訳の読み取りテスト
+        run: node tests/run-bill-tests.js

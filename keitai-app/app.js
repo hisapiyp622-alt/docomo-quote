@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.104.0";
+  var APP_VERSION = "1.105.0";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -454,9 +454,9 @@
       copy.fromStaff = activeStaff().id;
       copy.srcId = it.id;
       copy.custName = "";
-      ((copy.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+      ((copy.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
       // 成約時の控え（wonData）にもお客様名が入っている
-      ((copy.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+      ((copy.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
       it.sentTo = to; it.sentAt = now; it.sentId = copy.id; it.upAt = now;
       persistSaved();
       renderSaved();
@@ -2708,6 +2708,12 @@
     (config.staff || []).forEach(function (s) {
       var sv = readJson(SAVED_KEY + ":" + s.id);
       if (sv && sv.length) {
+        /* 請求内訳の読み取り（curBill）はお客様の請求情報なので、
+         * 「お客様名を含める」の指定に関係なく、控えには一切入れない */
+        sv.forEach(function (it) {
+          ((it.data || {}).patterns || []).forEach(function (pt) { delete pt.curBill; });
+          ((it.wonData || {}).patterns || []).forEach(function (pt) { delete pt.curBill; });
+        });
         if (!withCust) {
           sv = JSON.parse(JSON.stringify(sv));
           sv.forEach(function (it) {
@@ -2913,12 +2919,12 @@
         adminLock: cfgPush.adminLock || { hash: "", salt: "", algo: "" }
       }), { merge: true }));
       Object.keys(d.saved || {}).forEach(function (id) {
-        // お客様名（個人情報）はクラウドへ送らない
+        // お客様名・請求内訳（個人情報）はクラウドへ送らない
         var list = JSON.parse(JSON.stringify(d.saved[id]));
         list.forEach(function (it) {
           it.custName = "";
-          ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
-          ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+          ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+          ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
         });
         jobs.push(savedDoc(id).set(stamp({ list: JSON.stringify(list) })));
       });
@@ -3460,6 +3466,10 @@
        * 充当してご案内するときは、⑧のチェックを入れる。 */
       dcardGoldAuto: false,
       currentInst: 0, currentInstMonths: 0,  // 見直し前から支払い中の分割金（0=ずっと）
+      /* 現在のお支払い（請求内訳の読み取り）。{ lines: [{n, a}], total, month }
+       * お客様の請求情報なので、お客様名と同じく端末内のみ。
+       * クラウド・バックアップ・引き渡しには一切出さない（出口で必ず削除する）。 */
+      curBill: null,
       adhocMonthly: [],   // {name, amount, months} amountは±、months 0=ずっと
       accessories: [],    // {name, price, pay: "once"|"b12"|"b24"|"b36"}
       accSel: {},         // マスタ登録アクセサリの選択 {id: pay}
@@ -3821,11 +3831,11 @@
         .then(cloudOk, cloudNg);
     }, 1200);
   }
-  // 送信用の見積もりデータ。お客様名（個人情報）はクラウドへ送らない
+  // 送信用の見積もりデータ。お客様名・請求内訳（個人情報）はクラウドへ送らない
   function quotePayload() {
     try {
       var s = JSON.parse(JSON.stringify(store));
-      (s.patterns || []).forEach(function (pt) { pt.custName = ""; });
+      (s.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
@@ -3946,12 +3956,12 @@
     CLOUD.savedTimer = setTimeout(function () {
       CLOUD.savedTimer = null;
       if (!cloudOn()) return;
-      // お客様名（個人情報）はクラウドへ送らない
+      // お客様名・請求内訳（個人情報）はクラウドへ送らない
       var list = JSON.parse(JSON.stringify(savedList));
       list.forEach(function (it) {
         it.custName = "";
-        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; });
-        ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; });
+        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+        ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
       });
       savedDoc(sid).set(stamp({
         list: JSON.stringify(list),
@@ -3979,7 +3989,7 @@
         Object.keys(rdel).forEach(function (k) {
           if (!del[k] || rdel[k] > del[k]) del[k] = rdel[k];
         });
-        // お客様名は同期しないため、この端末に残っている名前を引き継ぐ
+        // お客様名・請求内訳は同期しないため、この端末に残っている内容を引き継ぐ
         var mine = {};
         savedList.forEach(function (x) { mine[x.id] = x; });
         incoming.forEach(function (x) {
@@ -3989,10 +3999,12 @@
           var op = (old.data && old.data.patterns) || [];
           ((x.data && x.data.patterns) || []).forEach(function (pt, i) {
             if (!pt.custName && op[i] && op[i].custName) pt.custName = op[i].custName;
+            if (!pt.curBill && op[i] && op[i].curBill) pt.curBill = op[i].curBill;
           });
           var owp = (old.wonData && old.wonData.patterns) || [];
           ((x.wonData && x.wonData.patterns) || []).forEach(function (pt, i) {
             if (!pt.custName && owp[i] && owp[i].custName) pt.custName = owp[i].custName;
+            if (!pt.curBill && owp[i] && owp[i].curBill) pt.curBill = owp[i].curBill;
           });
         });
         /* 全文の置き換えではなく統合する。
@@ -4099,11 +4111,13 @@
     try {
       var incoming = JSON.parse(d.data);
       if (!incoming || !incoming.patterns) return;
-      // お客様名は同期しないため、この端末で入力済みの名前を保持する
+      // お客様名・請求内訳は同期しないため、この端末で入力済みの内容を保持する
       for (var i = 0; i < 3; i++) {
         var mine = (store.patterns[i] || {}).custName;
+        var mineBill = (store.patterns[i] || {}).curBill;
         var pt = incoming.patterns[i] || {};
         if (!pt.custName && mine) pt.custName = mine;
+        if (!pt.curBill && mineBill) pt.curBill = mineBill;
         store.patterns[i] = Object.assign(defaultState(), pt);
         migratePattern(store.patterns[i]);
       }
@@ -5426,6 +5440,7 @@
   function tplSnapshot() {
     var snap = JSON.parse(JSON.stringify(state));
     delete snap.custName; delete snap.shopName; delete snap.staffName; delete snap.shopTel;
+    delete snap.curBill;  // 請求内訳の読み取りは端末内のみ（テンプレにも入れない）
     return snap;
   }
   function tplApply(i, isStore) {
@@ -5436,7 +5451,7 @@
         : "テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください");
       return;
     }
-    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
+    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel, curBill: state.curBill || null };
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     migratePattern(store.patterns[store.active]);
     state = store.patterns[store.active];
@@ -5983,6 +5998,7 @@
     $("currentInst").value = state.currentInst || "";
     $("currentInstMonths").value = state.currentInstMonths || "";
     $("currentInstMonthsField").hidden = !num(state.currentInst);
+    renderCurBill();
     $("custName").value = state.custName;
     $("shopName").value = state.shopName;
     $("staffName").value = state.staffName;
@@ -6143,6 +6159,238 @@
     return "";
   }
 
+  /* ---------- 現在のお支払い（請求内訳の読み取り） ----------
+   * お客様の請求書・My docomo の「ご利用料金の内訳」の文字を貼り付けると
+   * （iPadなら入力欄の「テキストをスキャン」でカメラから直接入れられる）、
+   * 行ごとの項目と金額に起こして、いまのお支払いとこの見積もりを比べられる。
+   * 読み取りはこの端末の中だけで完結し、外部への送信はない。
+   * 電話番号・お客様番号など、金額でない番号の行は読み取り結果に残さない。
+   * 読み取った内容（state.curBill）はお客様名と同じく端末内のみ（同期しない）。 */
+
+  // 全角の英数・記号を半角にそろえ、マイナスの表記ゆれを「-」に寄せる
+  function normBillLine(s) {
+    return String(s || "")
+      .replace(/[！-～]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); })
+      .replace(/　/g, " ")
+      .replace(/[，]/g, ",")
+      .replace(/[￥]/g, "¥")
+      .replace(/[−‒–—―▲△]/g, "-")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  /* 個人情報や案内の行か（読み取り結果に残してはいけない行）。
+   * 請求書には電話番号・お客様番号・振込用のバーコードなどが載っている。 */
+  function billLinePrivate(s) {
+    if (/電話番号|お客様番号|お問い合わせ|お問合せ|フリーダイヤル|受付時間|口座|振替|支払期限|お支払い期限|送付先|ご請求先|郵便|〒|住所/.test(s)) return true;
+    if (/様\s*$|御中\s*$/.test(s)) return true;
+    if (/0120[-\s]?\d/.test(s)) return true;
+    // 市外局番形式の電話番号（例 090-0123-4567 / 06-1234-5678）
+    if (/(^|[^0-9])0\d{1,4}[-()\s]\d{1,4}[-()\s]\d{3,4}([^0-9]|$)/.test(s)) return true;
+    // 長い番号の並び（バーコード・お客様番号など。金額はカンマ区切りでもここまで長くない）
+    if (/\d{10,}/.test(s.replace(/[-,\s]/g, ""))) return true;
+    return false;
+  }
+  // 表の見出しや案内など、金額の行として拾わない行か
+  function billLineNoise(s) {
+    return /^(内訳項目|内訳金額|金額\(?円\)?|請求内訳等詳細|税区分|ご利用料金の内訳|ご請求内訳|ご利用期間|ご利用月|前月|ポイント残高|請求書|ご請求のご案内)/.test(s);
+  }
+  /* 請求内訳の文字起こしを {lines:[{n,a}], total, month, dropped} にする。
+   * ・「◇」付きや「（計）」付きはカテゴリの小計行。紙の請求書は小計と明細の両方が
+   *   載っているため、明細の行があるときは小計を捨てて二重計上を防ぐ。
+   *   My docomo で内訳を開かずに写した場合など、小計しか無いときは小計を使う
+   * ・「合計」「ご請求金額」は行にせず total に入れる（行の合計との突き合わせ用）
+   * ・スキャンで金額が次の行に割れたときは、直前の項目名とつないで1行にする
+   * ※ 全角の英数・記号は normBillLine で半角にそろえてから見るので、
+   *   ここの正規表現は半角の「(計)」で書く */
+  function parseBillText(text) {
+    var out = { lines: [], total: null, month: "", dropped: 0 };
+    var subs = [];      // カテゴリ小計行の控え（明細が1行も無いときに使う）
+    var pendName = "";  // 金額が次の行へ割れたときのための、直前の項目名
+    var pendCat = false;  // 控えた項目名がカテゴリ小計（◇付き）だったか
+    String(text || "").split(/\r?\n/).forEach(function (rawLine) {
+      var s = normBillLine(rawLine);
+      if (!s) return;  // 空行では pendName を保持（スキャンは行が細かく割れるため）
+      if (billLinePrivate(s)) { out.dropped++; pendName = ""; return; }
+      var mm = s.match(/((?:19|20)\d{2})年\s*(\d{1,2})月/);
+      if (mm && /請求/.test(s)) { out.month = mm[1] + "年" + (mm[2] | 0) + "月"; pendName = ""; return; }
+      if (billLineNoise(s)) { pendName = ""; return; }
+      // 税区分の列（内税・合算など）が末尾に付いてきたら外す
+      var body = s.replace(/(内税|外税|合算|非課税|非対象等?)\s*$/, "").trim();
+      if (!body) return;
+      var isCat = /^[◇◆■□]/.test(body);  // ◇はカテゴリ小計の印（請求書の書式）
+      var amt = null, name = "";
+      if (/^-?\s*¥?\s*[0-9][0-9,]*\s*円?$/.test(body)) {
+        // 金額だけの行 → 直前の項目名とつなぐ（無ければ読み飛ばす）
+        if (!pendName) return;
+        amt = billAmount(body);
+        name = pendName;
+        isCat = pendCat;
+        pendName = "";
+      } else {
+        var m = body.match(/(-?)\s*¥?\s*([0-9][0-9,]{0,12})\s*円?$/);
+        if (!m) {
+          /* 項目名だけの行。次の行に金額が来ることがあるので控えておく。
+           * 長い文・句点入りは注釈（「◯回目のご請求です。」など）なので控えない */
+          pendName = (body.length <= 30 && body.indexOf("。") < 0) ? cleanBillName(body) : "";
+          pendCat = isCat;
+          return;
+        }
+        amt = billAmount(m[0]);
+        name = cleanBillName(body.slice(0, body.length - m[0].length));
+        pendName = "";
+      }
+      if (amt === null || !name) return;
+      if (Math.abs(amt) > 10000000) return;  // 読み間違いの桁あふれは拾わない
+      if (/^(合計|合計金額|ご請求金額|ご請求額|請求金額)$/.test(name)) { out.total = amt; return; }
+      if (isCat || /\(小?計\)$/.test(name)) {
+        subs.push({ n: name.replace(/\(小?計\)$/, "").trim(), a: amt });
+        return;
+      }
+      out.lines.push({ n: name, a: amt });
+    });
+    if (!out.lines.length && subs.length) out.lines = subs;
+    if (!out.lines.length && out.total !== null) out.lines = [{ n: "ご請求金額", a: out.total }];
+    return out;
+  }
+  function billAmount(s) {
+    var neg = /-/.test(s);
+    var d = String(s).replace(/[^0-9]/g, "");
+    if (!d) return null;
+    return (neg ? -1 : 1) * parseInt(d, 10);
+  }
+  function cleanBillName(s) {
+    return String(s || "").replace(/^[◇◆■□●○・･*＊\s]+/, "").replace(/[:：\s]+$/, "").trim();
+  }
+  // 読み取った請求内訳の月額合計（比較に使う数字）。読み取りが無ければ0
+  function curBillTotal(st) {
+    var b = st && st.curBill;
+    if (!b || !b.lines || !b.lines.length) return 0;
+    var t = 0;
+    b.lines.forEach(function (ln) { t += num(ln.a); });
+    return Math.round(t);
+  }
+  // 差額の表示（下がる場合は−、上がる場合は+を付ける）
+  function billDiffText(diff) {
+    return (diff > 0 ? "+" : diff < 0 ? "−" : "±") + yen(Math.abs(diff));
+  }
+  /* 読み取り結果の一覧（編集できる行）を描く。
+   * 入力のたびに描き直すとカーソルが外れるので、文字の入力では描き直さず
+   * updateCurBillMeta() で合計の表示だけ更新する（端末マスタ編集表と同じ考え方）。 */
+  function renderCurBill() {
+    var edit = $("curBillEdit"), clearBtn = $("curBillClearBtn"), open = $("curBillOpenBtn");
+    if (!edit) return;
+    var b = state.curBill;
+    if (clearBtn) clearBtn.hidden = !b;
+    if (open) open.textContent = b ? "読み取り直す" : "請求内訳を読み取る";
+    if (!b || !b.lines || !b.lines.length) { edit.innerHTML = ""; return; }
+    var h = '<table class="curbill-table"><tbody>';
+    b.lines.forEach(function (ln, i) {
+      h += '<tr><td><input type="text" value="' + esc(ln.n) + '" data-cb-n="' + i + '" placeholder="項目名"></td>'
+        + '<td class="cb-amt"><input type="number" inputmode="numeric" value="' + num(ln.a) + '" data-cb-a="' + i + '"> 円</td>'
+        + '<td class="cb-x"><button type="button" data-cb-del="' + i + '" title="この行を消す" aria-label="この行を消す">×</button></td></tr>';
+    });
+    h += "</tbody></table>";
+    h += '<div class="actions"><button class="btn-sub" type="button" data-cb-add="1">行を足す</button>';
+    var instIdx = -1;
+    b.lines.forEach(function (ln, i) { if (instIdx < 0 && /分割支払金|分割払金/.test(String(ln.n))) instIdx = i; });
+    if (instIdx >= 0) {
+      h += '<button class="btn-sub" type="button" data-cb-toinst="' + instIdx + '">この分割金を⑤の「現在の分割支払金」へ</button>';
+    }
+    h += "</div>";
+    h += '<p class="hint" id="cbSumLine"></p>';
+    h += '<div class="cb-compare">現在のお支払い <b id="cbCmpNow"></b> → この見積もり <b id="cbCmpNew"></b>（毎月の差額 <b id="cbCmpDiff"></b>）</div>';
+    edit.innerHTML = h;
+    updateCurBillMeta();
+  }
+  function updateCurBillMeta() {
+    var el = $("cbSumLine"), b = state.curBill;
+    if (!el || !b) return;
+    var t = curBillTotal(state);
+    var h = (b.month ? esc(b.month) + "分・" : "") + "行の合計: <b>" + yen(t) + "/月</b>";
+    if (b.total !== null && b.total !== undefined && Math.round(num(b.total)) !== t) {
+      h += '<span class="cb-warn">　⚠ 読み取った「合計」（' + yen(num(b.total))
+        + "）と一致していません。行の消し忘れ・読み落としがないかご確認ください。</span>";
+    }
+    el.innerHTML = h;
+    el.hidden = false;
+  }
+  function initCurBill() {
+    var openBtn = $("curBillOpenBtn"), clearBtn = $("curBillClearBtn"),
+        wrap = $("curBillWrap"), box = $("curBillBox"),
+        go = $("curBillGo"), cancel = $("curBillCancel"),
+        msg = $("curBillMsg"), edit = $("curBillEdit");
+    if (!openBtn) return;
+    function say(t, err) {
+      msg.textContent = t;
+      msg.hidden = false;
+      msg.style.color = err ? "#C62828" : "";
+    }
+    openBtn.addEventListener("click", function () {
+      wrap.hidden = !wrap.hidden;
+      msg.hidden = true;
+      if (!wrap.hidden) box.focus();
+    });
+    cancel.addEventListener("click", function () { wrap.hidden = true; box.value = ""; });
+    go.addEventListener("click", function () {
+      var r = parseBillText(box.value);
+      if (!r.lines.length) {
+        say("金額の行を読み取れませんでした。請求内訳の「項目名と金額」が写るように読み取ってください。", true);
+        return;
+      }
+      state.curBill = { lines: r.lines, total: r.total, month: r.month };
+      wrap.hidden = true;
+      box.value = "";
+      say(r.lines.length + "行を読み取りました。"
+        + (r.dropped ? "電話番号などの行は自動で除いています。" : "")
+        + "内容を確かめて、違う行は直すか「×」で消してください。");
+      renderCurBill();
+      recalc();
+    });
+    clearBtn.addEventListener("click", function () {
+      if (!window.confirm("読み取った請求内訳を消します。よろしいですか？")) return;
+      state.curBill = null;
+      msg.hidden = true;
+      renderCurBill();
+      recalc();
+    });
+    edit.addEventListener("input", function (e) {
+      var t = e.target, b = state.curBill, i;
+      if (!b || !t) return;
+      if (t.hasAttribute("data-cb-n")) {
+        i = t.getAttribute("data-cb-n") | 0;
+        if (b.lines[i]) b.lines[i].n = t.value;
+      } else if (t.hasAttribute("data-cb-a")) {
+        i = t.getAttribute("data-cb-a") | 0;
+        if (b.lines[i]) b.lines[i].a = num(t.value);
+      } else return;
+      updateCurBillMeta();
+      recalc();  // 保存とサマリー・見積書の更新（行は描き直さない）
+    });
+    edit.addEventListener("click", function (e) {
+      var t = e.target.closest ? e.target.closest("button") : null;
+      if (!t || !state.curBill) return;
+      if (t.hasAttribute("data-cb-del")) {
+        state.curBill.lines.splice(t.getAttribute("data-cb-del") | 0, 1);
+        if (!state.curBill.lines.length) state.curBill = null;
+        renderCurBill();
+        recalc();
+      } else if (t.hasAttribute("data-cb-add")) {
+        state.curBill.lines.push({ n: "", a: 0 });
+        renderCurBill();
+        recalc();
+        var ins = edit.querySelectorAll("input[data-cb-n]");
+        if (ins.length) ins[ins.length - 1].focus();
+      } else if (t.hasAttribute("data-cb-toinst")) {
+        var ln = state.curBill.lines[t.getAttribute("data-cb-toinst") | 0];
+        if (!ln) return;
+        state.currentInst = Math.max(0, Math.round(num(ln.a)));
+        syncFormFromState();
+        recalc();
+        say("⑤端末代金の「現在の分割支払金」に " + yen(state.currentInst) + " を入れました。残り回数がわかれば⑤で入力してください。");
+      }
+    });
+  }
+
   /* ---------- サマリーバー ---------- */
   function renderSummary(r) {
     var seg0 = r.segs[0];
@@ -6150,6 +6398,20 @@
     $("sumMonthlyLabel").textContent = "月額" + (lbl ? "（" + lbl + "）" : "") + "｜" + PAT_NAMES[store.active];
     $("sumMonthly").textContent = yen(seg0.monthly);
     $("sumInitial").textContent = yen(r.initialTotal);
+
+    // 請求内訳を読み取っているときは「現在のお支払い」を並べて出す
+    var cbT = curBillTotal(state);
+    var cbw = $("sumCurBillWrap");
+    if (cbw) {
+      cbw.hidden = !(cbT > 0);
+      if (cbT > 0) $("sumCurBill").textContent = yen(cbT);
+    }
+    var cbNow = $("cbCmpNow");
+    if (cbNow && cbT > 0) {
+      cbNow.textContent = yen(cbT);
+      $("cbCmpNew").textContent = yen(seg0.monthly);
+      $("cbCmpDiff").textContent = billDiffText(seg0.monthly - cbT);
+    }
 
     var k2 = $("kaedoki23Hint");
     if (state.payMethod === "kaedoki") {
@@ -6878,6 +7140,19 @@
     }
     if (hasInstallment) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ 機種代金などの分割支払金・初期費用は2ページ目に記載しています。</p>';
+    }
+    // 現在のお支払いとの比較（請求内訳を読み取ったときだけ出す）
+    var cbT = curBillTotal(state);
+    if (cbT > 0) {
+      h += "<h3>現在のお支払いとの比較</h3><table><tbody>";
+      h += row("現在のお支払い（ご請求内訳より"
+        + (state.curBill && state.curBill.month ? "・" + esc(state.curBill.month) + "分" : "") + "）※", yen(cbT), true);
+      h += row("この見積もりの月額" + (lbl0 ? "（" + lbl0 + "）" : ""), yen(seg0.monthly), true);
+      h += '<tr class="total"><td>毎月の差額</td><td class="amt">' + billDiffText(seg0.monthly - cbT) + "</td></tr>";
+      h += "</tbody></table>";
+      h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">'
+        + "※ 現在のお支払いは、お客様のご請求内訳（当月分）の読み取り値です。"
+        + "通話料・日割り・期間限定の割引などにより、通常月のお支払いとは異なる場合があります。</p>";
     }
     /* 「スマホ＋光」のときだけ、ここに世帯の合計を出す。
      * 別紙のときは光の基本料をスマホの見積もりに含めない。
@@ -10290,7 +10565,12 @@
         state = store.patterns[store.active];
         recalc();
         return out;
-      }
+      },
+      // 請求内訳の読み取り（tests/run-bill-tests.js が使う）
+      parseBill: function (t) { return parseBillText(t); },
+      // curBill が同期ペイロードに漏れないことの検査用
+      setCurBill: function (b) { state.curBill = b || null; },
+      quotePayload: function () { return quotePayload(); }
     };
   }
 
@@ -10364,6 +10644,7 @@
   initMasterSearch();
   initImportMaster();
   initDeviceMaster();
+  initCurBill();
   initCloud(); // ログイン・端末間同期はUI初期化が終わってから開始
   // 何かの理由で画面の決定に至らなくても、隠したままにはしない
   setTimeout(bootDone, 6000);
