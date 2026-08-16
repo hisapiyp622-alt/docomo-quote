@@ -433,7 +433,7 @@
         + (it.result
             ? "すでに付いている成約・見送りの記録は消えずに一緒に渡ります（成約・収益は記録を付けた担当のままです）。"
             : "")
-        + "お客様名は渡りません（端末内だけの情報のため）。",
+        + "お客様名と請求内訳の読み取りは渡りません（端末内だけの情報のため）。",
       label: "渡す担当", choices: others, value: others[0].id, okText: "渡す"
     }, function (to) {
       if (!to) return;
@@ -3503,7 +3503,11 @@
   function newIenaka() {
     return (typeof KQ_IENAKA !== "undefined" && KQ_IENAKA) ? KQ_IENAKA.defaultState() : {};
   }
-  var store = { active: 0, patterns: [defaultState(), defaultState(), defaultState()], ienaka: newIenaka() };
+  /* gen は「お客様の区切り」の通し番号。入力のクリア・担当入り直しで +1 して同期にも乗せる。
+   * 請求内訳の読み取り（curBill）は同期しないため、他端末から届いた内容に
+   * この端末の読み取りを付け直すときに、同じお客様のものかをこの番号で見分ける。
+   * （番号だけで個人情報は含まない） */
+  var store = { active: 0, gen: 0, patterns: [defaultState(), defaultState(), defaultState()], ienaka: newIenaka() };
   var state = store.patterns[0];
 
   /* 見積もりを読み込んだ時点の「最後に直した時刻」。
@@ -3516,12 +3520,14 @@
       var s = JSON.parse(localStorage.getItem(quoteKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
         store.active = Math.min(Math.max(s.active | 0, 0), 2);
+        store.gen = s.gen | 0;
         for (var i = 0; i < 3; i++) {
           store.patterns[i] = Object.assign(defaultState(), s.patterns[i] || {});
         }
       } else {
         // 保存がない担当者に切り替えたときは、前の担当の内容を引き継がない
         store.active = 0;
+        store.gen = 0;
         for (var j = 0; j < 3; j++) store.patterns[j] = defaultState();
       }
     } catch (e) {}
@@ -4111,17 +4117,21 @@
     try {
       var incoming = JSON.parse(d.data);
       if (!incoming || !incoming.patterns) return;
-      // お客様名・請求内訳は同期しないため、この端末で入力済みの内容を保持する
+      /* お客様名・請求内訳は同期しないため、この端末で入力済みの内容を保持する。
+       * 請求内訳は「お客様の区切り（gen）」が同じときだけ付け直す。
+       * 他端末で入力をクリアして次のお客様を始めたときに、
+       * 前のお客様の請求内訳がこの端末で新しい見積もりに付くのを防ぐ */
       for (var i = 0; i < 3; i++) {
         var mine = (store.patterns[i] || {}).custName;
         var mineBill = (store.patterns[i] || {}).curBill;
         var pt = incoming.patterns[i] || {};
         if (!pt.custName && mine) pt.custName = mine;
-        if (!pt.curBill && mineBill) pt.curBill = mineBill;
+        if (!pt.curBill && mineBill && (incoming.gen | 0) === (mineBill.gen | 0)) pt.curBill = mineBill;
         store.patterns[i] = Object.assign(defaultState(), pt);
         migratePattern(store.patterns[i]);
       }
       store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
+      store.gen = incoming.gen | 0;
       state = store.patterns[store.active];
       applyIenaka(incoming.ienaka);
       lsSet(quoteKey(), JSON.stringify(store));
@@ -4273,6 +4283,7 @@
     var staff = (st0 && st0.name) || src.staffName || "";
     var tel = config.storeTel || src.shopTel || "";
     store.active = 0;
+    store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
     for (var i = 0; i < 3; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
@@ -6184,10 +6195,13 @@
     if (/電話番号|お客様番号|お問い合わせ|お問合せ|フリーダイヤル|受付時間|口座|振替|支払期限|お支払い期限|送付先|ご請求先|郵便|〒|住所/.test(s)) return true;
     if (/様\s*$|御中\s*$/.test(s)) return true;
     if (/0120[-\s]?\d/.test(s)) return true;
-    // 市外局番形式の電話番号（例 090-0123-4567 / 06-1234-5678）
-    if (/(^|[^0-9])0\d{1,4}[-()\s]\d{1,4}[-()\s]\d{3,4}([^0-9]|$)/.test(s)) return true;
+    /* 市外局番形式の電話番号（例 090-0123-4567 / 06-1234-5678）。
+     * スキャンではハイフンが「.」「・」に化けることがあるので、区切りに含める */
+    if (/(^|[^0-9])0\d{1,4}[-()\s.・･]\d{1,4}[-()\s.・･]\d{3,4}([^0-9]|$)/.test(s)) return true;
     // 長い番号の並び（バーコード・お客様番号など。金額はカンマ区切りでもここまで長くない）
-    if (/\d{10,}/.test(s.replace(/[-,\s]/g, ""))) return true;
+    if (/\d{10,}/.test(s.replace(/[-,\s.・･]/g, ""))) return true;
+    // 宛先の住所行（都道府県名から始まる行。番地の数字を金額と読み違えないよう除く）
+    if (/^(北海道|東京都|京都府|大阪府)/.test(s) || /^[一-龠々]{2,3}県/.test(s)) return true;
     return false;
   }
   // 表の見出しや案内など、金額の行として拾わない行か
@@ -6227,10 +6241,14 @@
         isCat = pendCat;
         pendName = "";
       } else {
-        var m = body.match(/(-?)\s*¥?\s*([0-9][0-9,]{0,12})\s*円?$/);
+        /* 金額は「区切り（空白）のあとの数字で終わる」形だけを拾う。
+         * 「U15」「Wi-Fi 6」のような項目名の末尾の数字を金額と読み違えないため */
+        var m = body.match(/(^|[\s])(-?)\s*¥?\s*([0-9][0-9,]{0,12})\s*円?$/);
         if (!m) {
           /* 項目名だけの行。次の行に金額が来ることがあるので控えておく。
-           * 長い文・句点入りは注釈（「◯回目のご請求です。」など）なので控えない */
+           * 長い文・句点入りは注釈（「◯回目のご請求です。」など）なので控えない。
+           * 「(税込)」のような括弧だけの行は、控えた項目名を消さずに読み飛ばす */
+          if (/^\(.*\)$/.test(body)) return;
           pendName = (body.length <= 30 && body.indexOf("。") < 0) ? cleanBillName(body) : "";
           pendCat = isCat;
           return;
@@ -6241,7 +6259,9 @@
       }
       if (amt === null || !name) return;
       if (Math.abs(amt) > 10000000) return;  // 読み間違いの桁あふれは拾わない
-      if (/^(合計|合計金額|ご請求金額|ご請求額|請求金額)$/.test(name)) { out.total = amt; return; }
+      // 「ご請求金額(税込)」「ご利用料金合計」のような合計行の表記ゆれも合計として扱う
+      var nameNoParen = name.replace(/\(.*\)$/, "").trim();
+      if (/^(合計|合計金額|ご請求金額|ご請求額|請求金額|ご利用料金合計|お支払い合計)$/.test(nameNoParen)) { out.total = amt; return; }
       if (isCat || /\(小?計\)$/.test(name)) {
         subs.push({ n: name.replace(/\(小?計\)$/, "").trim(), a: amt });
         return;
@@ -6298,7 +6318,7 @@
     }
     h += "</div>";
     h += '<p class="hint" id="cbSumLine"></p>';
-    h += '<div class="cb-compare">現在のお支払い <b id="cbCmpNow"></b> → この見積もり <b id="cbCmpNew"></b>（毎月の差額 <b id="cbCmpDiff"></b>）</div>';
+    h += '<div class="cb-compare" id="cbCompare">現在のお支払い <b id="cbCmpNow"></b> → この見積もり <b id="cbCmpNew"></b>（毎月の差額 <b id="cbCmpDiff"></b>）</div>';
     edit.innerHTML = h;
     updateCurBillMeta();
   }
@@ -6337,7 +6357,7 @@
         say("金額の行を読み取れませんでした。請求内訳の「項目名と金額」が写るように読み取ってください。", true);
         return;
       }
-      state.curBill = { lines: r.lines, total: r.total, month: r.month };
+      state.curBill = { lines: r.lines, total: r.total, month: r.month, gen: store.gen | 0 };
       wrap.hidden = true;
       box.value = "";
       say(r.lines.length + "行を読み取りました。"
@@ -6371,7 +6391,7 @@
       if (!t || !state.curBill) return;
       if (t.hasAttribute("data-cb-del")) {
         state.curBill.lines.splice(t.getAttribute("data-cb-del") | 0, 1);
-        if (!state.curBill.lines.length) state.curBill = null;
+        if (!state.curBill.lines.length) { state.curBill = null; msg.hidden = true; }
         renderCurBill();
         recalc();
       } else if (t.hasAttribute("data-cb-add")) {
@@ -6406,11 +6426,15 @@
       cbw.hidden = !(cbT > 0);
       if (cbT > 0) $("sumCurBill").textContent = yen(cbT);
     }
-    var cbNow = $("cbCmpNow");
-    if (cbNow && cbT > 0) {
-      cbNow.textContent = yen(cbT);
-      $("cbCmpNew").textContent = yen(seg0.monthly);
-      $("cbCmpDiff").textContent = billDiffText(seg0.monthly - cbT);
+    var cbCmp = $("cbCompare");
+    if (cbCmp) {
+      // 行の編集で合計が0円以下になったときは、古い比較を出したままにしない
+      cbCmp.hidden = !(cbT > 0);
+      if (cbT > 0) {
+        $("cbCmpNow").textContent = yen(cbT);
+        $("cbCmpNew").textContent = yen(seg0.monthly) + (lbl ? "（" + lbl + "）" : "");
+        $("cbCmpDiff").textContent = billDiffText(seg0.monthly - cbT);
+      }
     }
 
     var k2 = $("kaedoki23Hint");
@@ -9629,6 +9653,8 @@
       store.patterns[next] = JSON.parse(JSON.stringify(state));
       store.patterns[next].visitPurposes = {};   // 目的は回線1のものだけ
       delete store.patterns[next].visitPurpose;
+      // 請求内訳の読み取りは番号ごとの請求なので、別の回線へは複製しない
+      delete store.patterns[next].curBill;
       switchPattern(next);
     });
     $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
@@ -10387,6 +10413,7 @@
             others.join("・") + " にも入力があります。\n回線1〜3をすべて消してよろしいですか？")) return;
       resetPropTracking();
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
+      store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
       store.patterns = [defaultState(), defaultState(), defaultState()];
       /* 光・5Gもリセットする。パターンの外（store.ienaka）にあるため、ここで消さないと
        * 前のお客様の光が次の見積もりに残り、「含める」が勝手に入っているように見える。 */

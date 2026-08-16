@@ -132,6 +132,53 @@ const CASES = [
     name: '金額の行が無ければ空（エラーにしない）',
     input: 'ドコモショップで機種変更のご相談\nありがとうございました',
     expect: { lines: [], total: null, month: '', dropped: 0 }
+  },
+  {
+    name: 'スキャンで区切りが「.」「・」に化けた電話番号・長い番号も残さない',
+    input: [
+      '090.1234.5678',
+      '090・1234・5678',
+      '1234.5678.9012.3456',
+      'eximo　5,078'
+    ].join('\n'),
+    expect: { lines: [{ n: 'eximo', a: 5078 }], total: null, month: '', dropped: 3 },
+    check(r) {
+      const s = JSON.stringify(r);
+      for (const leak of ['1234', '5678', '9012', '3456', '090']) {
+        if (s.includes(leak)) return `番号らしき数字が結果に残っている: ${leak}`;
+      }
+      return '';
+    }
+  },
+  {
+    name: '宛先の住所行（都道府県から始まる行）を残さない',
+    input: [
+      '大阪府阪南市尾崎町1-2-3',
+      '神奈川県横浜市中区4-5-6',
+      'eximo　5,078'
+    ].join('\n'),
+    expect: { lines: [{ n: 'eximo', a: 5078 }], total: null, month: '', dropped: 2 },
+    check(r) {
+      const s = JSON.stringify(r);
+      if (s.includes('阪南') || s.includes('横浜')) return '住所が結果に残っている';
+      return '';
+    }
+  },
+  {
+    name: '合計行の表記ゆれ（ご請求金額(税込)・ご利用料金合計）も合計として扱う',
+    input: 'ご請求金額（税込）　８，０２４',
+    expect: { lines: [{ n: 'ご請求金額', a: 8024 }], total: 8024, month: '', dropped: 0 }
+  },
+  {
+    name: '数字で終わる項目名（U15）の末尾を金額と読み違えない',
+    input: [
+      'ドコモ スマホデビュープラン U15',
+      '１，９８０'
+    ].join('\n'),
+    expect: {
+      lines: [{ n: 'ドコモ スマホデビュープラン U15', a: 1980 }],
+      total: null, month: '', dropped: 0
+    }
   }
 ];
 
