@@ -412,15 +412,17 @@
 
     <div class="card full" id="curBillCard">
       <h2>現在のお支払い（請求内訳の読み取り・任意） <button class="card-help" type="button" data-help="curbill" aria-label="この項目の入力のしかた">?</button></h2>
-      <p class="hint">お客様の請求書や My docomo の「ご利用料金の内訳」をカメラで撮ると、いまのお支払いとこの見積もりを比べてご案内できます。見積書にも比較が載ります。<strong>読み取りはこの端末の中だけで行い、写真も読み取った内容も外部へ送信しません。写真は解析が終わると破棄され、どこにも保存されません。</strong></p>
+      <!-- カメラ読み取りの入・切は app.js の OCR_ON。切のときは JS が
+           カメラのボタンとカメラ向けの文だけを隠す（HTMLは共通のまま） -->
+      <p class="hint">お客様の請求書や My docomo の「ご利用料金の内訳」を読み取ると、いまのお支払いとこの見積もりを比べてご案内できます。見積書にも比較が載ります。<strong>読み取りはこの端末の中だけで行い、内容が外部へ送信されることはありません。<span id="curBillCamNote" hidden>撮った写真は解析が終わると破棄され、どこにも保存されません。</span></strong></p>
       <div class="actions">
-        <label class="btn-main file-btn">カメラで読み取る<input type="file" id="curBillCam" accept="image/*" capture="environment" hidden></label>
-        <button class="btn-sub" id="curBillOpenBtn" type="button">文字の貼り付けで読み取る</button>
+        <label class="btn-main file-btn" id="curBillCamWrap" hidden>カメラで読み取る<input type="file" id="curBillCam" accept="image/*" capture="environment" hidden></label>
+        <button class="btn-sub" id="curBillOpenBtn" type="button">請求内訳を読み取る</button>
         <button class="btn-sub" id="curBillClearBtn" type="button" hidden>読み取りを消す</button>
       </div>
-      <p class="hint">「カメラで読み取る」→ 請求内訳の「項目名と金額」の部分を、明るい場所でまっすぐ撮ってください。初回だけ読み取りの部品（約6.5MB）を読み込みます（以後はオフラインでも動きます）。</p>
+      <p class="hint" id="curBillCamHint" hidden>「カメラで読み取る」→ 請求内訳の「項目名と金額」の部分を、明るい場所でまっすぐ撮ってください。初回だけ読み取りの部品（約6.5MB）を読み込みます（以後はオフラインでも動きます）。</p>
       <div id="curBillWrap" hidden>
-        <p class="hint">カメラでうまく写らないときの別の入れ方です。iPadは、下の欄をタップしてもう一度タップ →「<b>テキストをスキャン</b>」でカメラを請求書にかざすと、そのまま文字が入ります（iPadOS 16以降）。ほかに、写真アプリで文字を長押し →「すべてを選択」→ コピー → ここに貼り付けでも入ります。Androidは Google レンズでコピーして貼り付けます。</p>
+        <p class="hint"><span id="curBillPasteLead" hidden>カメラでうまく写らないときの別の入れ方です。</span>iPadは、下の欄をタップしてもう一度タップ →「<b>テキストをスキャン</b>」でカメラを請求書にかざすと、そのまま文字が入ります（iPadOS 16以降）。ほかに、写真アプリで文字を長押し →「すべてを選択」→ コピー → ここに貼り付けでも入ります。Androidは Google レンズでコピーして貼り付けます。</p>
         <textarea id="curBillBox" class="export-box" placeholder="ここに請求内訳の文字を入れてください（テキストをスキャン・貼り付け）"></textarea>
         <div class="actions">
           <button class="btn-main" id="curBillGo" type="button">この内容で読み取る</button>
