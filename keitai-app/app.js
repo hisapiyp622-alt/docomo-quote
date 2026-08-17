@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.107.1";
+  var APP_VERSION = "1.107.2";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -6888,7 +6888,14 @@
     var voiceName = r.voice.id !== "none" ? esc(r.voice.name) + "　" + yen(r.voicePrice) + esc(r.voiceNote) : "なし";
     h += row("通話オプション", voiceName
       + (state.voiceChange ? ' <b style="color:var(--red)">（変更あり）</b>' : '<span style="color:var(--muted)">（変更なし）</span>'));
-    h += row("ドコモメール", state.mailOpt === "yes" ? "有り" : "無し");
+    /* ドコモメールは②のプルダウンで選ぶが、中身はほかのオプションと同じ
+     * state.options に入っている。ここを state.mailOpt（どこにも入らない値）で
+     * 見ていたため、付けても必ず「無し」になっていた（1.89.3〜1.107.1）。 */
+    var mailDefSheet = mailOptDef();
+    var mailOnSheet = !!(mailDefSheet && state.options[mailDefSheet.id]);
+    h += row("ドコモメール", mailOnSheet
+      ? "有り　" + yen(optPrice(mailDefSheet, state)) + "/月"
+      : "無し");
     h += "</tbody></table>";
 
     var secContract = h; h = "";
@@ -6898,6 +6905,8 @@
     netSheet.rows.forEach(function (n) { kNew.push({ name: n.name, price: n.price }); });
     netSheet.off.forEach(function (n) { kOff.push(n.name); });
     MASTER.options.forEach(function (o) {
+      // ドコモメールは上の「ご契約内容」に出しているので、ここでは重ねて出さない
+      if (mailDefSheet && o.id === mailDefSheet.id) return;
       var kb = state.optionKubun[o.id] || (state.options[o.id] ? "new" : "");
       if (!kb) return;
       var pr = optPrice(o, state);
