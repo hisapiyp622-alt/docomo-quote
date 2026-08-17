@@ -88,7 +88,7 @@
     </div>
 
     <div class="card full">
-      <h2>ご来店の目的</h2>
+      <h2>ご来店の目的 <button class="card-help" type="button" data-help="purpose" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="proc-checks" id="visitChecks">
         <label class="check"><input type="checkbox" data-visit="buy"> ① 端末購入（新規・MNP・機種変更など）</label>
         <label class="check"><input type="checkbox" data-visit="plan"> ② プラン見直し</label>
@@ -103,7 +103,7 @@
     </div>
 
     <div class="card full">
-      <h2>手続き内容</h2>
+      <h2>手続き内容 <button class="card-help" type="button" data-help="proc" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="proc-checks">
         <label class="check"><input type="checkbox" data-proc="kishu"> 機種変更</label>
         <label class="check"><input type="checkbox" data-proc="shinki"> 新規</label>
@@ -158,7 +158,7 @@
     </div>
 
     <div class="card c1">
-      <h2>① 契約内容</h2>
+      <h2>① 契約内容 <button class="card-help" type="button" data-help="c1" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="field">
         <label for="procType">手続き種別</label>
         <select id="procType">
@@ -189,7 +189,7 @@
     </div>
 
     <div class="card c2">
-      <h2>② 通話・メール</h2>
+      <h2>② 通話・メール <button class="card-help" type="button" data-help="c2" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="field">
         <label for="voice">通話オプション</label>
         <select id="voice"></select>
@@ -209,7 +209,7 @@
     </div>
 
     <div class="card c3">
-      <h2>③ 割引</h2>
+      <h2>③ 割引 <button class="card-help" type="button" data-help="c3" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="field" id="minnaWrap">
         <label for="minna">みんなドコモ割</label>
         <select id="minna">
@@ -246,7 +246,7 @@
     </div>
 
     <div class="card full">
-      <h2>④ オプション・サービス</h2>
+      <h2>④ オプション・サービス <button class="card-help" type="button" data-help="c4" aria-label="この項目の入力のしかた">?</button></h2>
       <div id="optionList"></div>
       <p class="hint">内容・単価・並び順はマスタ設定タブで自由に変更できます。</p>
       <div class="adhoc-list" id="adhocMonthlyList"></div>
@@ -254,7 +254,7 @@
     </div>
 
     <div class="card c5">
-      <h2>⑤ 端末代金</h2>
+      <h2>⑤ 端末代金 <button class="card-help" type="button" data-help="c5" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="field">
         <label for="payMethod">支払い方法</label>
         <select id="payMethod">
@@ -329,7 +329,7 @@
     </div>
 
     <div class="card c6">
-      <h2>⑥ アクセサリ（docomo select など）</h2>
+      <h2>⑥ アクセサリ（docomo select など） <button class="card-help" type="button" data-help="c6" aria-label="この項目の入力のしかた">?</button></h2>
       <div id="accTileList"></div>
       <p class="hint">タップで選択し、タイル内で一括／分割を選べます。リストにない商品は下の自由入力で。定番商品はマスタ設定で編集できます。</p>
       <div class="adhoc-list" id="accessoryList"></div>
@@ -337,7 +337,7 @@
     </div>
 
     <div class="card c7">
-      <h2>⑦ 初期費用</h2>
+      <h2>⑦ 初期費用 <button class="card-help" type="button" data-help="c7" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="field">
         <label for="jimuFee">契約事務手数料</label>
         <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
@@ -361,7 +361,7 @@
     </div>
 
     <div class="card c8">
-      <h2>⑧ ポイント（実質額のご案内）</h2>
+      <h2>⑧ ポイント（実質額のご案内） <button class="card-help" type="button" data-help="c8" aria-label="この項目の入力のしかた">?</button></h2>
       <p class="hint">④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
       <div class="field">
         <label for="pointApply">ポイントの扱い</label>
@@ -401,7 +401,7 @@
     </div>
 
     <div class="card c9">
-      <h2>⑨ お客様情報（見積書用・任意）</h2>
+      <h2>⑨ お客様情報（見積書用・任意） <button class="card-help" type="button" data-help="c9" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <p class="hint">※ お客様名（個人情報）は端末間で同期されません。印刷する端末で入力してください。</p>
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
@@ -412,7 +412,7 @@
     </div>
 
     <div class="card full" id="curBillCard">
-      <h2>現在のお支払い（請求内訳の読み取り・任意）</h2>
+      <h2>現在のお支払い（請求内訳の読み取り・任意） <button class="card-help" type="button" data-help="curbill" aria-label="この項目の入力のしかた">?</button></h2>
       <p class="hint">お客様の請求書や My docomo の「ご利用料金の内訳」をカメラで撮ると、いまのお支払いとこの見積もりを比べてご案内できます。見積書にも比較が載ります。<strong>読み取りはこの端末の中だけで行い、写真も読み取った内容も外部へ送信しません。写真は解析が終わると破棄され、どこにも保存されません。</strong></p>
       <div class="actions">
         <label class="btn-main file-btn">カメラで読み取る<input type="file" id="curBillCam" accept="image/*" capture="environment" hidden></label>
@@ -1116,6 +1116,17 @@
     <div class="row-btns">
       <button class="btn-sub" id="svcDlgClose" type="button">閉じる</button>
       <a class="btn-main btn-link" id="svcDlgOpen" href="#" target="_blank" rel="noopener noreferrer" hidden>公式ページを開く</a>
+    </div>
+  </div>
+</div>
+
+<!-- 見積もりカードの「?」を押したときに出る、入力のしかたのご案内 -->
+<div class="login-overlay no-print" id="helpDlg" hidden>
+  <div class="login-box svc-box">
+    <h2 id="helpDlgTitle">入力のしかた</h2>
+    <div class="svc-dlg-desc" id="helpDlgBody"></div>
+    <div class="row-btns">
+      <button class="btn-main" id="helpDlgClose" type="button">閉じる</button>
     </div>
   </div>
 </div>
