@@ -1119,15 +1119,14 @@
   </div>
 </div>
 
-<!-- 見積もりカードの「?」を押したときに出る、入力のしかたのご案内 -->
-<div class="login-overlay no-print" id="helpDlg" hidden>
-  <div class="login-box svc-box">
-    <h2 id="helpDlgTitle">入力のしかた</h2>
-    <div class="svc-dlg-desc" id="helpDlgBody"></div>
-    <div class="row-btns">
-      <button class="btn-main" id="helpDlgClose" type="button">閉じる</button>
-    </div>
+<!-- 見積もりカードの「?」を押したときに、その場に出る吹き出し（入力のしかた） -->
+<div class="help-pop no-print" id="helpPop" role="dialog" aria-labelledby="helpPopTitle" hidden>
+  <span class="help-pop-arrow" id="helpPopArrow"></span>
+  <div class="help-pop-head">
+    <h3 id="helpPopTitle">入力のしかた</h3>
+    <button class="help-pop-x" id="helpPopClose" type="button" aria-label="閉じる">×</button>
   </div>
+  <div class="help-pop-body" id="helpPopBody"></div>
 </div>
 
 <div class="tour-overlay no-print" id="tourOverlay" hidden>

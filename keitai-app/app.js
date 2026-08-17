@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.107.0";
+  var APP_VERSION = "1.107.1";
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
@@ -10759,32 +10759,75 @@
     c9: { t: "⑨ お客様情報", b: "見積書に入る情報です。\n・お客様名は<b>この端末の中だけ</b>に保存され、端末間で同期されません。印刷する端末で入力してください\n・店舗名・担当・電話番号は、マスタ設定の店舗情報とログイン中の担当者から自動で入り、見積書の下端に載ります。この見積もりだけ変えたいときは書き換えられます\n・メモは見積書に載ります" },
     curbill: { t: "現在のお支払い（請求内訳の読み取り）", b: "お客様のいまのお支払いを読み取って、この見積もりと比べられます。\n・「カメラで読み取る」で請求書や My docomo の内訳を撮ると、行ごとの金額になります（初回だけ読み取りの部品 約6.5MB を読み込みます。以後はオフラインでも動きます）\n・読み取った行は<b>必ず内容を確かめて</b>、違う行は直すか「×」で消してください。合計行とズレがあると⚠でお知らせします\n・写真も読み取った内容も外部へ送信されません。写真は解析が終わると破棄されます\n・読み取ると、画面下のバーと見積書に「現在のお支払いとの比較」が出ます\n・お客様名と同じく端末間では同期されません（この端末の中だけ）" }
   };
-  function openHelpDlg(key) {
-    var h = QUOTE_HELP[key], dlg = $("helpDlg");
-    if (!h || !dlg) return;
-    $("helpDlgTitle").textContent = h.t;
-    $("helpDlgBody").innerHTML = h.b;  // 文面はこのファイルに直書きの固定文だけ（入力値は入らない）
-    dlg.hidden = false;
+  /* 押した「?」の横に吹き出しで出す。画面を覆わないので、
+   * 説明を読みながらそのまま入力できる。
+   * ページと一緒に動くよう、body に絶対位置（ページ座標）で置く。 */
+  function closeHelpPop() {
+    var pop = $("helpPop");
+    if (pop && !pop.hidden) {
+      pop.hidden = true;
+      if (helpPopBtn) helpPopBtn.setAttribute("aria-expanded", "false");
+      helpPopBtn = null;
+    }
   }
-  /* 見積書のサービス名をタップしたら説明の小窓、カードの「?」なら入力のしかたの小窓を出す */
+  var helpPopBtn = null;
+  function openHelpPop(btn, key) {
+    var h = QUOTE_HELP[key], pop = $("helpPop");
+    if (!h || !pop || !btn) return;
+    $("helpPopTitle").textContent = h.t;
+    $("helpPopBody").innerHTML = h.b;  // 文面はこのファイルに直書きの固定文だけ（入力値は入らない）
+    // 大きさを測るために、いったん出してから位置を決める
+    pop.style.left = "0px";
+    pop.style.top = "0px";
+    pop.hidden = false;
+    helpPopBtn = btn;
+    btn.setAttribute("aria-expanded", "true");
+
+    var GAP = 10, EDGE = 8;
+    var r = btn.getBoundingClientRect();
+    var pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var sx = window.pageXOffset, sy = window.pageYOffset;
+    // 「?」の中央に寄せ、画面からはみ出す分を内側へ戻す
+    var left = r.left + r.width / 2 - pw / 2;
+    left = Math.max(EDGE, Math.min(left, window.innerWidth - pw - EDGE));
+    /* 下に入りきらず、上には入るときだけ上に出す。
+     * 入りきらない場合でも下に出す（吹き出し自体が縦にスクロールする） */
+    var upper = r.top - GAP - ph;
+    var above = (r.bottom + GAP + ph > window.innerHeight - EDGE) && upper > EDGE;
+    var top = above ? upper : r.bottom + GAP;
+    pop.classList.toggle("pop-above", above);
+    pop.style.left = Math.round(left + sx) + "px";
+    pop.style.top = Math.round(top + sy) + "px";
+    // 矢印は「?」の真下（真上）を指す
+    var ax = Math.max(14, Math.min(r.left + r.width / 2 - left, pw - 14));
+    $("helpPopArrow").style.left = Math.round(ax - 6) + "px";
+  }
+  /* 見積書のサービス名をタップしたら説明の小窓、カードの「?」なら入力のしかたの吹き出しを出す */
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
     var hb = e.target.closest(".card-help");
-    if (hb) { openHelpDlg(hb.getAttribute("data-help")); return; }
+    if (hb) {
+      // 開いている「?」をもう一度押したら閉じる
+      if (helpPopBtn === hb) closeHelpPop();
+      else openHelpPop(hb, hb.getAttribute("data-help"));
+      return;
+    }
+    if (!e.target.closest("#helpPop") || e.target.id === "helpPopClose") closeHelpPop();
     var b = e.target.closest(".svc-link");
     if (b) { openSvcDlg(b.getAttribute("data-svc")); return; }
     var dlg = $("svcDlg");
     if (dlg && !dlg.hidden && (e.target === dlg || e.target.id === "svcDlgClose")) dlg.hidden = true;
-    var hd = $("helpDlg");
-    if (hd && !hd.hidden && (e.target === hd || e.target.id === "helpDlgClose")) hd.hidden = true;
   });
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     var dlg = $("svcDlg");
     if (dlg && !dlg.hidden) dlg.hidden = true;
-    var hd = $("helpDlg");
-    if (hd && !hd.hidden) hd.hidden = true;
+    closeHelpPop();
   });
+  /* 画面の幅が変わると位置がずれるので閉じる（回転・キーボードの開閉）。
+   * 縦スクロールはページ座標で置いているため一緒に動く。
+   * タブ切替など他の場所をタップしたときは、上の「外側タップ」で閉じる */
+  window.addEventListener("resize", closeHelpPop);
   $("recWonBtn").addEventListener("click", function () { $("recMenu").hidden = true; recordOutcome("won"); });
   $("recLostBtn").addEventListener("click", function () { $("recMenu").hidden = true; recordOutcome("lost"); });
   bindEvents();
