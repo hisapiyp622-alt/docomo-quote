@@ -4,21 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#CC0033">
-<title>ミツモリン｜料金見積もりシミュレーション</title>
+<title>フロントーク｜料金見積もりシミュレーション</title>
 <link rel="manifest" href="manifest.webmanifest">
-<!-- ホーム画面に置いたときのアイコン（ミツモリン） -->
+<!-- ホーム画面に置いたときのアイコン（フロントーク） -->
 <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="ミツモリン">
+<meta name="apple-mobile-web-app-title" content="フロントーク">
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="booting">
 
 <!-- どの画面を出すか決まるまでの目隠し。app.js が決めたら booting を外す -->
-<div class="boot-splash no-print" id="bootSplash"><span>ミツモリン</span></div>
+<div class="boot-splash no-print" id="bootSplash"><span>フロントーク</span></div>
 
 <header class="app-header no-print">
-  <h1>ミツモリン
+  <h1>フロントーク
     <span class="staff-bar" id="staffBar" hidden></span>
     <button class="hd-btn" id="switchStaffBtn" type="button">担当切替</button>
     <button class="hd-btn" id="logoutBtn" type="button" hidden>ログアウト</button>
@@ -662,7 +662,7 @@
         <p class="hint">相対対応用。金額・ポイントが入力されているときだけ、見積書・引き継ぎシートに「店舗独自特典」として記載されます（0なら記載されません）。</p>
       </div>
       <p class="hint" id="ieKojiPointInfo" hidden></p>
-      <p class="hint">ドコモ光／home 5G セット割は、<strong>ミツモリンの③割引で自動的に引かれます。</strong>
+      <p class="hint">ドコモ光／home 5G セット割は、<strong>フロントークの③割引で自動的に引かれます。</strong>
         こちらで入力する必要はありません。</p>
     </div>
         </div>
@@ -933,7 +933,6 @@
 <!-- 契約の器: お試し終了・利用停止のご案内（contracts/{uid} の状態で出る） -->
 <div class="login-overlay no-print" id="contractOverlay" hidden>
   <div class="login-box">
-    <img class="login-mascot" src="img/mitsumorin-hello.png" alt="ミツモリン" onerror="this.hidden=true">
     <h2 id="contractTitle"></h2>
     <p class="login-lead" id="contractMsg"></p>
     <p class="login-lead" id="contractContact"></p>
@@ -944,8 +943,7 @@
 
 <div class="login-overlay no-print" id="loginOverlay" hidden>
   <form class="login-box" id="loginForm">
-    <img class="login-mascot" src="img/mitsumorin-hello.png" alt="ミツモリン" onerror="this.hidden=true">
-    <h2>ミツモリン</h2>
+    <h2>フロントーク</h2>
     <p class="login-lead">店舗IDとパスワードでログインしてください。</p>
     <p class="login-err" id="loginErr" hidden></p>
     <div class="field">
@@ -1016,7 +1014,6 @@
 
 <div class="login-overlay no-print" id="staffOverlay" hidden>
   <form class="login-box" id="staffForm">
-    <img class="login-mascot" src="img/mitsumorin-sheet.png" alt="ミツモリン" onerror="this.hidden=true">
     <h2>担当者コード</h2>
     <p class="login-lead">ご自身の担当者コードを入力してください。<br>
       <span class="login-note">入力すると、新しいお客様の見積もりとして最初から始まります。作りかけの内容は「保存」タブに残しておけます。</span></p>
@@ -1133,9 +1130,8 @@
 
 <div class="tour-overlay no-print" id="tourOverlay" hidden>
   <div class="tour-box">
-    <div class="tour-mascot" id="tourMascot"><!-- JSで生成 --></div>
     <div class="tour-bubble">
-      <div class="tour-name">ミツモリン</div>
+      <div class="tour-name">フロントーク</div>
       <p id="tourText"></p>
       <div class="tour-dots" id="tourDots"></div>
       <div class="tour-actions">

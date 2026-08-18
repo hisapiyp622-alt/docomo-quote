@@ -1,6 +1,6 @@
 {
-  "name": "ミツモリン（料金見積もりシミュレーション）",
-  "short_name": "ミツモリン",
+  "name": "フロントーク（料金見積もりシミュレーション）",
+  "short_name": "フロントーク",
   "start_url": "./",
   "scope": "../",
   "display": "standalone",
