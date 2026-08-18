@@ -1,0 +1,7 @@
+# 動作確認で作る一時ファイル（コミットしない）
+*-bill.png
+sheet-*.pdf
+shot-*.png
+node_modules/
+package.json
+package-lock.json
