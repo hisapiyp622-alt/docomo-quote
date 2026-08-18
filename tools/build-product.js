@@ -99,6 +99,10 @@ for (const r of REWRITES) {
 // 5) 独自ドメインの指定（GitHub Pages がこのファイルを読む）
 fs.writeFileSync(path.join(OUT, "CNAME"), DOMAIN + "\n");
 
+/* GitHub Pages の下ごしらえ（Jekyll）を通さない印。
+ * 出荷物はそのまま配るファイルばかりで、加工されると困ることしかない。 */
+fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
+
 // 6) 配信用リポジトリの説明
 fs.writeFileSync(path.join(OUT, "README.md"), `# フロントーク（配信用）
 
