@@ -1,4 +1,4 @@
-# 引き継ぎ指示書（2026-08-16 時点）
+# 引き継ぎ指示書（2026-08-18 時点）
 
 新しいセッションはこの1枚を読めば作業を続けられます。
 あわせて `CLAUDE.md`（作業ルール）と `_internal/SYNC_DIFF.md`（社内版との違い）を読んでください。
@@ -46,6 +46,35 @@
 - **修正は `keitai-app/` と `ienaka-app/` に入れれば、社内版へ自動で反映されます**
 - デモ版（`ienaka-demo/app.js`）は `ienaka-app/app.js` の写し。単体版を直したら**同じ変更をデモにも入れる**
 
+### 出荷用（独自ドメイン版）も、このリポジトリから生成する（2026-08-18 追加）
+
+製品版は `frontalk.curacon.co.jp` から配信する。配信用の別リポジトリ（`frontalk`）を
+用意し、その中身を **`node tools/build-product.js`** で組み立てる。
+**このリポジトリ（`docomo-quote`）が原本で、配信用は生成物。配信用を直接編集しない。**
+
+| 出荷後のアドレス | 中身（原本のどこ） |
+|---|---|
+| `/` | `keitai-app/`（ルートへ移す） |
+| `/ienaka-app/` | `ienaka-app/` |
+| `/demo/` | `ienaka-demo/` |
+| `/CNAME` | `frontalk.curacon.co.jp` |
+
+- 入れないもの: `_internal/`・社内版・`tools`・`tests`・`dakkan-app`・`ienaka-tiles`
+- `ocr/`（14MB）は `keitai-app/app.js` の `OCR_ON` が `true` のときだけ同梱される
+- 阪南の社内版は**このリポジトリのまま**動き続ける。出荷用を作っても影響しない
+
+**注意（ここで一度やらかしている）**: 階層が変わるので、ファイル同士の相対パスを
+書き換える必要がある。**書き換え漏れは本番でだけ 404 になり、原本のテストでは気づけない。**
+実際にデモの `qr.js` が 404 になる状態で出かけた。二段で止めるようにしてある。
+
+1. 組み立て時に、残ってはいけない参照（`"../keitai-app/` など）を走査して中止する
+   （`tools/build-product.js` の `FORBIDDEN`）
+2. `node tests/run-product-layout-test.js` … 実際に組み立てて3つの入口をブラウザで開き、
+   読み込み失敗ゼロ・相互リンクの行き先・`sw.js` が控える一覧が全部 200 かを確認する（CI 済み）
+
+`keitai-app/index.html` や `ienaka-app/` の相対パスを触ったら、`tools/build-product.js` の
+`REWRITES` も見直すこと。テストが落ちて教えてくれる。
+
 ---
 
 ## 3. リリース手順（必ずこの順で）
@@ -85,6 +114,16 @@ PR は `mcp__github__*` を使う（`gh` は使えない）。コミット・PR�
 > **サブコレクションに効いておらず**、`quotes/` `saved/` `templates/` が同期されなかった。
 > ユーザーがコンソールで適用済み。**再着手しないこと。**
 > 同期が怪しいときの切り分けは `_internal/SYNC_DIFF.md` の「社内版の同期先」を見る。
+
+### ⓪ 独自ドメインでの公開（あと2手、ユーザー操作待ち）
+- DNS は通っている（`frontalk.curacon.co.jp` → `hisapiyp622-alt.github.io`）
+- 組み立てツールとテストは完成・CI 済み（`node tools/build-product.js`）
+- **残っているのはユーザー操作だけ**（API の権限では作れない）
+  1. `hisapiyp622-alt` に **Public** の空リポジトリ `frontalk` を作る
+  2. Settings → Pages → Deploy from a branch → `main` / `/ (root)`
+- そのあと: 組み立てた中身を push → 3つのアドレスを実際に開いて確認
+- **忘れると分かりにくい**: Firebase Authentication の**承認済みドメイン**に
+  `frontalk.curacon.co.jp` を足す。無いと「画面は開くがログインだけ失敗する」
 
 ### ① Blaze（Firestore の自動バックアップ）— 待ち
 - 小川さんが**山口社長に確認中**。こちらから催促しない
