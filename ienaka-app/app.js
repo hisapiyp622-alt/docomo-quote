@@ -873,7 +873,7 @@
     el.innerHTML = h;
   }
   /* 現在の固定回線ヒアリングの表示。
-   * ミツモリン（keitai-app/ienaka.js）と同じ作りにしてある。直すときは両方に。 */
+   * フロントーク（keitai-app/ienaka.js）と同じ作りにしてある。直すときは両方に。 */
   function syncCurForm() {
     var clSel = $("ieCurLine");
     if (!clSel) return;
@@ -1458,7 +1458,7 @@
   /* ---------- 登録スタッフ引き継ぎシート ---------- */
   /* 手続きに要るページのQR。図形は ../keitai-app/qr.js に持っているので、
    * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。
-   * どのQRを出すかの決まりはミツモリンと同じ。直すときは両方に。
+   * どのQRを出すかの決まりはフロントークと同じ。直すときは両方に。
    *   toss        … ドコモ光のとき（工事日を確定させるのに毎回入力が要る）
    *   router1g:*  … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
    *   niftyFollow … ドコモ光×@niftyのとき（フォローコールを光と同時に申込できる）
@@ -1667,7 +1667,7 @@
     save();
   });
 
-  /* 現在の固定回線ヒアリング。ミツモリンと同じ作り。 */
+  /* 現在の固定回線ヒアリング。フロントークと同じ作り。 */
   $("ieCurLine").addEventListener("change", function () { state.curLine = this.value; syncForm(); recalc(); });
   $("ieCurLineOther").addEventListener("input", function () { state.curLineOther = this.value; recalc(); });
   $("ieCurPhone").addEventListener("change", function () { state.curPhone = this.value; recalc(); });

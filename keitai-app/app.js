@@ -1,11 +1,11 @@
 /* =========================================================
- * ミツモリン（料金見積もりシミュレーション） — アプリ本体
+ * フロントーク（料金見積もりシミュレーション） — アプリ本体
  * 3パターン同時見積もり／期間セグメント式の月額計算
  * ========================================================= */
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.108.0";
+  var APP_VERSION = "1.109.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4335,7 +4335,7 @@
     watchQuote();
     watchSaved();
     watchTemplates();
-    // 初めての端末では、ミツモリンの使い方案内を出す（画面が落ち着いてから）
+    // 初めての端末では、フロントークの使い方案内を出す（画面が落ち着いてから）
     setTimeout(maybeStartTour, 400);
   }
   function renderStaffBar() {
@@ -8467,7 +8467,7 @@
     if (show) {
       var v = vendorInfo();
       var rows = [
-        ["アプリ名", "ミツモリン（料金見積もりシミュレーション）"],
+        ["アプリ名", "フロントーク（料金見積もりシミュレーション）"],
         ["アプリ版", APP_VERSION],
         ["料金データ基準日", MASTER.updated],
         ["提供元", v.name],
@@ -8563,79 +8563,22 @@
     });
   }
 
-  /* ---------- チュートリアル（ミツモリン） ----------
-   * マスコット「ミツモリン」が最初のひと巡りを案内する。
+  /* ---------- 使い方の案内（チュートリアル） ----------
    * 「見積書を開いた時点が提案として控えられる」というかんたん記録の要は、
    * 説明が無いと気づけないため、端末ごとに初回だけ自動で出す。
-   * キャラクター画像は mascotSvg() の1か所にまとめてあり、
-   * 正式なイラスト（PNG等）ができたらここを差し替えるだけでよい。 */
+   * 以前はマスコットが案内する形だったが、2026-08-18 にキャラクターを外した
+   * （画像は keitai-app/img/ に残してある。戻すときはそこから）。 */
   var TOUR_KEY = NS + "-tour-done-v1";
   var TOUR_STEPS = [
-    { pose: "hello", t: "はじめまして、ミツモリンです！ 使い方をぱぱっとご案内しますね。見積もり画面は、①から⑨を上から入れていくだけ。月々のお支払いがその場で出ます。ご家族の複数台は、回線1・回線2・回線3に分けて入れてくださいね。" },
-    { pose: "sheet", t: "できあがったら「見積書」タブへ。印刷やPDF保存ができて、文字サイズも大・中・小から選べます。じつは、見積書を開いた時点の内容が「ご提案」として自動で控えられるんです。操作はいりません！" },
-    { pose: "hello", t: "応対が終わったら、画面下の「成約」か「見送り」をポンと1回。それだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく！" },
-    { pose: "sheet", t: "「実績」タブでは、担当別・項目別に提案と成約が見られて、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べますよ。" },
-    { pose: "hello", t: "わからなくなったら、ヘッダーの「情報」からこの案内をもう一度見られます。それでは、よい接客を！ ミツモリンでした〜！" }
+    { t: "使い方をかんたんにご案内します。見積もり画面は、①から⑨を上から入れていくだけです。月々のお支払いがその場で出ます。ご家族の複数台は、回線1・回線2・回線3に分けて入れてください。" },
+    { t: "できあがったら「見積書」タブへ。印刷やPDF保存ができ、文字サイズも大・中・小から選べます。見積書を開いた時点の内容が「ご提案」として自動で控えられます（操作は不要です）。" },
+    { t: "応対が終わったら、画面下の「成約」か「見送り」を1回押すだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく。" },
+    { t: "「実績」タブでは、担当別・項目別に提案と成約が見られ、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べます。" },
+    { t: "わからなくなったら、ヘッダーの「情報」からこの案内をもう一度見られます。それでは、よい接客を。" }
   ];
-  function mascotSvg(pose) {
-    var rightArm = pose === "sheet"
-      ? "" // 見積書を持つポーズは、手を紙の両脇に描く
-      : '<path d="M83 92 Q98 84 102 68" stroke="#3f86c9" stroke-width="9" stroke-linecap="round" fill="none"/>'
-        + '<circle cx="103" cy="64" r="6.5" fill="#ffeede"/>';
-    var sheet = pose === "sheet"
-      ? '<g><rect x="42" y="96" width="36" height="26" rx="2.5" fill="#fff" stroke="#d94848" stroke-width="1.6"/>'
-        + '<rect x="46" y="101" width="20" height="3" rx="1.5" fill="#d94848"/>'
-        + '<rect x="46" y="107" width="28" height="2.4" rx="1.2" fill="#c9d3dd"/>'
-        + '<rect x="46" y="112" width="28" height="2.4" rx="1.2" fill="#c9d3dd"/>'
-        + '<circle cx="41" cy="110" r="6" fill="#ffeede"/>'
-        + '<circle cx="79" cy="110" r="6" fill="#ffeede"/></g>'
-      : '<path d="M39 92 Q30 102 33 112" stroke="#3f86c9" stroke-width="9" stroke-linecap="round" fill="none"/>'
-        + '<circle cx="33" cy="115" r="6" fill="#ffeede"/>';
-    return '<svg viewBox="0 0 120 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ミツモリン">'
-      + '<ellipse cx="24" cy="78" rx="14" ry="22" fill="#cfeafd" opacity=".85" transform="rotate(-18 24 78)"/>'
-      + '<ellipse cx="96" cy="78" rx="14" ry="22" fill="#cfeafd" opacity=".85" transform="rotate(18 96 78)"/>'
-      + '<path d="M60 22 q1-9 9-12 q-4 7-2 12z" fill="#8ed2f4"/>'
-      + '<circle cx="60" cy="54" r="33" fill="#8ed2f4"/>'
-      + '<circle cx="60" cy="60" r="26" fill="#ffeede"/>'
-      + '<path d="M33 56 q3-31 27-31 q24 0 27 31 q-7-12-15-12 q-5 7-12 7 q-7 0-12-7 q-8 0-15 12z" fill="#a9def7"/>'
-      + '<path d="M40 34 l2.6 5.4 5.9.6 -4.4 4 1.3 5.8 -5.4-3 -5.4 3 1.3-5.8 -4.4-4 5.9-.6z" fill="#ffd94d" transform="scale(.72) translate(16 8)"/>'
-      + '<circle cx="50" cy="62" r="3.4" fill="#4a3f36"/><circle cx="70" cy="62" r="3.4" fill="#4a3f36"/>'
-      + '<circle cx="51.2" cy="60.8" r="1.1" fill="#fff"/><circle cx="71.2" cy="60.8" r="1.1" fill="#fff"/>'
-      + '<ellipse cx="44" cy="70" rx="4" ry="2.2" fill="#ffc9c0"/><ellipse cx="76" cy="70" rx="4" ry="2.2" fill="#ffc9c0"/>'
-      + '<path d="M56 71 q4 4 8 0" stroke="#c96a5a" stroke-width="1.8" fill="none" stroke-linecap="round"/>'
-      + '<path d="M46 88 h28 l5 34 q-19 8 -38 0z" fill="#3f86c9"/>'
-      + '<path d="M54 88 h12 l-6 9z" fill="#fff"/>'
-      + '<rect x="50" y="99" width="9" height="6" rx="1" fill="#fff" stroke="#c9d3dd"/>'
-      + rightArm + sheet
-      + '<ellipse cx="52" cy="128" rx="6" ry="3.4" fill="#2f5f92"/>'
-      + '<ellipse cx="68" cy="128" rx="6" ry="3.4" fill="#2f5f92"/>'
-      + "</svg>";
-  }
-  /* 正式なキャラクター画像（PNG）。keitai-app/img/ に下の名前で置くと、
-   * 加工せずそのまま表示する。無い間は mascotSvg() の仮キャラで表示する。 */
-  var MASCOT_IMG = { hello: "img/mitsumorin-hello.png", sheet: "img/mitsumorin-sheet.png" };
-  var mascotImgOk = {}; // pose -> true(読めた) / false(無かった)
   var tourStep = 0;
-  function renderMascot(pose) {
-    var box = $("tourMascot");
-    if (mascotImgOk[pose] === false || !MASCOT_IMG[pose]) {
-      box.innerHTML = mascotSvg(pose);
-      return;
-    }
-    var img = new Image();
-    img.alt = "ミツモリン";
-    img.onload = function () { mascotImgOk[pose] = true; };
-    img.onerror = function () {
-      mascotImgOk[pose] = false;
-      box.innerHTML = mascotSvg(pose);
-    };
-    img.src = MASCOT_IMG[pose];
-    box.innerHTML = "";
-    box.appendChild(img);
-  }
   function renderTourStep() {
     var st = TOUR_STEPS[tourStep];
-    renderMascot(st.pose);
     $("tourText").textContent = st.t;
     $("tourDots").innerHTML = TOUR_STEPS.map(function (x, i) {
       return "<span" + (i === tourStep ? ' class="on"' : "") + "></span>";
