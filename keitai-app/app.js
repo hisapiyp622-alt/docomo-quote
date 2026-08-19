@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.111.0";
+  var APP_VERSION = "1.112.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -2405,9 +2405,11 @@
   }
   /* 見積書に出す内容。
    *   phone  … スマホのみ（2枚）
-   *   both   … スマホ＋光の世帯合計（2枚）
    *   hikari … スマホの見積書はそのままに、光の明細を3枚目の別紙として付ける（3枚）
-   *              光の基本料はスマホの月額に含めない（請求が分かれるため） */
+   *              光の基本料はスマホの月額に含めない（請求が分かれるため）
+   *   ienaka … 光のみ（イエナカ単体の見積書。裏面に開通までの流れ＝両面1枚）
+   * 「スマホ＋光（世帯の合計）」は 1.112.0 でやめた。請求が分かれるものを
+   * 1つの合計で見せると、ドコモの請求額と合わず店頭で説明に困るため。 */
   /* 郵便番号が要る受付か（光・でんき・ガスは住所での登録が要る） */
   function needsZip() {
     return !!(state.todoHikari || state.todoDenki || state.todoGas || ienakaOn());
@@ -2427,28 +2429,6 @@
   }
   function ienakaOn() {
     return typeof KQ_IENAKA !== "undefined" && KQ_IENAKA.isOn();
-  }
-  /* 見積書に足す光の要約。A4 2枚に収めるため、明細ではなく数行にとどめる。
-   * 光の明細が要るときは、イエナカ見積もり（単体）で別紙にする。 */
-  /* 見積書に足す光の行。標準の月額だけを載せて、世帯の合計が分かるようにする。
-   * 工事費・初期費用・お支払いの推移といった中身は「光のみ（別紙）」で出す。 */
-  function ienakaSheetHtml(phoneMonthly, setWari) {
-    var r = KQ_IENAKA.calc();
-    var last = r.segs[r.segs.length - 1];
-    var h = '<table class="sheet-hikari"><tbody>';
-    h += '<tr class="head"><td colspan="2">ドコモ光・home 5G</td></tr>';
-    h += "<tr><td>" + esc(KQ_IENAKA.label()) + '</td><td class="amt">'
-      + yen(last.monthly) + "</td></tr>";
-    h += '<tr class="total"><td>世帯の月額合計（スマホ＋光）</td><td class="amt">'
-      + yen(phoneMonthly + last.monthly) + "</td></tr>";
-    h += "</tbody></table>";
-    h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">'
-      + "※ 光の月額は標準のお支払い額です。初期費用・工事費・お支払いの推移は<b>別紙のお見積書</b>でご案内します。"
-      + (setWari > 0
-        ? "ドコモ光／home 5G セット割（" + yen(setWari) + "/月）は、上のスマホの月額から既に差し引いています。"
-        : "スマホ側で「ドコモ光／home 5G セット割」を選んでいません。対象の場合は③割引でご確認ください。")
-      + "</p>";
-    return h;
   }
   /* 開通までの流れ（A4・1枚）。お客様へお渡しする説明用の紙 */
   function flowOnlySheet() {
@@ -7192,6 +7172,16 @@
       $("sheetBody").innerHTML = flowOnlySheet();
       return;
     }
+    /* 光のみ（イエナカ単体の見積書）も同じく、まるごと差し替える。
+     * 店頭は両面印刷なので、裏面（2ページ目）に「開通までの流れ」を付けて
+     * 紙1枚で表＝金額・裏＝段取り、の形で渡せるようにする。 */
+    if (sheetScope === "ienaka" && ienakaOn()) {
+      $("sheetBody").innerHTML = ienakaOnlySheet(r.dSet || 0)
+        + '<div class="sheet-page2">'
+        + '<div class="page2-note no-print">――― 印刷時はここから2ページ目（裏面・開通までの流れ） ―――</div>'
+        + flowOnlySheet() + "</div>";
+      return;
+    }
     var today = new Date();
     var dateStr = today.getFullYear() + "年" + (today.getMonth() + 1) + "月" + today.getDate() + "日";
     var procLabel = procName(state.procType);
@@ -7345,12 +7335,8 @@
         + "※ 現在のお支払いは、お客様のご請求内訳（当月分）の読み取り値です。"
         + "通話料・日割り・期間限定の割引などにより、通常月のお支払いとは異なる場合があります。</p>";
     }
-    /* 「スマホ＋光」のときだけ、ここに世帯の合計を出す。
-     * 別紙のときは光の基本料をスマホの見積もりに含めない。
+    /* 別紙のときは光の基本料をスマホの見積もりに含めない。
      * スマホの月額はドコモの請求と一致させ、光は別の請求として別紙で案内するため。 */
-    if (sheetScope === "both" && ienakaOn()) {
-      h += ienakaSheetHtml(seg0.monthly, r.dSet || 0);
-    }
     if (sheetScope === "hikari" && ienakaOn()) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">'
         + "※ " + esc(KQ_IENAKA.label()) + "のお見積もりは<b>別紙</b>でご案内します。"
