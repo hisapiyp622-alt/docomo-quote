@@ -31,15 +31,17 @@ const DOMAIN = "frontalk.curacon.co.jp";
 /* 階層が変わることで直す必要のある参照。
  * from が1つも無かった場合はエラーで止める（黙って壊れるのを防ぐ）。 */
 const REWRITES = [
-  // ケータイはルートへ移るので、隣を指していた相対パスを1つ浅くする
+  /* 「イエナカ単体版 →」の行き先。単体版は出荷しない（2026-08-20）ため実体は無いが、
+   * リンク自体は app.js が製品版では隠すので、参照だけ無害な形に直しておく。
+   * ★ 単体版を出荷に戻すときは、下の「単体版を戻すとき」ブロックも戻すこと。 */
   { file: "index.html", from: '"../ienaka-app/"', to: '"ienaka-app/"' },
-  // イエナカから見たケータイは、1つ上（ルート）になる
-  { file: "ienaka-app/index.html", from: '"../keitai-app/"', to: '"../"' },
-  { file: "ienaka-app/index.html", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
-  { file: "ienaka-app/sw.js", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
   // デモは /demo/ に移るが、qr.js はルートにある
   { file: "demo/index.html", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
 ];
+/* 単体版を戻すとき: 上の REWRITES に次の3行を足し、下の copyDir の注記の行を戻す
+ *   { file: "ienaka-app/index.html", from: '"../keitai-app/"', to: '"../"' },
+ *   { file: "ienaka-app/index.html", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
+ *   { file: "ienaka-app/sw.js", from: '"../keitai-app/qr.js"', to: '"../qr.js"' }, */
 
 /* 出荷物に残っていてはいけない参照。1つでもあれば止める。
  * （引用符つきのものだけを見るので、日本語コメント中の説明は引っかからない） */
@@ -80,8 +82,8 @@ const SKIP = ["mitsumorin-hello.png", "mitsumorin-sheet.png"].concat(OCR ? [] : 
 
 // 1) ケータイ（製品版）をルートへ
 copyDir(path.join(ROOT, "keitai-app"), OUT, SKIP);
-// 2) イエナカ単体（製品版）
-copyDir(path.join(ROOT, "ienaka-app"), path.join(OUT, "ienaka-app"));
+// 2) イエナカ単体は出荷しない（2026-08-20 販売方針。阪南の社内版 /ienaka/ は原本のまま動き続ける）
+//    戻すとき: copyDir(path.join(ROOT, "ienaka-app"), path.join(OUT, "ienaka-app"));
 // 3) 営業用デモ（アドレスを短く /demo/ に）
 copyDir(path.join(ROOT, "ienaka-demo"), path.join(OUT, "demo"));
 
@@ -115,12 +117,11 @@ ${DOMAIN} で配信するための入れ物です。
 | アドレス | 中身 |
 |---|---|
 | https://${DOMAIN}/ | 製品版（店舗IDとパスワードでログイン） |
-| https://${DOMAIN}/ienaka-app/ | イエナカ単体版 |
 | https://${DOMAIN}/demo/ | 営業用デモ（ログイン不要） |
 
 ## 直すときは原本のほうで
 
-原本は \`docomo-quote\` リポジトリです。そちらの \`keitai-app/\` \`ienaka-app/\`
+原本は \`docomo-quote\` リポジトリです。そちらの \`keitai-app/\`
 \`ienaka-demo/\` を直したあと、\`node tools/build-product.js\` を実行して
 できた中身をこのリポジトリへ反映します。
 

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.110.0";
+  var APP_VERSION = "1.111.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -8506,6 +8506,11 @@
   function initIenakaLink() {
     var a = $("toIenaka");
     if (!a) return;
+    /* イエナカ単体版は製品の提供内容から外した（2026-08-20）。
+     * 社内版は /ienaka/ がこれまでどおり動くので、リンクは社内版だけに出す。
+     * ★ 単体版を製品に戻すときは、次の2行を消し、tools/build-product.js の
+     *   同梱も戻す（あちらにも目印コメントがある）。 */
+    if (!INTERNAL) { a.hidden = true; return; }
     a.addEventListener("click", function () {
       var st = activeStaff();
       try {
