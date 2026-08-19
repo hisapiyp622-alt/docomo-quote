@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.109.0";
+  var APP_VERSION = "1.110.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -20,6 +20,12 @@
    *   ・精度を上げてから戻すなら keitai-app/ocr/README.md の「精度を上げる案」を見る
    * 貼り付け（iPadの「テキストをスキャン」・写真からのコピー）は、切っていても使える。 */
   var OCR_ON = false;
+
+  /* ---------- 「現在のお支払い（請求内訳の読み取り）」の入・切 ----------
+   * 2026-08-18 商品化にあたり、いったん画面から外した（機能は残してある）。
+   * ★ 戻すときは、この1行を true にするだけでよい。
+   *   （社内版だけ戻すなら INTERNAL にする） */
+  var CUR_BILL_ON = false;
 
   /* 社内版（当方の店舗用・リポジトリ直下）から読み込まれたときの印。
    * 社内版は店舗ログインを使わず、データの置き場（localStorageの接頭辞 dq と
@@ -6303,6 +6309,7 @@
   }
   // 読み取った請求内訳の月額合計（比較に使う数字）。読み取りが無ければ0
   function curBillTotal(st) {
+    if (!CUR_BILL_ON) return 0;  // 切のときは比較も見積書の欄もすべて出ない
     var b = st && st.curBill;
     if (!b || !b.lines || !b.lines.length) return 0;
     var t = 0;
@@ -6445,6 +6452,11 @@
   }
 
   function initCurBill() {
+    if (!CUR_BILL_ON) {
+      var card = $("curBillCard");
+      if (card) card.hidden = true;
+      return;
+    }
     var openBtn = $("curBillOpenBtn"), clearBtn = $("curBillClearBtn"),
         wrap = $("curBillWrap"), box = $("curBillBox"),
         go = $("curBillGo"), cancel = $("curBillCancel"),
