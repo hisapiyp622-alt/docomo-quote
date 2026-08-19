@@ -5,7 +5,7 @@
  * が有効になります。
  *
  * 空のままでも、その端末の中だけで完結する形でそのまま使えます（設定不要）。
- * 手順はリポジトリの _internal/SETUP.md を参照してください。
+ * 手順は非公開リポジトリ docomo-quote-internal の SETUP.md を参照してください。
  * ここに書く値は公開されても問題ないもので、データの保護は
  * Firestoreのセキュリティルール（firestore.rules）で行います。 */
 var KEITAI_FIREBASE = {

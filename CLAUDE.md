@@ -2,6 +2,10 @@
 
 > **このリポジトリを初めて触る場合は、先に `HANDOVER.md`（引き継ぎ指示書）を読んでください。**
 > 経緯・現状・やってはいけないことがまとまっています。
+>
+> **販売・契約・運用の文書は、非公開リポジトリ `docomo-quote-internal` にあります。**
+> そちらの `HANDOFF.md` が最新の作業状況です。このリポジトリは public なので、
+> 分配率・営業メモ・契約の中身・連絡先は**ここには書かないでください**。
 
 ## 説明のしかた（ユーザーへの回答）
 
@@ -60,7 +64,8 @@
 | `/ienaka-app/` | `ienaka-app/` |
 | `/demo/` | `ienaka-demo/` |
 
-- `_internal/`・社内版・`tools`・`tests` は入らない。阪南の社内版は原本のまま動き続ける
+- 社内版・`tools`・`tests` は入らない。阪南の社内版は原本のまま動き続ける
+- 社内文書（分配率・営業メモ・契約）は 非公開リポジトリ `docomo-quote-internal` にある。**このリポジトリは public なので書かない**
 - `ocr/`（14MB）は `keitai-app/app.js` の `OCR_ON` が `true` のときだけ同梱
 - 階層が変わるぶん相対パスを書き換えている（`tools/build-product.js` の `REWRITES`）。
   **書き換え漏れは本番でだけ404になる**ので、`keitai-app/index.html` や `ienaka-app/` の

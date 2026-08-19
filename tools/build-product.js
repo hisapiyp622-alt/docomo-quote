@@ -14,7 +14,8 @@
  *   /CNAME           → 独自ドメイン名（GitHub Pages がこれを読む）
  *
  * ── 入れないもの ──────────────────────────────
- *   _internal/（社内文書）・社内版・tools・tests・dakkan-app・ienaka-tiles
+ *   社内版・tools・tests・dakkan-app・ienaka-tiles
+ *   （社内文書は非公開リポジトリ docomo-quote-internal へ移設済み）
  *
  * ケータイとイエナカは相対パスで参照し合っているため、
  * 階層を変えるぶんだけ書き換えます（下の REWRITES）。

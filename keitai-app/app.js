@@ -3735,7 +3735,7 @@
    *   status: "trial"=お試し（trialEndsAt まで）／ "active"=本契約 ／ "suspended"=停止
    * ドキュメントが無い店舗は従来どおり動く（既存店舗を壊さないため）。
    * オフラインでも効くように、最後に読めた内容を端末に控えて起動時はそれを使う。
-   * 手順は _internal/OPERATIONS.md「契約の器」を参照。 */
+   * 手順は非公開リポジトリ docomo-quote-internal の OPERATIONS.md「契約の器」を参照。 */
   var CONTRACT_KEY = NS + "-contract-v1";
   var contractInfo = null;   // { uid, status, trialEndsAt(ms), fetchedAt }
   function loadContractCache() {
