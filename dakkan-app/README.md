@@ -3,7 +3,7 @@
 店頭で「いまお使いの他社のネット回線から、ドコモ光・home 5G に乗り換えたらどうなるか」を、
 その場で数字にして **A4 1枚** にしてお渡しするためのアプリです。
 
-- 指示書: `_internal/DAKKAN_SPEC.md`
+- 指示書: 非公開リポジトリ `docomo-quote-internal` の `DAKKAN_SPEC.md`
 - サーバー処理なし。HTML・CSS・素のJavaScriptだけで動きます（ビルド不要）
 
 ## 画面
