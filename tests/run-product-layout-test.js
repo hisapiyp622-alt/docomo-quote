@@ -41,7 +41,6 @@ function serve() {
 /* 開く場所と、そこで必ず読み込まれていてほしいファイル */
 const PAGES = [
   { name: '製品版ケータイ', url: '/', want: ['/app.js', '/style.css', '/qr.js', '/data.js', '/ienaka.js'] },
-  { name: '製品版イエナカ単体', url: '/ienaka-app/', want: ['/ienaka-app/app.js', '/qr.js'] },
   { name: '営業用デモ', url: '/demo/', want: ['/demo/app.js', '/qr.js'] }
 ];
 
@@ -78,19 +77,15 @@ const PAGES = [
     await page.close();
   }
 
-  /* 相手側へのリンクが、移した後の階層で正しい先を指しているか */
-  const linkChecks = [
-    { file: 'index.html', id: 'toIenaka', want: '/ienaka-app/' },
-    { file: 'ienaka-app/index.html', id: 'toKeitai', want: '/' }
-  ];
-  for (const c of linkChecks) {
+  /* イエナカ単体版は出荷しないので、案内リンクが製品版で隠れていること（2026-08-20〜） */
+  {
     const page = await ctx.newPage();
     await page.route('**/*', (route) => (route.request().url().includes('gstatic.com') ? route.abort() : route.continue()));
-    await page.goto(base + '/' + c.file.replace(/index\.html$/, ''), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#' + c.id, { timeout: 5000 }).catch(() => {});
-    const href = await page.$eval('#' + c.id, (a) => a.href).catch((e) => { problems.push(`${c.file}: #${c.id} を読めません ${e.message}`); return null; });
-    if (!href) problems.push(`${c.file}: #${c.id} のリンクが見つかりません`);
-    else if (new URL(href).pathname !== c.want) problems.push(`${c.file}: #${c.id} の行き先が ${new URL(href).pathname}（${c.want} のはず）`);
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    const vis = await page.$eval('#toIenaka', (a) => !a.hidden && getComputedStyle(a).display !== 'none').catch(() => null);
+    if (vis === null) problems.push('index.html: #toIenaka が見つかりません（作りが変わったらこの確認も見直す）');
+    else if (vis) problems.push('index.html: 「イエナカ単体版 →」リンクが製品版で見えている（単体版は出荷していないので404になる）');
     await page.close();
   }
 
@@ -100,7 +95,7 @@ const PAGES = [
   function get(u) {
     return new Promise((resolve) => http.get(u, (r) => { r.resume(); resolve(r.statusCode); }).on('error', () => resolve(0)));
   }
-  for (const sw of ['sw.js', 'ienaka-app/sw.js']) {
+  for (const sw of ['sw.js']) {
     const src = fs.readFileSync(path.join(OUT, sw), 'utf8');
     const m = src.match(/var ASSETS\s*=\s*\[([\s\S]*?)\]/);
     if (!m) { problems.push(`${sw}: ASSETS の一覧が読めません`); continue; }
