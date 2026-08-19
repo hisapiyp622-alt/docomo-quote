@@ -2407,7 +2407,7 @@
    *   phone  … スマホのみ（2枚）
    *   hikari … スマホの見積書はそのままに、光の明細を3枚目の別紙として付ける（3枚）
    *              光の基本料はスマホの月額に含めない（請求が分かれるため）
-   *   ienaka … 光のみ（イエナカ単体の見積書・1枚）
+   *   ienaka … 光のみ（イエナカ単体の見積書。裏面に開通までの流れ＝両面1枚）
    * 「スマホ＋光（世帯の合計）」は 1.112.0 でやめた。請求が分かれるものを
    * 1つの合計で見せると、ドコモの請求額と合わず店頭で説明に困るため。 */
   /* 郵便番号が要る受付か（光・でんき・ガスは住所での登録が要る） */
@@ -7172,9 +7172,14 @@
       $("sheetBody").innerHTML = flowOnlySheet();
       return;
     }
-    // 光のみ（イエナカ単体の見積書・1枚）も同じく、まるごと差し替える
+    /* 光のみ（イエナカ単体の見積書）も同じく、まるごと差し替える。
+     * 店頭は両面印刷なので、裏面（2ページ目）に「開通までの流れ」を付けて
+     * 紙1枚で表＝金額・裏＝段取り、の形で渡せるようにする。 */
     if (sheetScope === "ienaka" && ienakaOn()) {
-      $("sheetBody").innerHTML = ienakaOnlySheet(r.dSet || 0);
+      $("sheetBody").innerHTML = ienakaOnlySheet(r.dSet || 0)
+        + '<div class="sheet-page2">'
+        + '<div class="page2-note no-print">――― 印刷時はここから2ページ目（裏面・開通までの流れ） ―――</div>'
+        + flowOnlySheet() + "</div>";
       return;
     }
     var today = new Date();
