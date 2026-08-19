@@ -51,10 +51,13 @@
 Curaconが握れる形にしておくべきで、**URLの変更は各店舗の端末のデータが切れるため、
 1店舗目を売ったあとにはできません。** 販売開始前の今だけ動かせます。
 
-- [ ] **独自ドメイン名を決めて取得する**（Curacon名義推奨。例: mitsumorin.jp など。決まれば設定作業は安藤さん側でやります）
-- [ ] **CuraconのGoogleアカウント**（Firebase管理用）を用意して安藤さんに伝える → Firebaseプロジェクト `keitai-quote` のオーナーに追加します
-- [ ] **CuraconのGitHubアカウント名**を安藤さんに伝える → リポジトリの権限を付与します（Organization化もこのタイミングで判断）
-- [ ] レンタルサーバーへの移管は**できません**（Firebaseは移せない構成のため）。「独自ドメイン＋管理権限の共有」が正解です
+- [x] **独自ドメインの取得**（2026-08-18 完了）… `frontalk.curacon.co.jp`。Curacon名義の `curacon.co.jp` のサブドメイン。
+      配信は GitHub Pages（`hisapiyp622-alt/frontalk`・安藤さん名義）。中身は原本から `node tools/build-product.js` で生成する
+- [x] **CuraconのGoogleアカウント**（Firebase管理用）を受領（2026-08-19・小川さんより）。
+      → 次: Firebaseプロジェクト `keitai-quote` の IAM にオーナーとして追加する（**安藤さんのコンソール操作**）
+      ※ アドレスはこのリポジトリが public のためここには書かない（④の非公開リポジトリ移行後に記載する）
+- [ ] **CuraconのGitHubアカウント名**を安藤さんに伝える → `docomo-quote` と `frontalk` の権限を付与します（Organization化もこのタイミングで判断）
+- [ ] レンタルサーバーへの移管はしない（Firebaseが移せないため）。「独自ドメイン＋管理権限の共有」で対応済み
 
 ### 1-C. Firebaseの有料プラン（Blaze）への切り替えを決める
 
