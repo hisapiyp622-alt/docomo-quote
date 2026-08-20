@@ -60,6 +60,14 @@
     return v;
   }
 
+  /* いま採用されている申込区分。
+   * ①で担当者が選べるようにしたので、回線の種類からの提案（lineType().apply）ではなく
+   * イエナカ側の実際の値を見る。イエナカ側が未設定のときだけ提案値へ戻す。 */
+  function applyNow() {
+    var ie = env.ienakaState ? env.ienakaState() : null;
+    return (ie && ie.applyType) || lineType().apply;
+  }
+
   function defaultState() {
     return {
       lineType: "collabo",
@@ -124,11 +132,14 @@
   function syncDefaultsForHousing() {
     if (!state) return;
     var c = carrier();
-    if (!c || state.renewal === "renewal") return;
-    var other = housingKey() === "ht" ? "ms" : "ht";
-    function otherOf(v) { return v && typeof v === "object" ? v[other] : null; }
-    if (state.penalty == null || state.penalty === otherOf(c.penalty)) state.penalty = byHousing(c.penalty);
-    if (lineType().removal && (state.removal == null || state.removal === otherOf(c.removal))) state.removal = byHousing(c.removal);
+    if (c && state.renewal !== "renewal") {
+      var other = housingKey() === "ht" ? "ms" : "ht";
+      var otherOf = function (v) { return v && typeof v === "object" ? v[other] : null; };
+      if (state.penalty == null || state.penalty === otherOf(c.penalty)) state.penalty = byHousing(c.penalty);
+      if (lineType().removal && (state.removal == null || state.removal === otherOf(c.removal))) state.removal = byHousing(c.removal);
+    }
+    /* 会社を選んでいなくても、①の住居タイプ・申込区分の表示はイエナカ側に合わせ直す。
+     * （以前はここで早期 return していたため、表示が古いまま残っていた） */
     syncForm();
   }
 
@@ -197,8 +208,8 @@
     }
     outRow(lt.zansaiLabel, state.zansai);
     if (lt.removal) outRow("撤去工事費", state.removal);
-    if (lt.apply === "jigyosha") outRow("事業者変更承諾番号の発行手数料", state.numberFee);
-    if (lt.apply === "tenyo") outRow("転用承諾番号の発行手数料", state.numberFee);
+    if (applyNow() === "jigyosha") outRow("事業者変更承諾番号の発行手数料", state.numberFee);
+    if (applyNow() === "tenyo") outRow("転用承諾番号の発行手数料", state.numberFee);
 
     var outTotal = 0;
     outRows.forEach(function (r) { if (!r.pending) outTotal += r.amount; });
@@ -323,7 +334,7 @@
 
     return {
       lineTypeName: lt.name, carrierName: carrierLabel(),
-      applyType: suggest().applyType, koji: suggest().koji,
+      applyType: applyNow(), koji: suggest().koji,
       nowSvc: nowSvc, newSvc: newSvc, newProduct: ie2 && window.KQ_IENAKA.label ? window.KQ_IENAKA.label() : "ドコモ光",
       nowMonthly: nowMonthly, nowIsRef: nowIsRef,
       newMonthly: newMonthly, newFirst: newFirst, segs: segs,
@@ -381,8 +392,13 @@
     $("dkZansai").value = state.zansai == null ? "" : state.zansai;
     $("dkRemovalField").hidden = !lt.removal;
     $("dkRemoval").value = state.removal == null ? "" : state.removal;
-    $("dkNumberFeeField").hidden = !(lt.apply === "jigyosha" || lt.apply === "tenyo");
-    $("dkNumberFeeLabel").textContent = lt.apply === "tenyo" ? "転用承諾番号の発行手数料" : "事業者変更承諾番号の発行手数料";
+    /* 住居タイプ・申込区分はイエナカ側が正。ここは表示を合わせるだけで、
+     * 変更は bind() から pickIenaka() でイエナカ側の入力欄を操作して反映する。 */
+    var ieS = env.ienakaState ? env.ienakaState() : null;
+    if ($("dkHousing")) $("dkHousing").value = (ieS && ieS.housing) || "ht";
+    if ($("dkApplyType")) $("dkApplyType").value = applyNow();
+    $("dkNumberFeeField").hidden = !(applyNow() === "jigyosha" || applyNow() === "tenyo");
+    $("dkNumberFeeLabel").textContent = applyNow() === "tenyo" ? "転用承諾番号の発行手数料" : "事業者変更承諾番号の発行手数料";
     $("dkNumberFee").value = state.numberFee == null ? "" : state.numberFee;
     $("dkMemo").value = state.memo || "";
     var sv = state.services || {};
@@ -393,6 +409,8 @@
     $("dkHikariSetWari").value = state.hikariSetWari === "" || state.hikariSetWari == null ? "" : state.hikariSetWari;
     $("dkDcardWari").value = state.dcardWari === "" || state.dcardWari == null ? "" : state.dcardWari;
     $("dkNorikae").checked = state.norikaeTokuten !== false;
+    /* eo光のときだけ「料金表から選ぶ」を出す */
+    if ($("dkEoOpen")) $("dkEoOpen").hidden = !(state.carrierId === "eo" && eoData());
     var c = carrier(), info = "";
     if (c && c.note) info += '<span class="dk-note">' + esc(c.note) + "</span>";
     if (c && (c.tel || c.url)) {
@@ -410,7 +428,7 @@
 
     /* 申込区分の提案 */
     $("dkApplyNote").innerHTML = "ドコモ側の申込区分は <b>" + esc(APPLY_LABEL[r.applyType] || r.applyType) + "</b> になります。"
-      + "（「ドコモにした場合」タブの①で変更できます）";
+      + "（上の「ドコモ側の申込区分」で変更できます）";
 
     /* ④ 比べる ― 出す数字は3つだけ */
     var h = '<div class="big-monthly">';
@@ -457,6 +475,95 @@
       : (r.diff > 0 ? "月々 " + yen(r.diff) + " 安くなります" : r.diff === 0 ? "月々のお支払いは同額です" : "月々 " + yen(-r.diff) + " 上がります");
   }
 
+
+  /* ---------- eo光の料金表から選ぶ ----------
+   * 請求書がお手元に無いお客様でも、ご契約の内容から月額を拾って
+   * ①の「月々のお支払い」に入れられるようにしたもの。
+   * 表はホームタイプ／メゾンタイプのみ。マンションタイプは物件ごとに異なるため注意書きを出す。 */
+  var eoPick = null;                         // { setId, course, tv, wari }
+  function eoData() { return DATA().eoPlans || null; }
+  function eoSetDef(id) {
+    var d = eoData(), i;
+    if (!d) return null;
+    for (i = 0; i < d.sets.length; i++) if (d.sets[i].id === id) return d.sets[i];
+    return d.sets[0];
+  }
+  /* ①の「いま含まれているもの」から、料金表の構成を推測する */
+  function eoGuessSet() {
+    var sv = (state && state.services) || {};
+    var net = sv.net !== false, tel = !!sv.tel, tv = !!(sv.tv || sv.cs);
+    if (net && tel && tv) return "netTelTv";
+    if (net && tv) return "netTv";
+    if (net && tel) return "netTel";
+    if (net) return "net";
+    if (tel && tv) return "telTv";
+    if (tv) return "tv";
+    return "net";
+  }
+  function eoGuessTv() { var sv = (state && state.services) || {}; return sv.cs ? "basic" : "chideji"; }
+  /* 構成ごとに price の引き方が変わる */
+  function eoValues(d, pick, def) {
+    var row = d.price[pick.setId];
+    if (!row) return null;
+    if (def.net && def.tv) return row[pick.course] ? row[pick.course][pick.tv] : null;
+    if (def.net) return row[pick.course] || null;
+    if (def.tv) return row[pick.tv] || null;
+    return null;
+  }
+  function openEoPicker() {
+    var d = eoData();
+    if (!d) return;
+    eoPick = { setId: eoGuessSet(), course: "1g", tv: eoGuessTv(), wari: "soku" };
+    $("dkEoSet").innerHTML = d.sets.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>"; }).join("");
+    $("dkEoCourse").innerHTML = d.courses.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>"; }).join("");
+    $("dkEoTv").innerHTML = d.tvCourses.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>"; }).join("");
+    $("dkEoLead").textContent = d.lead || "";
+    $("dkEoSrc").textContent = d.src ? "出典: " + d.src : "";
+    $("dkEoNotes").innerHTML = (d.notes || []).map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("");
+    $("dkEoModal").hidden = false;
+    renderEoPicker();
+  }
+  function closeEoPicker() { $("dkEoModal").hidden = true; }
+  function renderEoPicker() {
+    var d = eoData();
+    if (!d || !eoPick) return;
+    var def = eoSetDef(eoPick.setId);
+    $("dkEoSet").value = eoPick.setId;
+    $("dkEoCourse").value = eoPick.course;
+    $("dkEoTv").value = eoPick.tv;
+    $("dkEoWari").value = eoPick.wari;
+    $("dkEoCourseField").hidden = !def.net;
+    $("dkEoTvField").hidden = !def.tv;
+
+    var ie = env.ienakaState ? env.ienakaState() : null;
+    var msg = "";
+    if (ie && ie.housing && ie.housing !== "ht") {
+      msg = "この料金表はホームタイプ／メゾンタイプのものです。マンションタイプは物件ごとに料金が異なるため、請求書・マイページの金額を入力してください。";
+    } else if (eoPick.wari === "normal" && (def.tel || def.tv)) {
+      msg = "通常料金（即割なし）はeo光ネット分だけが公表されています。電話・テレビを含むご契約は請求額を入力してください。";
+    }
+    $("dkEoWarn").hidden = !msg;
+    $("dkEoWarn").textContent = msg;
+
+    var periods, vals;
+    if (eoPick.wari === "normal") {
+      if (!def.net) { $("dkEoTable").innerHTML = '<p class="hint">この構成には通常料金の記載がありません。</p>'; return; }
+      periods = d.normal.periods; vals = d.normal[eoPick.course];
+    } else {
+      periods = d.periods; vals = eoValues(d, eoPick, def);
+    }
+    if (!vals) { $("dkEoTable").innerHTML = '<p class="hint">該当する料金が見つかりません。</p>'; return; }
+    var h = '<div class="dk-eo-grid">';
+    periods.forEach(function (label, i) {
+      var v = vals[i];
+      /* 0円の欄（電話・テレビのみの構成のご利用開始月）は請求額として使えないので選べなくする */
+      h += '<button class="dk-eo-cell" type="button"' + (v ? ' data-eov="' + v + '"' : " disabled") + ">"
+        + '<span class="p">' + esc(label) + "</span>"
+        + '<span class="v">' + (v ? esc(yen(v)) : "—") + "</span></button>";
+    });
+    $("dkEoTable").innerHTML = h + "</div>";
+  }
+
   /* ---------- イベント登録（1回だけ） ---------- */
   function bind() {
     $("dkLineType").addEventListener("change", function () {
@@ -467,12 +574,52 @@
       if (window.KQ_DAKKAN.onSuggest) window.KQ_DAKKAN.onSuggest(suggest());
       syncForm(); recalc();
     });
+    /* 住居タイプ。イエナカ側の入力欄を操作して change を起こす。
+     * 他社の違約金・撤去費の入れ直し（syncDefaultsForHousing）は
+     * イエナカ側の変更通知から呼ばれるので、ここでは呼ばない。 */
+    $("dkHousing").addEventListener("change", function () {
+      if (env.pickIenaka) env.pickIenaka("ieHousing", this.value);
+      syncForm(); recalc();
+    });
+    /* 申込区分。回線の種類からの提案を担当者が上書きできる */
+    $("dkApplyType").addEventListener("change", function () {
+      var v = this.value, c = carrier();
+      state.applyTouched = true;
+      if (env.pickIenaka) env.pickIenaka("ieApplyType", v);
+      /* 承諾番号の手数料は申込区分で要否が変わる。
+       * 事業者変更・転用へ切り替えたときは会社の目安を入れ直す */
+      if ((v === "jigyosha" || v === "tenyo") && state.numberFee == null && c && c.numberFee != null) {
+        state.numberFee = c.numberFee;
+      }
+      syncForm(); recalc();
+    });
     $("dkCarrier").addEventListener("change", function () {
       state.carrierId = this.value;
       applyCarrierDefaults();
       syncForm(); recalc();
     });
     $("dkCarrierName").addEventListener("input", function () { state.carrierName = this.value; recalc(); });
+    /* eo光の料金表 */
+    $("dkEoOpen").addEventListener("click", openEoPicker);
+    $("dkEoClose").addEventListener("click", closeEoPicker);
+    $("dkEoModal").addEventListener("click", function (ev) { if (ev.target === this) closeEoPicker(); });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && !$("dkEoModal").hidden) closeEoPicker();
+    });
+    [["dkEoSet", "setId"], ["dkEoCourse", "course"], ["dkEoTv", "tv"], ["dkEoWari", "wari"]].forEach(function (pr) {
+      $(pr[0]).addEventListener("change", function () {
+        if (!eoPick) return;
+        eoPick[pr[1]] = this.value;
+        renderEoPicker();
+      });
+    });
+    $("dkEoTable").addEventListener("click", function (ev) {
+      var b = ev.target && ev.target.closest ? ev.target.closest("[data-eov]") : null;
+      if (!b) return;
+      state.monthly = num(b.getAttribute("data-eov"));
+      closeEoPicker();
+      syncForm(); recalc();
+    });
     $("dkMonthly").addEventListener("input", function () { state.monthly = this.value; recalc(); });
     $("dkOptMonthly").addEventListener("input", function () { state.optMonthly = this.value; recalc(); });
     $("dkSetWari").addEventListener("change", function () {

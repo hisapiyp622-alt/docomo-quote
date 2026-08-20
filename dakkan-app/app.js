@@ -11,7 +11,7 @@
  */
 (function () {
   "use strict";
-  var APP_VERSION = "1.2.1";
+  var APP_VERSION = "1.3.0";
   var KEY = "dk-state-v1";
   var CFG_KEY = "dk-config-v1";
   var MASTER_KEY = "dk-master-v1";
@@ -539,7 +539,10 @@
 
   window.KQ_IENAKA.attach(store.ienaka, onIenakaChange);
   window.KQ_DAKKAN.attach(store.dakkan, onDakkanChange, {
-    ienakaState: function () { return store.ienaka; }
+    ienakaState: function () { return store.ienaka; },
+    /* ①の住居タイプ・申込区分から、イエナカ側の入力欄を操作して change を起こす。
+     * 直接 store.ienaka を書かないのは、下の pick() のコメントと同じ理由 */
+    pickIenaka: function (id, value) { pick(id, value); }
   });
   /* 回線の種類から、ドコモ側の申込区分・商材を提案する（担当者はイエナカ側で変更できる） */
   /* 状態を直接書き換えず、イエナカ側の入力欄を操作して change を起こす。
@@ -568,6 +571,12 @@
   };
   window.KQ_IENAKA.bind();
   window.KQ_DAKKAN.bind();
+  /* まっさらな商談のときだけ、回線の種類からの申込区分の提案をイエナカ側へそろえる。
+   * 入力済みの商談では担当者の選択を上書きしないよう、既定値のときに限る。 */
+  if (window.KQ_DAKKAN.onSuggest && !store.dakkan.applyTouched
+      && JSON.stringify(store.dakkan) === JSON.stringify(window.KQ_DAKKAN.defaultState())) {
+    window.KQ_DAKKAN.onSuggest(window.KQ_DAKKAN.suggest());
+  }
 
   $("appVersion").textContent = APP_VERSION;
   renderStaffSelect();

@@ -50,6 +50,23 @@
             <select id="dkLineType"></select>
           </div>
           <div class="field">
+            <label for="dkHousing">住居タイプ</label>
+            <select id="dkHousing">
+              <option value="ht">戸建</option>
+              <option value="ms">マンション</option>
+              <option value="ms100">マンション（100M）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="dkApplyType">ドコモ側の申込区分</label>
+            <select id="dkApplyType">
+              <option value="jigyosha">事業者変更（他社光コラボから・工事不要）</option>
+              <option value="tenyo">転用（フレッツ光から・工事不要）</option>
+              <option value="shinki">新規（工事あり）</option>
+            </select>
+          </div>
+          <p class="hint" id="dkHousingNote">住居タイプは他社の標準月額・違約金の目安と、ドコモ光の料金の両方に効きます。申込区分は回線の種類から自動で入りますが、ここで変更できます（「ドコモにした場合」タブと連動します）。</p>
+          <div class="field">
             <label for="dkCarrier">ご利用中の会社</label>
             <select id="dkCarrier"></select>
           </div>
@@ -73,6 +90,7 @@
             <input type="number" id="dkMonthly" inputmode="numeric" placeholder="例）6600">
           </div>
           <p class="hint">請求書の<strong>合計額をそのまま</strong>入力してください（内訳は不要です）。</p>
+          <button class="btn-sub" id="dkEoOpen" type="button" hidden>eo光の料金表から選ぶ</button>
           <div class="field">
             <label for="dkOptMonthly">うちオプション分（任意）</label>
             <input type="number" id="dkOptMonthly" inputmode="numeric" placeholder="例）550">
@@ -420,6 +438,30 @@
   </form>
 </div>
 
+<!-- eo光の料金表から選ぶ（請求書がお手元に無いお客様向け） -->
+<div class="dk-modal" id="dkEoModal" hidden>
+  <div class="dk-modal-box" role="dialog" aria-modal="true" aria-labelledby="dkEoTitle">
+    <div class="dk-modal-head">
+      <h2 id="dkEoTitle">eo光の料金表から選ぶ</h2>
+      <button class="dk-modal-close" id="dkEoClose" type="button" aria-label="閉じる">×</button>
+    </div>
+    <p class="hint" id="dkEoLead"></p>
+    <p class="dk-eo-warn" id="dkEoWarn" hidden></p>
+    <div class="dk-eo-picks">
+      <label class="dkm-f"><span>ご契約の内容</span><select id="dkEoSet"></select></label>
+      <label class="dkm-f" id="dkEoCourseField"><span>コース</span><select id="dkEoCourse"></select></label>
+      <label class="dkm-f" id="dkEoTvField"><span>テレビのコース</span><select id="dkEoTv"></select></label>
+      <label class="dkm-f"><span>割引</span><select id="dkEoWari">
+        <option value="soku">即割あり</option>
+        <option value="normal">即割なし（通常料金）</option>
+      </select></label>
+    </div>
+    <p class="hint dk-eo-tap">お客様のご利用期間にあたる金額を選んでください。①の「月々のお支払い」に入ります。</p>
+    <div id="dkEoTable"></div>
+    <ul class="hint dk-eo-notes" id="dkEoNotes"></ul>
+    <p class="hint dkm-src" id="dkEoSrc"></p>
+  </div>
+</div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
