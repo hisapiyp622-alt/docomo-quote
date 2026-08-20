@@ -54,6 +54,12 @@
     return ie.housing === "ht" ? "ht" : "ms";   // ms100 もマンション扱い
   }
   /* data.js の値は { ht, ms } でも数値でも書ける。住居タイプで解決する */
+  /* 他社側が10ギガのときは、10ギガの料金・違約金を使う。
+   * 10ギガの目安を持っていない会社では、これまでどおり通常の値を返す。 */
+  function has10g(c) { return !!(c && c.monthly10g); }
+  function curMonthlyDef(c) { return (state && state.is10g && c && c.monthly10g) ? c.monthly10g : (c ? c.monthly : null); }
+  function curPenaltyDef(c) { return (state && state.is10g && c && c.penalty10g) ? c.penalty10g : (c ? c.penalty : null); }
+
   function byHousing(v) {
     if (v == null) return null;
     if (typeof v === "object") return v[housingKey()] != null ? v[housingKey()] : null;
@@ -72,6 +78,7 @@
     return {
       lineType: "collabo",
       carrierId: "", carrierName: "",
+      is10g: false,        // 他社側が10ギガコースか（料金・違約金の目安が変わる）
       /* いまのご契約に含まれているもの。別紙の見出し「（ネット＋TEL＋TV＋CS）」に使う。
        * ドコモ側は「ドコモにした場合」で選んだオプションから自動で判定する */
       services: { net: true, tel: false, tv: false, cs: false },
@@ -124,7 +131,7 @@
       return;
     }
     if (state.penaltyKeep != null) { state.penalty = state.penaltyKeep; state.penaltyKeep = null; return; }
-    state.penalty = c ? byHousing(c.penalty) : null;
+    state.penalty = c ? byHousing(curPenaltyDef(c)) : null;
   }
 
   /* イエナカ側で住居タイプが変わったとき、他社の目安も戸建／マンションを入れ直す。
@@ -135,7 +142,7 @@
     if (c && state.renewal !== "renewal") {
       var other = housingKey() === "ht" ? "ms" : "ht";
       var otherOf = function (v) { return v && typeof v === "object" ? v[other] : null; };
-      if (state.penalty == null || state.penalty === otherOf(c.penalty)) state.penalty = byHousing(c.penalty);
+      if (state.penalty == null || state.penalty === otherOf(curPenaltyDef(c))) state.penalty = byHousing(curPenaltyDef(c));
       if (lineType().removal && (state.removal == null || state.removal === otherOf(c.removal))) state.removal = byHousing(c.removal);
     }
     /* 会社を選んでいなくても、①の住居タイプ・申込区分の表示はイエナカ側に合わせ直す。
@@ -182,8 +189,8 @@
     var nowMonthly = null, nowIsRef = false;
     if (!blank(state.monthly)) {
       nowMonthly = num(state.monthly);
-    } else if (c && byHousing(c.monthly) != null) {
-      nowMonthly = num(byHousing(c.monthly));   // 請求額が未入力のときだけ標準月額を参考表示
+    } else if (c && byHousing(curMonthlyDef(c)) != null) {
+      nowMonthly = num(byHousing(curMonthlyDef(c)));   // 請求額が未入力のときだけ標準月額を参考表示
       nowIsRef = true;
     } else {
       pending.push("いまのお支払い");
@@ -229,7 +236,8 @@
     /* 注意書き */
     var notes = [];
     if (nowIsRef) {
-      notes.push("いまのお支払いは、" + carrierLabel() + "の標準月額（" + (housingKey() === "ht" ? "戸建" : "マンション") + "）を参考に表示しています。請求書の金額を入力すると、そちらが優先されます。");
+      notes.push("いまのお支払いは、" + carrierLabel() + (state.is10g ? "・10ギガ" : "") + "の標準月額（"
+        + (housingKey() === "ht" ? "戸建" : "マンション") + "）を参考に表示しています。請求書の金額を入力すると、そちらが優先されます。");
     }
     if (!blank(state.optMonthly) && num(state.optMonthly) > 0) {
       notes.push("いまお支払いのうちオプション " + yen(num(state.optMonthly)) + "/月 は、乗り換え後に不要になる見込みです（上の比較には含めていません）。");
@@ -433,6 +441,19 @@
     $("dkHikariSetWari").value = state.hikariSetWari === "" || state.hikariSetWari == null ? "" : state.hikariSetWari;
     $("dkDcardWari").value = state.dcardWari === "" || state.dcardWari == null ? "" : state.dcardWari;
     $("dkNorikae").checked = state.norikaeTokuten !== false;
+    /* 10ギガの目安を持っている会社のときだけ「10ギガコースをご利用中」を出す */
+    var c10 = carrier();
+    if ($("dk10gField")) {
+      var show10 = has10g(c10);
+      $("dk10gField").hidden = !show10;
+      if (!show10 && state.is10g) state.is10g = false;
+      $("dk10g").checked = !!state.is10g;
+    }
+    if ($("dk10gHint")) {
+      var showH10 = has10g(c10) && state.is10g && c10.note10g;
+      $("dk10gHint").hidden = !showH10;
+      if (showH10) $("dk10gHint").textContent = c10.note10g;
+    }
     /* eo光のときだけ「料金表から選ぶ」を出す。
      * マンションは料金表の対象外なので、検索ページへの導線を併せて出す。 */
     var eoD = eoData(), isEo = state.carrierId === "eo" && !!eoD;
@@ -670,6 +691,12 @@
       syncForm(); recalc();
     });
     $("dkCarrierName").addEventListener("input", function () { state.carrierName = this.value; recalc(); });
+    $("dk10g").addEventListener("change", function () {
+      state.is10g = this.checked;
+      /* 料金・違約金の目安が変わるので入れ直す */
+      applyCarrierDefaults();
+      syncForm(); recalc();
+    });
     /* eo光の料金表 */
     $("dkEoOpen").addEventListener("click", openEoPicker);
     $("dkEoClose").addEventListener("click", closeEoPicker);
