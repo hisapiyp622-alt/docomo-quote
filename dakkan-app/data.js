@@ -271,6 +271,11 @@ window.DAKKAN_DATA = {
       "Netflixパックは上記月額料金に1,480円プラスとなります。",
       "eo光テレビチューナーの追加（2〜5台目）は別途、スマートプレミアム3,368円／スマートベーシック1,938円／スマートコンパクト1,214円（各1台）。録画機能付きは+770円、ブルーレイ搭載は+1,980円。"
     ],
-    src: "eo光 カタログ 料金表（2026-08-20 転記）／ https://eonet.jp/home/charge/pricelist/"
+    src: "eo光 カタログ 料金表（2026-08-20 転記）／ https://eonet.jp/home/charge/pricelist/",
+    /* マンションタイプは物件ごとに料金が異なるため、この表では出せない。
+     * オプテージの「導入済みマンション検索」で物件を引くと料金が分かる。
+     * eonet.jp/mansion/ の「検索」リンクがこのURLへ転送している（2026-08-20 確認）。 */
+    mansionUrl: "https://apply.eonet.jp/mansion",
+    mansionLabel: "eo光 導入済みマンション検索"
   }
 };
