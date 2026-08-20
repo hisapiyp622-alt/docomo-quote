@@ -11,7 +11,7 @@
  */
 (function () {
   "use strict";
-  var APP_VERSION = "1.3.0";
+  var APP_VERSION = "1.4.0";
   var KEY = "dk-state-v1";
   var CFG_KEY = "dk-config-v1";
   var MASTER_KEY = "dk-master-v1";
@@ -436,13 +436,17 @@
     document.querySelectorAll(".tab").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === name); });
     document.querySelectorAll(".tab-page").forEach(function (s) { s.classList.toggle("active", s.id === "tab-" + name); });
     if (name === "sheet") renderSheet();
+    if (name === "compare") window.KQ_DAKKAN.render();
     if (name === "config") { renderConfigTab(); renderMasterTab(); }
-    $("summaryBar").style.display = (name === "dakkan" || name === "ienaka") ? "" : "none";
+    /* 「現在のご利用状況」はヒアリングのタブなので、比較の数字は出さない。
+     * 下部の「いま・ドコモ・乗り換え費用」も、ここでは隠す。 */
+    $("summaryBar").style.display = (name === "ienaka" || name === "compare") ? "" : "none";
   }
   document.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { switchTab(b.dataset.tab); });
   });
-  $("toSheet").addEventListener("click", function () { switchTab("sheet"); });
+  $("toIenakaNext").addEventListener("click", function () { switchTab("ienaka"); });
+  $("toSheetFromCompare").addEventListener("click", function () { switchTab("sheet"); });
   $("backToQuote").addEventListener("click", function () { switchTab("dakkan"); });
   $("printBtn").addEventListener("click", function () { window.print(); });
   window.addEventListener("beforeprint", function () { renderSheet(); });
@@ -582,5 +586,7 @@
   renderStaffSelect();
   renderConfigTab();
   syncAll();
+  /* 初期表示は「現在のご利用状況」。下部バーの出し分けを効かせるため一度通す */
+  switchTab("dakkan");
   initCloud();
 })();
