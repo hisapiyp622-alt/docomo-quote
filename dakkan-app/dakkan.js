@@ -409,8 +409,19 @@
     $("dkHikariSetWari").value = state.hikariSetWari === "" || state.hikariSetWari == null ? "" : state.hikariSetWari;
     $("dkDcardWari").value = state.dcardWari === "" || state.dcardWari == null ? "" : state.dcardWari;
     $("dkNorikae").checked = state.norikaeTokuten !== false;
-    /* eo光のときだけ「料金表から選ぶ」を出す */
-    if ($("dkEoOpen")) $("dkEoOpen").hidden = !(state.carrierId === "eo" && eoData());
+    /* eo光のときだけ「料金表から選ぶ」を出す。
+     * マンションは料金表の対象外なので、検索ページへの導線を併せて出す。 */
+    var eoD = eoData(), isEo = state.carrierId === "eo" && !!eoD;
+    if ($("dkEoOpen")) $("dkEoOpen").hidden = !isEo;
+    if ($("dkEoMansion")) {
+      var ieH = env.ienakaState ? env.ienakaState() : null;
+      var showM = isEo && ieH && ieH.housing && ieH.housing !== "ht";
+      $("dkEoMansion").hidden = !showM;
+      if (showM) {
+        $("dkEoMansion").innerHTML = "マンションタイプは物件ごとに料金が異なります。"
+          + eoMansionLink(eoD) + "でお住まいの物件の料金をご確認ください。";
+      }
+    }
     var c = carrier(), info = "";
     if (c && c.note) info += '<span class="dk-note">' + esc(c.note) + "</span>";
     if (c && (c.tel || c.url)) {
@@ -524,6 +535,11 @@
     renderEoPicker();
   }
   function closeEoPicker() { $("dkEoModal").hidden = true; }
+  /* マンションタイプの料金は物件ごとに違うので、オプテージの検索ページへ送る */
+  function eoMansionLink(d) {
+    if (!d || !d.mansionUrl) return "eo光の導入済みマンション検索";
+    return '<a href="' + esc(d.mansionUrl) + '" target="_blank" rel="noopener">' + esc(d.mansionLabel || "eo光 導入済みマンション検索") + "</a>";
+  }
   function renderEoPicker() {
     var d = eoData();
     if (!d || !eoPick) return;
@@ -538,12 +554,13 @@
     var ie = env.ienakaState ? env.ienakaState() : null;
     var msg = "";
     if (ie && ie.housing && ie.housing !== "ht") {
-      msg = "この料金表はホームタイプ／メゾンタイプのものです。マンションタイプは物件ごとに料金が異なるため、請求書・マイページの金額を入力してください。";
+      msg = "この料金表はホームタイプ／メゾンタイプのものです。マンションタイプは物件ごとに料金が異なります。"
+        + "請求書・マイページの金額を入力するか、" + eoMansionLink(d) + "でお住まいの物件をお調べください。";
     } else if (eoPick.wari === "normal" && (def.tel || def.tv)) {
       msg = "通常料金（即割なし）はeo光ネット分だけが公表されています。電話・テレビを含むご契約は請求額を入力してください。";
     }
     $("dkEoWarn").hidden = !msg;
-    $("dkEoWarn").textContent = msg;
+    $("dkEoWarn").innerHTML = msg;
 
     var periods, vals;
     if (eoPick.wari === "normal") {

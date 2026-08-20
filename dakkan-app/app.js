@@ -11,7 +11,7 @@
  */
 (function () {
   "use strict";
-  var APP_VERSION = "1.4.0";
+  var APP_VERSION = "1.4.1";
   var KEY = "dk-state-v1";
   var CFG_KEY = "dk-config-v1";
   var MASTER_KEY = "dk-master-v1";
