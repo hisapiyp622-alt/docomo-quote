@@ -60,6 +60,10 @@ const CASES = {
   'device_b24': { planId: 'max', payMethod: 'b24', devicePrice: 129800, deviceName: 'テスト機' },
   'device_b36_atamakin': { planId: 'max', payMethod: 'b36', devicePrice: 98000, atamakin: 11000, deviceName: 'テスト機' },
   'device_kaedoki': { planId: 'max', payMethod: 'kaedoki', devicePrice: 129800, kaedoki23: 58000, deviceName: 'テスト機' },
+  // --- 子育てサポート割引（1.115.0〜） ---
+  'kosodate_max': { planId: 'max', kosodate: true },
+  'kosodate_max_kake': { planId: 'max', kosodate: true, voice: 'kake' },
+  'kosodate_hearty_both': { planId: 'max', kosodate: true, hearty: true },
   // --- その他の枠 ---
   'adhoc_monthly': { planId: 'max', adhocMonthly: [{ name: 'テスト割', amount: -550, months: 12 }] },
   'adhoc_initial': { planId: 'max', adhocInitial: [{ name: 'テスト商材', amount: 3300 }] },

@@ -1174,3 +1174,7 @@ body.present .sheet{box-shadow:none}
 
 /* ネットワークサービスの区分（新規／継続／廃止） */
 #netSvcList .net-kubun{margin-left:8px;padding:2px 4px;font-size:12.5px}
+
+/* ③割引: チェックの下に開く選択肢（回線数・カード種類・年数・その他割引） */
+.wari-sub{margin:2px 0 8px 26px;display:flex;flex-wrap:wrap;gap:2px 14px}
+.wari-sub .hint{flex-basis:100%}
