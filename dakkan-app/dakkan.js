@@ -390,8 +390,26 @@
     $("dkPenaltyField").hidden = state.renewal === "renewal";
     $("dkZansaiLabel").textContent = lt.zansaiLabel;
     $("dkZansai").value = state.zansai == null ? "" : state.zansai;
-    $("dkRemovalField").hidden = !lt.removal;
+    /* 撤去工事費: eo光は選択制、それ以外の会社はこれまでどおり手入力 */
+    var remSet = lt.removal ? eoRemovalSet() : null;
+    $("dkRemovalField").hidden = !lt.removal || !!remSet;
     $("dkRemoval").value = state.removal == null ? "" : state.removal;
+    if ($("dkRemovalPickField")) {
+      $("dkRemovalPickField").hidden = !remSet;
+      if (remSet) {
+        var want = state.removal == null ? "" : String(state.removal);
+        var hit = remSet.opts.some(function (o) { return String(o.v) === want; });
+        /* 選択肢に無い額（別の会社から持ち越した値など）は未選択に戻す */
+        if (!hit && state.removal != null) { state.removal = null; want = ""; }
+        $("dkRemovalPick").innerHTML = '<option value="">（未選択・要確認）</option>'
+          + remSet.opts.map(function (o) { return '<option value="' + o.v + '">' + esc(o.name) + "</option>"; }).join("");
+        $("dkRemovalPick").value = want;
+      }
+    }
+    if ($("dkRemovalHint")) {
+      $("dkRemovalHint").hidden = !remSet;
+      if (remSet) $("dkRemovalHint").textContent = remSet.note;
+    }
     /* 住居タイプ・申込区分はイエナカ側が正。ここは表示を合わせるだけで、
      * 変更は bind() から pickIenaka() でイエナカ側の入力欄を操作して反映する。 */
     var ieS = env.ienakaState ? env.ienakaState() : null;
@@ -535,6 +553,19 @@
     renderEoPicker();
   }
   function closeEoPicker() { $("dkEoModal").hidden = true; }
+  /* eo光の撤去工事費は現地の状況で額が決まる。テレビの有無で選べる額が変わるので、
+   * 手入力ではなく選択制にする（選んだものだけが費用に入る）。 */
+  function eoRemovalSet() {
+    var d = eoData();
+    if (!d || !d.removalOptions || !state || state.carrierId !== "eo") return null;
+    var sv = state.services || {};
+    var hasTv = !!(sv.tv || sv.cs);
+    return {
+      opts: hasTv ? d.removalOptions.withTv : d.removalOptions.noTv,
+      note: (hasTv ? d.removalOptions.noteTv : d.removalOptions.noteNet) || "",
+      src: d.removalOptions.src || ""
+    };
+  }
   /* マンションタイプの料金は物件ごとに違うので、オプテージの検索ページへ送る */
   function eoMansionLink(d) {
     if (!d || !d.mansionUrl) return "eo光の導入済みマンション検索";
@@ -653,13 +684,18 @@
     $("dkPenalty").addEventListener("input", function () { state.penalty = this.value === "" ? null : num(this.value); recalc(); });
     $("dkZansai").addEventListener("input", function () { state.zansai = this.value === "" ? null : num(this.value); recalc(); });
     $("dkRemoval").addEventListener("input", function () { state.removal = this.value === "" ? null : num(this.value); recalc(); });
+    $("dkRemovalPick").addEventListener("change", function () {
+      state.removal = this.value === "" ? null : num(this.value);
+      syncForm(); recalc();
+    });
     $("dkNumberFee").addEventListener("input", function () { state.numberFee = this.value === "" ? null : num(this.value); recalc(); });
     $("dkMemo").addEventListener("input", function () { state.memo = this.value; recalc(); });
     [["dkSvcNet", "net"], ["dkSvcTel", "tel"], ["dkSvcTv", "tv"], ["dkSvcCs", "cs"]].forEach(function (p) {
       $(p[0]).addEventListener("change", function () {
         state.services = state.services || {};
         state.services[p[1]] = this.checked;
-        recalc();
+        /* テレビの有無で撤去工事費の選択肢が変わるため、画面を作り直す */
+        syncForm(); recalc();
       });
     });
     $("dkHikariSetWari").addEventListener("input", function () { state.hikariSetWari = this.value; recalc(); });
