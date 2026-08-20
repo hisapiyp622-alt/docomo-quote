@@ -72,12 +72,20 @@
    *            この見積もりは全体を税込で作っているため税込額を既定にしている。
    *          出典: https://setsuzoku.nifty.com/docomo/option/router_purchase/
    *                （2026-07-30 確認）
+   * GMOとくとくBB … 月額190円（税込）×36回＝総額6,840円（税込）の分割購入。
+   *          店頭運用に合わせた既定値（2026-08-20）。金額が変わったら
+   *          ルーター価格の欄で入れ直せる。
    * それ以外 … 一括購入の想定。 */
   var ROUTER10G = {
-    "@nifty": { price: 20064, pay: "b48" }
+    "@nifty": { price: 20064, pay: "b48" },
+    "GMOとくとくBB": { price: 6840, pay: "b36" }
   };
   var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
   function router10gDefault() { return ROUTER10G[state.provider] || ROUTER10G_DEFAULT; }
+  /* ルーターの分割回数はプロバイダで違う（@nifty 48回・GMOとくとくBB 36回）。
+   * 払い方の値から回数を引く。一括（once）は 0 を返す。 */
+  var ROUTER10G_TERMS = { b36: 36, b48: 48 };
+  function router10gTerm() { return ROUTER10G_TERMS[state.router10gPay] || 0; }
   /* プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す。
    * 手で直した金額は、そのプロバイダの中で入力しているあいだは残る。 */
   function applyRouter10gDefault() {
@@ -318,11 +326,12 @@
     if (koji > 0 && state.kojiFree) {
       timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });
     }
-    // 10Gルーターの分割購入（48回）。一括のときは下の初期費用へ回す
+    // 10Gルーターの分割購入（プロバイダごとに回数が違う）。一括のときは下の初期費用へ回す
     var r10g = canBuy10gRouter() && state.router10g ? num(state.router10gPrice) : 0;
-    var r10gSplit = r10g > 0 && state.router10gPay === "b48";
+    var r10gTerm = router10gTerm();
+    var r10gSplit = r10g > 0 && r10gTerm > 0;
     if (r10gSplit) {
-      timed.push({ name: "10Gルーター 分割（48回・総額" + yen(r10g) + "）", amount: Math.floor(r10g / 48), from: 1, to: 48 });
+      timed.push({ name: "10Gルーター 分割（" + r10gTerm + "回・総額" + yen(r10g) + "）", amount: Math.floor(r10g / r10gTerm), from: 1, to: r10gTerm });
     }
 
     // 期間セグメント（変化点ごとの月額）
@@ -643,13 +652,16 @@
     r10gHint.hidden = !r10gOn;
     if (r10gOn) {
       var rp10 = num(state.router10gPrice);
+      var rp10Term = router10gTerm();
       r10gHint.innerHTML = (state.provider === "@nifty"
         ? "@nifty の優待価格（バッファロー WSR6500BE6P-10G）。<strong>税込20,064円</strong>"
           + "（ページの「18,240円」は税抜）。ニフティで購入する場合、ドコモの"
           + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
-        : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
-        + (state.router10gPay === "b48" && rp10 > 0
-          ? "　48回分割で <strong>" + yen(Math.floor(rp10 / 48)) + "/月</strong>（総額 " + yen(rp10) + "）"
+        : state.provider === "GMOとくとくBB"
+          ? "GMOとくとくBB の10ギガ対応ルーター。<strong>月額190円（税込）×36回＝総額6,840円</strong>が既定です。"
+          : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
+        + (rp10Term > 0 && rp10 > 0
+          ? "　" + rp10Term + "回分割で <strong>" + yen(Math.floor(rp10 / rp10Term)) + "/月</strong>（総額 " + yen(rp10) + "）"
           : "");
     }
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
@@ -720,8 +732,9 @@
       onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
       if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
         var rp = num(state.router10gPrice);
-        others.push(state.router10gPay === "b48"
-          ? "10Gルーター 48回分割 " + yen(Math.floor(rp / 48)) + "/月（総額 " + yen(rp) + "）"
+        var rpTerm = router10gTerm();
+        others.push(rpTerm > 0
+          ? "10Gルーター " + rpTerm + "回分割 " + yen(Math.floor(rp / rpTerm)) + "/月（総額 " + yen(rp) + "）"
           : "10Gルーター購入費用 " + yen(rp));
       }
       if (others.length) {
