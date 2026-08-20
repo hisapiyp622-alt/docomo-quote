@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.113.0";
+  var APP_VERSION = "1.114.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -2384,9 +2384,6 @@
     KQ_IENAKA.attach(store.ienaka, function () {
       saveState();
       renderIenakaWarn(calc());
-      var zipOn = needsZip();
-      $("custZipField").hidden = !zipOn;
-      $("custZipHint").hidden = !zipOn;
       if ($("tab-sheet").classList.contains("active")) renderSheet();
     });
     KQ_IENAKA.bind();
@@ -2410,10 +2407,6 @@
    *   ienaka … 光のみ（イエナカ単体の見積書。裏面に開通までの流れ＝両面1枚）
    * 「スマホ＋光（世帯の合計）」は 1.112.0 でやめた。請求が分かれるものを
    * 1つの合計で見せると、ドコモの請求額と合わず店頭で説明に困るため。 */
-  /* 郵便番号が要る受付か（光・でんき・ガスは住所での登録が要る） */
-  function needsZip() {
-    return !!(state.todoHikari || state.todoDenki || state.todoGas || ienakaOn());
-  }
   var sheetScope = "phone";
   /* 光を申し込むのにスマホ側でセット割を選んでいない、という付け忘れに気づけるようにする。
    * 逆（セット割だけ選んで光を入れていない）は、ご家族の既契約という場合があるので出さない。 */
@@ -3448,7 +3441,7 @@
     return {
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false,
-      voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {},
+      voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
@@ -3488,11 +3481,6 @@
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
-      /* 郵便番号。光・でんき・ガスは住所での登録が要るため、
-       * 引き継ぎシートに載せて登録スタッフへ渡す。
-       * 受付の端末とレジの端末で見る必要があるので、こちらは同期する
-       * （番号だけでは個人を特定できないため。お客様名は引き続き同期しない）。 */
-      custZip: "",
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
       // データ移行の項目だけ、支払い先をこの見積もりで変えられる（未指定はマスタの設定）
@@ -4817,27 +4805,42 @@
   var NET_SVC = [
     { id: "rusuban", name: "留守番電話サービス", short: "留守番電話", price: 330, freeWithKake: true },
     { id: "catchhone", name: "キャッチホン", price: 220, freeWithKake: true },
-    { id: "melody", name: "メロディコール", price: 110, canOff: true }
+    { id: "melody", name: "メロディコール", price: 110 }
   ];
   // オプションパック（上の3つ＋転送でんわ をまとめると割引。転送でんわは単品でも無料）
   var NET_PACK_PRICE = 440;
   var NET_PACK_NAME = "オプションパック（留守番電話・キャッチホン・メロディコール・転送でんわ）";
   // 新カケホーダイ系の通話オプション。付けると留守番電話・キャッチホンは無料になる
   function kakeVoice(v) { return v === "v5" || v === "kake"; }
+  /* ネットワークサービスの区分（新規／継続／廃止）。
+   * オプション欄の区分と同じ考え方: 新規・継続は月額に入れ、廃止は入れない。
+   * 1.113.0 以前の「廃止」チェック（netSvcOff）は区分の廃止として読む。 */
+  function netKubun(st, id) {
+    var k = (st.netSvcKubun || {})[id];
+    if (k) return k;
+    if ((st.netSvcOff || {})[id]) return "off";
+    return "new";
+  }
+  function netSvcOn(st, id) {
+    return !!(st.netSvc || {})[id] || !!(st.netSvcOff || {})[id];
+  }
   // 選択中のネットワークサービスを、料金を確定させた行にして返す
   function netSvcCalc(st) {
     var free = kakeVoice(st.voice);
-    var offs = st.netSvcOff || {};
-    var picked = NET_SVC.filter(function (n) { return (st.netSvc || {})[n.id] && !offs[n.id]; });
-    var offRows = NET_SVC.filter(function (n) { return n.canOff && offs[n.id]; });
+    var on = NET_SVC.filter(function (n) { return netSvcOn(st, n.id); });
+    var offRows = on.filter(function (n) { return netKubun(st, n.id) === "off"; });
+    var picked = on.filter(function (n) { return netKubun(st, n.id) !== "off"; });
     var rows = [], total = 0;
     if (!free && picked.length === NET_SVC.length) {
-      rows.push({ name: NET_PACK_NAME, price: NET_PACK_PRICE });
+      // 3つとも継続ならパックも継続。1つでも新規があれば新規として扱う
+      var allKeep = picked.every(function (n) { return netKubun(st, n.id) === "keep"; });
+      rows.push({ name: NET_PACK_NAME, price: NET_PACK_PRICE, kubun: allKeep ? "keep" : "new" });
       total = NET_PACK_PRICE;
     } else {
       picked.forEach(function (n) {
         var f = free && n.freeWithKake;
-        rows.push({ name: n.name + (f ? "（通話オプションに込み）" : ""), base: n.short || n.name, incl: !!f, price: f ? 0 : n.price });
+        rows.push({ name: n.name + (f ? "（通話オプションに込み）" : ""), base: n.short || n.name,
+          incl: !!f, price: f ? 0 : n.price, kubun: netKubun(st, n.id) });
         total += f ? 0 : n.price;
       });
     }
@@ -5736,24 +5739,27 @@
   // ネットワークサービスの選択欄（通話オプションで金額が変わるので描き直す）
   function renderNetSvc() {
     var free = kakeVoice(state.voice);
-    var picked = state.netSvc || {};
-    var offs = state.netSvcOff || {};
-    var all = NET_SVC.every(function (n) { return picked[n.id] && !offs[n.id]; });
+    var net = netSvcCalc(state);
     $("netSvcList").innerHTML = NET_SVC.map(function (n) {
+      var on = netSvcOn(state, n.id);
+      var kb = netKubun(state, n.id);
+      var isOff = on && kb === "off";
       var f = free && n.freeWithKake;
-      // 廃止のときは「廃止」の文字が重ならないよう、元の金額に取り消し線を引く
-      var pr = offs[n.id] ? '<span style="text-decoration:line-through;opacity:.5">' + yen(n.price) + "/月</span>"
+      // 廃止のときは元の金額に取り消し線を引く（もう払わない金額だと分かるように）
+      var pr = isOff ? '<span style="text-decoration:line-through;opacity:.5">' + yen(n.price) + "/月</span>"
         : f ? "無料（通話オプションに込み）"
-        : (!free && all ? "パック適用" : yen(n.price) + "/月");
+        : (!free && net.pack && on ? "パック適用" : yen(n.price) + "/月");
       var h = '<div class="opt-row"><label class="check"><input type="checkbox" data-netsvc="' + n.id + '"'
-        + (picked[n.id] && !offs[n.id] ? " checked" : "") + "> " + esc(n.name) + "</label>";
-      if (n.canOff) {
-        h += '<label class="check net-off"><input type="checkbox" data-netsvcoff="' + n.id + '"'
-          + (offs[n.id] ? " checked" : "") + "> 廃止</label>";
+        + (on ? " checked" : "") + "> " + esc(n.name) + "</label>";
+      // 区分は、チェックしているものだけに出す（オプション欄と同じ考え方）
+      if (on) {
+        h += '<select class="net-kubun" data-netkubun="' + n.id + '">'
+          + [["new", "新規"], ["keep", "継続"], ["off", "廃止"]].map(function (k) {
+              return '<option value="' + k[0] + '"' + (kb === k[0] ? " selected" : "") + ">" + k[1] + "</option>";
+            }).join("") + "</select>";
       }
       return h + '<span class="price">' + pr + "</span></div>";
     }).join("");
-    var net = netSvcCalc(state);
     var msg;
     if (free) {
       msg = "通話オプション（880円／1,980円）を付けているため、留守番電話・キャッチホンは無料です。";
@@ -6092,10 +6098,6 @@
     });
     renderPointUse();
     $("todoOther").value = state.todoOther || "";
-    var zipOn = needsZip();
-    $("custZipField").hidden = !zipOn;
-    $("custZipHint").hidden = !zipOn;
-    if (document.activeElement !== $("custZip")) $("custZip").value = state.custZip || "";
     $("dcardTypeWrap").hidden = !state.todoDcard;
     $("denkiTypeWrap").hidden = !state.todoDenki;
     $("gasTypeWrap").hidden = !state.todoGas;
@@ -6880,13 +6882,6 @@
       }).join("");
       return cards ? row("QR（スマホで読み取り）", cards) : "";
     }
-    /* 光・でんき・ガスは住所での登録が要るため、それぞれの欄に郵便番号を出す。
-     * 登録する画面を開いたまま見られるよう、探しに戻らなくていい場所に置く。 */
-    function zipRow() {
-      return row("郵便番号", state.custZip
-        ? '<b style="color:var(--red)">' + esc(state.custZip) + "</b>"
-        : '<b style="color:var(--red)">未記入</b>　※ ご登録に必要です');
-    }
 
     var h = "";
     h += '<h2 class="sheet-title">登録スタッフ引き継ぎシート</h2>';
@@ -6974,7 +6969,9 @@
     // オプション（新規／継続／廃止をまとめる）
     var kNew = [], kKeep = [], kOff = [], kExist = [];
     var netSheet = netSvcCalc(state);
-    netSheet.rows.forEach(function (n) { kNew.push({ name: n.name, price: n.price }); });
+    netSheet.rows.forEach(function (n) {
+      (n.kubun === "keep" ? kKeep : kNew).push({ name: n.name, price: n.price });
+    });
     netSheet.off.forEach(function (n) { kOff.push(n.name); });
     MASTER.options.forEach(function (o) {
       // ドコモメールは上の「ご契約内容」に出しているので、ここでは重ねて出さない
@@ -7133,7 +7130,6 @@
             + (gc.tel ? "　連絡先: <b>" + esc(gc.tel) + "</b>" : "　（連絡先は未登録）"));
         }
       }
-      h += zipRow();
       h += "</tbody></table>";
     }
     var secEnergy = h; h = "";
@@ -7195,7 +7191,6 @@
       h += row("お申し込み", '<b style="color:var(--red)">光申し込み</b>　※「光・5G」の入力はありません');
     }
     if (ieOn || state.todoHikari) {
-      h += zipRow();
       h += qrRowHtml(ieOn);
       h += "</tbody></table>";
     }
@@ -10096,9 +10091,6 @@
     $("todoOther").addEventListener("input", function () {
       state.todoOther = this.value; saveState(); renderStaffSheet();
     });
-    $("custZip").addEventListener("input", function () {
-      state.custZip = this.value; saveState(); renderStaffSheet();
-    });
     document.querySelectorAll("[data-visit]").forEach(function (cb) {
       cb.addEventListener("change", function () {
         var vst = store.patterns[0] || state;   // 目的は回線1に持つ
@@ -10504,17 +10496,18 @@
       var t = e.target;
       if (!t.getAttribute) return;
       if (!state.netSvc) state.netSvc = {};
-      if (!state.netSvcOff) state.netSvcOff = {};
+      if (!state.netSvcKubun) state.netSvcKubun = {};
       var id = t.getAttribute("data-netsvc");
       if (id) {
         state.netSvc[id] = t.checked;
-        if (t.checked) state.netSvcOff[id] = false;   // 付けるなら廃止は外す
+        if (!t.checked) delete state.netSvcKubun[id];   // 外したら区分も忘れる
       } else {
-        id = t.getAttribute("data-netsvcoff");
+        id = t.getAttribute("data-netkubun");
         if (!id) return;
-        state.netSvcOff[id] = t.checked;
-        if (t.checked) state.netSvc[id] = false;      // 廃止するなら付けるは外す
+        state.netSvc[id] = true;
+        state.netSvcKubun[id] = t.value;
       }
+      if (state.netSvcOff) state.netSvcOff[id] = false;  // 旧形式（1.113.0以前）の印は消す
       recalc();
     });
     $("voiceChange").addEventListener("change", function () { state.voiceChange = this.checked; recalc(); });
@@ -10787,9 +10780,9 @@
   var QUOTE_HELP = {
     tpl: { t: "テンプレート", b: "よく使う見積もりの形を3つまで登録して、1タップで呼び出せます。\n・保存: 「現在の内容をテンプレに保存」→ 保存先のボタンをタップ → 名前を付けて保存\n・呼び出し: ボタンをタップ（お客様名と店舗情報は今の内容のまま残ります）\n・<b>削除: ボタンを長押しして、動かさずに離す</b>と出るメニューで「削除」を選びます（PCは右クリックでも出ます）\n・<b>並べ替え: 長押しでつかんだまま、別のボタンの上へ動かして離す</b>と入れ替わります\n・「テンプレート」は担当ごと、「店舗共通」は全担当で共有です" },
     purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします（複数可）。金額には影響しません。\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
-    proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・光・でんき・ガスはご住所での登録が要るため郵便番号の欄が出ます（郵便番号は他の端末にも同期されます）\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
+    proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
     c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
-    c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などの申し込み・廃止をチェックします\n・ドコモメール: 「有り」にすると月額に入ります" },
+    c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: 「有り」にすると月額に入ります" },
     c3: { t: "③ 割引", b: "月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: カードの種類で⑧のdカード還元の自動計算も変わります\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
     c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定タブで変えられます（タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },

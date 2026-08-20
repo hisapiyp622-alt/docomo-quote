@@ -1171,3 +1171,6 @@ body.present .sheet{box-shadow:none}
 .tpl{touch-action:pan-y}
 .tpl.tpl-grab{transform:scale(1.08);box-shadow:0 4px 10px rgba(0,0,0,.25);cursor:grabbing;position:relative;z-index:5}
 .tpl.tpl-over{outline:2px dashed var(--red);outline-offset:2px}
+
+/* ネットワークサービスの区分（新規／継続／廃止） */
+#netSvcList .net-kubun{margin-left:8px;padding:2px 4px;font-size:12.5px}
