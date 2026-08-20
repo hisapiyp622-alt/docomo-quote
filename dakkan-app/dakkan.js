@@ -406,6 +406,12 @@
         $("dkRemovalPick").value = want;
       }
     }
+    var eoPh = eoData();
+    if ($("dkPenaltyHint")) {
+      var showPh = state.carrierId === "eo" && eoPh && eoPh.penaltyByPeriod && state.renewal !== "renewal";
+      $("dkPenaltyHint").hidden = !showPh;
+      if (showPh) $("dkPenaltyHint").textContent = eoPh.penaltyByPeriod.hint || "";
+    }
     if ($("dkRemovalHint")) {
       $("dkRemovalHint").hidden = !remSet;
       if (remSet) $("dkRemovalHint").textContent = remSet.note;
@@ -555,6 +561,23 @@
   function closeEoPicker() { $("dkEoModal").hidden = true; }
   /* eo光の撤去工事費は現地の状況で額が決まる。テレビの有無で選べる額が変わるので、
    * 手入力ではなく選択制にする（選んだものだけが費用に入る）。 */
+  /* 料金表で選んだ期間から、eo光の解約精算金を入れる。
+   * 即割期間（1〜2年目）と長割期間（3年目以降）で額が違う。
+   * 更新月と分かっているときは0円のままにして触らない。 */
+  function applyEoPenalty(periodIdx) {
+    var d = eoData();
+    if (!d || !d.penaltyByPeriod || !eoPick || periodIdx == null || !state) return;
+    if (state.renewal === "renewal") return;
+    var p = d.penaltyByPeriod, i = num(periodIdx);
+    if (eoPick.wari === "normal") {
+      /* 即割なしは最低利用期間1年。2年目以降は長割の有無で変わるため要確認にする */
+      state.penalty = (i === 0) ? p.none : null;
+    } else {
+      var t = (i <= 1) ? p.soku : p.naga;
+      state.penalty = t[eoPick.course] != null ? t[eoPick.course] : null;
+    }
+    state.penaltyKeep = null;
+  }
   function eoRemovalSet() {
     var d = eoData();
     if (!d || !d.removalOptions || !state || state.carrierId !== "eo") return null;
@@ -605,7 +628,7 @@
     periods.forEach(function (label, i) {
       var v = vals[i];
       /* 0円の欄（電話・テレビのみの構成のご利用開始月）は請求額として使えないので選べなくする */
-      h += '<button class="dk-eo-cell" type="button"' + (v ? ' data-eov="' + v + '"' : " disabled") + ">"
+      h += '<button class="dk-eo-cell" type="button"' + (v ? ' data-eov="' + v + '" data-eop="' + i + '"' : " disabled") + ">"
         + '<span class="p">' + esc(label) + "</span>"
         + '<span class="v">' + (v ? esc(yen(v)) : "—") + "</span></button>";
     });
@@ -665,6 +688,7 @@
       var b = ev.target && ev.target.closest ? ev.target.closest("[data-eov]") : null;
       if (!b) return;
       state.monthly = num(b.getAttribute("data-eov"));
+      applyEoPenalty(b.getAttribute("data-eop"));
       closeEoPicker();
       syncForm(); recalc();
     });
