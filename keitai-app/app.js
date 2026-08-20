@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.115.1";
+  var APP_VERSION = "1.116.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4985,6 +4985,11 @@
   }
   // GOLD系カード（お支払割はGOLD区分・還元特典の自動計算対象）
   function isGoldCard(c) { return c === "goldu" || c === "gold" || c === "platinum"; }
+  // 券種チェック（R・G・U・P）。並びは画面の順のまま返る
+  function dcardKindBoxes() {
+    return Array.prototype.slice.call(document.querySelectorAll('#dCardSub [data-dcard]'));
+  }
+  var lastDcardKind = "";  // 割引を入→切→入としたときに券種を覚えておく
   // 還元特典の自動計算: 対象額 税込1,100円ごとのpt（GOLD U 5%／GOLD 10%／PLATINUM 20%）
   function dcardRatePt(c) { return c === "platinum" ? 200 : c === "gold" ? 100 : c === "goldu" ? 50 : 0; }
   function optPrice(o, st) {
@@ -6066,7 +6071,9 @@
     $("dSet").checked = state.dSet;
     $("dCardOn").checked = state.dCard !== "none";
     $("dCardSub").hidden = state.dCard === "none";
-    if (state.dCard !== "none") $("dCardSel").value = state.dCard;
+    dcardKindBoxes().forEach(function (b) {
+      b.checked = b.getAttribute("data-dcard") === state.dCard;
+    });
     $("dDenki").checked = state.dDenki;
     $("chokiOn").checked = state.choki !== "none";
     $("chokiSub").hidden = state.choki === "none";
@@ -9924,11 +9931,21 @@
     });
     $("dSet").addEventListener("change", function () { state.dSet = this.checked; recalc(); });
     $("dCardOn").addEventListener("change", function () {
-      state.dCard = this.checked ? $("dCardSel").value : "none";
-      $("dCardSub").hidden = !this.checked;
-      recalc();
+      // 入にしたときは、前回の券種（無ければ R=dカード）で始める
+      state.dCard = this.checked ? (lastDcardKind || "normal") : "none";
+      syncFormFromState(); recalc();
     });
-    $("dCardSel").addEventListener("change", function () { state.dCard = this.value; recalc(); });
+    /* 券種は R・G・U・P の頭文字チェック。カードは1枚なので、
+     * 1つ選ぶと他は外れる（ハーティ／子育てと同じ排他の形）。
+     * 選択中のものを外したときは、割引ごと切る。 */
+    dcardKindBoxes().forEach(function (b) {
+      b.addEventListener("change", function () {
+        var kind = this.getAttribute("data-dcard");
+        if (this.checked) { state.dCard = kind; lastDcardKind = kind; }
+        else if (state.dCard === kind) state.dCard = "none";
+        syncFormFromState(); recalc();
+      });
+    });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
     $("chokiOn").addEventListener("change", function () {
       state.choki = this.checked ? chokiY() : "none";
@@ -10869,7 +10886,7 @@
     proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
     c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
     c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: 「有り」にすると月額に入ります" },
-    c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: カードの種類で⑧のdカード還元の自動計算も変わります\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）。子育てサポート割引とも同時適用できず、片方を選ぶともう片方は外れます\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
+    c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: 券種は頭文字で選びます（R=dカード／G=GOLD／U=GOLD U／P=PLATINUM）。券種で⑧のdカード還元の自動計算も変わります\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）。子育てサポート割引とも同時適用できず、片方を選ぶともう片方は外れます\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
     c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定タブで変えられます（タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },
     c6: { t: "⑥ アクセサリ", b: "・定番商品はタイルをタップして選び、タイルの中で一括／分割を選びます\n・リストにない商品は「＋ アクセサリを追加」から名前と金額を入れます\n・一括のぶんは⑦の店頭お支払いに、分割（12・24・36回）は月額に入ります\n・定番商品の内容はマスタ設定で編集できます" },

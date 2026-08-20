@@ -215,13 +215,11 @@
       <label class="check" id="dSetWrap"><input type="checkbox" id="dSet"> ドコモ光／home 5G セット割</label>
       <div id="dCardWrap">
         <label class="check"><input type="checkbox" id="dCardOn"> dカードお支払割</label>
-        <div class="wari-sub" id="dCardSub" hidden>
-          <select id="dCardSel">
-            <option value="normal">dカード</option>
-            <option value="goldu">dカード GOLD U（還元5%）</option>
-            <option value="gold">dカード GOLD（還元10%）</option>
-            <option value="platinum">dカード PLATINUM（還元20%）</option>
-          </select>
+        <div class="wari-sub sub-checks" id="dCardSub" hidden>
+          <label class="check" title="dカード"><input type="checkbox" data-dcard="normal"> R</label>
+          <label class="check" title="dカード GOLD"><input type="checkbox" data-dcard="gold"> G</label>
+          <label class="check" title="dカード GOLD U"><input type="checkbox" data-dcard="goldu"> U</label>
+          <label class="check" title="dカード PLATINUM"><input type="checkbox" data-dcard="platinum"> P</label>
         </div>
       </div>
       <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
