@@ -509,3 +509,43 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
   .sheet ul.notes li{break-inside:avoid;page-break-inside:avoid}
   .sheet .memo{font-size:10px}
 }
+
+
+/* ================= eo光の料金表から選ぶ ================= */
+.dk-modal{
+  position:fixed;inset:0;z-index:60;
+  background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;
+}
+.dk-modal[hidden]{display:none}
+.dk-modal-box{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:16px 16px 14px;width:100%;max-width:560px;max-height:88vh;overflow:auto;
+  box-shadow:0 8px 30px rgba(0,0,0,.18);
+}
+.dk-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.dk-modal-head h2{margin:0;font-size:17px;color:var(--red)}
+.dk-modal-close{
+  border:1px solid var(--line);background:#fff;border-radius:8px;
+  font:inherit;font-size:18px;line-height:1;color:var(--muted);
+  width:34px;height:34px;cursor:pointer;flex:none;
+}
+.dk-modal-close:hover{color:var(--red);border-color:var(--red)}
+.dk-eo-picks{display:grid;grid-template-columns:1fr;gap:8px;margin:10px 0 4px}
+@media (min-width:520px){ .dk-eo-picks{grid-template-columns:1fr 1fr} }
+.dk-eo-tap{margin:8px 0 6px}
+.dk-eo-warn{
+  margin:6px 0;font-size:12.5px;color:#8A5A00;
+  background:#FFF6E5;border:1px solid #EBD8AE;border-radius:6px;padding:7px 9px;
+}
+.dk-eo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media (min-width:520px){ .dk-eo-grid{grid-template-columns:repeat(4,1fr)} }
+.dk-eo-cell{
+  border:1px solid var(--line);background:#fff;border-radius:9px;
+  padding:9px 6px;font:inherit;cursor:pointer;text-align:center;
+}
+.dk-eo-cell:hover{border-color:var(--red);background:#FDF4F6}
+.dk-eo-cell .p{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+.dk-eo-cell .v{display:block;font-size:17px;font-weight:700;color:var(--ink)}
+.dk-eo-cell[disabled]{opacity:.5;cursor:default}
+.dk-eo-notes{margin:10px 0 4px;padding-left:1.1em}
+.dk-eo-notes li{margin:2px 0}
