@@ -1166,3 +1166,8 @@ body.present .sheet{box-shadow:none}
 .help-pop-x:hover{background:#F1F1F2;color:var(--ink)}
 .help-pop-body{font-size:13.5px;line-height:1.75;white-space:pre-wrap;
   max-height:54vh;overflow:auto;overscroll-behavior:contain}
+
+/* テンプレートの長押し並べ替え */
+.tpl{touch-action:pan-y}
+.tpl.tpl-grab{transform:scale(1.08);box-shadow:0 4px 10px rgba(0,0,0,.25);cursor:grabbing;position:relative;z-index:5}
+.tpl.tpl-over{outline:2px dashed var(--red);outline-offset:2px}
