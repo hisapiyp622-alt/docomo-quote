@@ -72,19 +72,43 @@
    *            この見積もりは全体を税込で作っているため税込額を既定にしている。
    *          出典: https://setsuzoku.nifty.com/docomo/option/router_purchase/
    *                （2026-07-30 確認）
+   *          @nifty は一括か48回分割のみ（36回の取り扱いは無い）。
    * GMOとくとくBB … 月額190円（税込）×36回＝総額6,840円（税込）。
-   * それ以外 … 一括購入の想定。 */
+   *          一括か36回分割のみ。
+   * それ以外 … 取り扱いが分からないので、一括・36回・48回すべて出す。 */
   var ROUTER10G = {
-    "@nifty": { price: 20064, pay: "b48" },
-    /* GMOとくとくBB … 月額190円（税込）×36回＝総額6,840円（税込）。
-     *   ※ 190円が税抜表示だった場合は税込209円・総額7,524円になる。
-     *     金額欄は手で直せるので、店頭でご確認のうえ調整する。 */
-    "GMOとくとくBB": { price: 6840, pay: "b36" }
+    "@nifty": { price: 20064, pay: "b48", pays: ["once", "b48"] },
+    "GMOとくとくBB": { price: 6840, pay: "b36", pays: ["once", "b36"] }
   };
-  /* ルーターの分割回数。増やすときはここと、各 index.html の
-   * 「ルーターのお支払い」の選択肢の両方に足す。 */
+  var ROUTER10G_DEFAULT_PAYS = ["once", "b36", "b48"];
+  /* ルーターの分割回数と、選択肢に出す名前。
+   * 回数を増やすときは、この2つの表に足すだけでよい（画面・計算・見積書・
+   * 引き継ぎシートは、すべてこの表を見て動く）。 */
   var ROUTER10G_SPLIT = { b36: 36, b48: 48 };
+  var ROUTER10G_PAY_LABEL = {
+    once: "一括（初期費用）",
+    b36: "36回分割（3年・月額に加算）",
+    b48: "48回分割（月額に加算）"
+  };
   function router10gSplitN() { return ROUTER10G_SPLIT[state.router10gPay] || 0; }
+  /* そのプロバイダで実際に選べる払い方だけを出す。
+   * 取り扱いの無い回数を選べてしまうと、店頭で存在しない支払い方法を
+   * 案内することになるため。取り扱いが分からないプロバイダは全部出す。 */
+  function router10gPays() {
+    var d = ROUTER10G[state.provider];
+    return (d && d.pays) || ROUTER10G_DEFAULT_PAYS;
+  }
+  function renderRouter10gPays(sel) {
+    if (!sel) return;
+    var pays = router10gPays();
+    // 選べない払い方が選ばれたままにならないようにする
+    if (pays.indexOf(state.router10gPay) < 0) state.router10gPay = pays[0];
+    var h = "";
+    pays.forEach(function (k) {
+      h += '<option value="' + k + '">' + ROUTER10G_PAY_LABEL[k] + "</option>";
+    });
+    sel.innerHTML = h;
+  }
   var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
   function router10gDefault() { return ROUTER10G[state.provider] || ROUTER10G_DEFAULT; }
   /* プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す。
@@ -649,6 +673,7 @@
     $("ieRouter10gPriceField").hidden = !r10gOn;
     $("ieRouter10gPrice").value = state.router10gPrice || "";
     $("ieRouter10gPayField").hidden = !r10gOn;
+    renderRouter10gPays($("ieRouter10gPay"));
     $("ieRouter10gPay").value = state.router10gPay || "once";
     var r10gHint = $("ieRouter10gHint");
     r10gHint.hidden = !r10gOn;
@@ -661,7 +686,6 @@
           + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
         : state.provider === "GMOとくとくBB"
         ? "GMOとくとくBB の分割購入。<strong>月額190円（税込）×36回＝総額6,840円</strong>。"
-          + "表示が税抜だった場合は月額209円・総額7,524円になります。金額は店頭でご確認ください。"
         : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
         + (nSp > 0 && rp10 > 0
           ? "　" + nSp + "回分割で <strong>" + yen(Math.floor(rp10 / nSp)) + "/月</strong>（総額 " + yen(rp10) + "）"
