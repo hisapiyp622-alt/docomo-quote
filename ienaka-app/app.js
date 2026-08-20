@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.6.8";
+  var APP_VERSION = "2.6.9";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -63,10 +63,43 @@
    *            この見積もりは全体を税込で作っているため税込額を既定にしている。
    *          出典: https://setsuzoku.nifty.com/docomo/option/router_purchase/
    *                （2026-07-30 確認）
-   * それ以外 … 一括購入の想定。 */
+   *          @nifty は一括か48回分割のみ（36回の取り扱いは無い）。
+   * GMOとくとくBB … 月額190円（税込）×36回＝総額6,840円（税込）。
+   *          一括か36回分割のみ。
+   * それ以外 … 取り扱いが分からないので、一括・36回・48回すべて出す。 */
   var ROUTER10G = {
-    "@nifty": { price: 20064, pay: "b48" }
+    "@nifty": { price: 20064, pay: "b48", pays: ["once", "b48"] },
+    "GMOとくとくBB": { price: 6840, pay: "b36", pays: ["once", "b36"] }
   };
+  var ROUTER10G_DEFAULT_PAYS = ["once", "b36", "b48"];
+  /* ルーターの分割回数と、選択肢に出す名前。
+   * 回数を増やすときは、この2つの表に足すだけでよい（画面・計算・見積書・
+   * 引き継ぎシートは、すべてこの表を見て動く）。 */
+  var ROUTER10G_SPLIT = { b36: 36, b48: 48 };
+  var ROUTER10G_PAY_LABEL = {
+    once: "一括（初期費用）",
+    b36: "36回分割（3年・月額に加算）",
+    b48: "48回分割（月額に加算）"
+  };
+  function router10gSplitN() { return ROUTER10G_SPLIT[state.router10gPay] || 0; }
+  /* そのプロバイダで実際に選べる払い方だけを出す。
+   * 取り扱いの無い回数を選べてしまうと、店頭で存在しない支払い方法を
+   * 案内することになるため。取り扱いが分からないプロバイダは全部出す。 */
+  function router10gPays() {
+    var d = ROUTER10G[state.provider];
+    return (d && d.pays) || ROUTER10G_DEFAULT_PAYS;
+  }
+  function renderRouter10gPays(sel) {
+    if (!sel) return;
+    var pays = router10gPays();
+    // 選べない払い方が選ばれたままにならないようにする
+    if (pays.indexOf(state.router10gPay) < 0) state.router10gPay = pays[0];
+    var h = "";
+    pays.forEach(function (k) {
+      h += '<option value="' + k + '">' + ROUTER10G_PAY_LABEL[k] + "</option>";
+    });
+    sel.innerHTML = h;
+  }
   var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
   function router10gDefault() { return ROUTER10G[state.provider] || ROUTER10G_DEFAULT; }
   // プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す
@@ -357,11 +390,13 @@
        *       https://www.docomo.ne.jp/info/notice/page/260423_00.html （2026-07-30 確認） */
       timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });
     }
-    // 10Gルーターの分割購入（48回）。一括のときは下の初期費用へ回す
+    // 10Gルーターの分割購入。一括のときは下の初期費用へ回す
     var r10g = canBuy10gRouter() && state.router10g ? num(state.router10gPrice) : 0;
-    var r10gSplit = r10g > 0 && state.router10gPay === "b48";
+    var r10gN = router10gSplitN();
+    var r10gSplit = r10g > 0 && r10gN > 0;
     if (r10gSplit) {
-      timed.push({ name: "10Gルーター 分割（48回・総額" + yen(r10g) + "）", amount: Math.floor(r10g / 48), from: 1, to: 48 });
+      timed.push({ name: "10Gルーター 分割（" + r10gN + "回・総額" + yen(r10g) + "）",
+        amount: Math.floor(r10g / r10gN), from: 1, to: r10gN });
     }
 
     // 期間セグメント（変化点ごとの月額）
@@ -964,6 +999,7 @@
     $("router10gPriceField").hidden = !r10gOn;
     $("router10gPrice").value = state.router10gPrice || "";
     $("router10gPayField").hidden = !r10gOn;
+    renderRouter10gPays($("router10gPay"));
     $("router10gPay").value = state.router10gPay || "once";
     var r10gHint2 = $("router10gHint");
     r10gHint2.hidden = !r10gOn;
@@ -974,8 +1010,9 @@
           + "（ページの「18,240円」は税抜）。ニフティで購入する場合、ドコモの"
           + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
         : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
-        + (state.router10gPay === "b48" && rp10s > 0
-          ? "　48回分割で <strong>" + yen(Math.floor(rp10s / 48)) + "/月</strong>（総額 " + yen(rp10s) + "）"
+        + (router10gSplitN() > 0 && rp10s > 0
+          ? "　" + router10gSplitN() + "回分割で <strong>"
+            + yen(Math.floor(rp10s / router10gSplitN())) + "/月</strong>（総額 " + yen(rp10s) + "）"
           : "");
     }
     $("custName").value = state.custName;
@@ -1251,8 +1288,9 @@
       onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
       if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
         var rp10 = num(state.router10gPrice);
-        others.push(state.router10gPay === "b48"
-          ? "10Gルーター 48回分割 " + yen(Math.floor(rp10 / 48)) + "/月（総額 " + yen(rp10) + "）"
+        others.push(router10gSplitN() > 0
+          ? "10Gルーター " + router10gSplitN() + "回分割 "
+            + yen(Math.floor(rp10 / router10gSplitN())) + "/月（総額 " + yen(rp10) + "）"
           : "10Gルーター購入費用 " + yen(rp10));
       }
       if (others.length) {
@@ -1596,8 +1634,9 @@
     }
     r.tvRegRows.forEach(function (x) { h += row(esc(x.name), yen(x.amount)); });
     if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
-      h += row("10Gルーター購入", state.router10gPay === "b48"
-        ? yen(Math.floor(num(state.router10gPrice) / 48)) + "/月 × 48回（総額 " + yen(num(state.router10gPrice)) + "）"
+      h += row("10Gルーター購入", router10gSplitN() > 0
+        ? yen(Math.floor(num(state.router10gPrice) / router10gSplitN())) + "/月 × "
+          + router10gSplitN() + "回（総額 " + yen(num(state.router10gPrice)) + "）"
         : yen(num(state.router10gPrice)));
     }
     state.extraInitial.forEach(function (a) {

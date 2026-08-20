@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.112.0";
+  var APP_VERSION = "1.113.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -5495,6 +5495,24 @@
     m.style.left = left + "px";
     m.style.top = (r.bottom + 6) + "px";
   }
+  /* 長押しで「つかむ」。つかんだまま別のボタンへ動かして離すと並べ替え、
+   * 動かさずにそのまま離すと従来どおり削除メニューを出す。 */
+  var tplDrag = null;   // { i, store, btn, moved }
+  function tplDragClear() {
+    if (!tplDrag) return;
+    tplDrag.btn.classList.remove("tpl-grab");
+    document.querySelectorAll(".tpl.tpl-over").forEach(function (x) { x.classList.remove("tpl-over"); });
+    document.body.classList.remove("sorting");
+    tplDrag = null;
+  }
+  // いま指している先が、入れ替え先として有効なボタンなら返す（別の列へは移さない）
+  function tplTargetAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    var over = el && el.closest && el.closest(".tpl");
+    if (!over || !tplDrag || over === tplDrag.btn) return null;
+    if (over.hasAttribute("data-tplst") !== tplDrag.store) return null;
+    return over;
+  }
   function initTplHold() {
     document.querySelectorAll(".tpl").forEach(function (b) {
       var isStore = b.hasAttribute("data-tplst");
@@ -5503,9 +5521,16 @@
         if (e.pointerType === "mouse" && e.button !== 0) return;
         tplHold.fired = false;
         clearTimeout(tplHold.timer);
+        var pid = e.pointerId;
         tplHold.timer = setTimeout(function () {
           tplHold.fired = true;
-          openTplMenu(i, b, isStore);
+          var t = (isStore ? storeTemplates : templates)[i];
+          if (!t) return;                               // 未設定の枠はつかめない
+          if (tplSaveMode || tplStoreSaveMode) return;  // 保存先を選んでいる最中はつかめない
+          tplDrag = { i: i, store: isStore, btn: b, moved: false };
+          b.classList.add("tpl-grab");
+          document.body.classList.add("sorting");
+          try { b.setPointerCapture(pid); } catch (e2) {}
         }, 550);
       }
       function cancel() { clearTimeout(tplHold.timer); }
@@ -5513,13 +5538,42 @@
       ["pointerup", "pointerleave", "pointercancel"].forEach(function (ev) {
         b.addEventListener(ev, cancel);
       });
-      // PCは右クリックでも出せるようにする
+      // PCは右クリックでも削除メニューを出せる
       b.addEventListener("contextmenu", function (e) {
         e.preventDefault();
         tplHold.fired = true;
         openTplMenu(i, b, isStore);
       });
     });
+    // つかんだあとの移動と、離したときの入れ替え／削除メニュー
+    document.addEventListener("pointermove", function (e) {
+      if (!tplDrag) return;
+      e.preventDefault();
+      document.querySelectorAll(".tpl.tpl-over").forEach(function (x) { x.classList.remove("tpl-over"); });
+      var over = tplTargetAt(e.clientX, e.clientY);
+      if (over) { over.classList.add("tpl-over"); tplDrag.moved = true; }
+    }, { passive: false });
+    document.addEventListener("pointerup", function (e) {
+      if (!tplDrag) return;
+      var d = tplDrag;
+      var over = tplTargetAt(e.clientX, e.clientY);
+      tplDragClear();
+      if (over) {
+        var j = d.store ? +over.dataset.tplst : +over.dataset.tpl;
+        var list = d.store ? storeTemplates : templates;
+        var tmp = list[d.i]; list[d.i] = list[j]; list[j] = tmp;
+        if (d.store) persistStoreTemplates(); else persistTemplates();
+        renderTplBar();
+        tplMsg((d.store ? "店舗共通の" : "") + "テンプレートを並べ替えました");
+      } else if (!d.moved) {
+        openTplMenu(d.i, d.btn, d.store);   // 動かさず離した → 削除メニュー
+      }
+    });
+    document.addEventListener("pointercancel", function () { tplDragClear(); });
+    // つかんでいる間は画面ごとスクロールさせない（iPad）
+    document.addEventListener("touchmove", function (e) {
+      if (tplDrag) e.preventDefault();
+    }, { passive: false });
     $("tplMenuDel").addEventListener("click", function () {
       var i = tplHold.slot;
       var list = tplHold.store ? storeTemplates : templates;
@@ -8275,6 +8329,10 @@
     if (!head || !box) return;
     var drag = null;
     head.addEventListener("pointerdown", function (e) {
+      /* ✕ボタンの上では、つかむ処理を始めない。
+       * つかむ処理が先に走ると、ポインタを取り込んで（setPointerCapture）
+       * ✕のクリックが発火せず、PCのマウスで閉じられなくなる。 */
+      if (e.target && e.target.id === "calcClose") return;
       var r = box.getBoundingClientRect();
       drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
       calcPlace(r.left, r.top);   // いまの位置から動かし始める
@@ -10727,7 +10785,8 @@
    * 文面はここで持つ（マスタではない）。自動入力の決まりなど、
    * 仕組みを知らないと戸惑うところを優先して書く。 */
   var QUOTE_HELP = {
-    purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします（複数可）。金額には影響しません。\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「① 端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
+    tpl: { t: "テンプレート", b: "よく使う見積もりの形を3つまで登録して、1タップで呼び出せます。\n・保存: 「現在の内容をテンプレに保存」→ 保存先のボタンをタップ → 名前を付けて保存\n・呼び出し: ボタンをタップ（お客様名と店舗情報は今の内容のまま残ります）\n・<b>削除: ボタンを長押しして、動かさずに離す</b>と出るメニューで「削除」を選びます（PCは右クリックでも出ます）\n・<b>並べ替え: 長押しでつかんだまま、別のボタンの上へ動かして離す</b>と入れ替わります\n・「テンプレート」は担当ごと、「店舗共通」は全担当で共有です" },
+    purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします（複数可）。金額には影響しません。\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
     proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・光・でんき・ガスはご住所での登録が要るため郵便番号の欄が出ます（郵便番号は他の端末にも同期されます）\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
     c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
     c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などの申し込み・廃止をチェックします\n・ドコモメール: 「有り」にすると月額に入ります" },
