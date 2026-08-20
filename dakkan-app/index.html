@@ -50,6 +50,23 @@
             <select id="dkLineType"></select>
           </div>
           <div class="field">
+            <label for="dkHousing">住居タイプ</label>
+            <select id="dkHousing">
+              <option value="ht">戸建</option>
+              <option value="ms">マンション</option>
+              <option value="ms100">マンション（100M）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="dkApplyType">ドコモ側の申込区分</label>
+            <select id="dkApplyType">
+              <option value="jigyosha">事業者変更（他社光コラボから・工事不要）</option>
+              <option value="tenyo">転用（フレッツ光から・工事不要）</option>
+              <option value="shinki">新規（工事あり）</option>
+            </select>
+          </div>
+          <p class="hint" id="dkHousingNote">住居タイプは他社の標準月額・違約金の目安と、ドコモ光の料金の両方に効きます。申込区分は回線の種類から自動で入りますが、ここで変更できます（「ドコモにした場合」タブと連動します）。</p>
+          <div class="field">
             <label for="dkCarrier">ご利用中の会社</label>
             <select id="dkCarrier"></select>
           </div>

@@ -60,6 +60,14 @@
     return v;
   }
 
+  /* いま採用されている申込区分。
+   * ①で担当者が選べるようにしたので、回線の種類からの提案（lineType().apply）ではなく
+   * イエナカ側の実際の値を見る。イエナカ側が未設定のときだけ提案値へ戻す。 */
+  function applyNow() {
+    var ie = env.ienakaState ? env.ienakaState() : null;
+    return (ie && ie.applyType) || lineType().apply;
+  }
+
   function defaultState() {
     return {
       lineType: "collabo",
@@ -124,11 +132,14 @@
   function syncDefaultsForHousing() {
     if (!state) return;
     var c = carrier();
-    if (!c || state.renewal === "renewal") return;
-    var other = housingKey() === "ht" ? "ms" : "ht";
-    function otherOf(v) { return v && typeof v === "object" ? v[other] : null; }
-    if (state.penalty == null || state.penalty === otherOf(c.penalty)) state.penalty = byHousing(c.penalty);
-    if (lineType().removal && (state.removal == null || state.removal === otherOf(c.removal))) state.removal = byHousing(c.removal);
+    if (c && state.renewal !== "renewal") {
+      var other = housingKey() === "ht" ? "ms" : "ht";
+      var otherOf = function (v) { return v && typeof v === "object" ? v[other] : null; };
+      if (state.penalty == null || state.penalty === otherOf(c.penalty)) state.penalty = byHousing(c.penalty);
+      if (lineType().removal && (state.removal == null || state.removal === otherOf(c.removal))) state.removal = byHousing(c.removal);
+    }
+    /* 会社を選んでいなくても、①の住居タイプ・申込区分の表示はイエナカ側に合わせ直す。
+     * （以前はここで早期 return していたため、表示が古いまま残っていた） */
     syncForm();
   }
 
@@ -197,8 +208,8 @@
     }
     outRow(lt.zansaiLabel, state.zansai);
     if (lt.removal) outRow("撤去工事費", state.removal);
-    if (lt.apply === "jigyosha") outRow("事業者変更承諾番号の発行手数料", state.numberFee);
-    if (lt.apply === "tenyo") outRow("転用承諾番号の発行手数料", state.numberFee);
+    if (applyNow() === "jigyosha") outRow("事業者変更承諾番号の発行手数料", state.numberFee);
+    if (applyNow() === "tenyo") outRow("転用承諾番号の発行手数料", state.numberFee);
 
     var outTotal = 0;
     outRows.forEach(function (r) { if (!r.pending) outTotal += r.amount; });
@@ -323,7 +334,7 @@
 
     return {
       lineTypeName: lt.name, carrierName: carrierLabel(),
-      applyType: suggest().applyType, koji: suggest().koji,
+      applyType: applyNow(), koji: suggest().koji,
       nowSvc: nowSvc, newSvc: newSvc, newProduct: ie2 && window.KQ_IENAKA.label ? window.KQ_IENAKA.label() : "ドコモ光",
       nowMonthly: nowMonthly, nowIsRef: nowIsRef,
       newMonthly: newMonthly, newFirst: newFirst, segs: segs,
@@ -381,8 +392,13 @@
     $("dkZansai").value = state.zansai == null ? "" : state.zansai;
     $("dkRemovalField").hidden = !lt.removal;
     $("dkRemoval").value = state.removal == null ? "" : state.removal;
-    $("dkNumberFeeField").hidden = !(lt.apply === "jigyosha" || lt.apply === "tenyo");
-    $("dkNumberFeeLabel").textContent = lt.apply === "tenyo" ? "転用承諾番号の発行手数料" : "事業者変更承諾番号の発行手数料";
+    /* 住居タイプ・申込区分はイエナカ側が正。ここは表示を合わせるだけで、
+     * 変更は bind() から pickIenaka() でイエナカ側の入力欄を操作して反映する。 */
+    var ieS = env.ienakaState ? env.ienakaState() : null;
+    if ($("dkHousing")) $("dkHousing").value = (ieS && ieS.housing) || "ht";
+    if ($("dkApplyType")) $("dkApplyType").value = applyNow();
+    $("dkNumberFeeField").hidden = !(applyNow() === "jigyosha" || applyNow() === "tenyo");
+    $("dkNumberFeeLabel").textContent = applyNow() === "tenyo" ? "転用承諾番号の発行手数料" : "事業者変更承諾番号の発行手数料";
     $("dkNumberFee").value = state.numberFee == null ? "" : state.numberFee;
     $("dkMemo").value = state.memo || "";
     var sv = state.services || {};
@@ -410,7 +426,7 @@
 
     /* 申込区分の提案 */
     $("dkApplyNote").innerHTML = "ドコモ側の申込区分は <b>" + esc(APPLY_LABEL[r.applyType] || r.applyType) + "</b> になります。"
-      + "（「ドコモにした場合」タブの①で変更できます）";
+      + "（上の「ドコモ側の申込区分」で変更できます）";
 
     /* ④ 比べる ― 出す数字は3つだけ */
     var h = '<div class="big-monthly">';
@@ -465,6 +481,25 @@
       applyCarrierDefaults();
       /* 回線の種類からドコモ側の申込区分・商材を提案する */
       if (window.KQ_DAKKAN.onSuggest) window.KQ_DAKKAN.onSuggest(suggest());
+      syncForm(); recalc();
+    });
+    /* 住居タイプ。イエナカ側の入力欄を操作して change を起こす。
+     * 他社の違約金・撤去費の入れ直し（syncDefaultsForHousing）は
+     * イエナカ側の変更通知から呼ばれるので、ここでは呼ばない。 */
+    $("dkHousing").addEventListener("change", function () {
+      if (env.pickIenaka) env.pickIenaka("ieHousing", this.value);
+      syncForm(); recalc();
+    });
+    /* 申込区分。回線の種類からの提案を担当者が上書きできる */
+    $("dkApplyType").addEventListener("change", function () {
+      var v = this.value, c = carrier();
+      state.applyTouched = true;
+      if (env.pickIenaka) env.pickIenaka("ieApplyType", v);
+      /* 承諾番号の手数料は申込区分で要否が変わる。
+       * 事業者変更・転用へ切り替えたときは会社の目安を入れ直す */
+      if ((v === "jigyosha" || v === "tenyo") && state.numberFee == null && c && c.numberFee != null) {
+        state.numberFee = c.numberFee;
+      }
       syncForm(); recalc();
     });
     $("dkCarrier").addEventListener("change", function () {
