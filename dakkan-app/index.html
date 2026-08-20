@@ -23,8 +23,9 @@
     <a class="hd-link" id="toKeitai" href="../keitai-app/">← ケータイ見積もり</a>
   </h1>
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="dakkan" type="button">いまのご契約</button>
+    <button class="tab active" data-tab="dakkan" type="button">現在のご利用状況</button>
     <button class="tab" data-tab="ienaka" type="button">ドコモにした場合</button>
+    <button class="tab" data-tab="compare" type="button">比べる</button>
     <button class="tab" data-tab="sheet" type="button">別紙</button>
     <button class="tab" data-tab="config" type="button">設定</button>
   </nav>
@@ -35,16 +36,16 @@
   <!-- ============ ①いまのご契約・②乗り換え費用・④比べる ============ -->
   <section id="tab-dakkan" class="tab-page active no-print">
     <div class="card full ie-head">
-      <p class="hint">お客様の<strong>請求書を見ながら</strong>入力します。分からない項目は<strong>空欄のまま</strong>で構いません（「要確認」として出ます）。
-        掛からないことが確認できた項目は <strong>0</strong> と入力してください。</p>
-      <p class="hint ie-summary" id="dkSummary"></p>
+      <p class="hint">このタブは<strong>お客様の現在のご利用状況をうかがう</strong>ためのものです。お客様の<strong>請求書を見ながら</strong>入力します。
+        分からない項目は<strong>空欄のまま</strong>で構いません（「要確認」として出ます）。掛からないことが確認できた項目は <strong>0</strong> と入力してください。</p>
+      <p class="hint">比較の結果は<strong>「比べる」タブ</strong>に出ます。ここでは数字を並べません。</p>
       <p class="hint" id="dkApplyNote"></p>
     </div>
 
     <div class="qcols">
       <div class="qcol">
         <div class="step">
-          <h2>① いまのご契約</h2>
+          <h2>① 現在のご利用状況</h2>
           <div class="field">
             <label for="dkLineType">回線の種類</label>
             <select id="dkLineType"></select>
@@ -137,44 +138,11 @@
             <textarea id="dkMemo" rows="2" placeholder="例）お客様のご希望・確認事項など"></textarea>
           </div>
         </div>
-
-        <div class="step">
-          <h2>③ ドコモ側の割引（「実質」の計算）</h2>
-          <div class="field">
-            <label for="dkHikariSetWari">ドコモ光セット割 合計</label>
-            <input type="number" id="dkHikariSetWari" inputmode="numeric" placeholder="例）1100"> 円/月
-          </div>
-          <p class="hint"><strong>ご家族のスマホ側から割引される金額</strong>の合計です。ここに入れると別紙に「実質」が出ます。
-            スマホの見積書と<strong>二重に数えないよう</strong>ご注意ください（別紙にも注記が出ます）。</p>
-          <div class="field">
-            <label for="dkDcardWari">dカードお支払割</label>
-            <input type="number" id="dkDcardWari" inputmode="numeric" placeholder="通常は空欄"> 円/月
-          </div>
-          <p class="hint"><strong>ドコモ光はこの割引の対象外です</strong>（対象はスマホの料金プラン。ドコモ MAX等＋dカード GOLD/PLATINUM で −550円/月、その他対象プランは −187円/月）。
-            しかも<strong>光へ乗り換えなくても受けられる</strong>割引なので、ここに入れると「乗り換えで得する額」が実際より大きく見えます。
-            世帯の実質でご案内したいときだけ入れてください（別紙に注記が出ます）。</p>
-        </div>
-
-        <div class="step">
-          <h2>④ 乗り換え特典</h2>
-          <label class="check"><input type="checkbox" id="dkNorikae" checked> ドコモ光 乗り換え特典を案内する</label>
-          <p class="hint">他社の<strong>解約金・撤去工事費・端末残債</strong>を、dポイント（期間・用途限定）<strong>最大100,000pt</strong>で補填する特典です。
-            上の②で入力した<strong>他社側の費用</strong>から自動で計算し、別紙の「キャンペーン」に出ます。
-            <strong>転用（フレッツ光から）は対象外</strong>のため、そのときは出ません。「要確認」の項目は金額が分からないので含めません。</p>
-        </div>
       </div>
     </div>
 
-    <div class="card full">
-      <h2>④ 比べる</h2>
-      <div id="dkCompare"></div>
-      <h3>乗り換えに掛かる費用</h3>
-      <div id="dkCostList"></div>
-      <ul class="hint" id="dkNotes"></ul>
-    </div>
-
     <div class="actions">
-      <button class="btn-main" id="toSheet" type="button">別紙を表示する</button>
+      <button class="btn-main" id="toIenakaNext" type="button">ドコモにした場合へ進む</button>
       <button class="btn-sub" id="clearQuote" type="button">入力をクリア</button>
     </div>
   </section>
@@ -182,7 +150,7 @@
   <!-- ============ ドコモにした場合（keitai-app/ienaka.js と同じ入力画面） ============ -->
   <section id="tab-ienaka" class="tab-page no-print">
     <div class="card full ie-head">
-      <p class="hint">ドコモ光・home 5G にした場合の見積もりです。<strong>「いまのご契約」タブの比較は、ここの内容から計算されます。</strong></p>
+      <p class="hint">ドコモ光・home 5G にした場合の見積もりです。<strong>「比べる」タブの比較は、ここの内容と「現在のご利用状況」から計算されます。</strong></p>
       <p class="hint ie-summary" id="ieSummary"></p>
     </div>
     <div id="ieBody">
@@ -358,6 +326,54 @@
     </div>
         </div>
       </div>
+    </div>
+
+    <div class="qcols">
+      <div class="qcol">
+        <div class="step">
+          <h2>③ ドコモ側の割引（「実質」の計算）</h2>
+          <div class="field">
+            <label for="dkHikariSetWari">ドコモ光セット割 合計</label>
+            <input type="number" id="dkHikariSetWari" inputmode="numeric" placeholder="例）1100"> 円/月
+          </div>
+          <p class="hint"><strong>ご家族のスマホ側から割引される金額</strong>の合計です。ここに入れると別紙に「実質」が出ます。
+            スマホの見積書と<strong>二重に数えないよう</strong>ご注意ください（別紙にも注記が出ます）。</p>
+          <div class="field">
+            <label for="dkDcardWari">dカードお支払割</label>
+            <input type="number" id="dkDcardWari" inputmode="numeric" placeholder="通常は空欄"> 円/月
+          </div>
+          <p class="hint"><strong>ドコモ光はこの割引の対象外です</strong>（対象はスマホの料金プラン。ドコモ MAX等＋dカード GOLD/PLATINUM で −550円/月、その他対象プランは −187円/月）。
+            しかも<strong>光へ乗り換えなくても受けられる</strong>割引なので、ここに入れると「乗り換えで得する額」が実際より大きく見えます。
+            世帯の実質でご案内したいときだけ入れてください（別紙に注記が出ます）。</p>
+        </div>
+      </div>
+      <div class="qcol">
+        <div class="step">
+          <h2>④ 乗り換え特典</h2>
+          <label class="check"><input type="checkbox" id="dkNorikae" checked> ドコモ光 乗り換え特典を案内する</label>
+          <p class="hint">他社の<strong>解約金・撤去工事費・端末残債</strong>を、dポイント（期間・用途限定）<strong>最大100,000pt</strong>で補填する特典です。
+            上の②で入力した<strong>他社側の費用</strong>から自動で計算し、別紙の「キャンペーン」に出ます。
+            <strong>転用（フレッツ光から）は対象外</strong>のため、そのときは出ません。「要確認」の項目は金額が分からないので含めません。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 比べる ============ -->
+  <section id="tab-compare" class="tab-page no-print">
+    <div class="card full ie-head">
+      <p class="hint">「現在のご利用状況」と「ドコモにした場合」の入力から計算しています。金額を直すときは、それぞれのタブに戻ってください。</p>
+      <p class="hint ie-summary" id="dkSummary"></p>
+    </div>
+    <div class="card full">
+      <h2>比べる</h2>
+      <div id="dkCompare"></div>
+      <h3>乗り換えに掛かる費用</h3>
+      <div id="dkCostList"></div>
+      <ul class="hint" id="dkNotes"></ul>
+    </div>
+    <div class="actions">
+      <button class="btn-main" id="toSheetFromCompare" type="button">別紙を表示する</button>
     </div>
   </section>
 
