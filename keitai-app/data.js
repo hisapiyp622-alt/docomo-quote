@@ -10,7 +10,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 6,
+  "masterVersion": 7,
   "updated": "2026-08-13",
   "fees": {
     "jimu_shinki": 4950,
@@ -39,6 +39,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "kosodate": 1210,
         "hearty": 1980,
         "minna2": 550,
         "minna3": 1210,
@@ -67,6 +68,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "kosodate": 1210,
         "hearty": 1980,
         "minna2": 550,
         "minna3": 1210,
@@ -98,6 +100,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "kosodate": 1210,
         "hearty": 1980,
         "minna2": 550,
         "minna3": 1210,
@@ -347,6 +350,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "kosodate": 1100,
         "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,
@@ -371,6 +375,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "kosodate": 1100,
         "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,
@@ -441,6 +446,7 @@ const DEFAULT_DATA = {
         }
       ],
       "discounts": {
+        "kosodate": 1100,
         "hearty": 1507,
         "minna2": 550,
         "minna3": 1100,

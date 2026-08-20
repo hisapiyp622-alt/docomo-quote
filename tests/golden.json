@@ -373,6 +373,42 @@
       }
     ]
   },
+  "kosodate_max": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 4488
+      }
+    ]
+  },
+  "kosodate_max_kake": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5588
+      }
+    ]
+  },
+  "kosodate_hearty_both": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 2508
+      }
+    ]
+  },
   "adhoc_monthly": {
     "initial": 0,
     "store": 0,

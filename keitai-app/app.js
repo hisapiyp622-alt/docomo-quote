@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.114.0";
+  var APP_VERSION = "1.115.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -245,7 +245,11 @@
   var SAVED_FULL = 60;
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
   var HEARTY_VOICE_OFF = 880;   // ハーティ割引の通話オプション割引（税込）
-  var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty",
+  /* 子育てサポート割引の通話オプション割引（税込）。
+   * 出典: docomo.ne.jp/charge/kosodate_wari/（2026-08-20 確認）
+   * 月額の割引額はプランごとに違うため data.js の discounts.kosodate に持つ。 */
+  var KOSODATE_VOICE_OFF = 880;
+  var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty", "kosodate",
     "kaimashi", "u15", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
   function slimData(d) {
@@ -2408,6 +2412,7 @@
    * 「スマホ＋光（世帯の合計）」は 1.112.0 でやめた。請求が分かれるものを
    * 1つの合計で見せると、ドコモの請求額と合わず店頭で説明に困るため。 */
   var sheetScope = "phone";
+  var otherWariOpen = false;  // ③割引「その他割引」を手で開いたか（見積もりには保存しない）
   /* 光を申し込むのにスマホ側でセット割を選んでいない、という付け忘れに気づけるようにする。
    * 逆（セット割だけ選んで光を入れていない）は、ご家族の既契約という場合があるので出さない。 */
   function renderIenakaWarn(r) {
@@ -2983,6 +2988,8 @@
     "x:dcardpay": { name: "dカードお支払割", url: DCM_URL + "charge/dcard_oshiharai/" },
     "x:denki":    { name: "ドコモでんき", url: DCM_URL + "denki/" },
     "x:dcard":    { name: "dカード", url: DCM_URL + "service/dcard/" },
+    "x:kosodate": { name: "子育てサポート割引", url: DCM_URL + "charge/kosodate_wari/",
+      desc: "ひとり親世帯の方向けの割引です。児童扶養手当受給者証などの確認書類が必要で、お子さまが18歳になったあと最初の3月31日まで割引が続きます。" },
     "x:hearty":   { name: "ハーティ割引", url: DCM_URL + "charge/hearty/",
       desc: "障がい者手帳などをお持ちの方向けの割引です。基本使用料と通話オプションが安くなり、各種手数料も無料になります。みんなドコモ割・dカードお支払割とは重ねてご利用いただけません。" }
   };
@@ -3440,7 +3447,7 @@
   function defaultState() {
     return {
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
-      minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false,
+      minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false, kosodate: false,
       voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
@@ -5014,7 +5021,9 @@
     var dDenki = st.dDenki ? (d.denki || 0) : 0;
     var dChoki = st.choki === "y10" ? (d.choki10 || 0)
                : st.choki === "y20" ? (d.choki20 || 0) : 0;
-    var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki - dHearty);
+    // 子育てサポート割引（ひとり親世帯）。併用制限は公式に明記が無いため、そのまま重ねる
+    var dKosodate = st.kosodate ? (d.kosodate || 0) : 0;
+    var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki - dHearty - dKosodate);
 
     // 通話オプション
     var vo = MASTER.voiceOptions.filter(function (v) { return v.id === st.voice; })[0]
@@ -5026,6 +5035,12 @@
     if (dHearty && plan.id !== "hajimete" && (vo.id === "v5" || vo.id === "kake")) {
       dHeartyVoice = Math.min(HEARTY_VOICE_OFF, voicePrice);
       voicePrice -= dHeartyVoice;
+    }
+    // 子育てサポート割引も通話オプションを880円引く（ハーティと同じ形。引き切ったら0円まで）
+    var dKosodateVoice = 0;
+    if (dKosodate && (vo.id === "v5" || vo.id === "kake")) {
+      dKosodateVoice = Math.min(KOSODATE_VOICE_OFF, voicePrice);
+      voicePrice -= dKosodateVoice;
     }
     var voiceNote = (plan.includes5min && vo.id === "v5") ? "（プランに標準込み）" : "";
 
@@ -5381,7 +5396,7 @@
     return {
       plan: plan, tier: tier, tierIdx: tierIdx,
       dMinna: dMinna, dSet: dSet, dCard: dCard, dDenki: dDenki, dChoki: dChoki,
-      dHearty: dHearty, dHeartyVoice: dHeartyVoice,
+      dHearty: dHearty, dHeartyVoice: dHeartyVoice, dKosodate: dKosodate, dKosodateVoice: dKosodateVoice,
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
@@ -5415,7 +5430,7 @@
   }
   function isPatternUsed(st) {
     var d = defaultState();
-    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "hearty", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointPoikatsuFamily", "pointDcard"];
+    var keys = ["minna", "dSet", "dCard", "dDenki", "choki", "hearty", "kosodate", "voice", "devicePrice", "payMethod", "tierIdx", "planGroup", "deviceName", "custName", "pointPoikatsu", "pointPoikatsuFamily", "pointDcard"];
     if (keys.some(function (k) { return st[k] !== d[k]; })) return true;
     function anyOn(map) { return Object.keys(map || {}).some(function (k) { return map[k]; }); }
     if (anyOn(st.options) || anyOn(st.feeItems) || anyOn(st.accSel)) return true;
@@ -6006,7 +6021,8 @@
     { wrap: "dCardWrap", name: "dカードお支払割", on: function (d) { return !!(d.dcard || d.dcardGold); } },
     { wrap: "dDenkiWrap", name: "ドコモでんきセット割", on: function (d) { return !!d.denki; } },
     { wrap: "chokiWrap", name: "長期利用割", on: function (d) { return !!d.choki10; } },
-    { wrap: "heartyWrap", name: "ハーティ割引", on: function (d) { return !!d.hearty; } }
+    { wrap: "heartyWrap", name: "ハーティ割引", on: function (d) { return !!d.hearty; } },
+    { wrap: "kosodateWrap", name: "子育てサポート割引", on: function (d) { return !!d.kosodate; } }
   ];
   function renderDiscountHint() {
     var plan = currentPlan();
@@ -6042,12 +6058,27 @@
     $("procType").value = state.procType;
     $("planGroup").value = state.planGroup;
     renderPlanSelect();
-    $("minna").value = state.minna;
+    $("minnaOn").checked = state.minna !== "0";
+    $("minnaSub").hidden = state.minna === "0";
+    var mr = document.querySelector('input[name="minnaN"][value="' + (state.minna === "3" ? "3" : "2") + '"]');
+    if (mr) mr.checked = true;
     $("dSet").checked = state.dSet;
-    $("dCardSel").value = state.dCard;
+    $("dCardOn").checked = state.dCard !== "none";
+    $("dCardSub").hidden = state.dCard === "none";
+    if (state.dCard !== "none") $("dCardSel").value = state.dCard;
     $("dDenki").checked = state.dDenki;
+    $("chokiOn").checked = state.choki !== "none";
+    $("chokiSub").hidden = state.choki === "none";
+    var cr = document.querySelector('input[name="chokiY"][value="' + (state.choki === "y20" ? "y20" : "y10") + '"]');
+    if (cr) cr.checked = true;
+    /* その他割引は、どちらかを選んでいるか、開くと自分で押したときに開いた状態にする */
+    var otherOn = state.hearty || state.kosodate || otherWariOpen;
+    $("otherWariOn").checked = otherOn;
+    $("otherWariBox").hidden = !otherOn;
     $("hearty").checked = state.hearty;
-    $("choki").value = state.choki;
+    $("kosodate").checked = state.kosodate;
+    var kn = $("kosodateNote");
+    if (kn) kn.hidden = !state.kosodate;
     renderVoiceSelect();
     renderMailOpt();
     renderOptionList();
@@ -7301,6 +7332,8 @@
     if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", amt: r.dChoki });
     if (r.dHearty) setWari.push({ key: "x:hearty", name: "ハーティ割引", amt: r.dHearty });
     if (r.dHeartyVoice) setWari.push({ key: "x:hearty", name: "ハーティ割引（通話オプション）", amt: r.dHeartyVoice });
+    if (r.dKosodate) setWari.push({ key: "x:kosodate", name: "子育てサポート割引", amt: r.dKosodate });
+    if (r.dKosodateVoice) setWari.push({ key: "x:kosodate", name: "子育てサポート割引（通話オプション）", amt: r.dKosodateVoice });
     if (setWari.length) {
       var setTotal = 0, setDetail = [];
       setWari.forEach(function (w) { setTotal += w.amt; setDetail.push(svcName(w.name, w.key) + " −" + yen(w.amt)); });
@@ -9872,15 +9905,55 @@
       recalc();
     });
     $("tierIdx").addEventListener("change", function () { state.tierIdx = parseInt(this.value, 10) || 0; recalc(); });
-    $("minna").addEventListener("change", function () { state.minna = this.value; recalc(); });
+    function minnaN() {
+      var r2 = document.querySelector('input[name="minnaN"]:checked');
+      return r2 ? r2.value : "2";
+    }
+    function chokiY() {
+      var r2 = document.querySelector('input[name="chokiY"]:checked');
+      return r2 ? r2.value : "y10";
+    }
+    $("minnaOn").addEventListener("change", function () {
+      state.minna = this.checked ? minnaN() : "0";
+      $("minnaSub").hidden = !this.checked;
+      recalc();
+    });
+    document.querySelectorAll('input[name="minnaN"]').forEach(function (rb) {
+      rb.addEventListener("change", function () { state.minna = this.value; recalc(); });
+    });
     $("dSet").addEventListener("change", function () { state.dSet = this.checked; recalc(); });
+    $("dCardOn").addEventListener("change", function () {
+      state.dCard = this.checked ? $("dCardSel").value : "none";
+      $("dCardSub").hidden = !this.checked;
+      recalc();
+    });
     $("dCardSel").addEventListener("change", function () { state.dCard = this.value; recalc(); });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
+    $("chokiOn").addEventListener("change", function () {
+      state.choki = this.checked ? chokiY() : "none";
+      $("chokiSub").hidden = !this.checked;
+      recalc();
+    });
+    document.querySelectorAll('input[name="chokiY"]').forEach(function (rb) {
+      rb.addEventListener("change", function () { state.choki = this.value; recalc(); });
+    });
+    /* その他割引（ハーティ・子育てサポート）は普段は畳んでおく。
+     * 閉じたときは中の割引も外す（見えないのに効いている状態を作らない） */
+    $("otherWariOn").addEventListener("change", function () {
+      otherWariOpen = this.checked;
+      if (!this.checked) { state.hearty = false; state.kosodate = false; $("hearty").checked = false; $("kosodate").checked = false; }
+      $("otherWariBox").hidden = !this.checked;
+      recalc(); renderDiscountHint();
+    });
     /* 重ねられない割引の注意書きを出し直すため、ここだけ renderDiscountHint も呼ぶ */
     $("hearty").addEventListener("change", function () {
       state.hearty = this.checked; recalc(); renderDiscountHint();
     });
-    $("choki").addEventListener("change", function () { state.choki = this.value; recalc(); });
+    $("kosodate").addEventListener("change", function () {
+      state.kosodate = this.checked;
+      $("kosodateNote").hidden = !this.checked;
+      recalc(); renderDiscountHint();
+    });
     $("campaignList").addEventListener("change", function (e) {
       var cid = e.target.getAttribute("data-cp");
       if (cid) { state.campaigns[cid] = e.target.checked; recalc(); return; }
@@ -10783,7 +10856,7 @@
     proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
     c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
     c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: 「有り」にすると月額に入ります" },
-    c3: { t: "③ 割引", b: "月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: カードの種類で⑧のdカード還元の自動計算も変わります\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
+    c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: カードの種類で⑧のdカード還元の自動計算も変わります\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
     c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定タブで変えられます（タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },
     c6: { t: "⑥ アクセサリ", b: "・定番商品はタイルをタップして選び、タイルの中で一括／分割を選びます\n・リストにない商品は「＋ アクセサリを追加」から名前と金額を入れます\n・一括のぶんは⑦の店頭お支払いに、分割（12・24・36回）は月額に入ります\n・定番商品の内容はマスタ設定で編集できます" },

@@ -205,36 +205,40 @@
 
     <div class="card c3">
       <h2>③ 割引 <button class="card-help" type="button" data-help="c3" aria-label="この項目の入力のしかた">?</button></h2>
-      <div class="field" id="minnaWrap">
-        <label for="minna">みんなドコモ割</label>
-        <select id="minna">
-          <option value="0">適用なし（1回線）</option>
-          <option value="2">2回線</option>
-          <option value="3">3回線以上</option>
-        </select>
+      <div id="minnaWrap">
+        <label class="check"><input type="checkbox" id="minnaOn"> みんなドコモ割</label>
+        <div class="wari-sub" id="minnaSub" hidden>
+          <label class="check"><input type="radio" name="minnaN" value="2" checked> 2回線</label>
+          <label class="check"><input type="radio" name="minnaN" value="3"> 3回線以上</label>
+        </div>
       </div>
       <label class="check" id="dSetWrap"><input type="checkbox" id="dSet"> ドコモ光／home 5G セット割</label>
-      <div class="field" id="dCardWrap">
-        <label for="dCardSel">dカードお支払割</label>
-        <select id="dCardSel">
-          <option value="none">適用なし</option>
-          <option value="normal">dカード</option>
-          <option value="goldu">dカード GOLD U（還元5%）</option>
-          <option value="gold">dカード GOLD（還元10%）</option>
-          <option value="platinum">dカード PLATINUM（還元20%）</option>
-        </select>
+      <div id="dCardWrap">
+        <label class="check"><input type="checkbox" id="dCardOn"> dカードお支払割</label>
+        <div class="wari-sub" id="dCardSub" hidden>
+          <select id="dCardSel">
+            <option value="normal">dカード</option>
+            <option value="goldu">dカード GOLD U（還元5%）</option>
+            <option value="gold">dカード GOLD（還元10%）</option>
+            <option value="platinum">dカード PLATINUM（還元20%）</option>
+          </select>
+        </div>
       </div>
       <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
-      <div class="field" id="chokiWrap">
-        <label for="choki">長期利用割（MAX・ポイ活MAXのみ）</label>
-        <select id="choki">
-          <option value="none">適用なし</option>
-          <option value="y10">ドコモ歴10年以上</option>
-          <option value="y20">ドコモ歴20年以上</option>
-        </select>
+      <div id="chokiWrap">
+        <label class="check"><input type="checkbox" id="chokiOn"> 長期利用割（MAX・ポイ活MAXのみ）</label>
+        <div class="wari-sub" id="chokiSub" hidden>
+          <label class="check"><input type="radio" name="chokiY" value="y10" checked> ドコモ歴10年以上</label>
+          <label class="check"><input type="radio" name="chokiY" value="y20"> 20年以上</label>
+        </div>
       </div>
-      <label class="check" id="heartyWrap"><input type="checkbox" id="hearty"> ハーティ割引（障がい者手帳などをお持ちの方）</label>
-      <p class="hint warn-hint" id="heartyNote" hidden>ハーティ割引は<strong>みんなドコモ割・dカードお支払割とは重ねられません</strong>。選んでいても計算には入れていません。</p>
+      <label class="check"><input type="checkbox" id="otherWariOn"> その他割引（ハーティ・子育てサポート）</label>
+      <div class="wari-sub" id="otherWariBox" hidden>
+        <label class="check" id="heartyWrap"><input type="checkbox" id="hearty"> ハーティ割引（障がい者手帳などをお持ちの方）</label>
+        <p class="hint warn-hint" id="heartyNote" hidden>ハーティ割引は<strong>みんなドコモ割・dカードお支払割とは重ねられません</strong>。選んでいても計算には入れていません。</p>
+        <label class="check" id="kosodateWrap"><input type="checkbox" id="kosodate"> 子育てサポート割引（ひとり親世帯の方）</label>
+        <p class="hint" id="kosodateNote" hidden>ひとり親世帯の方向けの割引です（児童扶養手当受給者証などの<strong>確認書類が必要</strong>）。お子さまが18歳になったあと最初の3月31日まで。5分通話無料・かけ放題も880円/月引かれます。ハーティ割引との併用可否は公式に明記がないため、両方選んだ場合はそのまま両方引いています。店頭でご確認ください。</p>
+      </div>
       <p class="hint" id="discountOff" hidden></p>
       <div id="campaignList"></div>
       <p class="hint" id="discountHint"></p>
