@@ -82,6 +82,7 @@
         <select id="product">
           <option value="hikari1g">ドコモ光 1ギガ</option>
           <option value="hikari10g">ドコモ光 10ギガ</option>
+          <option value="hikaric">ドコモ光 1ギガ タイプC（ケーブルテレビ設備）</option>
           <option value="ahamo1g">ahamo光 1ギガ</option>
           <option value="ahamo10g">ahamo光 10ギガ</option>
           <option value="home5g">home 5G</option>
@@ -93,8 +94,14 @@
           <option value="shinki">新規</option>
           <option value="tenyo">転用（フレッツ光から）</option>
           <option value="jigyosha">事業者変更（他社光コラボから）</option>
+          <option value="kirikae" hidden>切替（ケーブルテレビのネットから・工事なし）</option>
         </select>
       </div>
+      <div class="field" id="typecKeepField" hidden>
+        <label for="typecKeep">ケーブルテレビに残る月額（参考・ZTV等からの請求）</label>
+        <input type="number" id="typecKeep" inputmode="numeric" min="0" placeholder="例）2200">
+      </div>
+      <p class="hint" id="typecHint" hidden>タイプCでは<strong>お電話・テレビはケーブルテレビのご契約のまま残ります</strong>（ドコモ光電話・テレビオプションは申込不可）。金額を入れると見積書に「参考」として別枠で載ります。ケーブルテレビ側のセット割引が分かったら、割引後の額を入れてください。※ ZTVは集合住宅が対象外です。</p>
       <div id="hikariFields">
         <div class="field">
           <label for="housing">住居タイプ</label>
