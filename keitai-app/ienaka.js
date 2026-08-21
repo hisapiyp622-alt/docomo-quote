@@ -652,6 +652,14 @@
     /* 新規申込でも、いまのプロバイダを残してメールアドレスを引き継ぐことがあるため、
      * 申込区分によらず、プロバイダを選んだら聞く。 */
     var ptOn = !$("ieProviderField").hidden && !!state.provider;
+    /* 店舗ごとの機能スイッチ（契約の器の features）。切のときは
+     * タイプCの入り口（商材・切替・ZTVヒアリング）をすべて隠す。
+     * 例: ZTVエリアの無い代理店の店舗では typec: false を書く。 */
+    var typecOk = typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
+    var hOpt = $("ieProduct").querySelector('option[value="hikaric"]');
+    if (hOpt) hOpt.hidden = !typecOk;
+    var zOpt = $("ieCurLine") && $("ieCurLine").querySelector('option[value="ztv"]');
+    if (zOpt) zOpt.hidden = !typecOk;
     /* タイプC: 申込種別は「新規／切替」だけ。他の商材では「切替」を出さない。
      * ケーブルテレビ設備なのでフレッツ転用・事業者変更は当たらないため。 */
     var isC = !!PRODUCTS[state.product].typec;
@@ -661,8 +669,10 @@
       var o = $("ieApplyType").querySelector('option[value="' + v + '"]');
       if (o) o.hidden = isC;
     });
-    /* 「切替」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ
-     * 切り替える（受け取り側で処理）。店頭では「切替で来た」が入口になるため。 */
+    /* 「切替」は常に出す（機能スイッチが切の店舗を除く）。タイプC以外で
+     * 選んだら、商材を自動でタイプCへ切り替える（受け取り側で処理）。 */
+    var kOptF = $("ieApplyType").querySelector('option[value="kirikae"]');
+    if (kOptF) kOptF.hidden = !typecOk;
     $("ieApplyType").value = state.applyType || "shinki";
     $("ieTypecKeepField").hidden = !isC;
     $("ieTypecHint").hidden = !isC;

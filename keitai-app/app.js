@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.118.0";
+  var APP_VERSION = "1.119.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3763,12 +3763,27 @@
         var t = d.trialEndsAt, ends = 0;
         if (t && typeof t.toMillis === "function") ends = t.toMillis();
         else if (t) ends = num(t);
-        contractInfo = { uid: uid, status: String(d.status || ""), trialEndsAt: ends, fetchedAt: Date.now() };
+        contractInfo = { uid: uid, status: String(d.status || ""), trialEndsAt: ends, fetchedAt: Date.now(),
+          /* 店舗ごとの機能スイッチ。販売側がコンソールで features に
+           * { typec: false } のように書くと、その店舗だけ機能が消える。 */
+          features: (d.features && typeof d.features === "object") ? d.features : null };
       }
       saveContractCache();
       renderContract();
+      applyFeaturesUi();
       return true;
     }, function () { renderContract(); return false; });  // 読めないときは手元の控えのまま
+  }
+  /* 店舗ごとの機能スイッチ。書いていない機能は「あり」。
+   * 社内版・器の無い店舗・お試し中も、書かれていない限り全部あり。 */
+  function featOn(key) {
+    var f = contractInfo && contractInfo.features;
+    return !f || f[key] !== false;
+  }
+  window.KQ_FEAT = featOn;   // 光・5Gタブ（ienaka.js）からも同じ判定を使う
+  /* スイッチが切り替わったら、出し分けのある画面を描き直す */
+  function applyFeaturesUi() {
+    try { if (typeof KQ_IENAKA !== "undefined" && store && store.ienaka) KQ_IENAKA.syncForm(); } catch (e) {}
   }
   /* 使えない状態か。"" = 使える ／ "trialEnded"=お試し終了 ／ "suspended"=停止 */
   function contractBlocked() {
@@ -3809,6 +3824,7 @@
   function initContract() {
     loadContractCache();
     renderContract();
+    applyFeaturesUi();
     var btn = $("contractRecheck");
     if (btn) btn.addEventListener("click", function () {
       var msgEl = $("contractRecheckMsg");
