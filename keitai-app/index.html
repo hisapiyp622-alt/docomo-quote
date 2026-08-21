@@ -130,6 +130,8 @@
       <div class="sub-checks" id="denkiNowWrap" hidden></div>
       <div class="sub-checks" id="gasTypeWrap" hidden>
         <span class="sub-label">ガス（大阪ガス）</span>
+        <span class="sub-label">エリアの目安: <input type="text" id="gasAreaZip" inputmode="numeric" maxlength="8" placeholder="郵便番号" autocomplete="off" style="width:7.5em"></span>
+        <span id="gasAreaResult" style="flex-basis:100%"></span>
         <label class="check" title="標準メニュー。新規受付は2026年9月30日まで"><input type="checkbox" data-gastype="ippan"> 一般料金</label>
         <label class="check" title="2026年10月1日以降の新規受付の標準メニュー"><input type="checkbox" data-gastype="ippanS"> 一般料金S</label>
         <label class="check" title="ドコモでんきとセットで契約するお客さま向け"><input type="checkbox" data-gastype="matome"> まとめトク料金</label>
