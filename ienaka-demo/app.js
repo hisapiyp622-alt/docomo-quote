@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.7.0-demo";
+  var APP_VERSION = "2.7.1-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -998,8 +998,7 @@
       var o = $("applyType").querySelector('option[value="' + v + '"]');
       if (o) o.hidden = isC;
     });
-    var kOpt = $("applyType").querySelector('option[value="kirikae"]');
-    if (kOpt) kOpt.hidden = !isC;
+    /* 「切替」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
     $("applyType").value = state.applyType || "shinki";
     $("typecKeepField").hidden = !isC;
     $("typecHint").hidden = !isC;
@@ -1809,6 +1808,10 @@
   $("applyType").addEventListener("change", function () {
     var prevDef = dpointDefaultFor(state.product, state.applyType);
     state.applyType = this.value;
+    if (this.value === "kirikae" && !PRODUCTS[state.product].typec) {
+      state.product = "hikaric";
+      applyDefaults();
+    }
     syncDpointDefault(prevDef);
     syncForm(); recalc();
   });

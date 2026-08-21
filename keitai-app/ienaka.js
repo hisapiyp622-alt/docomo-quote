@@ -661,8 +661,8 @@
       var o = $("ieApplyType").querySelector('option[value="' + v + '"]');
       if (o) o.hidden = isC;
     });
-    var kOpt = $("ieApplyType").querySelector('option[value="kirikae"]');
-    if (kOpt) kOpt.hidden = !isC;
+    /* 「切替」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ
+     * 切り替える（受け取り側で処理）。店頭では「切替で来た」が入口になるため。 */
     $("ieApplyType").value = state.applyType || "shinki";
     $("ieTypecKeepField").hidden = !isC;
     $("ieTypecHint").hidden = !isC;
@@ -886,6 +886,12 @@
     $("ieApplyType").addEventListener("change", function () {
       var prevDef = dpointDefaultFor(state.product, state.applyType);
       state.applyType = this.value;
+      /* ケーブルテレビからの「切替」を選んだら、商材も自動でタイプCにする。
+       * 切替はケーブルテレビ設備（タイプC）でしか起きないため。 */
+      if (this.value === "kirikae" && !PRODUCTS[state.product].typec) {
+        state.product = "hikaric";
+        applyDefaults();
+      }
       syncDpointDefault(prevDef);
       syncForm(); recalc();
     });
