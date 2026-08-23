@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.121.0";
+  var APP_VERSION = "1.122.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3354,6 +3354,13 @@
     MASTER.options.forEach(function (o) {
       if (o.id === "dhits" && o.priceChoices) { delete o.priceChoices; delete o.priceLabels; }
     });
+    // smartあんしんパック: 初期値を792円→1,452円へ（一度だけ。以降は店舗が選んだ額を尊重する）
+    if (!MASTER.anshinPack1452) {
+      MASTER.options.forEach(function (o) {
+        if (o.id === "anshin_pack" && num(o.price) === 792) o.price = 1452;
+      });
+      MASTER.anshinPack1452 = true;
+    }
     // 1.5.7 で一時的に作った買い切りオプションを取り下げ、アクセサリへ戻す
     MASTER.options = MASTER.options.filter(function (o) { return o.id !== "op_photocube256"; });
     MASTER.options.forEach(function (o) { delete o.once; });
