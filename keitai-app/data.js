@@ -555,7 +555,7 @@ const DEFAULT_DATA = {
       "id": "anshin_pack",
       "url": "https://www.docomo.ne.jp/service/anshin_pack/",
       "name": "smartあんしんパック",
-      "price": 792,
+      "price": 1452,
       "priceChoices": [
         792,
         952,
