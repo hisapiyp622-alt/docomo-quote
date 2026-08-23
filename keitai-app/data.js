@@ -598,6 +598,14 @@ const DEFAULT_DATA = {
       "url": "https://www.docomo.ne.jp/service/anshin_security/",
       "name": "あんしんセキュリティ詐欺電話対策",
       "price": 999,
+      "priceChoices": [
+        999,
+        1815
+      ],
+      "priceLabels": {
+        "999": "1台版",
+        "1815": "複数台版"
+      },
       "category": "セキュリティ",
       "note": "",
       "carrier": true,
