@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.120.1";
+  var APP_VERSION = "1.121.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -5295,10 +5295,14 @@
       }
     });
 
-    // dカード還元特典の自動計算
-    // 対象＝プラン基本料＋通話オプション＋対象（carrier）オプションのみ。
+    /* dカード還元特典の自動計算
+     * 対象＝プラン基本料（みんなドコモ割・お支払割など各種割引の適用後）
+     * 　　＋通話オプション＋対象（carrier）オプションのみ。
+     * 公式の還元条件が「各種割引適用後のご利用料金」のため、割引後で計算する。
+     * （2026-08-23修正: 以前は割引前の定価で計算しており、ポイントが多く出て
+     * 　実質額を安く見せすぎていた） */
     // 税込1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt
-    var dcardGoldBase = tier.price + voicePrice + net.total;
+    var dcardGoldBase = planMonthly + voicePrice + net.total;
     MASTER.options.forEach(function (o) {
       if (!st.options[o.id] || !o.carrier) return;
       if (bonusFree[o.id]) return;   // 選べる特典で0円のものは支払いが無いため対象外
@@ -10898,6 +10902,7 @@
           initial: r.initialTotal,
           store: r.storeTotal,
           bill: r.billTotal,
+          dcardPt: r.dcardAutoPt || 0,   // dカード還元の自動計算（割引後ベース）も golden で見張る
           segs: r.segs.map(function (sg) {
             var o = { from: sg.from, to: sg.to === Infinity ? "inf" : sg.to, monthly: sg.monthly };
             if (typeof sg.monthlyKeep === "number") o.keep = sg.monthlyKeep;
