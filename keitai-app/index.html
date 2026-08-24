@@ -147,10 +147,6 @@
       <div class="sub-checks" id="gasDiscountWrap" hidden></div>
       <div class="sub-checks" id="gasNowWrap" hidden></div>
       </div>
-      <div class="field">
-        <label for="todoOther">その他</label>
-        <textarea id="todoOther" rows="2" placeholder="例）データ移行あり／来店時にSIM再発行／家族の来店予定あり"></textarea>
-      </div>
     </div>
 
     <div class="card c1">
@@ -368,6 +364,22 @@
         </select>
       </div>
       <p class="hint" id="pointSummary" hidden></p>
+      <div id="mnpBenefitWrap" hidden>
+        <div class="subhead">MNP特典（SIMのみ・端末購入なし）</div>
+        <div class="field">
+          <label for="mnpBenefitType">ご案内した特典</label>
+          <select id="mnpBenefitType">
+            <option value="">選択なし</option>
+            <option value="cash">キャッシュバック</option>
+            <option value="dpoint">dポイント還元</option>
+          </select>
+        </div>
+        <div class="field" id="mnpBenefitAmtWrap" hidden>
+          <label for="mnpBenefitAmt">金額</label>
+          <input type="number" id="mnpBenefitAmt" inputmode="numeric" min="0" placeholder="0"> <span id="mnpBenefitUnit">円</span>
+        </div>
+        <p class="hint">見積書と引き継ぎシートに「いくらでご案内したか」が残ります。<strong>月額・初期費用の計算には入りません</strong>（後日のお渡し・進呈のため）。</p>
+      </div>
       <div class="field" id="ptPoikatsuWrap">
         <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
         <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
@@ -398,14 +410,21 @@
     </div>
 
     <div class="card c9">
-      <h2>⑨ お客様情報（見積書用・任意） <button class="card-help" type="button" data-help="c9" aria-label="この項目の入力のしかた">?</button></h2>
+      <h2>⑨ 備考・その他特記事項 <button class="card-help" type="button" data-help="c9" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="field">
+        <label for="todoOther">その他・特記事項</label>
+        <textarea id="todoOther" rows="2" placeholder="例）データ移行あり／来店時にSIM再発行／家族の来店予定あり"></textarea>
+      </div>
+      <p class="hint">引き継ぎシートの「その他」に載ります。<strong>お客様名などの個人情報は書かないでください。</strong></p>
+      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
+      <p class="hint">メモは見積書の下に「※」付きで載ります。</p>
+      <div class="subhead">お客様情報・発行元（見積書用・任意）</div>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <p class="hint">※ お客様名（個人情報）は端末間で同期されません。印刷する端末で入力してください。</p>
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
       <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）山田"></div>
       <div class="field"><label for="shopTel">電話番号</label><input type="tel" id="shopTel" placeholder="例）072-000-0000" inputmode="tel"></div>
       <p class="hint">店舗名・電話番号・担当は、マスタ設定の店舗情報から自動で入ります。この見積もりだけ変えたいときは直接書き換えられます。</p>
-      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
     </div>
 
     <div class="card full" id="curBillCard">

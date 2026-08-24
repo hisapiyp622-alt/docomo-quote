@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.128.1";
+  var APP_VERSION = "1.129.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3548,6 +3548,11 @@
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
+      /* MNP（SIMのみ・端末購入なし）のときにご案内した特典。
+       * 何をいくらでご案内したかを残すためのもので、月額・初期費用の
+       * 計算には入れない（後日のお渡し・進呈になるため）。 */
+      mnpBenefitType: "",  // "" | "cash"（キャッシュバック）| "dpoint"（dポイント還元）
+      mnpBenefitAmt: 0,
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
       // データ移行の項目だけ、支払い先をこの見積もりで変えられる（未指定はマスタの設定）
@@ -5884,6 +5889,34 @@
     }
     $("planNote").textContent = plan.note || "";
   }
+  /* MNP特典の欄は、MNPで端末を購入しないとき（SIMのみ）だけ出す。
+   * 端末代金が入っていれば端末購入ありと見なす。 */
+  function mnpSimOnly(st) {
+    var todo = st.procTodo || {};
+    var isMnp = !!todo.mnp || st.procType === "mnp";
+    return isMnp && num(st.devicePrice) === 0;
+  }
+  var MNP_BENEFIT_NAMES = { cash: "キャッシュバック", dpoint: "dポイント還元" };
+  // ご案内した特典の文字（見積書・引き継ぎシートで共通）
+  function mnpBenefitText(st) {
+    var t = st.mnpBenefitType;
+    if (!t || !MNP_BENEFIT_NAMES[t]) return "";
+    var a = num(st.mnpBenefitAmt);
+    if (!a) return MNP_BENEFIT_NAMES[t];
+    return MNP_BENEFIT_NAMES[t] + " "
+      + (t === "dpoint" ? a.toLocaleString("ja-JP") + "pt" : yen(a));
+  }
+  function renderMnpBenefit() {
+    var wrap = $("mnpBenefitWrap");
+    if (!wrap) return;
+    var on = mnpSimOnly(state);
+    wrap.hidden = !on;
+    if (!on) return;
+    $("mnpBenefitType").value = state.mnpBenefitType || "";
+    $("mnpBenefitAmt").value = num(state.mnpBenefitAmt) || "";
+    $("mnpBenefitAmtWrap").hidden = !state.mnpBenefitType;
+    $("mnpBenefitUnit").textContent = state.mnpBenefitType === "dpoint" ? "pt" : "円";
+  }
   // ネットワークサービスの選択欄（通話オプションで金額が変わるので描き直す）
   function renderNetSvc() {
     var free = kakeVoice(state.voice);
@@ -7164,6 +7197,11 @@
           return esc(f.name) + tag;
         }).join("／")
       : "<b>なし</b>");
+    var mnpBene = mnpSimOnly(state) ? mnpBenefitText(state) : "";
+    if (mnpBene) {
+      anyTodo = true;
+      h += row("MNP特典（SIMのみ）", "<b>" + esc(mnpBene) + "</b>");
+    }
     if (state.todoOther) {
       anyTodo = true;
       h += row("その他", "<b>" + esc(state.todoOther).replace(/\n/g, "<br>") + "</b>");
@@ -7588,6 +7626,10 @@
         r.pointTotal.toLocaleString("ja-JP") + "pt/月", true);
       h += '<tr class="total"><td>ポイントを使った場合の実質※</td><td class="amt">'
         + yen(Math.max(0, seg0.monthly - r.pointTotal)) + "</td></tr>";
+    }
+    var mnpBeneSheet = mnpSimOnly(state) ? mnpBenefitText(state) : "";
+    if (mnpBeneSheet) {
+      h += row("MNP特典（SIMのみ）", "<b>" + esc(mnpBeneSheet) + "</b>", true);
     }
     h += "</tbody></table>";
     if (r.pointRows.length) {
@@ -8399,6 +8441,7 @@
     renderSummary(r);
     renderVisitPurpose();
     renderU15();
+    renderMnpBenefit();
     renderPatternTabs();
     renderIenakaWarn(r);
     saveState();
@@ -10555,6 +10598,17 @@
     ["custName", "shopName", "staffName", "shopTel", "quoteMemo"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); });
     });
+    $("mnpBenefitType").addEventListener("change", function () {
+      state.mnpBenefitType = this.value;
+      if (!this.value) state.mnpBenefitAmt = 0;
+      recalc();
+    });
+    $("mnpBenefitAmt").addEventListener("input", function () {
+      state.mnpBenefitAmt = Math.max(0, num(this.value));
+      saveState();
+      if ($("tab-sheet").classList.contains("active")) renderSheet();
+      if ($("tab-staff").classList.contains("active")) renderStaffSheet();
+    });
     $("todoOther").addEventListener("input", function () {
       state.todoOther = this.value; saveState(); renderStaffSheet();
     });
@@ -11268,8 +11322,8 @@
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },
     c6: { t: "⑥ アクセサリ", b: "・定番商品はタイルをタップして選び、タイルの中で一括／分割を選びます\n・リストにない商品は「＋ アクセサリを追加」から名前と金額を入れます\n・一括のぶんは⑦の店頭お支払いに、分割（12・24・36回）は月額に入ります\n・定番商品の内容はマスタ設定で編集できます" },
     c7: { t: "⑦ 初期費用", b: "・契約事務手数料と店頭頭金は、①の手続き種別から自動で入ります（手で書き換えられます）\n・データ移行サポートなどの項目はチェックで足します\n・「＋ 初期費用の追加項目」は±の金額で自由に足せます（下取りなどの値引きはマイナスで）\n・店頭お支払いの方法（現金・カード・d払い）のチェックは引き継ぎシートに載ります\n・dポイント利用は<b>頭金 → 分割金 → 残価</b>の順に充当します（1pt = 1円）\n・見積書では「店頭でお支払い」と「翌月の携帯料金と合算」に分かれて出ます" },
-    c8: { t: "⑧ ポイント", b: "もらえるdポイントを「実質額」のご案内に使えます。\n・爆アゲセレクションやdカードの還元は、④と③の選択から自動で計算されます（金額は直接書き換えられます）\n・はじめの設定は<b>「充当しない」</b>: 月額はそのままに、もらえるポイントと実質額を見積書に添えます\n・「月額から充当する」にすると、月額からポイントを引いた実質額でご案内します\n・進呈ポイントは毎月の請求が下がるものではないため、実質額を多めに見せない作りにしています" },
-    c9: { t: "⑨ お客様情報", b: "見積書に入る情報です。\n・お客様名は<b>この端末の中だけ</b>に保存され、端末間で同期されません。印刷する端末で入力してください\n・店舗名・担当・電話番号は、マスタ設定の店舗情報とログイン中の担当者から自動で入り、見積書の下端に載ります。この見積もりだけ変えたいときは書き換えられます\n・メモは見積書に載ります" },
+    c8: { t: "⑧ ポイント", b: "もらえるdポイントを「実質額」のご案内に使えます。\n・爆アゲセレクションやdカードの還元は、④と③の選択から自動で計算されます（金額は直接書き換えられます）\n・はじめの設定は<b>「充当しない」</b>: 月額はそのままに、もらえるポイントと実質額を見積書に添えます\n・「月額から充当する」にすると、月額からポイントを引いた実質額でご案内します\n・進呈ポイントは毎月の請求が下がるものではないため、実質額を多めに見せない作りにしています\n・<b>MNP特典（SIMのみ）</b>: MNPで端末を購入しないときだけ欄が出ます。キャッシュバックかdポイント還元と金額を入れると、見積書と引き継ぎシートに「いくらでご案内したか」が残ります。月額・初期費用の計算には入りません" },
+    c9: { t: "⑨ 備考・その他特記事項", b: "自由に書ける欄と、見積書に入るお客様情報です。\n・「その他・特記事項」は<b>引き継ぎシートの「その他」</b>に載ります（例：データ移行あり／来店時にSIM再発行）。お客様名などの個人情報は書かないでください\n・「メモ」は<b>見積書の下</b>に「※」付きで載ります\n・お客様名は<b>この端末の中だけ</b>に保存され、端末間で同期されません。印刷する端末で入力してください\n・店舗名・担当・電話番号は、マスタ設定の店舗情報とログイン中の担当者から自動で入り、見積書の下端に載ります。この見積もりだけ変えたいときは書き換えられます" },
     curbill: {
       t: "現在のお支払い（請求内訳の読み取り）",
       b: "お客様のいまのお支払いを読み取って、この見積もりと比べられます。\n"
