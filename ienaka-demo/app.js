@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.7.2-demo";
+  var APP_VERSION = "2.8.0-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -190,29 +190,24 @@
       flowDates: {}                    // 開通までの流れ（1枚）の予定日メモ {工程番号: 文字}
     };
   }
-  /* ---------- 店舗設定・担当者 ----------
-   * 店舗名と担当者リストは端末ごとの設定として保存する。
-   * 見積もりの入力内容は担当者ごとに別々の保存領域へ入れ、担当を切り替えても互いに影響しない。 */
+  /* ---------- 店舗設定 ----------
+   * 店舗名は端末ごとの設定として保存する（クラウド利用時は端末間で揃う）。
+   * 見積もりは全端末・全員で共通の1枚（2026-08-24 に担当者ごとの分離をやめた）。
+   * 担当者名は見積もり本体（state.staffName）に入れて一緒に保存・同期する。 */
   var CFG_KEY = INTERNAL ? "ienaka-internal-config-v1" : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
-  function defaultConfig() {
-    return { storeName: "", staff: [{ id: "s1", name: "担当1" }], activeStaffId: "s1" };
-  }
+  function defaultConfig() { return { storeName: "" }; }
   var config = defaultConfig();
+  var oldCfg = null; // 担当者分離時代の設定（見積もりの引き継ぎにだけ使う）
   try {
-    var savedCfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
-    if (savedCfg && savedCfg.staff && savedCfg.staff.length) config = Object.assign(defaultConfig(), savedCfg);
+    oldCfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
+    if (oldCfg && typeof oldCfg.storeName === "string") config.storeName = oldCfg.storeName;
   } catch (e) {}
   function saveConfig() {
     try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {}
     pushConfig(); // クラウド保存が有効な場合のみ送信
   }
-  function activeStaff() {
-    var s = config.staff.filter(function (x) { return x.id === config.activeStaffId; })[0];
-    if (!s) { s = config.staff[0]; config.activeStaffId = s.id; }
-    return s;
-  }
-  function staffLabel() { return (activeStaff().name || "").trim(); }
-  function quoteKey(staffId) { return KEY + ":" + (staffId || activeStaff().id); }
+  function staffLabel() { return (state.staffName || "").trim(); }
+  function quoteKey() { return KEY; }
 
   /* 古い形の保存データを、いまの形へ引き継ぐ。
    * 起動時と端末間同期の両方から呼ぶこと。 */
@@ -228,8 +223,12 @@
     var st = defaultState();
     try {
       var raw = localStorage.getItem(quoteKey());
-      // 担当者分離より前に保存したデータは、最初の担当者の見積もりとして引き継ぐ
-      if (raw == null && activeStaff().id === config.staff[0].id) raw = localStorage.getItem(KEY);
+      /* 担当者ごとに分けて保存していたころ（〜2.7.x）のデータは、
+       * 最後に使っていた担当者の見積もりを共通の1枚として引き継ぐ */
+      if (raw == null && oldCfg && oldCfg.staff && oldCfg.staff.length) {
+        raw = localStorage.getItem(KEY + ":" + (oldCfg.activeStaffId || oldCfg.staff[0].id));
+        if (raw == null) raw = localStorage.getItem(KEY + ":" + oldCfg.staff[0].id);
+      }
       var saved = JSON.parse(raw || "null");
       if (saved) {
         st = Object.assign(defaultState(), saved);
@@ -1051,6 +1050,7 @@
           : "");
     }
     $("custName").value = state.custName;
+    $("staffName").value = state.staffName || "";
     $("quoteMemo").value = state.quoteMemo;
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
     $("storeCash").value = state.storeCash || "";
@@ -1066,33 +1066,12 @@
     renderConfigTab();
   }
 
-  /* ---------- 店舗設定・担当者のUI ---------- */
+  /* ---------- 店舗設定のUI ---------- */
   function renderStaffSelect() {
-    var sel = $("staffSelect");
-    sel.innerHTML = config.staff.map(function (s) {
-      return '<option value="' + esc(s.id) + '"' + (s.id === config.activeStaffId ? " selected" : "") + ">"
-        + esc(s.name || "（無名）") + "</option>";
-    }).join("");
     $("storeLabel").textContent = config.storeName || "";
   }
   function renderConfigTab() {
     $("storeName").value = config.storeName || "";
-    $("staffList").innerHTML = config.staff.map(function (s, i) {
-      return '<div class="adhoc-row">'
-        + '<input type="text" value="' + esc(s.name) + '" data-staff="' + i + '" placeholder="担当者名">'
-        + (config.staff.length > 1 ? '<button class="del" data-staffdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
-        + "</div>";
-    }).join("");
-  }
-  // 担当者を切り替える: その担当者の見積もりを読み直す
-  function switchStaff(id) {
-    save(); // 切り替え前の担当者の入力を保存
-    config.activeStaffId = id;
-    saveConfig();
-    state = loadState();
-    syncForm();
-    recalc();
-    watchQuote(); // クラウド保存が有効な場合、購読先を新しい担当者へ切り替え
   }
 
   /* ---------- クラウド保存（店舗アカウント） ----------
@@ -1103,7 +1082,7 @@
   var CLOUD = {
     enabled: false, user: null, db: null, auth: null,
     suppress: false, cfgTimer: null, quoteTimer: null,
-    unsubStore: null, unsubQuote: null, watchingStaffId: null,
+    unsubStore: null, unsubQuote: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
   function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
@@ -1117,7 +1096,9 @@
     if (INTERNAL) return CLOUD.db.collection("settings").doc("ienakaInternalStore");
     return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
   }
-  function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
+  /* 見積もりは全員共通の1枚。担当者別（quotes/{担当id}）だったころの
+   * ドキュメントは残っているが、もう読み書きしない */
+  function quoteDoc() { return storeDoc().collection("quotes").doc("shared"); }
   function stamp(extra) {
     var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     for (var k in extra) if (extra.hasOwnProperty(k)) o[k] = extra[k];
@@ -1134,7 +1115,7 @@
     CLOUD.cfgTimer = setTimeout(function () {
       CLOUD.cfgTimer = null;
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
-      storeDoc().set(stamp({ storeName: config.storeName || "", staff: config.staff }), { merge: true })
+      storeDoc().set(stamp({ storeName: config.storeName || "" }), { merge: true })
         .then(cloudOk, cloudNg);
     }, 800);
   }
@@ -1148,27 +1129,18 @@
   }
   function pushQuote() {
     if (!cloudOn() || CLOUD.suppress) return;
-    var sid = activeStaff().id;
     if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
     cloudStatus("同期中…", "");
     CLOUD.quoteTimer = setTimeout(function () {
       CLOUD.quoteTimer = null;
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
-      quoteDoc(sid).set(stamp({ data: quotePayload() })).then(cloudOk, cloudNg);
+      quoteDoc().set(stamp({ data: quotePayload() })).then(cloudOk, cloudNg);
     }, 800);
   }
   function applyRemoteConfig(d) {
     CLOUD.suppress = true;
     try {
       if (typeof d.storeName === "string") config.storeName = d.storeName;
-      if (d.staff && d.staff.length) {
-        config.staff = d.staff;
-        if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
-          config.activeStaffId = config.staff[0].id;
-          state = loadState();
-          syncForm();
-        }
-      }
       try { localStorage.setItem(CFG_KEY, JSON.stringify(config)); } catch (e) {}
       renderStaffSelect();
       renderConfigTab();
@@ -1202,11 +1174,8 @@
   }
   function watchQuote() {
     if (!cloudOn()) return;
-    var sid = activeStaff().id;
-    if (CLOUD.unsubQuote && CLOUD.watchingStaffId === sid) return;
-    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
-    CLOUD.watchingStaffId = sid;
-    CLOUD.unsubQuote = quoteDoc(sid).onSnapshot(function (snap) {
+    if (CLOUD.unsubQuote) return; // 共通の1枚なので、購読は一度張ればよい
+    CLOUD.unsubQuote = quoteDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
       if (!d) { pushQuote(); return; }
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
@@ -1231,7 +1200,6 @@
     CLOUD.user = null;
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
-    CLOUD.watchingStaffId = null;
     $("accountStep").hidden = true;
     cloudStatus("", "");
     showLogin(true);
@@ -1839,36 +1807,12 @@
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
   $("custName").addEventListener("input", function () { state.custName = this.value; recalc(); });
-  /* 店舗設定・担当者 */
-  $("staffSelect").addEventListener("change", function () { switchStaff(this.value); });
+  /* 店舗設定・担当者名 */
+  $("staffName").addEventListener("input", function () { state.staffName = this.value; recalc(); });
   $("storeName").addEventListener("input", function () {
     config.storeName = this.value; saveConfig(); renderStaffSelect();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
     if ($("tab-staff").classList.contains("active")) renderStaffSheet();
-  });
-  $("addStaff").addEventListener("click", function () {
-    config.staff.push({ id: "s" + Date.now().toString(36), name: "" });
-    saveConfig(); renderConfigTab(); renderStaffSelect();
-    var inputs = $("staffList").querySelectorAll("input[data-staff]");
-    if (inputs.length) inputs[inputs.length - 1].focus();
-  });
-  $("staffList").addEventListener("input", function (e) {
-    var i = e.target.getAttribute("data-staff");
-    if (i == null) return;
-    config.staff[+i].name = e.target.value;
-    saveConfig(); renderStaffSelect();
-  });
-  $("staffList").addEventListener("click", function (e) {
-    var i = e.target.getAttribute("data-staffdel");
-    if (i == null) return;
-    var s = config.staff[+i];
-    if (!confirm("担当者「" + (s.name || "無名") + "」を削除しますか？\nこの担当者の見積もりも削除されます。")) return;
-    try { localStorage.removeItem(quoteKey(s.id)); } catch (err) {}
-    config.staff.splice(+i, 1);
-    var wasActive = config.activeStaffId === s.id;
-    saveConfig();
-    if (wasActive) { config.activeStaffId = config.staff[0].id; saveConfig(); state = loadState(); syncForm(); }
-    renderConfigTab(); renderStaffSelect(); recalc();
   });
   $("quoteMemo").addEventListener("input", function () { state.quoteMemo = this.value; recalc(); });
 
@@ -1956,17 +1900,7 @@
     if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return;
 
     if (d.storeName) { config.storeName = d.storeName; }
-    if (d.staffName) {
-      var hit = config.staff.filter(function (s) { return (s.name || "") === d.staffName; })[0];
-      if (!hit) {
-        var n = 1;
-        while (config.staff.some(function (s) { return s.id === "s" + n; })) n++;
-        hit = { id: "s" + n, name: d.staffName };
-        config.staff.push(hit);
-      }
-      config.activeStaffId = hit.id;
-      state.staffName = d.staffName;
-    }
+    if (d.staffName) state.staffName = d.staffName;
     if (d.custName) state.custName = d.custName;
     saveConfig();
     save();
@@ -1979,7 +1913,7 @@
     backLink.addEventListener("click", function () {
       try {
         localStorage.setItem(HANDOFF_KEY, JSON.stringify({
-          staffName: (activeStaff() || {}).name || "",
+          staffName: state.staffName || "",
           custName: state.custName || "",
           from: "ienaka", at: Date.now()
         }));
