@@ -16,9 +16,6 @@
 <header class="app-header no-print">
   <h1>イエナカ見積もり <span class="demo-badge">デモ版</span>
     <span class="sync-status" id="storeLabel"></span>
-    <label class="staff-pick"><span>担当</span>
-      <select id="staffSelect" title="担当者を切り替えます（担当ごとに見積もりが分かれます）"></select>
-    </label>
     <span class="sync-status" id="cloudStatus"></span>
   </h1>
   <nav class="tabs" role="tablist">
@@ -253,8 +250,9 @@
       </div>
       <p class="hint">ご家族のスマホに掛かるセット割（−1,210円/月×回線数など）の合計。入力すると見積書に「実質お支払い目安」として差引後の金額が表示されます。</p>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
+      <div class="field"><label for="staffName">担当者名</label><input type="text" id="staffName" placeholder="例）田中"></div>
       <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）工事希望日は今月末以降"></div>
-      <p class="hint">担当者は画面上部で切り替えます（名前の追加・変更は「設定」タブ）。</p>
+      <p class="hint">担当者名は見積書・引き継ぎシートの「担当」欄に入ります（見積もりと一緒に保存されます）。</p>
       <p class="hint">※ ドコモ光／home 5G セット割はご家族のスマホ料金から割引されます。上の「光セット割 合計額」に入力すると、実質価格として見積書に表示されます。</p>
     </div>
 
@@ -308,13 +306,7 @@
           <h2>アカウント</h2>
           <p class="hint" id="accountInfo"></p>
           <div class="actions"><button class="btn-sub" id="logoutBtn" type="button">ログアウト</button></div>
-          <p class="hint">同じアカウントでログインした端末どうしで、店舗名・担当者・見積もりが自動的に同期されます。お客様名は端末内にのみ保存され、クラウドへは送信されません。</p>
-        </div>
-        <div class="step">
-          <h2>担当者</h2>
-          <div class="adhoc-list" id="staffList"></div>
-          <button class="btn-sub" id="addStaff" type="button">＋ 担当者を追加</button>
-          <p class="hint">画面上部の「担当」で切り替えます。見積もりの入力内容は担当者ごとに保存されるため、別の担当者の作業中の見積もりに影響しません。担当者を削除すると、その担当者の見積もりも削除されます。</p>
+          <p class="hint">同じアカウントでログインした端末どうしで、店舗名・見積もりが自動的に同期されます。見積もりは全端末で共通の1枚です（担当ごとには分かれません）。お客様名は端末内にのみ保存され、クラウドへは送信されません。</p>
         </div>
       </div>
     </div>
