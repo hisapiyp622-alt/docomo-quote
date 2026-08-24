@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.125.0";
+  var APP_VERSION = "1.126.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -7833,6 +7833,58 @@
     var mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
     return mn === mx ? yen(mn) : yen(mn) + "〜" + yen(mx);
   }
+  /* マスタ設定の各項目（見出しごと）を開閉できるようにする。
+   * 画面を開き直す（マスタ設定を開き直す）と、すべてたたんだ状態に戻る。保存はしない。
+   * 検索中（masterSearch に入力がある間）は、結果を隠さないためすべて開く。 */
+  var masterFoldOpen = {};
+  function masterSearchActive() {
+    var el = $("masterSearch");
+    return !!(el && el.value.trim());
+  }
+  // headerEl（h2/h3）以降のきょうだい要素をひとつの開閉できる箱にまとめる
+  function foldifySection(headerEl, key) {
+    if (!headerEl || headerEl.dataset.msecDone) return;
+    headerEl.dataset.msecDone = "1";
+    headerEl.dataset.msecKey = key;
+    var body = document.createElement("div");
+    body.className = "msec-body";
+    var parent = headerEl.parentNode;
+    var sib = headerEl.nextSibling;
+    while (sib) {
+      var next = sib.nextSibling;
+      body.appendChild(sib);
+      sib = next;
+    }
+    parent.appendChild(body);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "msec-toggle";
+    btn.setAttribute("data-msec-toggle", key);
+    headerEl.appendChild(btn);
+    updateFoldUi(headerEl, body, key);
+  }
+  function updateFoldUi(headerEl, body, key) {
+    var open = !!masterFoldOpen[key] || masterSearchActive();
+    body.hidden = !open;
+    var btn = headerEl.querySelector(".msec-toggle");
+    if (btn) btn.textContent = open ? "たたむ ▴" : "開く ▾";
+  }
+  // 現在ある開閉状態を、検索の有無に合わせて表示だけ更新する（DOMの再構築はしない）
+  function applyMasterFoldState() {
+    Array.prototype.forEach.call(document.querySelectorAll("#masterBody [data-msec-key]"), function (headerEl) {
+      var body = headerEl.nextElementSibling;
+      if (!body || !body.classList.contains("msec-body")) return;
+      updateFoldUi(headerEl, body, headerEl.dataset.msecKey);
+    });
+  }
+  // masterBody 直下の各見出し（h3）を開閉できるようにする。再描画のたびに呼ぶ
+  // （innerHTML の入れ替えで前回のラップは消えているため、そのつど作り直す）。
+  function foldifyMasterSections() {
+    Array.prototype.forEach.call(document.querySelectorAll("#masterBody > .master-plan"), function (sec) {
+      var h3 = sec.querySelector("h3");
+      if (h3) foldifySection(h3, "sec:" + h3.textContent.trim());
+    });
+  }
   function renderMasterTab() {
     $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
     var su = $("storageUsage");
@@ -8146,6 +8198,7 @@
     h += "</div>";
 
     $("masterBody").innerHTML = h;
+    foldifyMasterSections();
     applyMasterSearch(); // 検索中に再描画されても絞り込みを維持する
 
     /* filter を渡すと、その条件に合う項目だけを並べる。
@@ -8945,6 +8998,8 @@
       });
       r2.hidden = t.indexOf(q) < 0;
     });
+    // 検索中はたたんだ項目も開く（結果を隠さないため）。空にしたら開閉状態に戻す
+    applyMasterFoldState();
   }
   function initMasterSearch() {
     var inp = $("masterSearch");
@@ -10913,6 +10968,13 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      var msecHead = e.target.closest && e.target.closest("[data-msec-key]");
+      if (msecHead) {
+        var msecKey = msecHead.dataset.msecKey;
+        masterFoldOpen[msecKey] = !masterFoldOpen[msecKey];
+        applyMasterFoldState();
+        return;
+      }
       if (handlePlanEvent(e.target, "click")) return;
       if (handleEnergyEvent(e.target, "click")) return;
       var hr = e.target.getAttribute && e.target.getAttribute("data-hist-restore");

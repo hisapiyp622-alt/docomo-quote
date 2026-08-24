@@ -269,6 +269,10 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 /* ---------- master ---------- */
 .master-plan{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
 .master-plan h3{font-size:14px;margin:0 0 8px;color:var(--ink)}
+.master-plan h3[data-msec-key]{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0;cursor:pointer}
+.msec-toggle{background:none;border:none;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;padding:2px 4px;white-space:nowrap;flex:none}
+.msec-body{margin-top:8px}
+.msec-body[hidden]{display:none}
 .master-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;font-size:13px}
 .master-grid label{color:var(--muted)}
 .master-grid input{padding:5px 8px;border:1px solid var(--line);border-radius:5px;font:inherit;text-align:right;max-width:8em;font-variant-numeric:tabular-nums}
