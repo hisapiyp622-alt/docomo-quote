@@ -267,6 +267,12 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 }
 
 /* ---------- master ---------- */
+.mroom-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.mroom-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.mroom-tabs button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font:inherit;font-size:13px;cursor:pointer;color:var(--muted)}
+.mroom-tabs button.on{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+.mroom-search{margin-left:auto}
+.mroom-search input{padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;min-width:15em}
 .master-plan{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
 .master-plan h3{font-size:14px;margin:0 0 8px;color:var(--ink)}
 .master-plan h3[data-msec-key]{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0;cursor:pointer}

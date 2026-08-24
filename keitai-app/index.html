@@ -776,7 +776,39 @@
       <button class="btn-sub" id="masterBackBtn" type="button">← 担当者の選択に戻る</button>
       <span class="hint">マスタ設定は担当者コードの画面から開きます（見積もり画面には出ません）。<br>見積もりに戻るときは左の「担当者の選択に戻る」から。</span>
     </div>
-    <div class="card" id="lockBox">
+    <div class="mroom-bar">
+      <div class="mroom-tabs" id="mroomTabs" role="tablist">
+        <button type="button" data-mroom-btn="shop">お店の商材</button>
+        <button type="button" data-mroom-btn="docomo">ドコモの料金</button>
+        <button type="button" data-mroom-btn="tools">画面と道具</button>
+        <button type="button" data-mroom-btn="store">お店の設定</button>
+      </div>
+      <div class="mroom-search">
+        <input type="search" id="masterSearch" placeholder="項目を探す（例）あんしん、頭金" autocomplete="off" aria-label="項目を探す">
+      </div>
+    </div>
+    <div class="card" data-mroom="store">
+      <h2>店舗設定</h2>
+      <p class="hint" id="accountInfo"></p>
+      <div class="field">
+        <label for="storeNameInput">店舗名</label>
+        <input type="text" id="storeNameInput" placeholder="例）ドコモショップ○○店">
+      </div>
+      <div class="field">
+        <label for="storeTelInput">電話番号</label>
+        <input type="tel" id="storeTelInput" placeholder="例）072-000-0000" inputmode="tel">
+      </div>
+      <p class="hint">ここで登録した店舗名・電話番号と、ログイン中の担当者名が、<strong>見積書の下端に自動で入ります。</strong></p>
+      <div class="subhead">担当者</div>
+      <div id="staffList"><!-- JSで生成 --></div>
+      <div class="actions">
+        <button class="btn-sub" id="addStaffBtn" type="button">＋ 担当者を追加</button>
+      </div>
+      <div class="actions"><button class="btn-sub" id="setupAgainBtn" type="button">初期設定をやり直す</button></div>
+      <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
+      <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
+    </div>
+    <div class="card" id="lockBox" data-mroom="store">
       <h2>店舗ログイン</h2>
       <p class="hint" id="lockState"></p>
       <div class="field">
@@ -800,7 +832,7 @@
         <strong>このロックは画面を覆うだけの簡易的なものです。</strong>見積もりは端末内に暗号化せずに保存されるため、端末を自由に操作できる方（ブラウザの開発者ツールや設定を使える方）には、ロック中でも中身を見ることやロックの解除ができます。盗難・紛失への備えとしては、<strong>端末自体の画面ロックを必ず併用してください。</strong><br>
         複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>販売元が発行するクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
     </div>
-    <div class="card" id="adminLockBox">
+    <div class="card" id="adminLockBox" data-mroom="store">
       <h2>マスタ設定のパスワード</h2>
       <p class="hint" id="adminLockState"></p>
       <div class="field">
@@ -823,34 +855,9 @@
         忘れた場合は、パスワードを聞かれる画面の「<strong>マスタ設定のパスワードを忘れた場合</strong>」から、
         <strong>店舗ID＋店舗のパスワード</strong>で開いて決め直せます。</p>
     </div>
-    <div class="card">
-      <h2>店舗設定</h2>
-      <p class="hint" id="accountInfo"></p>
-      <div class="field">
-        <label for="storeNameInput">店舗名</label>
-        <input type="text" id="storeNameInput" placeholder="例）ドコモショップ○○店">
-      </div>
-      <div class="field">
-        <label for="storeTelInput">電話番号</label>
-        <input type="tel" id="storeTelInput" placeholder="例）072-000-0000" inputmode="tel">
-      </div>
-      <p class="hint">ここで登録した店舗名・電話番号と、ログイン中の担当者名が、<strong>見積書の下端に自動で入ります。</strong></p>
-      <div class="subhead">担当者</div>
-      <div id="staffList"><!-- JSで生成 --></div>
-      <div class="actions">
-        <button class="btn-sub" id="addStaffBtn" type="button">＋ 担当者を追加</button>
-      </div>
-      <div class="actions"><button class="btn-sub" id="setupAgainBtn" type="button">初期設定をやり直す</button></div>
-      <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
-      <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
-    </div>
-    <div class="card">
+    <div class="card" data-mroom="store">
       <h2>料金マスタ</h2>
-      <p class="hint">料金改定があったらここで直せます。変更は自動保存されます（この端末のみ）。<br>データ基準日: <strong id="masterUpdated"></strong></p>
-      <div class="field">
-        <label for="masterSearch">項目を探す</label>
-        <input type="search" id="masterSearch" placeholder="例）あんしん、コーティング、頭金" autocomplete="off">
-      </div>
+      <p class="hint">料金・商材の編集は上の<strong>「ドコモの料金」「お店の商材」</strong>で行います。ここは控え・別端末への移行・初期化の道具です。<br>データ基準日: <strong id="masterUpdated"></strong></p>
       <div class="actions">
         <button class="btn-sub" id="resetMaster" type="button">マスタを初期値に戻す</button>
         <button class="btn-sub" id="exportMaster" type="button">現在のマスタ構成をコピー</button>
@@ -867,7 +874,7 @@
       </div>
       <p class="hint" id="importMasterMsg" hidden></p>
     </div>
-    <div class="card">
+    <div class="card" data-mroom="shop">
       <h2>端末マスタ（商品マスタ）</h2>
       <p class="hint">機種を登録しておくと、見積もりの<strong>機種名がプルダウンになり、本体代金が自動で入ります</strong>。入れかたは2つあり、代理店からもらった<strong>商品マスタ（機種名と本体価格の一覧）を丸ごと取り込む</strong>か、下の<strong>「よく出る機種を登録する」で1つずつ入れる</strong>かを選べます。登録しなくても、これまでどおり手入力で使えます。</p>
       <p class="hint" id="devMasterCount"></p>
@@ -902,7 +909,7 @@
         </div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" data-mroom="store">
       <h2>バックアップ</h2>
       <p class="hint">店舗情報・担当者・料金マスタ・マスタ履歴・保存した見積もり・テンプレートを、
         1つのファイルにまとめて保存します。<strong>間違えて消してしまったときに、ここから戻せます。</strong>
