@@ -860,7 +860,7 @@
     return null;
   }
   var VISIT_NAMES = {
-    buy: "端末購入（新規・MNP・機種変更など）", plan: "プラン見直し", repair: "故障",
+    buy: "端末購入", plan: "プラン見直し", repair: "故障",
     howto: "操作", ask: "問合せ", other: "その他"
   };
   var VISIT_ORDER = ["buy", "plan", "repair", "howto", "ask", "other"];
