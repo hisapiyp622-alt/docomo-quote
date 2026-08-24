@@ -517,10 +517,24 @@ const DEFAULT_DATA = {
       "price": 880
     },
     {
+      "id": "v5l",
+      "url": "https://www.docomo.ne.jp/charge/kakeho_light/",
+      "name": "5分通話無料オプション（留守電・キャッチホン無料なし）",
+      "price": 770,
+      "hideOnPlans": ["mini"]
+    },
+    {
       "id": "kake",
       "url": "https://www.docomo.ne.jp/charge/kakeho/",
       "name": "かけ放題オプション",
       "price": 1980
+    },
+    {
+      "id": "kakel",
+      "url": "https://www.docomo.ne.jp/charge/kakeho/",
+      "name": "かけ放題オプション（留守電・キャッチホン無料なし）",
+      "price": 1870,
+      "hideOnPlans": ["mini"]
     },
     {
       "id": "kake1000",
