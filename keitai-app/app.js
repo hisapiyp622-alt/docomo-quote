@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.127.0";
+  var APP_VERSION = "1.128.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3350,6 +3350,12 @@
       if (!o.priceChoices) o.priceChoices = d.priceChoices.slice();
       if (d.priceLabels && !o.priceLabels) o.priceLabels = JSON.parse(JSON.stringify(d.priceLabels));
     });
+    /* 通話オプションの新旧の表示名を短くする（1.128.0）。
+     * タイルの中のプルダウンで新旧を選ぶ形にしたため、名前の但し書きは不要になった */
+    MASTER.voiceOptions.forEach(function (v) {
+      if (v.id === "v5l" && v.name === "5分通話無料オプション（留守電・キャッチホン無料なし）") v.name = "5分通話無料オプション（旧）";
+      if (v.id === "kakel" && v.name === "かけ放題オプション（留守電・キャッチホン無料なし）") v.name = "かけ放題オプション（旧）";
+    });
     // dヒッツ: 330円コースは扱わないため、保存済みマスタからも選択肢を外す
     MASTER.options.forEach(function (o) {
       if (o.id === "dhits" && o.priceChoices) { delete o.priceChoices; delete o.priceLabels; }
@@ -5059,6 +5065,29 @@
    * 同じ内容の標準版（留守電・キャッチホン無料つき）へ読み替える。
    * 保存済みの見積もりでプランだけ mini に変えた場合の取りこぼし防止。 */
   var VOICE_FALLBACK = { v5l: "v5", kakel: "kake" };
+  /* ②の通話オプションはタイルで選ぶ。中身が同じで新旧2種類あるものは
+   * 1つのタイルにまとめ、タイルの中のプルダウンで新旧を選ぶ。
+   *   新 … 留守番電話・キャッチホンが無料で付く（2025年〜の料金）
+   *   旧 … 留守番電話・キャッチホンは別料金（それ以前からのご契約） */
+  var VOICE_GROUP = { v5: "v5", v5l: "v5", kake: "kake", kakel: "kake" };
+  var VOICE_GROUP_NAME = { v5: "5分通話無料オプション", kake: "かけ放題オプション" };
+  var VOICE_ERA = { v5: "新", v5l: "旧", kake: "新", kakel: "旧" };
+  /* 画面に出す並びで、タイルごとに中身（新旧）をまとめて返す。
+   * このプランで選べないもの（hideOnPlans）は外す。 */
+  function voiceTiles(plan) {
+    var tiles = [], byKey = {};
+    MASTER.voiceOptions.forEach(function (v) {
+      if (voiceHiddenOn(plan, v)) return;
+      var key = VOICE_GROUP[v.id] || v.id;
+      if (!byKey[key]) {
+        byKey[key] = { key: key, name: VOICE_GROUP_NAME[key] || v.name, items: [] };
+        tiles.push(byKey[key]);
+      }
+      byKey[key].items.push(v);
+    });
+    return tiles;
+  }
+  function voiceTileKey(id) { return VOICE_GROUP[id] || id; }
   function voiceHiddenOn(plan, vo) {
     return !!(vo && vo.hideOnPlans && vo.hideOnPlans.indexOf(plan.id) >= 0);
   }
@@ -5880,17 +5909,36 @@
     if (cur && voiceHiddenOn(plan, cur)) {
       state.voice = VOICE_FALLBACK[cur.id] || "none";
     }
-    $("voice").innerHTML = MASTER.voiceOptions.filter(function (v) {
-      return !voiceHiddenOn(plan, v);
-    }).map(function (v) {
-      var pr = voicePriceFor(plan, v);
-      var label = v.name;
-      if (v.id !== "none") {
-        label += pr === 0 ? "（プランに込み）" : "（" + yen(pr) + "）";
+    var curKey = voiceTileKey(state.voice);
+    $("voiceTiles").innerHTML = voiceTiles(plan).map(function (t) {
+      var on = t.key === curKey;
+      // タイルの中で選ばれているもの（選んでいなければ先頭＝新）
+      var sel = t.items.filter(function (v) { return v.id === state.voice; })[0] || t.items[0];
+      var pr = voicePriceFor(plan, sel);
+      var priceHtml;
+      if (t.key === "none") {
+        priceHtml = "";
+      } else if (t.items.length > 1) {
+        // 新旧が選べるものは、タイルの中にプルダウンを出す
+        priceHtml = '<select data-voice-era="' + esc(t.key) + '">'
+          + t.items.map(function (v) {
+              var p2 = voicePriceFor(plan, v);
+              return '<option value="' + esc(v.id) + '"' + (v.id === sel.id ? " selected" : "") + ">"
+                + esc(VOICE_ERA[v.id] || "") + " " + (p2 === 0 ? "プランに込み" : yen(p2)) + "</option>";
+            }).join("") + "</select>";
+      } else {
+        priceHtml = '<span class="t-price">' + (pr === 0 ? "プランに込み" : yen(pr) + "/月") + "</span>";
       }
-      return '<option value="' + esc(v.id) + '">' + esc(label) + "</option>";
+      return tileHtml("data-voice", t.key, t.name, on, priceHtml);
     }).join("");
-    $("voice").value = state.voice;
+    var hint = $("voiceHint");
+    if (hint) {
+      var hasEra = voiceTiles(plan).some(function (t) { return t.items.length > 1; });
+      hint.textContent = hasEra
+        ? "「新」は留守番電話・キャッチホンが無料で付きます。「旧」はそれ以前からのご契約で、留守番電話・キャッチホンは別料金です。"
+        : "";
+      hint.hidden = !hasEra;
+    }
   }
   /* ドコモメールが「有料オプション」になるプラン。ここに無いプランは
    * 標準で込みなので、②のプルダウン自体を出さない（2026-08-21 店頭確認）。
@@ -10277,7 +10325,33 @@
       $("ptDcard").value = state.pointDcard || "";
       recalc();
     });
-    $("voice").addEventListener("change", function () { state.voice = this.value; recalc(); });
+    /* 通話オプションのタイル。タイルを押すとその種類に切り替え、
+     * 中のプルダウンでは新旧を選ぶ（プルダウンの操作でタイルも選ばれた状態にする） */
+    $("voiceTiles").addEventListener("change", function (e) {
+      var key = e.target.getAttribute && e.target.getAttribute("data-voice-era");
+      if (!key) return;
+      state.voice = e.target.value;
+      renderVoiceSelect();
+      recalc();
+    });
+    function pickVoiceTile(t) {
+      var key = t.getAttribute("data-voice");
+      if (voiceTileKey(state.voice) === key) return; // 同じタイルの押し直しでは新旧を変えない
+      var sel = t.querySelector("select[data-voice-era]");
+      state.voice = sel ? sel.value : key;
+      renderVoiceSelect();
+      recalc();
+    }
+    $("voiceTiles").addEventListener("click", function (e) {
+      if (e.target.closest("select")) return; // プルダウンの操作はタイル選択にしない
+      var t = e.target.closest("[data-voice]");
+      if (t) pickVoiceTile(t);
+    });
+    $("voiceTiles").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var t = e.target.closest && e.target.closest("[data-voice]");
+      if (t) { e.preventDefault(); pickVoiceTile(t); }
+    });
     $("mailOpt").addEventListener("change", function () {
       var mo = mailOptDef();
       if (mo) { state.options[mo.id] = this.value === "yes"; }

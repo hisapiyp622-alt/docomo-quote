@@ -519,7 +519,7 @@ const DEFAULT_DATA = {
     {
       "id": "v5l",
       "url": "https://www.docomo.ne.jp/charge/kakeho_light/",
-      "name": "5分通話無料オプション（留守電・キャッチホン無料なし）",
+      "name": "5分通話無料オプション（旧）",
       "price": 770,
       "hideOnPlans": ["mini"]
     },
@@ -532,7 +532,7 @@ const DEFAULT_DATA = {
     {
       "id": "kakel",
       "url": "https://www.docomo.ne.jp/charge/kakeho/",
-      "name": "かけ放題オプション（留守電・キャッチホン無料なし）",
+      "name": "かけ放題オプション（旧）",
       "price": 1870,
       "hideOnPlans": ["mini"]
     },
