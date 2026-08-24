@@ -187,10 +187,9 @@
 
     <div class="card c2">
       <h2>② 通話・メール <button class="card-help" type="button" data-help="c2" aria-label="この項目の入力のしかた">?</button></h2>
-      <div class="field">
-        <label for="voice">通話オプション</label>
-        <select id="voice"></select>
-      </div>
+      <div class="subhead">通話オプション</div>
+      <div class="tile-grid" id="voiceTiles"><!-- JSで生成 --></div>
+      <p class="hint" id="voiceHint" hidden></p>
       <label class="check"><input type="checkbox" id="voiceChange"> 通話オプションの変更あり</label>
       <div class="subhead">ネットワークサービス</div>
       <div id="netSvcList"></div>
