@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.126.0";
+  var APP_VERSION = "1.127.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -7686,7 +7686,7 @@
   /* マスタ設定の「実績で追う項目」カード。設定は MASTER.statsCfg（statsCfg() 参照）。 */
   function statsCfgHtml() {
     var sc = statsCfg();
-    var h = '<div class="master-plan"><h3>実績で追う項目</h3>';
+    var h = '<div class="master-plan" data-mroom="tools"><h3>実績で追う項目</h3>';
     h += '<p class="hint">実績タブの「項目別」で<strong>どの項目を数えるか</strong>を選べます。'
       + '店舗として力を入れている商材だけに絞ると、表が見やすくなります。<br>'
       + '設定は保存済みの見積もりには手を加えず、<strong>集計するときに数え直す</strong>ため、'
@@ -7803,7 +7803,7 @@
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
       return gOrder.length;
     }
-    h += '<div class="master-plan"><h3>実績の目標（月あたり・管理者）</h3>';
+    h += '<div class="master-plan" data-mroom="tools"><h3>実績の目標（月あたり・管理者）</h3>';
     h += '<p class="hint">項目ごとの<strong>月の成約目標</strong>を入れると、実績に「目標と進捗」の表が出ます'
       + '（残りの件数と、いまのペースでの着地見込み）。空欄の項目は出ません。</p>';
     h += '<div class="goal-grid">';
@@ -7832,6 +7832,29 @@
     if (!ps.length) return "";
     var mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
     return mn === mx ? yen(mn) : yen(mn) + "〜" + yen(mx);
+  }
+  /* マスタ設定は4つの部屋（お店の商材／ドコモの料金／画面と道具／お店の設定）に
+   * 分かれている。data-mroom の付いたカード・セクションを、選んだ部屋のものだけ表示する。
+   * 検索中（項目を探す）は、結果を隠さないため全部屋を表示する。 */
+  var masterRoom = "shop";
+  function applyMasterRoom() {
+    var showAll = masterSearchActive();
+    Array.prototype.forEach.call(document.querySelectorAll('#tab-master [data-mroom]'), function (el) {
+      el.hidden = !showAll && el.getAttribute("data-mroom") !== masterRoom;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mroom-btn]'), function (b) {
+      b.classList.toggle("on", b.getAttribute("data-mroom-btn") === masterRoom);
+    });
+  }
+  function initMasterRooms() {
+    var bar = $("mroomTabs");
+    if (!bar) return;
+    bar.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("[data-mroom-btn]");
+      if (!b) return;
+      masterRoom = b.getAttribute("data-mroom-btn");
+      applyMasterRoom();
+    });
   }
   /* マスタ設定の各項目（見出しごと）を開閉できるようにする。
    * 画面を開き直す（マスタ設定を開き直す）と、すべてたたんだ状態に戻る。保存はしない。
@@ -7892,12 +7915,32 @@
       + "（このサイトの全アプリ合計。目安の上限は5MB前後。上限に近いと保存に失敗することがあります）";
     var h = masterUpdateHtml();
 
-    h += '<div class="master-plan"><h3>共通費用</h3><div class="master-grid">';
+    h += '<div class="master-plan" data-mroom="docomo"><h3>共通費用</h3><div class="master-grid">';
     h += mInput("事務手数料（新規）", "fees.jimu_shinki");
     h += mInput("事務手数料（MNP）", "fees.jimu_mnp");
     h += mInput("事務手数料（機種変更）", "fees.jimu_kishu");
     h += mInput("店頭頭金（初期値）", "fees.atamakin_default");
     h += "</div></div>";
+
+    // キャンペーン割引（名称・期間・割引額を編集可）
+    h += '<div class="master-plan" data-mroom="docomo"><h3>キャンペーン割引</h3>';
+    h += '<p class="hint">対象プラン選択時に「②割引」へ表示されます。終了したキャンペーンは×で削除してください。</p>';
+    (MASTER.campaigns || []).forEach(function (c, i) {
+      h += '<div class="adhoc-row">'
+        + '<input type="text" value="' + esc(c.name) + '" placeholder="キャンペーン名" data-cp-name="' + i + '">'
+        + '<input type="number" value="' + c.months + '" title="割引期間（か月）" data-cp-months="' + i + '" style="max-width:5em">'
+        + '<span class="price">か月</span>'
+        + '<button class="del" data-cp-del="' + i + '" type="button" aria-label="削除">×</button>'
+        + "</div>";
+      (c.amountChoices || []).forEach(function (ch, j) {
+        h += '<div class="adhoc-row" style="margin-left:24px">'
+          + '<span class="price" style="min-width:9em">' + esc(ch.label || "割引額") + "</span>"
+          + '<input type="number" value="' + ch.a + '" data-cp-amt="' + i + '-' + j + '">'
+          + '<span class="price">円/月引き</span>'
+          + "</div>";
+      });
+    });
+    h += "</div>";
 
     var D_LABELS = [
       ["minna2", "みんなドコモ割（2回線）"],
@@ -7914,7 +7957,7 @@
       ["max", "ドコモ MAX／ポイ活 MAX の率"],
       ["std", "ポイ活20・ahamo・eximo・ギガホ の率"]
     ];
-    h += '<div class="master-plan"><h3>料金プラン</h3>';
+    h += '<div class="master-plan" data-mroom="docomo"><h3>料金プラン</h3>';
     h += '<p class="hint">新しいプランが出たときは、ここから登録できます。'
       + '<strong>似ているプランの「複製」から作ると早いです</strong>（割引や詳細設定がそのまま写ります）。'
       + '見積もり画面のプルダウンには、ここで「現行」にしたものだけが出ます。'
@@ -8008,7 +8051,7 @@
       + '<button class="btn-sub" data-pl-add="1" type="button">＋ プランを追加</button></div>';
     h += "</div>";
 
-    h += '<div class="master-plan"><h3>通話オプション</h3><div class="master-grid">';
+    h += '<div class="master-plan" data-mroom="docomo"><h3>通話オプション</h3><div class="master-grid">';
     MASTER.voiceOptions.forEach(function (v, vi) {
       if (v.id === "none") return;
       h += mInput(esc(v.name), "voiceOptions." + vi + ".price");
@@ -8071,7 +8114,7 @@
     var isCarrier = function (o) { return !o.own; };
 
     // 見積もり画面のタイルの並び（長押しドラッグ）
-    h += '<div class="master-plan"><h3>見積もり画面のタイルの並び</h3>';
+    h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面のタイルの並び</h3>';
     h += '<p class="hint">タイルを<strong>長押ししてから動かす</strong>と、順番を入れ替えたり、別のカテゴリへ移したりできます。'
       + 'ここでの並びが、そのまま見積もり画面のタイルの並びになります。</p>';
     h += sorterHtml("op", optCatGroups(), true);
@@ -8081,30 +8124,35 @@
     h += sorterHtml("ac", [{ cat: "", items: MASTER.accessories || [] }], false);
     h += "</div>";
 
-    h += '<div class="master-plan"><h3>オプション・サービス（月額）</h3>';
-    h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は下の「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
-      + '「<strong>店舗独自</strong>」にチェックを入れると、下の「店舗独自サービス」へ移ります。<strong>見積もり画面の表示は変わりません</strong>（従来どおりカテゴリごとに並びます）。</p>';
-    h += '<div class="master-sub"><h4>ドコモの商材</h4>';
-    h += listEditor(MASTER.options, "op", optExtra, isCarrier, optChoicesHtml) + "</div>";
-    h += '<div class="master-sub own"><h4>店舗独自サービス</h4>';
-    h += listEditor(MASTER.options, "op", optExtra, isOwn, optChoicesHtml) + "</div>";
+    h += '<div class="master-plan" data-mroom="docomo"><h3>オプション・サービス（月額・ドコモ）</h3>';
+    h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
+      + '「<strong>店舗独自</strong>」にチェックを入れると、<strong>「お店の商材」の「店舗独自サービス」へ移ります</strong>。見積もり画面の表示は変わりません（従来どおりカテゴリごとに並びます）。</p>';
+    h += listEditor(MASTER.options, "op", optExtra, isCarrier, optChoicesHtml);
     h += '<div class="actions">'
-      + '<button class="btn-sub" data-add="options" type="button">＋ ドコモの商材を追加</button>'
+      + '<button class="btn-sub" data-add="options" type="button">＋ ドコモの商材を追加</button></div></div>';
+
+    h += '<div class="master-plan" data-mroom="shop"><h3>店舗独自サービス（月額）</h3>';
+    h += '<p class="hint">お店で扱う月額のサービス。名称・月額・カテゴリを自由に設定でき、見積もり画面ではカテゴリごとにドコモの商材と同じ場所へ並びます。<br>'
+      + '「<strong>店舗独自</strong>」のチェックを外すと「ドコモの料金」の一覧へ戻ります。</p>';
+    h += listEditor(MASTER.options, "op", optExtra, isOwn, optChoicesHtml);
+    h += '<div class="actions">'
       + '<button class="btn-sub" data-add="optionsOwn" type="button">＋ 店舗独自サービスを追加</button></div></div>';
 
     // 初期費用の定番項目（手数料・コーティング等の一括もの）
-    h += '<div class="master-plan"><h3>初期費用の定番項目（手数料・コーティングなど）</h3>';
-    h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。</p>';
-    h += '<div class="master-sub"><h4>ドコモの商材</h4>';
-    h += listEditor(MASTER.feeItems, "fi", feeExtra, isCarrier) + "</div>";
-    h += '<div class="master-sub own"><h4>店舗独自サービス</h4>';
-    h += listEditor(MASTER.feeItems, "fi", feeExtra, isOwn) + "</div>";
+    h += '<div class="master-plan" data-mroom="docomo"><h3>初期費用の定番項目（ドコモ・手数料など）</h3>';
+    h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。「<strong>店舗独自</strong>」にチェックを入れると「お店の商材」の一覧へ移ります。</p>';
+    h += listEditor(MASTER.feeItems, "fi", feeExtra, isCarrier);
     h += '<div class="actions">'
-      + '<button class="btn-sub" data-add="feeItems" type="button">＋ ドコモの商材を追加</button>'
+      + '<button class="btn-sub" data-add="feeItems" type="button">＋ ドコモの商材を追加</button></div></div>';
+
+    h += '<div class="master-plan" data-mroom="shop"><h3>初期費用の店舗独自項目（コーティングなど）</h3>';
+    h += '<p class="hint">お店で扱う一括のもの。「⑦初期費用」にチェックボックスとして表示されます。「<strong>店舗独自</strong>」のチェックを外すと「ドコモの料金」の一覧へ戻ります。</p>';
+    h += listEditor(MASTER.feeItems, "fi", feeExtra, isOwn);
+    h += '<div class="actions">'
       + '<button class="btn-sub" data-add="feeItemsOwn" type="button">＋ 店舗独自サービスを追加</button></div></div>';
 
     // アクセサリの定番商品
-    h += '<div class="master-plan"><h3>アクセサリの定番商品（docomo select など）</h3>';
+    h += '<div class="master-plan" data-mroom="shop"><h3>アクセサリの定番商品（docomo select など）</h3>';
     h += '<p class="hint">「⑥アクセサリ」にタイルとして表示されます。単価は店舗の取扱商品に合わせて編集を。<br>'
       + '<strong>置き場所</strong>でカテゴリを選ぶと、「⑥アクセサリ」ではなく<strong>オプションのそのカテゴリ</strong>に並びます。'
       + '一括・分割の選び方は変わりません。<strong>初期の支払い</strong>は、タイルを押したときに最初に入る払い方です。</p>';
@@ -8124,7 +8172,7 @@
     h += '<div class="actions"><button class="btn-sub" data-add="accessories" type="button">＋ 商品を追加</button></div></div>';
 
     // でんき・ガスの現在の会社と連絡先
-    h += '<div class="master-plan"><h3>でんき・ガスの現在の会社</h3>';
+    h += '<div class="master-plan" data-mroom="docomo"><h3>でんき・ガスの現在の会社</h3>';
     h += '<p class="hint">でんき・ガスをお申し込みのとき、<strong>いまご契約中の会社を選ぶとご連絡先が出ます</strong>。'
       + '電話番号は変わることがあるので、変わったらここで直してください。'
       + '<strong>番号が空欄の会社は、お手元の番号を登録してお使いください。</strong></p>';
@@ -8150,7 +8198,7 @@
     h += statsCfgHtml();
 
     // 料金マスタの履歴
-    h += '<div class="master-plan"><h3>料金マスタの履歴</h3>';
+    h += '<div class="master-plan" data-mroom="tools"><h3>料金マスタの履歴</h3>';
     h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残り、何を変更したのかも記録されます</strong>'
       + '（編集の区切りごとに1件。続けて直しているあいだは1件にまとめます）。'
       + '「変更した内容」を開くと、変更した項目と金額の前後が分かります。'
@@ -8163,7 +8211,7 @@
     h += "</div>";
 
     // テンプレート管理
-    h += '<div class="master-plan"><h3>テンプレート</h3>';
+    h += '<div class="master-plan" data-mroom="tools"><h3>テンプレート</h3>';
     h += '<p class="hint">テンプレートは<strong>担当者ごと</strong>です（いまは「' + esc(activeStaff().name || "担当") + '」のもの）。'
       + '保存は見積もり画面の「現在の内容をテンプレに保存」から。ここでは名前変更と削除ができます。</p>';
     templates.forEach(function (t, i) {
@@ -8177,28 +8225,9 @@
     });
     h += "</div>";
 
-    // キャンペーン割引（名称・期間・割引額を編集可）
-    h += '<div class="master-plan"><h3>キャンペーン割引</h3>';
-    h += '<p class="hint">対象プラン選択時に「②割引」へ表示されます。終了したキャンペーンは×で削除してください。</p>';
-    (MASTER.campaigns || []).forEach(function (c, i) {
-      h += '<div class="adhoc-row">'
-        + '<input type="text" value="' + esc(c.name) + '" placeholder="キャンペーン名" data-cp-name="' + i + '">'
-        + '<input type="number" value="' + c.months + '" title="割引期間（か月）" data-cp-months="' + i + '" style="max-width:5em">'
-        + '<span class="price">か月</span>'
-        + '<button class="del" data-cp-del="' + i + '" type="button" aria-label="削除">×</button>'
-        + "</div>";
-      (c.amountChoices || []).forEach(function (ch, j) {
-        h += '<div class="adhoc-row" style="margin-left:24px">'
-          + '<span class="price" style="min-width:9em">' + esc(ch.label || "割引額") + "</span>"
-          + '<input type="number" value="' + ch.a + '" data-cp-amt="' + i + '-' + j + '">'
-          + '<span class="price">円/月引き</span>'
-          + "</div>";
-      });
-    });
-    h += "</div>";
-
     $("masterBody").innerHTML = h;
     foldifyMasterSections();
+    applyMasterRoom();
     applyMasterSearch(); // 検索中に再描画されても絞り込みを維持する
 
     /* filter を渡すと、その条件に合う項目だけを並べる。
@@ -8998,8 +9027,10 @@
       });
       r2.hidden = t.indexOf(q) < 0;
     });
-    // 検索中はたたんだ項目も開く（結果を隠さないため）。空にしたら開閉状態に戻す
+    // 検索中はたたんだ項目も開き、全部屋を表示する（結果を隠さないため）。
+    // 空にしたら開閉状態・選んでいた部屋に戻す
     applyMasterFoldState();
+    applyMasterRoom();
   }
   function initMasterSearch() {
     var inp = $("masterSearch");
@@ -11264,6 +11295,7 @@
   initSheetFs();
   initPresent();
   initMasterSearch();
+  initMasterRooms();
   initImportMaster();
   initDeviceMaster();
   initCurBill();
