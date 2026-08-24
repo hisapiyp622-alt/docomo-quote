@@ -1178,3 +1178,13 @@ body.present .sheet{box-shadow:none}
 /* ③割引: チェックの下に開く選択肢（回線数・カード種類・年数・その他割引） */
 .wari-sub{margin:2px 0 8px 26px;display:flex;flex-wrap:wrap;gap:2px 14px}
 .wari-sub .hint{flex-basis:100%}
+
+/* 料金プランのたたみ表示（1.124.0） */
+.plan-closed{padding:6px 10px}
+.plan-open-btn{flex:1;display:flex;align-items:center;gap:8px;min-width:0;
+  background:none;border:0;padding:8px 4px;font:inherit;text-align:left;cursor:pointer;color:var(--ink)}
+.plan-open-btn:active{opacity:.7}
+.plan-open-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plan-badge{flex:none;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.plan-sum{flex:none;font-size:12.5px;color:var(--muted)}
+.plan-open-mark{flex:none;margin-left:auto;font-size:12px;color:var(--accent, #CC0033)}
