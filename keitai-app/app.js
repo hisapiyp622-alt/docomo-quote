@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.128.0";
+  var APP_VERSION = "1.128.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3461,6 +3461,25 @@
       if (MASTER.feeItems.some(function (f) { return f.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
       MASTER.feeItems.push(JSON.parse(JSON.stringify(d)));
+    });
+    /* 通話オプションも同様に追記する。
+     * これが無いと、すでにお使いの店舗（保存済みマスタがある店舗）には
+     * 1.125.0 で足した「旧」の通話オプションが出てこない（2026-08-24 修正）。
+     * 並びは初期データと同じ位置に入れて、新→旧の順に見えるようにする。 */
+    if (!MASTER.voiceOptions) MASTER.voiceOptions = [];
+    (DEFAULT_DATA.voiceOptions || []).forEach(function (d, di) {
+      if (MASTER.voiceOptions.some(function (v) { return v.id === d.id; })) return;
+      if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      MASTER.voiceOptions.splice(Math.min(di, MASTER.voiceOptions.length), 0, JSON.parse(JSON.stringify(d)));
+    });
+    /* 「このプランでは選べない」の指定（hideOnPlans）も初期データから補う。
+     * 先に別の道筋で追記されていた場合に、指定が抜けたままにならないようにする。 */
+    var defVoiceHide = {};
+    (DEFAULT_DATA.voiceOptions || []).forEach(function (d) {
+      if (d.hideOnPlans) defVoiceHide[d.id] = d.hideOnPlans;
+    });
+    MASTER.voiceOptions.forEach(function (v) {
+      if (!v.hideOnPlans && defVoiceHide[v.id]) v.hideOnPlans = defVoiceHide[v.id].slice();
     });
     // 初期データに後から増えたプランも同様に追記（同じグループの末尾に挿入）
     (DEFAULT_DATA.plans || []).forEach(function (d) {
