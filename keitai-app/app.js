@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.123.0";
+  var APP_VERSION = "1.124.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -7796,6 +7796,20 @@
     return h;
   }
 
+  /* 料金プランの一覧のたたみ状態（プランidごと）。再描画しても消えないようここに持つ。
+   * 保存はしない：開き直したら全部たたまれた状態から始まる。 */
+  var planOpen = {};
+  var planShowLegacy = false;
+  function planVisible(pl) {
+    return planShowLegacy || pl.group !== "legacy" || !!planOpen[pl.id];
+  }
+  /* たたんだ行に出す月額のあらまし（段階が複数なら 最低〜最高） */
+  function planPriceSummary(pl) {
+    var ps = (pl.tiers || []).map(function (t) { return num(t.price); });
+    if (!ps.length) return "";
+    var mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
+    return mn === mx ? yen(mn) : yen(mn) + "〜" + yen(mx);
+  }
   function renderMasterTab() {
     $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
     var su = $("storageUsage");
@@ -7828,18 +7842,37 @@
     h += '<div class="master-plan"><h3>料金プラン</h3>';
     h += '<p class="hint">新しいプランが出たときは、ここから登録できます。'
       + '<strong>似ているプランの「複製」から作ると早いです</strong>（割引や詳細設定がそのまま写ります）。'
-      + '見積もり画面のプルダウンには、ここで「現行」にしたものだけが出ます。</p>';
+      + '見積もり画面のプルダウンには、ここで「現行」にしたものだけが出ます。'
+      + '<strong>プラン名を押すと編集が開きます。</strong></p>';
+    var visIdx = [];
+    MASTER.plans.forEach(function (pl, pi) { if (planVisible(pl)) visIdx.push(pi); });
     MASTER.plans.forEach(function (pl, pi) {
-      var last = pi === MASTER.plans.length - 1;
+      if (!planVisible(pl)) return;
+      var firstVis = pi === visIdx[0];
+      var lastVis = pi === visIdx[visIdx.length - 1];
+      var mvBtns = '<button class="mv" data-pl-up="' + pi + '" type="button" aria-label="上へ"' + (firstVis ? " disabled" : "") + ">▲</button>"
+        + '<button class="mv" data-pl-down="' + pi + '" type="button" aria-label="下へ"' + (lastVis ? " disabled" : "") + ">▼</button>";
+      if (!planOpen[pl.id]) {
+        /* たたんだ行：名前と月額のあらましだけ。行を押すと開く */
+        h += '<div class="plan-edit plan-closed"><div class="plan-head">'
+          + mvBtns
+          + '<button class="plan-open-btn" data-pl-open="' + pi + '" type="button">'
+          + '<span class="plan-open-name">' + esc(pl.name || "（名前なし）") + "</span>"
+          + (pl.group === "legacy" ? '<span class="plan-badge">旧</span>' : "")
+          + '<span class="plan-sum">' + planPriceSummary(pl) + "</span>"
+          + '<span class="plan-open-mark">開く ▾</span>'
+          + "</button></div></div>";
+        return;
+      }
       h += '<div class="plan-edit">';
       h += '<div class="plan-head">'
-        + '<button class="mv" data-pl-up="' + pi + '" type="button" aria-label="上へ"' + (pi === 0 ? " disabled" : "") + ">▲</button>"
-        + '<button class="mv" data-pl-down="' + pi + '" type="button" aria-label="下へ"' + (last ? " disabled" : "") + ">▼</button>"
+        + mvBtns
         + '<input type="text" class="plan-name" value="' + esc(pl.name) + '" placeholder="プラン名" data-pl-name="' + pi + '">'
         + '<select data-pl-group="' + pi + '">'
         + '<option value="current"' + (pl.group === "current" ? " selected" : "") + ">現行</option>"
         + '<option value="legacy"' + (pl.group === "legacy" ? " selected" : "") + ">旧プラン</option>"
         + "</select>"
+        + '<button class="btn-sub" data-pl-close="' + pi + '" type="button">たたむ ▴</button>'
         + '<button class="btn-sub" data-pl-copy="' + pi + '" type="button">複製</button>'
         + '<button class="del" data-pl-del="' + pi + '" type="button" aria-label="削除">×</button>'
         + "</div>";
@@ -7893,7 +7926,11 @@
       h += "</div></details>";
       h += "</div>";
     });
-    h += '<div class="actions"><button class="btn-sub" data-pl-add="1" type="button">＋ プランを追加</button></div>';
+    var legacyN = MASTER.plans.filter(function (pl) { return pl.group === "legacy"; }).length;
+    h += '<div class="actions">'
+      + (legacyN ? '<button class="btn-sub" data-pl-legacy-toggle="1" type="button">'
+          + (planShowLegacy ? "旧プランを隠す ▴" : "受付終了の旧プランを表示（" + legacyN + "件）▾") + "</button>" : "")
+      + '<button class="btn-sub" data-pl-add="1" type="button">＋ プランを追加</button></div>';
     h += "</div>";
 
     h += '<div class="master-plan"><h3>通話オプション</h3><div class="master-grid">';
@@ -9609,13 +9646,34 @@
 
     if (evType !== "click") return false;
 
-    if (g("add") != null) { MASTER.plans.push(newPlan()); planRestructure(); return true; }
+    /* たたんだ行は中の文字（名前・金額）を押しても開くように、ボタンまでさかのぼる */
+    var openBtn = t.closest ? t.closest("[data-pl-open]") : null;
+    if (openBtn) {
+      planOpen[MASTER.plans[+openBtn.getAttribute("data-pl-open")].id] = true;
+      renderMasterTab(); return true;
+    }
+    if ((v = g("close")) != null) {
+      delete planOpen[MASTER.plans[+v].id];
+      renderMasterTab(); return true;
+    }
+    if (g("legacy-toggle") != null) {
+      planShowLegacy = !planShowLegacy;
+      renderMasterTab(); return true;
+    }
+
+    if (g("add") != null) {
+      var np = newPlan();
+      planOpen[np.id] = true; // 追加したプランはすぐ編集できるよう開いておく
+      MASTER.plans.push(np);
+      planRestructure(); return true;
+    }
 
     if ((v = g("copy")) != null) {
       var src = MASTER.plans[+v];
       var cp = JSON.parse(JSON.stringify(src));
       cp.id = "pl_" + Date.now();
       cp.name = (src.name || "プラン") + "（コピー）";
+      planOpen[cp.id] = true; // 複製もすぐ編集できるよう開いておく
       MASTER.plans.splice(+v + 1, 0, cp);
       planRestructure(); return true;
     }
@@ -9637,7 +9695,10 @@
     var up = g("up"), dn = g("down");
     if (up != null || dn != null) {
       var i = +(up != null ? up : dn);
-      var j = up != null ? i - 1 : i + 1;
+      var dir = up != null ? -1 : 1;
+      var j = i + dir;
+      /* 隠している旧プランは飛び越えて、見えている隣と入れ替える */
+      while (j >= 0 && j < MASTER.plans.length && !planVisible(MASTER.plans[j])) j += dir;
       if (j < 0 || j >= MASTER.plans.length) return true;
       var tmp = MASTER.plans[i]; MASTER.plans[i] = MASTER.plans[j]; MASTER.plans[j] = tmp;
       planRestructure(); return true;
