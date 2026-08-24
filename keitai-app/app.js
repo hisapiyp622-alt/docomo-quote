@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.124.0";
+  var APP_VERSION = "1.125.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -5055,6 +5055,22 @@
         && o.priceChoices.indexOf(st.optionPrices[o.id]) >= 0) return st.optionPrices[o.id];
     return o.price;
   }
+  /* 通話オプションがそのプランで選べないとき（hideOnPlans）は、
+   * 同じ内容の標準版（留守電・キャッチホン無料つき）へ読み替える。
+   * 保存済みの見積もりでプランだけ mini に変えた場合の取りこぼし防止。 */
+  var VOICE_FALLBACK = { v5l: "v5", kakel: "kake" };
+  function voiceHiddenOn(plan, vo) {
+    return !!(vo && vo.hideOnPlans && vo.hideOnPlans.indexOf(plan.id) >= 0);
+  }
+  function effectiveVoice(plan, id) {
+    var vo = MASTER.voiceOptions.filter(function (v) { return v.id === id; })[0]
+             || MASTER.voiceOptions[0];
+    if (voiceHiddenOn(plan, vo)) {
+      var fb = MASTER.voiceOptions.filter(function (v) { return v.id === VOICE_FALLBACK[vo.id]; })[0];
+      if (fb) return fb;
+    }
+    return vo;
+  }
   function voicePriceFor(plan, vo) {
     var p = vo.price;
     if (plan.voiceOverrides && plan.voiceOverrides[vo.id] != null) p = plan.voiceOverrides[vo.id];
@@ -5091,9 +5107,8 @@
                : st.choki === "y20" ? (d.choki20 || 0) : 0;
     var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki - dHearty - dKosodate);
 
-    // 通話オプション
-    var vo = MASTER.voiceOptions.filter(function (v) { return v.id === st.voice; })[0]
-             || MASTER.voiceOptions[0];
+    // 通話オプション（プランで選べないものは標準版へ読み替え）
+    var vo = effectiveVoice(plan, st.voice);
     var voicePrice = voicePriceFor(plan, vo);
     /* ハーティ割引は通話オプションも 880円 引く（5分は無料、かけ放題は1,100円）。
      * 「はじめてスマホプラン」は通話オプションの割引対象外。 */
@@ -5848,7 +5863,7 @@
     var msg;
     if (free) {
       msg = "通話オプション（880円／1,980円）を付けているため、留守番電話・キャッチホンは無料です。";
-      if (picked.melody && !offs.melody) msg += "メロディコールは110円/月かかります。";
+      if (netSvcOn(state, "melody") && netKubun(state, "melody") !== "off") msg += "メロディコールは110円/月かかります。";
     } else if (net.pack) {
       msg = "3つまとめて " + yen(NET_PACK_PRICE) + "/月（オプションパック。単品合計660円のところ220円おトク）。転送でんわも無料で付けられます。";
     } else {
@@ -5859,7 +5874,15 @@
   function renderVoiceSelect() {
     renderNetSvc();
     var plan = currentPlan();
-    $("voice").innerHTML = MASTER.voiceOptions.map(function (v) {
+    /* このプランで選べないもの（hideOnPlans）は選択肢に出さない。
+     * 選択中だった場合は標準版（留守電・キャッチホン無料つき）へ戻す */
+    var cur = MASTER.voiceOptions.filter(function (v) { return v.id === state.voice; })[0];
+    if (cur && voiceHiddenOn(plan, cur)) {
+      state.voice = VOICE_FALLBACK[cur.id] || "none";
+    }
+    $("voice").innerHTML = MASTER.voiceOptions.filter(function (v) {
+      return !voiceHiddenOn(plan, v);
+    }).map(function (v) {
       var pr = voicePriceFor(plan, v);
       var label = v.name;
       if (v.id !== "none") {
