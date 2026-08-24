@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.122.1";
+  var APP_VERSION = "1.123.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3620,6 +3620,13 @@
     }
     delete pt.zanka;
     if (!pt.optionKubun) pt.optionKubun = {};
+    /* 重なる組み合わせが両方入っている保存は、含んでいるほう（パック）を残す */
+    OPT_EXCLUSIVE.forEach(function (pair) {
+      if ((pt.options[pair[0]] || pt.optionKubun[pair[0]])
+          && (pt.options[pair[1]] || pt.optionKubun[pair[1]])) {
+        optExclusiveOff(pair[0], pt);
+      }
+    });
     migrateEnergyTodo(pt);
     /* 「キャンペーン値引き」を「手値引き」と「ダイレクト割」に分けた（2026-07-30）。
      * 以前の入力はドコモ側の施策を指していたため、ダイレクト割として引き継ぐ。 */
@@ -5902,6 +5909,27 @@
     smart_hosho: "https://www.docomo.ne.jp/service/smart_anshin_hoshou/charge.html",
     anshin_pack: "https://www.docomo.ne.jp/service/smart_anshinpack/"
   };
+  /* 中身が重なるオプションの組み合わせ（片方を選ぶと、もう片方は自動で外れる）。
+   * dバリューパス パックは dバリューパス を含むため、両方を数えると二重になる。 */
+  var OPT_EXCLUSIVE = [["dvaluepass", "dvaluepass_single"]];
+  function optExclusiveOther(id) {
+    var other = null;
+    OPT_EXCLUSIVE.forEach(function (pair) {
+      if (pair[0] === id) other = pair[1];
+      else if (pair[1] === id) other = pair[0];
+    });
+    return other;
+  }
+  /* id を選んだときに、重なるほうを外す */
+  function optExclusiveOff(id, pt) {
+    var st = pt || state;
+    var other = optExclusiveOther(id);
+    if (!other) return false;
+    if (!st.options[other] && !st.optionKubun[other]) return false;
+    st.options[other] = false;
+    if (st.optionKubun) delete st.optionKubun[other];
+    return true;
+  }
   function renderOptionList() {
     // カテゴリ（フォルダ）ごとに横5列のタイルで表示
     var h = "";
@@ -10103,6 +10131,7 @@
         } else {
           state.options[optId] = true;
           state.optionKubun[optId] = "new";
+          optExclusiveOff(optId);
         }
         renderOptionList();
       }

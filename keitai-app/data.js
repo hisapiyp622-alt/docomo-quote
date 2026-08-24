@@ -585,11 +585,21 @@ const DEFAULT_DATA = {
     },
     {
       "id": "dvaluepass",
-      "url": "https://www.docomo.ne.jp/service/dvaluepass/",
+      "url": "https://www.docomo.ne.jp/service/dvaluepass_pack/",
       "name": "dバリューパス パック",
       "price": 682,
-      "note": "旧いちおしパック（2026年3月改定・初回31日無料）",
+      "note": "旧いちおしパック（2026年3月改定・初回31日無料）。dバリューパス＋my daiz＋クラウド容量オプションの3つセット。dバリューパス単体とは同時に選べません",
       "category": "バックアップ",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "dvaluepass_single",
+      "url": "https://www.docomo.ne.jp/service/dvaluepass/",
+      "name": "dバリューパス",
+      "price": 550,
+      "note": "初回31日間無料。dバリューパス パックに含まれているため、パックとは同時に選べません",
+      "category": "エンタメ",
       "carrier": true,
       "own": false
     },
