@@ -8307,7 +8307,7 @@
     h += statsCfgHtml();
 
     // 料金マスタの履歴
-    h += '<div class="master-plan" data-mroom="tools"><h3>料金マスタの履歴</h3>';
+    h += '<div class="master-plan" data-mroom="store"><h3>料金マスタの履歴</h3>';
     h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残り、何を変更したのかも記録されます</strong>'
       + '（編集の区切りごとに1件。続けて直しているあいだは1件にまとめます）。'
       + '「変更した内容」を開くと、変更した項目と金額の前後が分かります。'
