@@ -58,6 +58,12 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
   #tab-quote .card.c6,#tab-quote .card.c7{grid-column:2}
   #tab-quote .card.c8{grid-column:1}
   #tab-quote .card.c9{grid-column:2}
+  /* 店舗が①〜⑨を並び替えたとき（custom-order）は列の固定をやめて自動配置にする。
+     ①は大きいので横幅いっぱいのまま */
+  #tab-quote.custom-order .card.c2,#tab-quote.custom-order .card.c3,
+  #tab-quote.custom-order .card.c5,#tab-quote.custom-order .card.c6,
+  #tab-quote.custom-order .card.c7,#tab-quote.custom-order .card.c8,
+  #tab-quote.custom-order .card.c9{grid-column:auto;grid-row:auto}
   /* 半分幅カード内のタイルは3列（全幅カードは5列のまま） */
   #tab-quote .card:not(.full) .tile-grid{grid-template-columns:repeat(3,1fr)}
 }

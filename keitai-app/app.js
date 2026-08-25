@@ -63,6 +63,60 @@
   /* 1商談の中の別の番号（回線）。表示名は「回線1・回線2・回線3」 */
   var PAT_NAMES = ["回線1", "回線2", "回線3"];
   var OPT_CATEGORIES = ["補償", "バックアップ", "セキュリティ", "エンタメ", "その他"];
+  /* ④のカテゴリの表示順。店舗が並び替えたら MASTER.optCatOrder に入る。
+   * 中身の判定（どのカテゴリに属すか）は従来どおり OPT_CATEGORIES を使い、
+   * こちらは「表示する順番」だけを差し替える。 */
+  function optCategories() {
+    var o = (typeof MASTER !== "undefined" && MASTER && MASTER.optCatOrder) || null;
+    if (!o || !o.length) return OPT_CATEGORIES;
+    var seen = {};
+    var out = o.filter(function (c) {
+      if (seen[c] || OPT_CATEGORIES.indexOf(c) < 0) return false;
+      seen[c] = true; return true;
+    });
+    OPT_CATEGORIES.forEach(function (c) { if (!seen[c]) out.push(c); });
+    return out;
+  }
+  /* ①〜⑨のカードの表示順（見積もり画面）。MASTER.quoteCardOrder に入る。
+   * 丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動く。 */
+  var QUOTE_CARDS = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"];
+  var QUOTE_CARD_NAMES = {
+    c1: "① 契約内容", c2: "② 通話・メール", c3: "③ 割引", c4: "④ オプション・サービス",
+    c5: "⑤ 端末代金", c6: "⑥ アクセサリ", c7: "⑦ 初期費用", c8: "⑧ ポイント", c9: "⑨ 備考・その他特記事項"
+  };
+  function quoteCardOrder() {
+    var o = (typeof MASTER !== "undefined" && MASTER && MASTER.quoteCardOrder) || null;
+    if (!o || !o.length) return QUOTE_CARDS;
+    var seen = {};
+    var out = o.filter(function (c) {
+      if (seen[c] || QUOTE_CARDS.indexOf(c) < 0) return false;
+      seen[c] = true; return true;
+    });
+    QUOTE_CARDS.forEach(function (c) { if (!seen[c]) out.push(c); });
+    return out;
+  }
+  /* 並びの指定どおりにカードを差し替える。既定の並びのときは何もせず、
+   * 2列レイアウトの列の固定（CSS）もそのまま生かす。 */
+  function applyQuoteCardOrder() {
+    var tab = document.getElementById("tab-quote");
+    if (!tab) return;
+    var order = quoteCardOrder();
+    var custom = order.join(",") !== QUOTE_CARDS.join(",");
+    var els = {};
+    QUOTE_CARDS.forEach(function (k) { els[k] = tab.querySelector(".card." + k); });
+    if (QUOTE_CARDS.some(function (k) { return !els[k]; })) return;
+    tab.classList.toggle("custom-order", custom);
+    // 現在の並びと同じなら差し替えない（入力中のフォーカスを守る）
+    var cur = [];
+    QUOTE_CARDS.map(function (k) { return els[k]; })
+      .sort(function (a, b) { return a.compareDocumentPosition(b) & 2 ? 1 : -1; })
+      .forEach(function (el) {
+        QUOTE_CARDS.forEach(function (k) { if (els[k] === el) cur.push(k); });
+      });
+    if (cur.join(",") === order.join(",")) return;
+    var anchor = els[cur[cur.length - 1]].nextSibling; // いまの最後のカードの直後
+    order.forEach(function (k) { tab.insertBefore(els[k], anchor); });
+  }
 
   /* ---------- 店舗設定（店舗名・担当者） ---------- */
   /* ---------- 端末内保存の共通入口 ----------
@@ -3490,6 +3544,7 @@
       MASTER.plans.splice(at + 1, 0, JSON.parse(JSON.stringify(d)));
     });
     saveMaster();
+    applyQuoteCardOrder(); // 保存済みの並びを見積もり画面へ反映（同期で届いたときも通る）
   }
   function saveMaster() {
     lsSet(MASTER_KEY, JSON.stringify(MASTER));
@@ -6056,7 +6111,7 @@
   function renderOptionList() {
     // カテゴリ（フォルダ）ごとに横5列のタイルで表示
     var h = "";
-    OPT_CATEGORIES.forEach(function (cat) {
+    optCategories().forEach(function (cat) {
       var mailDef = mailOptDef();
       var items = MASTER.options.filter(function (o) {
         if (mailDef && o.id === mailDef.id) return false; // ②で選択するため除外
@@ -8199,7 +8254,7 @@
     }
     function optExtra(o) {
       return '<select data-op-cat="' + o.__i + '">'
-        + OPT_CATEGORIES.map(function (c) {
+        + optCategories().map(function (c) {
             return '<option value="' + c + '"' + ((o.category || "その他") === c ? " selected" : "") + ">" + c + "</option>";
           }).join("")
         + "</select>"
@@ -8221,6 +8276,41 @@
     }
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
+
+    // 見積もり画面のカードとカテゴリの並び（▲▼）
+    h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面の並び（①〜⑨のカード）</h3>';
+    h += '<p class="hint">見積もり画面のカードの順番を入れ替えられます。<strong>丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動きます</strong>（引き継ぎシートや説明の「⑦の事務手数料」などの対応関係は変わりません）。</p>';
+    (function () {
+      var order = quoteCardOrder();
+      order.forEach(function (k, i) {
+        h += '<div class="adhoc-row">'
+          + '<button class="mv" data-qc-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-qc-down="' + i + '" type="button" aria-label="下へ"' + (i === order.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<span class="price" style="min-width:14em;text-align:left">' + esc(QUOTE_CARD_NAMES[k] || k) + "</span>"
+          + "</div>";
+      });
+      if (order.join(",") !== QUOTE_CARDS.join(",")) {
+        h += '<div class="actions"><button class="btn-sub" data-qc-reset="1" type="button">初期の並びに戻す</button></div>';
+      }
+    })();
+    h += "</div>";
+
+    h += '<div class="master-plan" data-mroom="tools"><h3>④オプションのカテゴリの並び</h3>';
+    h += '<p class="hint">④の中の「補償」「バックアップ」などのカテゴリの順番を入れ替えられます（下の「タイルの並び」にも同じ順で並びます）。</p>';
+    (function () {
+      var order = optCategories();
+      order.forEach(function (c, i) {
+        h += '<div class="adhoc-row">'
+          + '<button class="mv" data-oc-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-oc-down="' + i + '" type="button" aria-label="下へ"' + (i === order.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<span class="price" style="min-width:10em;text-align:left">' + esc(c) + "</span>"
+          + "</div>";
+      });
+      if (order.join(",") !== OPT_CATEGORIES.join(",")) {
+        h += '<div class="actions"><button class="btn-sub" data-oc-reset="1" type="button">初期の並びに戻す</button></div>';
+      }
+    })();
+    h += "</div>";
 
     // 見積もり画面のタイルの並び（長押しドラッグ）
     h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面のタイルの並び</h3>';
@@ -8268,7 +8358,7 @@
     h += listEditor(MASTER.accessories, "ac", function (a) {
       return '<select data-ac-cat="' + a.__i + '">'
         + '<option value="">置き場所: ⑥アクセサリ</option>'
-        + OPT_CATEGORIES.map(function (c) {
+        + optCategories().map(function (c) {
             return '<option value="' + c + '"' + (a.category === c ? " selected" : "") + ">置き場所: " + c + "</option>";
           }).join("")
         + "</select>"
@@ -9587,7 +9677,7 @@
   // 見積もり画面と同じ規則でカテゴリ分けする（ドコモメールは②で選ぶため除く）
   function optCatGroups() {
     var mailDef = mailOptDef();
-    return OPT_CATEGORIES.map(function (cat) {
+    return optCategories().map(function (cat) {
       return {
         cat: cat,
         items: MASTER.options.filter(function (o) {
@@ -11129,6 +11219,36 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      var qcU = e.target.getAttribute && (e.target.getAttribute("data-qc-up") || e.target.getAttribute("data-qc-down"));
+      if (qcU != null && qcU !== "" || (e.target.getAttribute && e.target.getAttribute("data-qc-reset"))) {
+        var qOrder = quoteCardOrder().slice();
+        if (e.target.getAttribute("data-qc-reset")) {
+          delete MASTER.quoteCardOrder;
+        } else {
+          var qi = +qcU;
+          var qj = e.target.hasAttribute("data-qc-up") ? qi - 1 : qi + 1;
+          if (qj < 0 || qj >= qOrder.length) return;
+          var qt = qOrder[qi]; qOrder[qi] = qOrder[qj]; qOrder[qj] = qt;
+          MASTER.quoteCardOrder = qOrder;
+        }
+        markEdited(); applyQuoteCardOrder(); renderMasterTab();
+        return;
+      }
+      var ocU = e.target.getAttribute && (e.target.getAttribute("data-oc-up") || e.target.getAttribute("data-oc-down"));
+      if (ocU != null && ocU !== "" || (e.target.getAttribute && e.target.getAttribute("data-oc-reset"))) {
+        var cOrder = optCategories().slice();
+        if (e.target.getAttribute("data-oc-reset")) {
+          delete MASTER.optCatOrder;
+        } else {
+          var ci2 = +ocU;
+          var cj = e.target.hasAttribute("data-oc-up") ? ci2 - 1 : ci2 + 1;
+          if (cj < 0 || cj >= cOrder.length) return;
+          var ct = cOrder[ci2]; cOrder[ci2] = cOrder[cj]; cOrder[cj] = ct;
+          MASTER.optCatOrder = cOrder;
+        }
+        markEdited(); renderOptionList(); renderMasterTab();
+        return;
+      }
       var msecHead = e.target.closest && e.target.closest("[data-msec-key]");
       if (msecHead) {
         var msecKey = msecHead.dataset.msecKey;
