@@ -7795,7 +7795,7 @@
   /* マスタ設定の「実績で追う項目」カード。設定は MASTER.statsCfg（statsCfg() 参照）。 */
   function statsCfgHtml() {
     var sc = statsCfg();
-    var h = '<div class="master-plan" data-mroom="tools"><h3>実績で追う項目</h3>';
+    var h = '<div class="master-plan" data-mroom="stats"><h3>実績で追う項目</h3>';
     h += '<p class="hint">実績タブの「項目別」で<strong>どの項目を数えるか</strong>を選べます。'
       + '店舗として力を入れている商材だけに絞ると、表が見やすくなります。<br>'
       + '設定は保存済みの見積もりには手を加えず、<strong>集計するときに数え直す</strong>ため、'
@@ -7912,7 +7912,7 @@
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
       return gOrder.length;
     }
-    h += '<div class="master-plan" data-mroom="tools"><h3>実績の目標（月あたり・管理者）</h3>';
+    h += '<div class="master-plan" data-mroom="stats"><h3>実績の目標（月あたり・管理者）</h3>';
     h += '<p class="hint">項目ごとの<strong>月の成約目標</strong>を入れると、実績に「目標と進捗」の表が出ます'
       + '（残りの件数と、いまのペースでの着地見込み）。空欄の項目は出ません。</p>';
     h += '<div class="goal-grid">';
@@ -7942,7 +7942,7 @@
     var mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
     return mn === mx ? yen(mn) : yen(mn) + "〜" + yen(mx);
   }
-  /*/* マスタ設定は4つの部屋（お店の商材／ドコモの料金／画面と道具／店舗情報）に
+  /*/* マスタ設定は5つの部屋（お店の商材／ドコモの料金／画面と道具／実績／店舗情報）に
    * 分かれている。data-mroom の付いたカード・セクションを、選んだ部屋のものだけ表示する。
    * 検索中（項目を探す）は、結果を隠さないため全部屋を表示する。 */
   var masterRoom = "shop";
