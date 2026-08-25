@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.132.0";
+  var APP_VERSION = "1.132.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4642,7 +4642,6 @@
     var ai = $("accountInfo");
     if (ai) ai.textContent = "ログイン中の店舗: " + String(user.email || "").replace(/@.*$/, "");
     var lo = $("logoutBtn"); if (lo) lo.hidden = false;
-    var pwBox = $("pwChangeBox"); if (pwBox) pwBox.hidden = INTERNAL || isDevUser();
     renderDevBar();
     watchStore();
     watchStoreTemplates();
@@ -4659,7 +4658,6 @@
   function onSignedOut() {
     CLOUD.user = null;
     CLOUD.actAsUid = null;
-    var pwBox = $("pwChangeBox"); if (pwBox) pwBox.hidden = true;
     renderDevBar();
     masterUnlocked = false;
     statsUnlocked = false;
@@ -11239,45 +11237,6 @@
       });
     }
 
-    // 店舗ログインのパスワード変更（クラウドの店舗アカウント）
-    var pwBtn = $("pwChangeBtn");
-    if (pwBtn) {
-      pwBtn.addEventListener("click", function () {
-        var msg = $("pwChangeMsg");
-        function say(t, ok) {
-          if (!msg) return;
-          msg.textContent = t;
-          msg.hidden = false;
-          msg.style.color = ok ? "" : "var(--red)";
-        }
-        if (!(CLOUD.user && CLOUD.auth)) { say("ログイン中の店舗がありません。", false); return; }
-        var cur = $("pwCur").value;
-        var n1 = $("pwNew").value;
-        var n2 = $("pwNew2").value;
-        if (!cur) { say("今のパスワードを入れてください。", false); return; }
-        if (n1.length < 8) { say("新しいパスワードは8文字以上にしてください。", false); return; }
-        if (n1 !== n2) { say("新しいパスワード（確認）が一致しません。", false); return; }
-        if (n1 === cur) { say("今のパスワードと同じです。別のものにしてください。", false); return; }
-        pwBtn.disabled = true;
-        say("変更しています…", true);
-        var cred = firebase.auth.EmailAuthProvider.credential(String(CLOUD.user.email || ""), cur);
-        CLOUD.user.reauthenticateWithCredential(cred).then(function () {
-          return CLOUD.user.updatePassword(n1);
-        }).then(function () {
-          pwBtn.disabled = false;
-          $("pwCur").value = ""; $("pwNew").value = ""; $("pwNew2").value = "";
-          say("変更しました。ほかの端末は1時間ほどで自動的にログアウトされ、新しいパスワードで入り直しになります。", true);
-        }).catch(function (err) {
-          pwBtn.disabled = false;
-          var c = String((err && err.code) || "");
-          if (/wrong-password|invalid-credential/.test(c)) say("今のパスワードが違います。", false);
-          else if (/weak-password/.test(c)) say("新しいパスワードが弱すぎます。もう少し長くしてください。", false);
-          else if (/too-many-requests/.test(c)) say("試行回数が多すぎます。しばらく時間をおいてからお試しください。", false);
-          else if (/network/.test(c)) say("通信エラーです。電波の良いところでお試しください。", false);
-          else say("変更できませんでした。時間をおいて再度お試しください。", false);
-        });
-      });
-    }
     // 店舗ログイン（端末内モード）の設定
     var lockSave = $("lockSaveBtn");
     if (lockSave) {
