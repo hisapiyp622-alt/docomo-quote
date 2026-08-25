@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.129.0";
+  var APP_VERSION = "1.130.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3811,10 +3811,23 @@
       + "販売元へご連絡ください。";
     el.hidden = false;
   }
+  /* 保守用（開発者専用）アカウント。firebase-config.js の KEITAI_DEV_UID と
+   * 一致するアカウントでログインしたときだけ、店舗を選んでその店舗として
+   * データを確認・修正できる（Firestoreルール側にも同じUIDの例外が必要）。 */
+  function devUid() {
+    return (typeof KEITAI_DEV_UID === "string" && KEITAI_DEV_UID) ? KEITAI_DEV_UID : "";
+  }
+  function isDevUser() {
+    return !!(CLOUD.user && devUid() && CLOUD.user.uid === devUid());
+  }
+  // いま「どの店舗のデータ」を見ているか（保守モードで店舗を選んだときだけ変わる）
+  function effectiveUid() {
+    return (isDevUser() && CLOUD.actAsUid) ? CLOUD.actAsUid : (CLOUD.user && CLOUD.user.uid);
+  }
   function storeDoc() {
     // 社内版はログインを使わないため、決め打ちの置き場（従来と同じ）と同期する
     if (INTERNAL) return CLOUD.db.collection("settings").doc("docomoQuoteStore");
-    return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
+    return CLOUD.db.collection("stores").doc(effectiveUid());
   }
   function quoteDoc(staffId) { return storeDoc().collection("quotes").doc(staffId); }
   /* 同じ内容を何度も送らないための控え。送る直前に見比べて、
@@ -3849,7 +3862,7 @@
       else localStorage.removeItem(CONTRACT_KEY);
     } catch (e) {}
   }
-  function contractsDoc() { return CLOUD.db.collection("contracts").doc(CLOUD.user.uid); }
+  function contractsDoc() { return CLOUD.db.collection("contracts").doc(effectiveUid()); }
   function fetchContract() {
     if (INTERNAL) return Promise.resolve(false);   // 社内版に契約の器は無い
     if (!cloudOn()) return Promise.resolve(false);
@@ -4538,15 +4551,79 @@
     } finally { CLOUD.suppress = false; }
   }
 
+  /* 保守モードの店舗選択。stores の一覧を読み、選んだ店舗として動く。 */
+  function showDevPicker() {
+    var old = document.getElementById("devPicker");
+    if (old) old.remove();
+    var ov = document.createElement("div");
+    ov.id = "devPicker";
+    ov.className = "login-overlay no-print";
+    ov.innerHTML = '<div class="login-box"><h2>保守モード：店舗を選択</h2>'
+      + '<p class="hint">選んだ店舗のデータを、その店舗として表示・修正します。</p>'
+      + '<div id="devPickList"><p class="hint">読み込み中…</p></div>'
+      + '<div class="actions"><button class="btn-sub" id="devPickLogout" type="button">ログアウト</button></div></div>';
+    document.body.appendChild(ov);
+    document.getElementById("devPickLogout").addEventListener("click", function () {
+      CLOUD.auth.signOut();
+      ov.remove();
+    });
+    CLOUD.db.collection("stores").get().then(function (qs) {
+      var h = "";
+      qs.forEach(function (doc) {
+        var d = doc.data() || {};
+        h += '<button class="btn-sub dev-pick" data-dev-uid="' + esc(doc.id) + '" type="button" style="display:block;width:100%;text-align:left;margin-bottom:6px">'
+          + '<b>' + esc(d.storeName || "（店舗名未設定）") + "</b><br>"
+          + '<span style="font-size:11px;color:#888">' + esc(doc.id) + "</span></button>";
+      });
+      var list = document.getElementById("devPickList");
+      if (list) list.innerHTML = h || '<p class="hint">店舗がまだありません。</p>';
+      Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
+        b.addEventListener("click", function () {
+          CLOUD.actAsUid = b.getAttribute("data-dev-uid");
+          ov.remove();
+          onSignedIn(CLOUD.user); // 選んだ店舗として通常の流れをやり直す
+        });
+      });
+    }, function (err) {
+      var list = document.getElementById("devPickList");
+      if (list) list.innerHTML = '<p class="hint">一覧を読めませんでした。firestore.rules に保守用UIDの例外（DEV_UID_HERE の置き換え）が入っているか確認してください。<br>' + esc(String(err)) + "</p>";
+    });
+  }
+  /* 保守モード中の上部バー（どの店舗を見ているか常に分かるように） */
+  function renderDevBar() {
+    var bar = document.getElementById("devBar");
+    if (!(isDevUser() && CLOUD.actAsUid)) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "devBar";
+      bar.className = "no-print";
+      bar.style.cssText = "position:sticky;top:0;z-index:60;background:#B33;color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center";
+      document.body.insertBefore(bar, document.body.firstChild);
+    }
+    bar.innerHTML = '<span>保守モード：<b>' + esc((MASTER && MASTER.storeName) || $("storeNameInput") && $("storeNameInput").value || CLOUD.actAsUid) + "</b> のデータを表示中</span>"
+      + '<button class="btn-sub" id="devSwitchStore" type="button" style="margin-left:auto">店舗を切り替える</button>';
+    document.getElementById("devSwitchStore").addEventListener("click", function () {
+      CLOUD.actAsUid = null;
+      showDevPicker();
+    });
+  }
   function onSignedIn(user) {
     CLOUD.user = user;
+    if (isDevUser() && !CLOUD.actAsUid) {
+      // 保守モード: まず「どの店舗を見るか」を選んでもらう
+      showLogin(false);
+      showDevPicker();
+      return;
+    }
     rememberStoreId(String(user.email || "").replace(/@.*$/, ""));
-    switchStoreIfNeeded(user.uid); // 前の店舗の内容を持ち込まない
+    switchStoreIfNeeded(effectiveUid()); // 前の店舗の内容を持ち込まない
     showLogin(false);
     syncStatus("同期中…", "");
     var ai = $("accountInfo");
     if (ai) ai.textContent = "ログイン中の店舗: " + String(user.email || "").replace(/@.*$/, "");
     var lo = $("logoutBtn"); if (lo) lo.hidden = false;
+    var pwBox = $("pwChangeBox"); if (pwBox) pwBox.hidden = INTERNAL || isDevUser();
+    renderDevBar();
     watchStore();
     watchStoreTemplates();
     fetchContract();   // 契約状態（お試し・本契約・停止）を確かめる
@@ -4561,6 +4638,9 @@
   }
   function onSignedOut() {
     CLOUD.user = null;
+    CLOUD.actAsUid = null;
+    var pwBox = $("pwChangeBox"); if (pwBox) pwBox.hidden = true;
+    renderDevBar();
     masterUnlocked = false;
     statsUnlocked = false;
     masterGateFrom = null;
@@ -10926,6 +11006,45 @@
       });
     }
 
+    // 店舗ログインのパスワード変更（クラウドの店舗アカウント）
+    var pwBtn = $("pwChangeBtn");
+    if (pwBtn) {
+      pwBtn.addEventListener("click", function () {
+        var msg = $("pwChangeMsg");
+        function say(t, ok) {
+          if (!msg) return;
+          msg.textContent = t;
+          msg.hidden = false;
+          msg.style.color = ok ? "" : "var(--red)";
+        }
+        if (!(CLOUD.user && CLOUD.auth)) { say("ログイン中の店舗がありません。", false); return; }
+        var cur = $("pwCur").value;
+        var n1 = $("pwNew").value;
+        var n2 = $("pwNew2").value;
+        if (!cur) { say("今のパスワードを入れてください。", false); return; }
+        if (n1.length < 8) { say("新しいパスワードは8文字以上にしてください。", false); return; }
+        if (n1 !== n2) { say("新しいパスワード（確認）が一致しません。", false); return; }
+        if (n1 === cur) { say("今のパスワードと同じです。別のものにしてください。", false); return; }
+        pwBtn.disabled = true;
+        say("変更しています…", true);
+        var cred = firebase.auth.EmailAuthProvider.credential(String(CLOUD.user.email || ""), cur);
+        CLOUD.user.reauthenticateWithCredential(cred).then(function () {
+          return CLOUD.user.updatePassword(n1);
+        }).then(function () {
+          pwBtn.disabled = false;
+          $("pwCur").value = ""; $("pwNew").value = ""; $("pwNew2").value = "";
+          say("変更しました。ほかの端末は1時間ほどで自動的にログアウトされ、新しいパスワードで入り直しになります。", true);
+        }).catch(function (err) {
+          pwBtn.disabled = false;
+          var c = String((err && err.code) || "");
+          if (/wrong-password|invalid-credential/.test(c)) say("今のパスワードが違います。", false);
+          else if (/weak-password/.test(c)) say("新しいパスワードが弱すぎます。もう少し長くしてください。", false);
+          else if (/too-many-requests/.test(c)) say("試行回数が多すぎます。しばらく時間をおいてからお試しください。", false);
+          else if (/network/.test(c)) say("通信エラーです。電波の良いところでお試しください。", false);
+          else say("変更できませんでした。時間をおいて再度お試しください。", false);
+        });
+      });
+    }
     // 店舗ログイン（端末内モード）の設定
     var lockSave = $("lockSaveBtn");
     if (lockSave) {

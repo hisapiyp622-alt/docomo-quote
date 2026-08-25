@@ -827,6 +827,28 @@
       <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
       <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
     </div>
+    <div class="card" id="pwChangeBox" data-mroom="store" hidden>
+      <h2>店舗ログインのパスワード変更</h2>
+      <p class="hint">この店舗のログインに使うパスワードを変えられます。<strong>今のパスワードを知っている方だけ</strong>が変更できます。</p>
+      <div class="field">
+        <label for="pwCur">今のパスワード</label>
+        <input type="password" id="pwCur" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="pwNew">新しいパスワード</label>
+        <input type="password" id="pwNew" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="pwNew2">新しいパスワード（確認）</label>
+        <input type="password" id="pwNew2" autocomplete="new-password">
+      </div>
+      <div class="actions">
+        <button class="btn-main" id="pwChangeBtn" type="button">パスワードを変更する</button>
+      </div>
+      <p class="hint" id="pwChangeMsg" hidden></p>
+      <p class="hint">変更すると、この店舗の<strong>ほかの端末は1時間ほどで自動的にログアウト</strong>され、新しいパスワードで入り直しになります。見積もりやマスタは消えません。<br>
+        パスワードを<strong>忘れてしまった場合</strong>は販売元へご連絡ください（データはそのままで再発行できます）。</p>
+    </div>
     <div class="card" id="adminLockBox" data-mroom="store">
       <h2>マスタ設定のパスワード</h2>
       <p class="hint" id="adminLockState"></p>
