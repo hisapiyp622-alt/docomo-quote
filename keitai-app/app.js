@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.130.0";
+  var APP_VERSION = "1.130.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4511,6 +4511,8 @@
         var k = localStorage.key(i);
         if (!k) continue;
         if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
+          || k === WIZ_SKIP_KEY                      // 「初期設定は済み」の印（前の店舗のものを持ち込まない）
+          || k.indexOf(NS + "-quote-at:") === 0      // 見積もりを最後に直した時刻の控え
           || k.indexOf(STATE_KEY + ":") === 0
           || k.indexOf(SAVED_KEY + ":") === 0
           || k.indexOf(TPL_KEY + ":") === 0) kill.push(k);
