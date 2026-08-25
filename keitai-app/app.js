@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.131.0";
+  var APP_VERSION = "1.132.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -95,6 +95,23 @@
     QUOTE_CARDS.forEach(function (c) { if (!seen[c]) out.push(c); });
     return out;
   }
+  /* ①〜⑨の丸数字を、いまの並び順に合わせて振り直す。
+   * 番号はカードの見出しと「?」の説明の題名に出る。
+   * （説明文の中に出てくる丸数字は、初期の並びを前提にした文のため触らない） */
+  var CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
+  function renumberQuoteCards() {
+    var order = quoteCardOrder();
+    order.forEach(function (k, i) {
+      var card = document.querySelector("#tab-quote .card." + k);
+      var h2 = card && card.querySelector("h2");
+      if (h2 && h2.firstChild && h2.firstChild.nodeType === 3) {
+        h2.firstChild.nodeValue = h2.firstChild.nodeValue.replace(/^[①-⑨]/, CIRCLED[i]);
+      }
+      if (typeof QUOTE_HELP === "object" && QUOTE_HELP && QUOTE_HELP[k] && QUOTE_HELP[k].t) {
+        QUOTE_HELP[k].t = QUOTE_HELP[k].t.replace(/^[①-⑨]/, CIRCLED[i]);
+      }
+    });
+  }
   /* 並びの指定どおりにカードを差し替える。既定の並びのときは何もせず、
    * 2列レイアウトの列の固定（CSS）もそのまま生かす。 */
   function applyQuoteCardOrder() {
@@ -113,9 +130,10 @@
       .forEach(function (el) {
         QUOTE_CARDS.forEach(function (k) { if (els[k] === el) cur.push(k); });
       });
-    if (cur.join(",") === order.join(",")) return;
+    if (cur.join(",") === order.join(",")) { renumberQuoteCards(); return; }
     var anchor = els[cur[cur.length - 1]].nextSibling; // いまの最後のカードの直後
     order.forEach(function (k) { tab.insertBefore(els[k], anchor); });
+    renumberQuoteCards();
   }
 
   /* ---------- 店舗設定（店舗名・担当者） ---------- */
@@ -8359,38 +8377,19 @@
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
 
-    // 見積もり画面のカードとカテゴリの並び（タイルと同じ長押しドラッグ）
-    h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面の並び（①〜⑨のカード）</h3>';
-    h += '<p class="hint"><strong>長押ししてつかみ、置きたい場所で離す</strong>と順番が入れ替わります（タイルの並びと同じ操作）。'
-      + '丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動きます（説明の「⑦の事務手数料」などの対応関係は変わりません）。</p>';
-    h += sorterHtml("qc", [{ cat: "", items: quoteCardOrder().map(function (k) {
-      return { id: k, name: QUOTE_CARD_NAMES[k] || k };
-    }) }], false);
+    // 見積もり画面の並べ替え（本物の画面の上で長押しドラッグ）
+    h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面の並べ替え</h3>';
+    h += '<p class="hint">本物の見積もり画面に移って、<strong>長押しでつかんで動かす</strong>だけで並べ替えられます（iPhoneのホーム画面と同じ要領）。動かせるのは、'
+      + '<strong>①〜⑨のカード</strong>・<strong>④⑥⑦のタイル</strong>（④はカテゴリをまたいで移動可）・<strong>④のカテゴリ名</strong>（丸ごと移動）の3種類。'
+      + '<strong>カードを並び替えると、①〜⑨の番号も新しい並び順に振り直されます。</strong>動かしたそばから本番と同じ見た目で確認できます。</p>';
+    h += '<div class="actions"><button class="btn-main" data-arrange-start="1" type="button">並べ替えを開始</button>';
     if (quoteCardOrder().join(",") !== QUOTE_CARDS.join(",")) {
-      h += '<div class="actions"><button class="btn-sub" data-qc-reset="1" type="button">初期の並びに戻す</button></div>';
+      h += '<button class="btn-sub" data-qc-reset="1" type="button">カードの並びを初期に戻す</button>';
     }
-    h += "</div>";
-
-    h += '<div class="master-plan" data-mroom="tools"><h3>④オプションのカテゴリの並び</h3>';
-    h += '<p class="hint">「補償」「バックアップ」などのカテゴリも、<strong>長押しでつかんで並び替えられます</strong>（④の表示と下の「タイルの並び」に同じ順で反映されます）。</p>';
-    h += sorterHtml("oc", [{ cat: "", items: optCategories().map(function (c) {
-      return { id: c, name: c };
-    }) }], false);
     if (optCategories().join(",") !== OPT_CATEGORIES.join(",")) {
-      h += '<div class="actions"><button class="btn-sub" data-oc-reset="1" type="button">初期の並びに戻す</button></div>';
+      h += '<button class="btn-sub" data-oc-reset="1" type="button">カテゴリの並びを初期に戻す</button>';
     }
-    h += "</div>";
-
-    // 見積もり画面のタイルの並び（長押しドラッグ）
-    h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面のタイルの並び</h3>';
-    h += '<p class="hint">タイルを<strong>長押ししてから動かす</strong>と、順番を入れ替えたり、別のカテゴリへ移したりできます。'
-      + 'ここでの並びが、そのまま見積もり画面のタイルの並びになります。</p>';
-    h += sorterHtml("op", optCatGroups(), true);
-    h += '<div class="subhead">初期費用の定番項目</div>';
-    h += sorterHtml("fi", [{ cat: "", items: MASTER.feeItems || [] }], false);
-    h += '<div class="subhead">アクセサリ</div>';
-    h += sorterHtml("ac", [{ cat: "", items: MASTER.accessories || [] }], false);
-    h += "</div>";
+    h += "</div></div>";
 
     h += '<div class="master-plan" data-mroom="docomo"><h3>オプション・サービス（月額・ドコモ）</h3>';
     h += '<p class="hint">名称・月額・カテゴリを自由に設定できます。一括で払うもの（コーティング・手数料など）は「初期費用の定番項目」へ。金額選択式のもの（補償など）は選択肢の初期値が単価になります。<br>'
@@ -9898,6 +9897,227 @@
     });
   }
 
+  /* ---------- 並べ替えモード（UI・タイル変更） ----------
+   * 本物の見積もり画面の上で、カード（①〜⑨）・④のカテゴリ見出し・
+   * タイル（④・⑥・⑦）を長押しでつかんで並べ替える。
+   * iPhoneのホーム画面のアイコン並べ替えと同じ考え方。
+   * モード中は金額入力やチェックは効かせない（動かす専用）。 */
+  var arrangeOn = false;
+  var arrangeWasMasterOnly = false;
+  var ARR = { kind: "", el: null, pair: null, ghost: null, timer: null, active: false, x0: 0, y0: 0 };
+  function arrangeBarShow(show) {
+    var bar = document.getElementById("arrangeBar");
+    if (!show) { if (bar) bar.remove(); return; }
+    if (bar) return;
+    bar = document.createElement("div");
+    bar.id = "arrangeBar";
+    bar.className = "no-print";
+    bar.innerHTML = '<span>並べ替え中：カード・タイル・④のカテゴリ名を<b>長押しでつかんで</b>動かします</span>'
+      + '<button class="btn-main" id="arrangeDone" type="button">完了</button>';
+    document.body.insertBefore(bar, document.body.firstChild);
+    document.getElementById("arrangeDone").addEventListener("click", exitArrange);
+  }
+  function enterArrange() {
+    if (arrangeOn) return;
+    arrangeOn = true;
+    arrangeWasMasterOnly = masterOnly;
+    masterOnly = false; // マスタ設定の外へ出るときの担当者コードの問い直しを止める
+    document.body.classList.add("arranging");
+    switchTab("quote");
+    arrangeBarShow(true);
+    window.scrollTo(0, 0);
+  }
+  function exitArrange() {
+    if (!arrangeOn) return;
+    arrEnd(false);
+    arrangeOn = false;
+    document.body.classList.remove("arranging");
+    arrangeBarShow(false);
+    masterOnly = arrangeWasMasterOnly;
+    switchTab("master");
+  }
+  /* モード中は見積もり画面のクリック・変更を全部止める（つかむ操作だけにする） */
+  ["click", "change", "input"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (!arrangeOn) return;
+      if (e.target.closest && e.target.closest("#arrangeBar")) return;
+      if (e.target.closest && e.target.closest("#tab-quote")) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+  });
+  function arrCancelHold() { if (ARR.timer) { clearTimeout(ARR.timer); ARR.timer = null; } }
+  function arrBegin(kind, el, x, y) {
+    var r = el.getBoundingClientRect();
+    ARR.kind = kind; ARR.el = el; ARR.active = true; ARR.x0 = x; ARR.y0 = y;
+    ARR.pair = kind === "cat" ? el.nextElementSibling : null; // カテゴリはタイル一覧ごと動かす
+    var g = el.cloneNode(true);
+    g.className += " sort-ghost arr-ghost";
+    g.style.left = r.left + "px"; g.style.top = r.top + "px";
+    g.style.width = r.width + "px"; g.style.height = r.height + "px";
+    document.body.appendChild(g);
+    ARR.ghost = g;
+    el.classList.add("sort-src");
+    document.body.classList.add("sorting");
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+  }
+  /* タイルがどの入れ物へ移れるか。data-opt=④のカテゴリ内、
+   * data-acsel=④のカテゴリ内と⑥、data-fee=⑦の中だけ */
+  function arrTileAllowed(tile, grid) {
+    if (tile.hasAttribute("data-opt")) return !!grid.closest("#optionList");
+    if (tile.hasAttribute("data-acsel")) return !!(grid.closest("#optionList") || grid.closest("#accTileList"));
+    if (tile.hasAttribute("data-fee")) return !!grid.closest("#feeItemList");
+    return false;
+  }
+  function arrMove(x, y) {
+    ARR.ghost.style.transform = "translate(" + (x - ARR.x0) + "px," + (y - ARR.y0) + "px)";
+    var el = document.elementFromPoint(x, y);
+    if (!el || !el.closest) return;
+    if (ARR.kind === "card") {
+      var over = el.closest("#tab-quote .card");
+      if (!over || over === ARR.el) return;
+      if (!/\bc[1-9]\b/.test(over.className)) return; // ①〜⑨以外のカードの位置へは入れない
+      var r = over.getBoundingClientRect();
+      var after = y > r.top + r.height / 2;
+      over.parentNode.insertBefore(ARR.el, after ? over.nextSibling : over);
+    } else if (ARR.kind === "cat") {
+      var overCat = el.closest("#optionList .opt-cat");
+      if (!overCat || overCat === ARR.el) return;
+      var rc = overCat.getBoundingClientRect();
+      var afterC = y > rc.top + rc.height / 2;
+      var ref = afterC ? overCat.nextElementSibling.nextElementSibling : overCat;
+      ARR.el.parentNode.insertBefore(ARR.el, ref);
+      ARR.el.parentNode.insertBefore(ARR.pair, ARR.el.nextElementSibling);
+    } else if (ARR.kind === "tile") {
+      var grid = el.closest(".tile-grid");
+      if (!grid || !arrTileAllowed(ARR.el, grid)) return;
+      var overT = el.closest(".tile");
+      if (overT && overT !== ARR.el) {
+        var rt = overT.getBoundingClientRect();
+        var afterT = x > rt.left + rt.width / 2;
+        grid.insertBefore(ARR.el, afterT ? overT.nextSibling : overT);
+      } else if (!overT && grid !== ARR.el.parentNode) {
+        grid.appendChild(ARR.el);
+      }
+    }
+  }
+  /* いまの画面の姿を、そのままマスタへ書き戻す */
+  function arrCommit() {
+    if (ARR.kind === "card") {
+      var order = [];
+      document.querySelectorAll("#tab-quote .card").forEach(function (c) {
+        var m = c.className.match(/\bc([1-9])\b/);
+        if (m) order.push("c" + m[1]);
+      });
+      if (order.length === QUOTE_CARDS.length) {
+        if (order.join(",") === QUOTE_CARDS.join(",")) delete MASTER.quoteCardOrder;
+        else MASTER.quoteCardOrder = order;
+        markEdited();
+        applyQuoteCardOrder();
+      }
+    } else if (ARR.kind === "cat") {
+      var cats = [];
+      document.querySelectorAll("#optionList .opt-cat").forEach(function (c) {
+        if (OPT_CATEGORIES.indexOf(c.textContent) >= 0) cats.push(c.textContent);
+      });
+      if (cats.join(",") === OPT_CATEGORIES.join(",")) delete MASTER.optCatOrder;
+      else MASTER.optCatOrder = cats;
+      markEdited();
+      renderOptionList();
+    } else if (ARR.kind === "tile") {
+      /* ④のカテゴリごとのタイル並びからオプションとアクセサリの並び・カテゴリを、
+       * ⑦からは初期費用の並びを作り直す */
+      var optSeq = [], accSeq = [], feeSeq = [], optById = {}, accById = {}, feeById = {};
+      (MASTER.options || []).forEach(function (o) { optById[o.id] = o; });
+      (MASTER.accessories || []).forEach(function (a) { accById[a.id] = a; });
+      (MASTER.feeItems || []).forEach(function (f) { feeById[f.id] = f; });
+      document.querySelectorAll("#optionList .opt-cat").forEach(function (catEl) {
+        var cat = catEl.textContent;
+        var grid = catEl.nextElementSibling;
+        if (!grid || !grid.classList.contains("tile-grid")) return;
+        grid.querySelectorAll(".tile").forEach(function (t) {
+          var oid = t.getAttribute("data-opt");
+          var aid = t.getAttribute("data-acsel");
+          if (oid && optById[oid]) { optById[oid].category = cat; optSeq.push(optById[oid]); }
+          if (aid && accById[aid]) { accById[aid].category = cat; accSeq.push(accById[aid]); }
+        });
+      });
+      document.querySelectorAll("#accTileList .tile[data-acsel]").forEach(function (t) {
+        var a = accById[t.getAttribute("data-acsel")];
+        if (a) { a.category = ""; accSeq.push(a); }
+      });
+      document.querySelectorAll("#feeItemList .tile[data-fee]").forEach(function (t) {
+        var f = feeById[t.getAttribute("data-fee")];
+        if (f) feeSeq.push(f);
+      });
+      var seen = {};
+      function mergeBack(seq, list) {
+        var next = [];
+        seq.forEach(function (o) { if (!seen[o.id]) { next.push(o); seen[o.id] = true; } });
+        (list || []).forEach(function (o) { if (!seen[o.id]) { next.push(o); seen[o.id] = true; } });
+        return next;
+      }
+      MASTER.options = mergeBack(optSeq, MASTER.options);
+      seen = {};
+      MASTER.accessories = mergeBack(accSeq, MASTER.accessories);
+      seen = {};
+      MASTER.feeItems = mergeBack(feeSeq, MASTER.feeItems);
+      markEdited();
+      renderOptionList();
+      renderAccessoryTiles();
+      renderFeeItemList();
+    }
+  }
+  function arrEnd(commit) {
+    arrCancelHold();
+    if (!ARR.active) return;
+    ARR.active = false;
+    if (ARR.ghost) { ARR.ghost.remove(); ARR.ghost = null; }
+    if (ARR.el) ARR.el.classList.remove("sort-src");
+    document.body.classList.remove("sorting");
+    if (commit) arrCommit();
+    ARR.el = null; ARR.pair = null; ARR.kind = "";
+  }
+  function initArrange() {
+    document.addEventListener("pointerdown", function (e) {
+      if (!arrangeOn) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      var t = e.target;
+      if (!t.closest || t.closest("#arrangeBar")) return;
+      var kind = "", el = null;
+      var cat = t.closest("#optionList .opt-cat");
+      var tile = t.closest("#tab-quote .tile");
+      var card = t.closest("#tab-quote .card");
+      if (cat) { kind = "cat"; el = cat; }
+      else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acsel") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
+      else if (card && /\bc[1-9]\b/.test(card.className)) { kind = "card"; el = card; }
+      if (!el) return;
+      arrCancelHold();
+      var x = e.clientX, y = e.clientY;
+      ARR.x0 = x; ARR.y0 = y;
+      ARR.timer = setTimeout(function () { ARR.timer = null; arrBegin(kind, el, x, y); }, 400);
+    });
+    document.addEventListener("pointermove", function (e) {
+      if (!arrangeOn) return;
+      if (!ARR.active) {
+        if (ARR.timer && (Math.abs(e.clientX - ARR.x0) > 8 || Math.abs(e.clientY - ARR.y0) > 8)) arrCancelHold();
+        return;
+      }
+      e.preventDefault();
+      arrMove(e.clientX, e.clientY);
+    }, { passive: false });
+    ["pointerup", "pointercancel"].forEach(function (ev) {
+      document.addEventListener(ev, function () { if (arrangeOn) arrEnd(ev === "pointerup"); });
+    });
+    document.addEventListener("touchmove", function (e) {
+      if (arrangeOn && ARR.active) e.preventDefault();
+    }, { passive: false });
+    document.addEventListener("keydown", function (e) {
+      if (arrangeOn && e.key === "Escape") arrEnd(false);
+    });
+  }
+
   // 選択式の編集を開いているオプション（マスタ設定を描き直しても開いたままにする）
   var openChoices = {};
   /* 選択肢を整える。並びはそのままにして、
@@ -11351,6 +11571,10 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      if (e.target.getAttribute && e.target.getAttribute("data-arrange-start")) {
+        enterArrange();
+        return;
+      }
       if (e.target.getAttribute && e.target.getAttribute("data-qc-reset")) {
         delete MASTER.quoteCardOrder;
         markEdited(); applyQuoteCardOrder(); renderMasterTab();
@@ -11653,6 +11877,8 @@
   initPresent();
   initMasterSearch();
   initMasterRooms();
+  initArrange();
+  renumberQuoteCards(); // 保存済みの並びがある店舗は、開いた時点で番号を振り直す
   initImportMaster();
   initDeviceMaster();
   initCurBill();
