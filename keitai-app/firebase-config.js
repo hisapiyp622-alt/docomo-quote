@@ -39,7 +39,7 @@ var KEITAI_STORE_DOMAIN = "keitai-quote.example";
  * あわせて firestore.rules の DEV_UID_HERE も同じUIDに置き換えて
  * コンソールへ貼り付けること（ルール側が本体。ここは画面の出し分けだけ）。
  * 空のままなら、この仕組みは眠ったままです。 */
-var KEITAI_DEV_UID = "";
+var KEITAI_DEV_UID = "M4MFfPd80oTBN3RdqH0Z3WsLHyY2";
 
 if (typeof firebase !== "undefined" && KEITAI_FIREBASE.projectId) {
   try { firebase.initializeApp(KEITAI_FIREBASE); } catch (e) {}

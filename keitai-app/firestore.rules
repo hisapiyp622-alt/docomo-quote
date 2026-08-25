@@ -15,7 +15,7 @@ service cloud.firestore {
      * そのアカウントだけ全店舗のデータを読み書きできます（サポート・修理用）。
      * 置き換えずに公開しても、誰にも一致しないので何も起きません。 */
     function isDev() {
-      return request.auth != null && request.auth.uid == 'DEV_UID_HERE';
+      return request.auth != null && request.auth.uid == 'M4MFfPd80oTBN3RdqH0Z3WsLHyY2';
     }
     function sizeOk() {
       return request.resource.size() < 900000;
