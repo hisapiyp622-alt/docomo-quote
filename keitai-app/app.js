@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.128.0";
+  var APP_VERSION = "1.129.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -63,6 +63,60 @@
   /* 1商談の中の別の番号（回線）。表示名は「回線1・回線2・回線3」 */
   var PAT_NAMES = ["回線1", "回線2", "回線3"];
   var OPT_CATEGORIES = ["補償", "バックアップ", "セキュリティ", "エンタメ", "その他"];
+  /* ④のカテゴリの表示順。店舗が並び替えたら MASTER.optCatOrder に入る。
+   * 中身の判定（どのカテゴリに属すか）は従来どおり OPT_CATEGORIES を使い、
+   * こちらは「表示する順番」だけを差し替える。 */
+  function optCategories() {
+    var o = (typeof MASTER !== "undefined" && MASTER && MASTER.optCatOrder) || null;
+    if (!o || !o.length) return OPT_CATEGORIES;
+    var seen = {};
+    var out = o.filter(function (c) {
+      if (seen[c] || OPT_CATEGORIES.indexOf(c) < 0) return false;
+      seen[c] = true; return true;
+    });
+    OPT_CATEGORIES.forEach(function (c) { if (!seen[c]) out.push(c); });
+    return out;
+  }
+  /* ①〜⑨のカードの表示順（見積もり画面）。MASTER.quoteCardOrder に入る。
+   * 丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動く。 */
+  var QUOTE_CARDS = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"];
+  var QUOTE_CARD_NAMES = {
+    c1: "① 契約内容", c2: "② 通話・メール", c3: "③ 割引", c4: "④ オプション・サービス",
+    c5: "⑤ 端末代金", c6: "⑥ アクセサリ", c7: "⑦ 初期費用", c8: "⑧ ポイント", c9: "⑨ 備考・その他特記事項"
+  };
+  function quoteCardOrder() {
+    var o = (typeof MASTER !== "undefined" && MASTER && MASTER.quoteCardOrder) || null;
+    if (!o || !o.length) return QUOTE_CARDS;
+    var seen = {};
+    var out = o.filter(function (c) {
+      if (seen[c] || QUOTE_CARDS.indexOf(c) < 0) return false;
+      seen[c] = true; return true;
+    });
+    QUOTE_CARDS.forEach(function (c) { if (!seen[c]) out.push(c); });
+    return out;
+  }
+  /* 並びの指定どおりにカードを差し替える。既定の並びのときは何もせず、
+   * 2列レイアウトの列の固定（CSS）もそのまま生かす。 */
+  function applyQuoteCardOrder() {
+    var tab = document.getElementById("tab-quote");
+    if (!tab) return;
+    var order = quoteCardOrder();
+    var custom = order.join(",") !== QUOTE_CARDS.join(",");
+    var els = {};
+    QUOTE_CARDS.forEach(function (k) { els[k] = tab.querySelector(".card." + k); });
+    if (QUOTE_CARDS.some(function (k) { return !els[k]; })) return;
+    tab.classList.toggle("custom-order", custom);
+    // 現在の並びと同じなら差し替えない（入力中のフォーカスを守る）
+    var cur = [];
+    QUOTE_CARDS.map(function (k) { return els[k]; })
+      .sort(function (a, b) { return a.compareDocumentPosition(b) & 2 ? 1 : -1; })
+      .forEach(function (el) {
+        QUOTE_CARDS.forEach(function (k) { if (els[k] === el) cur.push(k); });
+      });
+    if (cur.join(",") === order.join(",")) return;
+    var anchor = els[cur[cur.length - 1]].nextSibling; // いまの最後のカードの直後
+    order.forEach(function (k) { tab.insertBefore(els[k], anchor); });
+  }
 
   /* ---------- 店舗設定（店舗名・担当者） ---------- */
   /* ---------- 端末内保存の共通入口 ----------
@@ -860,7 +914,7 @@
     return null;
   }
   var VISIT_NAMES = {
-    buy: "端末購入（新規・MNP・機種変更など）", plan: "プラン見直し", repair: "故障",
+    buy: "端末購入", plan: "プラン見直し", repair: "故障",
     howto: "操作", ask: "問合せ", other: "その他"
   };
   var VISIT_ORDER = ["buy", "plan", "repair", "howto", "ask", "other"];
@@ -3462,6 +3516,25 @@
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
       MASTER.feeItems.push(JSON.parse(JSON.stringify(d)));
     });
+    /* 通話オプションも同様に追記する。
+     * これが無いと、すでにお使いの店舗（保存済みマスタがある店舗）には
+     * 1.125.0 で足した「旧」の通話オプションが出てこない（2026-08-24 修正）。
+     * 並びは初期データと同じ位置に入れて、新→旧の順に見えるようにする。 */
+    if (!MASTER.voiceOptions) MASTER.voiceOptions = [];
+    (DEFAULT_DATA.voiceOptions || []).forEach(function (d, di) {
+      if (MASTER.voiceOptions.some(function (v) { return v.id === d.id; })) return;
+      if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      MASTER.voiceOptions.splice(Math.min(di, MASTER.voiceOptions.length), 0, JSON.parse(JSON.stringify(d)));
+    });
+    /* 「このプランでは選べない」の指定（hideOnPlans）も初期データから補う。
+     * 先に別の道筋で追記されていた場合に、指定が抜けたままにならないようにする。 */
+    var defVoiceHide = {};
+    (DEFAULT_DATA.voiceOptions || []).forEach(function (d) {
+      if (d.hideOnPlans) defVoiceHide[d.id] = d.hideOnPlans;
+    });
+    MASTER.voiceOptions.forEach(function (v) {
+      if (!v.hideOnPlans && defVoiceHide[v.id]) v.hideOnPlans = defVoiceHide[v.id].slice();
+    });
     // 初期データに後から増えたプランも同様に追記（同じグループの末尾に挿入）
     (DEFAULT_DATA.plans || []).forEach(function (d) {
       if (MASTER.plans.some(function (p) { return p.id === d.id; })) return;
@@ -3471,6 +3544,7 @@
       MASTER.plans.splice(at + 1, 0, JSON.parse(JSON.stringify(d)));
     });
     saveMaster();
+    applyQuoteCardOrder(); // 保存済みの並びを見積もり画面へ反映（同期で届いたときも通る）
   }
   function saveMaster() {
     lsSet(MASTER_KEY, JSON.stringify(MASTER));
@@ -3529,6 +3603,11 @@
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
       todoDcardType: "", todoDenkiType: "", todoGasType: "", todoGasDiscount: {},
       todoOther: "",      // 引き継ぎシートの自由記入
+      /* MNP（SIMのみ・端末購入なし）のときにご案内した特典。
+       * 何をいくらでご案内したかを残すためのもので、月額・初期費用の
+       * 計算には入れない（後日のお渡し・進呈になるため）。 */
+      mnpBenefitType: "",  // "" | "cash"（キャッシュバック）| "dpoint"（dポイント還元）
+      mnpBenefitAmt: 0,
       // 店頭お支払い（頭金・付属品など）の支払方法
       storePay: {}, usePoint: false, usePointAmount: 0,
       // データ移行の項目だけ、支払い先をこの見積もりで変えられる（未指定はマスタの設定）
@@ -5865,6 +5944,34 @@
     }
     $("planNote").textContent = plan.note || "";
   }
+  /* MNP特典の欄は、MNPで端末を購入しないとき（SIMのみ）だけ出す。
+   * 端末代金が入っていれば端末購入ありと見なす。 */
+  function mnpSimOnly(st) {
+    var todo = st.procTodo || {};
+    var isMnp = !!todo.mnp || st.procType === "mnp";
+    return isMnp && num(st.devicePrice) === 0;
+  }
+  var MNP_BENEFIT_NAMES = { cash: "キャッシュバック", dpoint: "dポイント還元" };
+  // ご案内した特典の文字（見積書・引き継ぎシートで共通）
+  function mnpBenefitText(st) {
+    var t = st.mnpBenefitType;
+    if (!t || !MNP_BENEFIT_NAMES[t]) return "";
+    var a = num(st.mnpBenefitAmt);
+    if (!a) return MNP_BENEFIT_NAMES[t];
+    return MNP_BENEFIT_NAMES[t] + " "
+      + (t === "dpoint" ? a.toLocaleString("ja-JP") + "pt" : yen(a));
+  }
+  function renderMnpBenefit() {
+    var wrap = $("mnpBenefitWrap");
+    if (!wrap) return;
+    var on = mnpSimOnly(state);
+    wrap.hidden = !on;
+    if (!on) return;
+    $("mnpBenefitType").value = state.mnpBenefitType || "";
+    $("mnpBenefitAmt").value = num(state.mnpBenefitAmt) || "";
+    $("mnpBenefitAmtWrap").hidden = !state.mnpBenefitType;
+    $("mnpBenefitUnit").textContent = state.mnpBenefitType === "dpoint" ? "pt" : "円";
+  }
   // ネットワークサービスの選択欄（通話オプションで金額が変わるので描き直す）
   function renderNetSvc() {
     var free = kakeVoice(state.voice);
@@ -6004,7 +6111,7 @@
   function renderOptionList() {
     // カテゴリ（フォルダ）ごとに横5列のタイルで表示
     var h = "";
-    OPT_CATEGORIES.forEach(function (cat) {
+    optCategories().forEach(function (cat) {
       var mailDef = mailOptDef();
       var items = MASTER.options.filter(function (o) {
         if (mailDef && o.id === mailDef.id) return false; // ②で選択するため除外
@@ -7145,6 +7252,11 @@
           return esc(f.name) + tag;
         }).join("／")
       : "<b>なし</b>");
+    var mnpBene = mnpSimOnly(state) ? mnpBenefitText(state) : "";
+    if (mnpBene) {
+      anyTodo = true;
+      h += row("MNP特典（SIMのみ）", "<b>" + esc(mnpBene) + "</b>");
+    }
     if (state.todoOther) {
       anyTodo = true;
       h += row("その他", "<b>" + esc(state.todoOther).replace(/\n/g, "<br>") + "</b>");
@@ -7570,6 +7682,10 @@
       h += '<tr class="total"><td>ポイントを使った場合の実質※</td><td class="amt">'
         + yen(Math.max(0, seg0.monthly - r.pointTotal)) + "</td></tr>";
     }
+    var mnpBeneSheet = mnpSimOnly(state) ? mnpBenefitText(state) : "";
+    if (mnpBeneSheet) {
+      h += row("MNP特典（SIMのみ）", "<b>" + esc(mnpBeneSheet) + "</b>", true);
+    }
     h += "</tbody></table>";
     if (r.pointRows.length) {
       h += '<p class="memo" style="font-size:11.5px;color:#6E7075;margin:4px 0 0">※ '
@@ -7734,7 +7850,7 @@
   /* マスタ設定の「実績で追う項目」カード。設定は MASTER.statsCfg（statsCfg() 参照）。 */
   function statsCfgHtml() {
     var sc = statsCfg();
-    var h = '<div class="master-plan" data-mroom="tools"><h3>実績で追う項目</h3>';
+    var h = '<div class="master-plan" data-mroom="stats"><h3>実績で追う項目</h3>';
     h += '<p class="hint">実績タブの「項目別」で<strong>どの項目を数えるか</strong>を選べます。'
       + '店舗として力を入れている商材だけに絞ると、表が見やすくなります。<br>'
       + '設定は保存済みの見積もりには手を加えず、<strong>集計するときに数え直す</strong>ため、'
@@ -7851,7 +7967,7 @@
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
       return gOrder.length;
     }
-    h += '<div class="master-plan" data-mroom="tools"><h3>実績の目標（月あたり・管理者）</h3>';
+    h += '<div class="master-plan" data-mroom="stats"><h3>実績の目標（月あたり・管理者）</h3>';
     h += '<p class="hint">項目ごとの<strong>月の成約目標</strong>を入れると、実績に「目標と進捗」の表が出ます'
       + '（残りの件数と、いまのペースでの着地見込み）。空欄の項目は出ません。</p>';
     h += '<div class="goal-grid">';
@@ -7881,7 +7997,7 @@
     var mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
     return mn === mx ? yen(mn) : yen(mn) + "〜" + yen(mx);
   }
-  /* マスタ設定は4つの部屋（お店の商材／ドコモの料金／画面と道具／お店の設定）に
+  /*/* マスタ設定は5つの部屋（お店の商材／ドコモの料金／画面と道具／実績／店舗情報）に
    * 分かれている。data-mroom の付いたカード・セクションを、選んだ部屋のものだけ表示する。
    * 検索中（項目を探す）は、結果を隠さないため全部屋を表示する。 */
   var masterRoom = "shop";
@@ -8138,7 +8254,7 @@
     }
     function optExtra(o) {
       return '<select data-op-cat="' + o.__i + '">'
-        + OPT_CATEGORIES.map(function (c) {
+        + optCategories().map(function (c) {
             return '<option value="' + c + '"' + ((o.category || "その他") === c ? " selected" : "") + ">" + c + "</option>";
           }).join("")
         + "</select>"
@@ -8160,6 +8276,41 @@
     }
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
+
+    // 見積もり画面のカードとカテゴリの並び（▲▼）
+    h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面の並び（①〜⑨のカード）</h3>';
+    h += '<p class="hint">見積もり画面のカードの順番を入れ替えられます。<strong>丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動きます</strong>（引き継ぎシートや説明の「⑦の事務手数料」などの対応関係は変わりません）。</p>';
+    (function () {
+      var order = quoteCardOrder();
+      order.forEach(function (k, i) {
+        h += '<div class="adhoc-row">'
+          + '<button class="mv" data-qc-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-qc-down="' + i + '" type="button" aria-label="下へ"' + (i === order.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<span class="price" style="min-width:14em;text-align:left">' + esc(QUOTE_CARD_NAMES[k] || k) + "</span>"
+          + "</div>";
+      });
+      if (order.join(",") !== QUOTE_CARDS.join(",")) {
+        h += '<div class="actions"><button class="btn-sub" data-qc-reset="1" type="button">初期の並びに戻す</button></div>';
+      }
+    })();
+    h += "</div>";
+
+    h += '<div class="master-plan" data-mroom="tools"><h3>④オプションのカテゴリの並び</h3>';
+    h += '<p class="hint">④の中の「補償」「バックアップ」などのカテゴリの順番を入れ替えられます（下の「タイルの並び」にも同じ順で並びます）。</p>';
+    (function () {
+      var order = optCategories();
+      order.forEach(function (c, i) {
+        h += '<div class="adhoc-row">'
+          + '<button class="mv" data-oc-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
+          + '<button class="mv" data-oc-down="' + i + '" type="button" aria-label="下へ"' + (i === order.length - 1 ? " disabled" : "") + ">▼</button>"
+          + '<span class="price" style="min-width:10em;text-align:left">' + esc(c) + "</span>"
+          + "</div>";
+      });
+      if (order.join(",") !== OPT_CATEGORIES.join(",")) {
+        h += '<div class="actions"><button class="btn-sub" data-oc-reset="1" type="button">初期の並びに戻す</button></div>';
+      }
+    })();
+    h += "</div>";
 
     // 見積もり画面のタイルの並び（長押しドラッグ）
     h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面のタイルの並び</h3>';
@@ -8207,7 +8358,7 @@
     h += listEditor(MASTER.accessories, "ac", function (a) {
       return '<select data-ac-cat="' + a.__i + '">'
         + '<option value="">置き場所: ⑥アクセサリ</option>'
-        + OPT_CATEGORIES.map(function (c) {
+        + optCategories().map(function (c) {
             return '<option value="' + c + '"' + (a.category === c ? " selected" : "") + ">置き場所: " + c + "</option>";
           }).join("")
         + "</select>"
@@ -8246,7 +8397,7 @@
     h += statsCfgHtml();
 
     // 料金マスタの履歴
-    h += '<div class="master-plan" data-mroom="tools"><h3>料金マスタの履歴</h3>';
+    h += '<div class="master-plan" data-mroom="store"><h3>料金マスタの履歴</h3>';
     h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残り、何を変更したのかも記録されます</strong>'
       + '（編集の区切りごとに1件。続けて直しているあいだは1件にまとめます）。'
       + '「変更した内容」を開くと、変更した項目と金額の前後が分かります。'
@@ -8258,21 +8409,9 @@
     h += '<div id="histBox">' + histListHtml() + "</div>";
     h += "</div>";
 
-    // テンプレート管理
-    h += '<div class="master-plan" data-mroom="tools"><h3>テンプレート</h3>';
-    h += '<p class="hint">テンプレートは<strong>担当者ごと</strong>です（いまは「' + esc(activeStaff().name || "担当") + '」のもの）。'
-      + '保存は見積もり画面の「現在の内容をテンプレに保存」から。ここでは名前変更と削除ができます。</p>';
-    templates.forEach(function (t, i) {
-      h += '<div class="adhoc-row">'
-        + '<span class="price" style="min-width:2em">' + (i + 1) + '</span>'
-        + (t
-          ? '<input type="text" value="' + esc(t.name) + '" data-tp-name="' + i + '">'
-            + '<button class="del" data-tp-del="' + i + '" type="button" aria-label="削除">×</button>'
-          : '<span class="price">未設定</span>')
-        + "</div>";
-    });
-    h += "</div>";
-
+    /* テンプレートの管理はマスタ設定から外した（2026-08-25）。
+     * 保存・削除・並べ替えは見積もり画面のテンプレートのボタン（長押しメニュー）で
+     * できるため、こちらに置く意味がなくなった。 */
     $("masterBody").innerHTML = h;
     foldifyMasterSections();
     applyMasterRoom();
@@ -8380,6 +8519,7 @@
     renderSummary(r);
     renderVisitPurpose();
     renderU15();
+    renderMnpBenefit();
     renderPatternTabs();
     renderIenakaWarn(r);
     saveState();
@@ -9537,7 +9677,7 @@
   // 見積もり画面と同じ規則でカテゴリ分けする（ドコモメールは②で選ぶため除く）
   function optCatGroups() {
     var mailDef = mailOptDef();
-    return OPT_CATEGORIES.map(function (cat) {
+    return optCategories().map(function (cat) {
       return {
         cat: cat,
         items: MASTER.options.filter(function (o) {
@@ -10536,6 +10676,17 @@
     ["custName", "shopName", "staffName", "shopTel", "quoteMemo"].forEach(function (id) {
       $(id).addEventListener("input", function () { state[id] = this.value; saveState(); });
     });
+    $("mnpBenefitType").addEventListener("change", function () {
+      state.mnpBenefitType = this.value;
+      if (!this.value) state.mnpBenefitAmt = 0;
+      recalc();
+    });
+    $("mnpBenefitAmt").addEventListener("input", function () {
+      state.mnpBenefitAmt = Math.max(0, num(this.value));
+      saveState();
+      if ($("tab-sheet").classList.contains("active")) renderSheet();
+      if ($("tab-staff").classList.contains("active")) renderStaffSheet();
+    });
     $("todoOther").addEventListener("input", function () {
       state.todoOther = this.value; saveState(); renderStaffSheet();
     });
@@ -11047,11 +11198,6 @@
         recalc();
         return;
       }
-      if (t.hasAttribute("data-tp-name")) {
-        var tpi = +t.getAttribute("data-tp-name");
-        if (templates[tpi]) { templates[tpi].name = t.value.slice(0, 20); persistTemplates(); renderTplBar(); }
-        return;
-      }
       if (t.hasAttribute("data-cp-name")) {
         MASTER.campaigns[+t.getAttribute("data-cp-name")].name = t.value;
         markEdited(); renderCampaigns(); recalc(); return;
@@ -11073,6 +11219,36 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      var qcU = e.target.getAttribute && (e.target.getAttribute("data-qc-up") || e.target.getAttribute("data-qc-down"));
+      if (qcU != null && qcU !== "" || (e.target.getAttribute && e.target.getAttribute("data-qc-reset"))) {
+        var qOrder = quoteCardOrder().slice();
+        if (e.target.getAttribute("data-qc-reset")) {
+          delete MASTER.quoteCardOrder;
+        } else {
+          var qi = +qcU;
+          var qj = e.target.hasAttribute("data-qc-up") ? qi - 1 : qi + 1;
+          if (qj < 0 || qj >= qOrder.length) return;
+          var qt = qOrder[qi]; qOrder[qi] = qOrder[qj]; qOrder[qj] = qt;
+          MASTER.quoteCardOrder = qOrder;
+        }
+        markEdited(); applyQuoteCardOrder(); renderMasterTab();
+        return;
+      }
+      var ocU = e.target.getAttribute && (e.target.getAttribute("data-oc-up") || e.target.getAttribute("data-oc-down"));
+      if (ocU != null && ocU !== "" || (e.target.getAttribute && e.target.getAttribute("data-oc-reset"))) {
+        var cOrder = optCategories().slice();
+        if (e.target.getAttribute("data-oc-reset")) {
+          delete MASTER.optCatOrder;
+        } else {
+          var ci2 = +ocU;
+          var cj = e.target.hasAttribute("data-oc-up") ? ci2 - 1 : ci2 + 1;
+          if (cj < 0 || cj >= cOrder.length) return;
+          var ct = cOrder[ci2]; cOrder[ci2] = cOrder[cj]; cOrder[cj] = ct;
+          MASTER.optCatOrder = cOrder;
+        }
+        markEdited(); renderOptionList(); renderMasterTab();
+        return;
+      }
       var msecHead = e.target.closest && e.target.closest("[data-msec-key]");
       if (msecHead) {
         var msecKey = msecHead.dataset.msecKey;
@@ -11104,11 +11280,6 @@
         return;
       }
       var t = e.target;
-      if (t.hasAttribute("data-tp-del")) {
-        templates[+t.getAttribute("data-tp-del")] = null;
-        persistTemplates(); renderMasterTab(); renderTplBar();
-        return;
-      }
       if (t.hasAttribute("data-cp-del")) {
         var ci = +t.getAttribute("data-cp-del");
         var co = MASTER.campaigns[ci];
@@ -11249,8 +11420,8 @@
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },
     c6: { t: "⑥ アクセサリ", b: "・定番商品はタイルをタップして選び、タイルの中で一括／分割を選びます\n・リストにない商品は「＋ アクセサリを追加」から名前と金額を入れます\n・一括のぶんは⑦の店頭お支払いに、分割（12・24・36回）は月額に入ります\n・定番商品の内容はマスタ設定で編集できます" },
     c7: { t: "⑦ 初期費用", b: "・契約事務手数料と店頭頭金は、①の手続き種別から自動で入ります（手で書き換えられます）\n・データ移行サポートなどの項目はチェックで足します\n・「＋ 初期費用の追加項目」は±の金額で自由に足せます（下取りなどの値引きはマイナスで）\n・店頭お支払いの方法（現金・カード・d払い）のチェックは引き継ぎシートに載ります\n・dポイント利用は<b>頭金 → 分割金 → 残価</b>の順に充当します（1pt = 1円）\n・見積書では「店頭でお支払い」と「翌月の携帯料金と合算」に分かれて出ます" },
-    c8: { t: "⑧ ポイント", b: "もらえるdポイントを「実質額」のご案内に使えます。\n・爆アゲセレクションやdカードの還元は、④と③の選択から自動で計算されます（金額は直接書き換えられます）\n・はじめの設定は<b>「充当しない」</b>: 月額はそのままに、もらえるポイントと実質額を見積書に添えます\n・「月額から充当する」にすると、月額からポイントを引いた実質額でご案内します\n・進呈ポイントは毎月の請求が下がるものではないため、実質額を多めに見せない作りにしています" },
-    c9: { t: "⑨ お客様情報", b: "見積書に入る情報です。\n・お客様名は<b>この端末の中だけ</b>に保存され、端末間で同期されません。印刷する端末で入力してください\n・店舗名・担当・電話番号は、マスタ設定の店舗情報とログイン中の担当者から自動で入り、見積書の下端に載ります。この見積もりだけ変えたいときは書き換えられます\n・メモは見積書に載ります" },
+    c8: { t: "⑧ ポイント", b: "もらえるdポイントを「実質額」のご案内に使えます。\n・爆アゲセレクションやdカードの還元は、④と③の選択から自動で計算されます（金額は直接書き換えられます）\n・はじめの設定は<b>「充当しない」</b>: 月額はそのままに、もらえるポイントと実質額を見積書に添えます\n・「月額から充当する」にすると、月額からポイントを引いた実質額でご案内します\n・進呈ポイントは毎月の請求が下がるものではないため、実質額を多めに見せない作りにしています\n・<b>MNP特典（SIMのみ）</b>: MNPで端末を購入しないときだけ欄が出ます。キャッシュバックかdポイント還元と金額を入れると、見積書と引き継ぎシートに「いくらでご案内したか」が残ります。月額・初期費用の計算には入りません" },
+    c9: { t: "⑨ 備考・その他特記事項", b: "自由に書ける欄と、見積書に入るお客様情報です。\n・「その他・特記事項」は<b>引き継ぎシートの「その他」</b>に載ります（例：データ移行あり／来店時にSIM再発行）。お客様名などの個人情報は書かないでください\n・「メモ」は<b>見積書の下</b>に「※」付きで載ります\n・お客様名は<b>この端末の中だけ</b>に保存され、端末間で同期されません。印刷する端末で入力してください\n・店舗名・担当・電話番号は、マスタ設定の店舗情報とログイン中の担当者から自動で入り、見積書の下端に載ります。この見積もりだけ変えたいときは書き換えられます" },
     curbill: {
       t: "現在のお支払い（請求内訳の読み取り）",
       b: "お客様のいまのお支払いを読み取って、この見積もりと比べられます。\n"

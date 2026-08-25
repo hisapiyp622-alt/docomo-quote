@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.8.0";
+  var APP_VERSION = "2.8.1";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -1909,6 +1909,10 @@
   /* ケータイ見積もりへ戻るとき、担当者名とお客様名を渡す。
    * 向こうで担当者コードを聞かれずに済むようにするため。 */
   var backLink = $("toKeitai");
+  /* 製品版の単体出荷（--with-ienaka）ではケータイ見積もりとの行き来をさせない。
+   * 行き来すると端末間同期の内容が混ざりやすく、事故のもとになるため（2026-08-24 方針）。
+   * リンクを使うのは阪南の社内版（INTERNAL）だけ。 */
+  if (backLink && !INTERNAL) { backLink.hidden = true; backLink = null; }
   if (backLink) {
     backLink.addEventListener("click", function () {
       try {

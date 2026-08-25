@@ -89,7 +89,7 @@
     <div class="card full">
       <h2>ご来店の目的 <button class="card-help" type="button" data-help="purpose" aria-label="この項目の入力のしかた">?</button></h2>
       <div class="proc-checks" id="visitChecks">
-        <label class="check"><input type="checkbox" data-visit="buy"> 端末購入（新規・MNP・機種変更など）</label>
+        <label class="check"><input type="checkbox" data-visit="buy"> 端末購入</label>
         <label class="check"><input type="checkbox" data-visit="plan"> プラン見直し</label>
         <label class="check"><input type="checkbox" data-visit="repair"> 故障</label>
         <label class="check"><input type="checkbox" data-visit="howto"> 操作</label>
@@ -147,11 +147,6 @@
       <div class="sub-checks" id="gasDiscountWrap" hidden></div>
       <div class="sub-checks" id="gasNowWrap" hidden></div>
       </div>
-      <div class="field">
-        <label for="todoOther">その他</label>
-        <textarea id="todoOther" rows="2" placeholder="例）データ移行あり／来店時にSIM再発行／家族の来店予定あり"></textarea>
-      </div>
-      <p class="hint">チェックした内容と「その他」が引き継ぎシートに記載されます。機種変更・新規・MNP・プラン変更は「① 契約内容」の手続き種別と連動し、事務手数料の判定に使われます（複数チェック時は MNP → 新規 → 機種変更 → プラン変更 の順で判定）。</p>
     </div>
 
     <div class="card c1">
@@ -243,7 +238,7 @@
       <p class="hint" id="discountHint"></p>
     </div>
 
-    <div class="card full">
+    <div class="card full c4">
       <h2>④ オプション・サービス <button class="card-help" type="button" data-help="c4" aria-label="この項目の入力のしかた">?</button></h2>
       <div id="optionList"></div>
       <p class="hint">内容・単価・並び順はマスタ設定タブで自由に変更できます。</p>
@@ -369,6 +364,22 @@
         </select>
       </div>
       <p class="hint" id="pointSummary" hidden></p>
+      <div id="mnpBenefitWrap" hidden>
+        <div class="subhead">MNP特典（SIMのみ・端末購入なし）</div>
+        <div class="field">
+          <label for="mnpBenefitType">ご案内した特典</label>
+          <select id="mnpBenefitType">
+            <option value="">選択なし</option>
+            <option value="cash">キャッシュバック</option>
+            <option value="dpoint">dポイント還元</option>
+          </select>
+        </div>
+        <div class="field" id="mnpBenefitAmtWrap" hidden>
+          <label for="mnpBenefitAmt">金額</label>
+          <input type="number" id="mnpBenefitAmt" inputmode="numeric" min="0" placeholder="0"> <span id="mnpBenefitUnit">円</span>
+        </div>
+        <p class="hint">見積書と引き継ぎシートに「いくらでご案内したか」が残ります。<strong>月額・初期費用の計算には入りません</strong>（後日のお渡し・進呈のため）。</p>
+      </div>
       <div class="field" id="ptPoikatsuWrap">
         <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
         <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
@@ -399,14 +410,21 @@
     </div>
 
     <div class="card c9">
-      <h2>⑨ お客様情報（見積書用・任意） <button class="card-help" type="button" data-help="c9" aria-label="この項目の入力のしかた">?</button></h2>
+      <h2>⑨ 備考・その他特記事項 <button class="card-help" type="button" data-help="c9" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="field">
+        <label for="todoOther">その他・特記事項</label>
+        <textarea id="todoOther" rows="2" placeholder="例）データ移行あり／来店時にSIM再発行／家族の来店予定あり"></textarea>
+      </div>
+      <p class="hint">引き継ぎシートの「その他」に載ります。<strong>お客様名などの個人情報は書かないでください。</strong></p>
+      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
+      <p class="hint">メモは見積書の下に「※」付きで載ります。</p>
+      <div class="subhead">お客様情報・発行元（見積書用・任意）</div>
       <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
       <p class="hint">※ お客様名（個人情報）は端末間で同期されません。印刷する端末で入力してください。</p>
       <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
       <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）山田"></div>
       <div class="field"><label for="shopTel">電話番号</label><input type="tel" id="shopTel" placeholder="例）072-000-0000" inputmode="tel"></div>
       <p class="hint">店舗名・電話番号・担当は、マスタ設定の店舗情報から自動で入ります。この見積もりだけ変えたいときは直接書き換えられます。</p>
-      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
     </div>
 
     <div class="card full" id="curBillCard">
@@ -779,8 +797,9 @@
       <div class="mroom-tabs" id="mroomTabs" role="tablist">
         <button type="button" data-mroom-btn="shop">お店の商材</button>
         <button type="button" data-mroom-btn="docomo">ドコモの料金</button>
-        <button type="button" data-mroom-btn="tools">画面と道具</button>
-        <button type="button" data-mroom-btn="store">お店の設定</button>
+        <button type="button" data-mroom-btn="tools">UI・タイル変更</button>
+        <button type="button" data-mroom-btn="stats">実績</button>
+        <button type="button" data-mroom-btn="store">店舗情報</button>
       </div>
       <div class="mroom-search">
         <input type="search" id="masterSearch" placeholder="項目を探す（例）あんしん、頭金" autocomplete="off" aria-label="項目を探す">
@@ -806,30 +825,6 @@
       <div class="actions"><button class="btn-sub" id="setupAgainBtn" type="button">初期設定をやり直す</button></div>
       <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
       <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
-    </div>
-    <div class="card" id="lockBox" data-mroom="store">
-      <h2>店舗ログイン</h2>
-      <p class="hint" id="lockState"></p>
-      <div class="field">
-        <label for="lockStoreId">店舗ID</label>
-        <input type="text" id="lockStoreId" placeholder="例）shop01" autocapitalize="none" spellcheck="false">
-      </div>
-      <div class="field">
-        <label for="lockPass">パスワード</label>
-        <input type="password" id="lockPass" autocomplete="new-password">
-      </div>
-      <div class="field">
-        <label for="lockPass2">パスワード（確認）</label>
-        <input type="password" id="lockPass2" autocomplete="new-password">
-      </div>
-      <div class="actions">
-        <button class="btn-main" id="lockSaveBtn" type="button">この内容で設定する</button>
-        <button class="btn-sub" id="lockClearBtn" type="button" hidden>ログインを解除する</button>
-      </div>
-      <p class="hint" id="lockMsg" hidden></p>
-      <p class="hint">設定すると、アプリを開いたときに店舗IDとパスワードを求めます。ヘッダーの「ログアウト」でこの画面に戻せます。<br>
-        <strong>このロックは画面を覆うだけの簡易的なものです。</strong>見積もりは端末内に暗号化せずに保存されるため、端末を自由に操作できる方（ブラウザの開発者ツールや設定を使える方）には、ロック中でも中身を見ることやロックの解除ができます。盗難・紛失への備えとしては、<strong>端末自体の画面ロックを必ず併用してください。</strong><br>
-        複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>販売元が発行するクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
     </div>
     <div class="card" id="adminLockBox" data-mroom="store">
       <h2>マスタ設定のパスワード</h2>

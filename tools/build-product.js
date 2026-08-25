@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* 製品版（フロントーク）の配信用リポジトリの中身を作る。
  *
- *   node tools/build-product.js [出力先]        既定: dist-product/
+ *   node tools/build-product.js [出力先]              既定: dist-product/
+ *   node tools/build-product.js --with-ienaka [出力先] イエナカ単体版も同梱する
  *
  * このリポジトリ（docomo-quote）が原本です。ここから製品版だけを取り出して、
  * 独自ドメインで配信するリポジトリ（frontalk）の中身に組み替えます。
@@ -25,7 +26,13 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const OUT = path.resolve(process.argv[2] || path.join(ROOT, "dist-product"));
+/* イエナカ単体版の同梱（既定は入れない・2026-08-20 販売方針）。
+ * 「光だけ使いたい」という店舗の希望があったときだけ --with-ienaka を付けてビルドする。
+ * 同梱してもケータイ⇄イエナカの行き来リンクは出さない（行き来すると端末間同期が
+ * 混ざって事故のもとになるため。単体版は単体で完結して使ってもらう）。 */
+const WITH_IENAKA = process.argv.includes("--with-ienaka");
+const args = process.argv.slice(2).filter(function (a) { return a !== "--with-ienaka"; });
+const OUT = path.resolve(args[0] || path.join(ROOT, "dist-product"));
 const DOMAIN = "frontalk.curacon.co.jp";
 
 /* 階層が変わることで直す必要のある参照。
@@ -38,10 +45,16 @@ const REWRITES = [
   // デモは /demo/ に移るが、qr.js はルートにある
   { file: "demo/index.html", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
 ];
-/* 単体版を戻すとき: 上の REWRITES に次の3行を足し、下の copyDir の注記の行を戻す
- *   { file: "ienaka-app/index.html", from: '"../keitai-app/"', to: '"../"' },
- *   { file: "ienaka-app/index.html", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
- *   { file: "ienaka-app/sw.js", from: '"../keitai-app/qr.js"', to: '"../qr.js"' }, */
+if (WITH_IENAKA) {
+  /* 単体版の分。qr.js はルート（旧 keitai-app）にあるものを使う。
+   * 「← ケータイ見積もり」リンクの href も無害な形に直す（表示自体は
+   * ienaka-app/app.js が製品版では隠す）。 */
+  REWRITES.push(
+    { file: "ienaka-app/index.html", from: '"../keitai-app/qr.js"', to: '"../qr.js"' },
+    { file: "ienaka-app/index.html", from: '"../keitai-app/"', to: '"../"' },
+    { file: "ienaka-app/sw.js", from: '"../keitai-app/qr.js"', to: '"../qr.js"' }
+  );
+}
 
 /* 出荷物に残っていてはいけない参照。1つでもあれば止める。
  * （引用符つきのものだけを見るので、日本語コメント中の説明は引っかからない） */
@@ -82,8 +95,9 @@ const SKIP = ["mitsumorin-hello.png", "mitsumorin-sheet.png"].concat(OCR ? [] : 
 
 // 1) ケータイ（製品版）をルートへ
 copyDir(path.join(ROOT, "keitai-app"), OUT, SKIP);
-// 2) イエナカ単体は出荷しない（2026-08-20 販売方針。阪南の社内版 /ienaka/ は原本のまま動き続ける）
-//    戻すとき: copyDir(path.join(ROOT, "ienaka-app"), path.join(OUT, "ienaka-app"));
+// 2) イエナカ単体は既定では出荷しない（2026-08-20 販売方針。阪南の社内版 /ienaka/ は原本のまま）。
+//    希望のある店舗向けに --with-ienaka を付けたときだけ /ienaka-app/ として同梱する
+if (WITH_IENAKA) copyDir(path.join(ROOT, "ienaka-app"), path.join(OUT, "ienaka-app"), SKIP);
 // 3) 営業用デモ（アドレスを短く /demo/ に）
 copyDir(path.join(ROOT, "ienaka-demo"), path.join(OUT, "demo"));
 
@@ -117,7 +131,8 @@ ${DOMAIN} で配信するための入れ物です。
 | アドレス | 中身 |
 |---|---|
 | https://${DOMAIN}/ | 製品版（店舗IDとパスワードでログイン） |
-| https://${DOMAIN}/demo/ | 営業用デモ（ログイン不要） |
+| https://${DOMAIN}/demo/ | 営業用デモ（ログイン不要） |${WITH_IENAKA ? `
+| https://${DOMAIN}/ienaka-app/ | イエナカ単体版（光・home 5G のみ） |` : ""}
 
 ## 直すときは原本のほうで
 
@@ -165,4 +180,5 @@ console.log(`できあがり: ${OUT}`);
 console.log(`  ファイル ${files}件 / ${(bytes / 1024 / 1024).toFixed(1)}MB`);
 console.log(`  独自ドメイン: ${DOMAIN}`);
 console.log(`  カメラ読み取り: ${OCR ? "入（読み取り用ファイルを同梱）" : "切（読み取り用ファイルは入れない）"}`);
+console.log(`  イエナカ単体版: ${WITH_IENAKA ? "同梱（--with-ienaka）" : "入れない（希望の店舗向けは --with-ienaka を付けて実行）"}`);
 console.log("\n中身を配信用リポジトリへ入れれば、そのまま公開されます。");
