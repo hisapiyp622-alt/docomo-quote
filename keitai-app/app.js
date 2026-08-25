@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.130.1";
+  var APP_VERSION = "1.131.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -8359,39 +8359,26 @@
     var isOwn = function (o) { return !!o.own; };
     var isCarrier = function (o) { return !o.own; };
 
-    // 見積もり画面のカードとカテゴリの並び（▲▼）
+    // 見積もり画面のカードとカテゴリの並び（タイルと同じ長押しドラッグ）
     h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面の並び（①〜⑨のカード）</h3>';
-    h += '<p class="hint">見積もり画面のカードの順番を入れ替えられます。<strong>丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動きます</strong>（引き継ぎシートや説明の「⑦の事務手数料」などの対応関係は変わりません）。</p>';
-    (function () {
-      var order = quoteCardOrder();
-      order.forEach(function (k, i) {
-        h += '<div class="adhoc-row">'
-          + '<button class="mv" data-qc-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
-          + '<button class="mv" data-qc-down="' + i + '" type="button" aria-label="下へ"' + (i === order.length - 1 ? " disabled" : "") + ">▼</button>"
-          + '<span class="price" style="min-width:14em;text-align:left">' + esc(QUOTE_CARD_NAMES[k] || k) + "</span>"
-          + "</div>";
-      });
-      if (order.join(",") !== QUOTE_CARDS.join(",")) {
-        h += '<div class="actions"><button class="btn-sub" data-qc-reset="1" type="button">初期の並びに戻す</button></div>';
-      }
-    })();
+    h += '<p class="hint"><strong>長押ししてつかみ、置きたい場所で離す</strong>と順番が入れ替わります（タイルの並びと同じ操作）。'
+      + '丸数字はカードの名前の一部なので、並び替えても番号はそのカードに付いて動きます（説明の「⑦の事務手数料」などの対応関係は変わりません）。</p>';
+    h += sorterHtml("qc", [{ cat: "", items: quoteCardOrder().map(function (k) {
+      return { id: k, name: QUOTE_CARD_NAMES[k] || k };
+    }) }], false);
+    if (quoteCardOrder().join(",") !== QUOTE_CARDS.join(",")) {
+      h += '<div class="actions"><button class="btn-sub" data-qc-reset="1" type="button">初期の並びに戻す</button></div>';
+    }
     h += "</div>";
 
     h += '<div class="master-plan" data-mroom="tools"><h3>④オプションのカテゴリの並び</h3>';
-    h += '<p class="hint">④の中の「補償」「バックアップ」などのカテゴリの順番を入れ替えられます（下の「タイルの並び」にも同じ順で並びます）。</p>';
-    (function () {
-      var order = optCategories();
-      order.forEach(function (c, i) {
-        h += '<div class="adhoc-row">'
-          + '<button class="mv" data-oc-up="' + i + '" type="button" aria-label="上へ"' + (i === 0 ? " disabled" : "") + ">▲</button>"
-          + '<button class="mv" data-oc-down="' + i + '" type="button" aria-label="下へ"' + (i === order.length - 1 ? " disabled" : "") + ">▼</button>"
-          + '<span class="price" style="min-width:10em;text-align:left">' + esc(c) + "</span>"
-          + "</div>";
-      });
-      if (order.join(",") !== OPT_CATEGORIES.join(",")) {
-        h += '<div class="actions"><button class="btn-sub" data-oc-reset="1" type="button">初期の並びに戻す</button></div>';
-      }
-    })();
+    h += '<p class="hint">「補償」「バックアップ」などのカテゴリも、<strong>長押しでつかんで並び替えられます</strong>（④の表示と下の「タイルの並び」に同じ順で反映されます）。</p>';
+    h += sorterHtml("oc", [{ cat: "", items: optCategories().map(function (c) {
+      return { id: c, name: c };
+    }) }], false);
+    if (optCategories().join(",") !== OPT_CATEGORIES.join(",")) {
+      h += '<div class="actions"><button class="btn-sub" data-oc-reset="1" type="button">初期の並びに戻す</button></div>';
+    }
     h += "</div>";
 
     // 見積もり画面のタイルの並び（長押しドラッグ）
@@ -9783,7 +9770,31 @@
   }
   // 画面の並びを MASTER の配列へ書き戻す
   function commitSort(root) {
-    var def = SORT_LISTS[root.getAttribute("data-sorter")];
+    var prefix = root.getAttribute("data-sorter");
+    /* ①〜⑨のカードと④のカテゴリは、MASTERの並び配列へ書き戻す */
+    if (prefix === "qc" || prefix === "oc") {
+      var ids = [];
+      Array.prototype.forEach.call(root.querySelectorAll(".sort-chip"), function (c) {
+        ids.push(c.getAttribute("data-sid"));
+      });
+      if (prefix === "qc") {
+        var qo = ids.filter(function (k) { return QUOTE_CARDS.indexOf(k) >= 0; });
+        if (qo.join(",") === QUOTE_CARDS.join(",")) delete MASTER.quoteCardOrder;
+        else MASTER.quoteCardOrder = qo;
+        markEdited();
+        applyQuoteCardOrder();
+      } else {
+        var co = ids.filter(function (c2) { return OPT_CATEGORIES.indexOf(c2) >= 0; });
+        if (co.join(",") === OPT_CATEGORIES.join(",")) delete MASTER.optCatOrder;
+        else MASTER.optCatOrder = co;
+        markEdited();
+        renderOptionList();
+      }
+      recalc();
+      renderMasterTab();
+      return;
+    }
+    var def = SORT_LISTS[prefix];
     if (!def) return;
     var list = MASTER[def.key] || [];
     var byId = {};
@@ -11340,33 +11351,13 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
-      var qcU = e.target.getAttribute && (e.target.getAttribute("data-qc-up") || e.target.getAttribute("data-qc-down"));
-      if (qcU != null && qcU !== "" || (e.target.getAttribute && e.target.getAttribute("data-qc-reset"))) {
-        var qOrder = quoteCardOrder().slice();
-        if (e.target.getAttribute("data-qc-reset")) {
-          delete MASTER.quoteCardOrder;
-        } else {
-          var qi = +qcU;
-          var qj = e.target.hasAttribute("data-qc-up") ? qi - 1 : qi + 1;
-          if (qj < 0 || qj >= qOrder.length) return;
-          var qt = qOrder[qi]; qOrder[qi] = qOrder[qj]; qOrder[qj] = qt;
-          MASTER.quoteCardOrder = qOrder;
-        }
+      if (e.target.getAttribute && e.target.getAttribute("data-qc-reset")) {
+        delete MASTER.quoteCardOrder;
         markEdited(); applyQuoteCardOrder(); renderMasterTab();
         return;
       }
-      var ocU = e.target.getAttribute && (e.target.getAttribute("data-oc-up") || e.target.getAttribute("data-oc-down"));
-      if (ocU != null && ocU !== "" || (e.target.getAttribute && e.target.getAttribute("data-oc-reset"))) {
-        var cOrder = optCategories().slice();
-        if (e.target.getAttribute("data-oc-reset")) {
-          delete MASTER.optCatOrder;
-        } else {
-          var ci2 = +ocU;
-          var cj = e.target.hasAttribute("data-oc-up") ? ci2 - 1 : ci2 + 1;
-          if (cj < 0 || cj >= cOrder.length) return;
-          var ct = cOrder[ci2]; cOrder[ci2] = cOrder[cj]; cOrder[cj] = ct;
-          MASTER.optCatOrder = cOrder;
-        }
+      if (e.target.getAttribute && e.target.getAttribute("data-oc-reset")) {
+        delete MASTER.optCatOrder;
         markEdited(); renderOptionList(); renderMasterTab();
         return;
       }
