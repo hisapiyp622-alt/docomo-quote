@@ -32,6 +32,15 @@ var KEITAI_VENDOR = {
  * 実在するドメインである必要はありません。値は店舗を作るときと揃えてください。 */
 var KEITAI_STORE_DOMAIN = "keitai-quote.example";
 
+/* 保守用（開発者専用）アカウントのユーザーUID。
+ * ここに Authentication 上の dev アカウントのUIDを入れると、
+ * そのアカウントでログインしたときだけ「店舗の選択」が出て、
+ * 選んだ店舗のデータをその店舗として確認・修正できます。
+ * あわせて firestore.rules の DEV_UID_HERE も同じUIDに置き換えて
+ * コンソールへ貼り付けること（ルール側が本体。ここは画面の出し分けだけ）。
+ * 空のままなら、この仕組みは眠ったままです。 */
+var KEITAI_DEV_UID = "";
+
 if (typeof firebase !== "undefined" && KEITAI_FIREBASE.projectId) {
   try { firebase.initializeApp(KEITAI_FIREBASE); } catch (e) {}
 }
