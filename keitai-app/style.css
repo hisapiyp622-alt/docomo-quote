@@ -273,6 +273,18 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 }
 
 /* ---------- master ---------- */
+/* 並べ替えモード（UI・タイル変更 → 並べ替えを開始） */
+#arrangeBar{position:sticky;top:0;z-index:80;background:var(--red);color:#fff;
+  font-size:13px;padding:8px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between}
+#arrangeBar .btn-main{background:#fff;color:var(--red);border:none;padding:6px 16px;border-radius:8px;font-weight:700;cursor:pointer}
+body.arranging #tab-quote input,body.arranging #tab-quote select,body.arranging #tab-quote textarea,
+body.arranging #tab-quote button{pointer-events:none}
+body.arranging #tab-quote .card,body.arranging #tab-quote .tile,body.arranging #tab-quote .opt-cat{cursor:grab;user-select:none;-webkit-user-select:none}
+body.arranging #tab-quote .card.c1,body.arranging #tab-quote .card.c2,body.arranging #tab-quote .card.c3,
+body.arranging #tab-quote .card.c4,body.arranging #tab-quote .card.c5,body.arranging #tab-quote .card.c6,
+body.arranging #tab-quote .card.c7,body.arranging #tab-quote .card.c8,body.arranging #tab-quote .card.c9{outline:2px dashed #E8C7CD;outline-offset:2px}
+body.arranging #optionList .opt-cat{background:#FBF1F3;border:1px dashed var(--red);border-radius:6px;padding:4px 8px}
+.arr-ghost{position:fixed;z-index:90;pointer-events:none;opacity:.85;box-shadow:0 8px 24px rgba(0,0,0,.25);background:#fff}
 .mroom-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
 .mroom-tabs{display:flex;gap:6px;flex-wrap:wrap}
 .mroom-tabs button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font:inherit;font-size:13px;cursor:pointer;color:var(--muted)}
