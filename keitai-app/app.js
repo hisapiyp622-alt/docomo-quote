@@ -7942,7 +7942,7 @@
     var mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps);
     return mn === mx ? yen(mn) : yen(mn) + "〜" + yen(mx);
   }
-  /* マスタ設定は4つの部屋（お店の商材／ドコモの料金／画面と道具／お店の設定）に
+  /*/* マスタ設定は4つの部屋（お店の商材／ドコモの料金／画面と道具／店舗情報）に
    * 分かれている。data-mroom の付いたカード・セクションを、選んだ部屋のものだけ表示する。
    * 検索中（項目を探す）は、結果を隠さないため全部屋を表示する。 */
   var masterRoom = "shop";
