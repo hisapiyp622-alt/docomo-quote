@@ -8319,21 +8319,9 @@
     h += '<div id="histBox">' + histListHtml() + "</div>";
     h += "</div>";
 
-    // テンプレート管理
-    h += '<div class="master-plan" data-mroom="tools"><h3>テンプレート</h3>';
-    h += '<p class="hint">テンプレートは<strong>担当者ごと</strong>です（いまは「' + esc(activeStaff().name || "担当") + '」のもの）。'
-      + '保存は見積もり画面の「現在の内容をテンプレに保存」から。ここでは名前変更と削除ができます。</p>';
-    templates.forEach(function (t, i) {
-      h += '<div class="adhoc-row">'
-        + '<span class="price" style="min-width:2em">' + (i + 1) + '</span>'
-        + (t
-          ? '<input type="text" value="' + esc(t.name) + '" data-tp-name="' + i + '">'
-            + '<button class="del" data-tp-del="' + i + '" type="button" aria-label="削除">×</button>'
-          : '<span class="price">未設定</span>')
-        + "</div>";
-    });
-    h += "</div>";
-
+    /* テンプレートの管理はマスタ設定から外した（2026-08-25）。
+     * 保存・削除・並べ替えは見積もり画面のテンプレートのボタン（長押しメニュー）で
+     * できるため、こちらに置く意味がなくなった。 */
     $("masterBody").innerHTML = h;
     foldifyMasterSections();
     applyMasterRoom();
@@ -11120,11 +11108,6 @@
         recalc();
         return;
       }
-      if (t.hasAttribute("data-tp-name")) {
-        var tpi = +t.getAttribute("data-tp-name");
-        if (templates[tpi]) { templates[tpi].name = t.value.slice(0, 20); persistTemplates(); renderTplBar(); }
-        return;
-      }
       if (t.hasAttribute("data-cp-name")) {
         MASTER.campaigns[+t.getAttribute("data-cp-name")].name = t.value;
         markEdited(); renderCampaigns(); recalc(); return;
@@ -11177,11 +11160,6 @@
         return;
       }
       var t = e.target;
-      if (t.hasAttribute("data-tp-del")) {
-        templates[+t.getAttribute("data-tp-del")] = null;
-        persistTemplates(); renderMasterTab(); renderTplBar();
-        return;
-      }
       if (t.hasAttribute("data-cp-del")) {
         var ci = +t.getAttribute("data-cp-del");
         var co = MASTER.campaigns[ci];
