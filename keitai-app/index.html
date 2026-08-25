@@ -826,30 +826,6 @@
       <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
       <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
     </div>
-    <div class="card" id="lockBox" data-mroom="store">
-      <h2>店舗ログイン</h2>
-      <p class="hint" id="lockState"></p>
-      <div class="field">
-        <label for="lockStoreId">店舗ID</label>
-        <input type="text" id="lockStoreId" placeholder="例）shop01" autocapitalize="none" spellcheck="false">
-      </div>
-      <div class="field">
-        <label for="lockPass">パスワード</label>
-        <input type="password" id="lockPass" autocomplete="new-password">
-      </div>
-      <div class="field">
-        <label for="lockPass2">パスワード（確認）</label>
-        <input type="password" id="lockPass2" autocomplete="new-password">
-      </div>
-      <div class="actions">
-        <button class="btn-main" id="lockSaveBtn" type="button">この内容で設定する</button>
-        <button class="btn-sub" id="lockClearBtn" type="button" hidden>ログインを解除する</button>
-      </div>
-      <p class="hint" id="lockMsg" hidden></p>
-      <p class="hint">設定すると、アプリを開いたときに店舗IDとパスワードを求めます。ヘッダーの「ログアウト」でこの画面に戻せます。<br>
-        <strong>このロックは画面を覆うだけの簡易的なものです。</strong>見積もりは端末内に暗号化せずに保存されるため、端末を自由に操作できる方（ブラウザの開発者ツールや設定を使える方）には、ロック中でも中身を見ることやロックの解除ができます。盗難・紛失への備えとしては、<strong>端末自体の画面ロックを必ず併用してください。</strong><br>
-        複数の端末で使う場合や、他店とデータを分けたい場合は、<strong>販売元が発行するクラウドの店舗アカウント</strong>をご利用ください（設定するとこの欄は使いません）。</p>
-    </div>
     <div class="card" id="adminLockBox" data-mroom="store">
       <h2>マスタ設定のパスワード</h2>
       <p class="hint" id="adminLockState"></p>
