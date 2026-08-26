@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.133.0";
+  var APP_VERSION = "1.133.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -5454,7 +5454,10 @@
     /* 「端末購入なし」のときは、機種名・端末代金・頭金・値引きが入力に残っていても
      * 端末のお支払いは一切計上しない（端末代金総額を0として扱うと、頭金・値引きも
      * 0にそろう）。機種を選んだあとに「端末購入なし」へ戻したとき、店頭頭金だけが
-     * 初期費用に残ってしまうのを防ぐ。入力が残っていること自体は payWarn で知らせる。 */
+     * 初期費用に残ってしまうのを防ぐ。
+     * 2026-08-26 からは「購入なし」へ切り替えた時点で入力そのものも消す（⑤の
+     * change 処理）。ここの0扱いは、消す前に保存された見積もり・履歴・テンプレを
+     * 読み込んだときのための保険として残す（残っていれば payWarn で知らせる）。 */
     var deviceList = st.payMethod === "none" ? 0 : num(st.devicePrice);
     var devOffCoupon = Math.min(Math.max(0, num(st.couponOff)), deviceList);
     var devOffTebiki = Math.min(Math.max(0, num(st.tebikiOff)), Math.max(0, deviceList - devOffCoupon));
@@ -11035,6 +11038,20 @@
       $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
       $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
       $("devBuyDetail").hidden = state.payMethod === "none";
+      /* 「端末購入なし」に変えたら、購入のときにしか使わない入力はその場で消す。
+       * 以前は隠したまま残して警告だけ出していたが、消えないという声があった。
+       * 残っていると、MNPのSIMのみ特典の欄も「端末購入あり」と見なされて出ない。
+       * 「現在の分割支払金」と店頭頭金（⑦・手続き種別から自動）は購入と別の話なので残す。 */
+      if (state.payMethod === "none") {
+        state.deviceName = "";
+        state.devicePrice = 0;
+        state.couponOff = 0;
+        state.tebikiOff = 0;
+        state.directOff = 0;
+        state.kaedoki23 = 0;
+        state.kaedokiFee = 0;
+        syncFormFromState();
+      }
       recalc();
     });
     $("kaedoki23").addEventListener("input", function () { state.kaedoki23 = num(this.value); recalc(); });
