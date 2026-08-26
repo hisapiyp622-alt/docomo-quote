@@ -356,7 +356,8 @@
 
     <div class="card c8">
       <h2>⑧ ポイント（実質額のご案内） <button class="card-help" type="button" data-help="c8" aria-label="この項目の入力のしかた">?</button></h2>
-      <p class="hint">④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
+      <!-- data-remap-circled: カードを並べ替えた店舗では、文中の丸数字を新しい番号に置き換える（app.js） -->
+      <p class="hint" data-remap-circled>④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
       <div class="field">
         <label for="pointApply">ポイントの扱い</label>
         <select id="pointApply">
@@ -688,7 +689,8 @@
         <p class="hint">相対対応用。金額・ポイントが入力されているときだけ、見積書・引き継ぎシートに「店舗独自特典」として記載されます（0なら記載されません）。</p>
       </div>
       <p class="hint" id="ieKojiPointInfo" hidden></p>
-      <p class="hint">ドコモ光／home 5G セット割は、<strong>フロントークの③割引で自動的に引かれます。</strong>
+      <!-- data-remap-circled: この③は見積もりタブのカードの番号。並べ替えた店舗では置き換わる（app.js） -->
+      <p class="hint" data-remap-circled>ドコモ光／home 5G セット割は、<strong>フロントークの③割引で自動的に引かれます。</strong>
         こちらで入力する必要はありません。</p>
     </div>
         </div>

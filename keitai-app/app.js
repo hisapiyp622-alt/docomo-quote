@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.132.1";
+  var APP_VERSION = "1.133.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -53,6 +53,45 @@
       localStorage.setItem("dq-store-uid", "internal");
     } catch (eMig) {}
   }
+  /* ---------- 更新の谷間の安全網 ----------
+   * アップデートの配信とかち合う瞬間に開くと、画面（index.html）と
+   * プログラム（app.js）が別々の版で混ざることがまれにある
+   * （以前、チェック欄が消えて見える形で実際に起きた）。
+   * 起動時に大事な部品が揃っているかを確かめ、欠けていたら1回だけ自動で
+   * 開き直す（開き直せば両方とも最新版が揃う）。それでも欠けているときは、
+   * 中途半端に動かして入力が消えたように見せるより、案内を出して止める。
+   * この確認より下の処理は部品が欠けていると途中で止まるため、必ずこの位置
+   * （DOMに触る処理より前）に置くこと。新しい版で大事な部品を足したら、
+   * この一覧にも id を足す。 */
+  var INTEGRITY_IDS = ["planId", "voiceTiles", "optionList", "accTileList",
+    "feeItemList", "pointApply", "dCardSub", "mnpBenefitWrap", "summaryBar",
+    "masterBody", "helpPop"];
+  var INTEGRITY_KEY = NS + "-integrity-reload";
+  var integrityMissing = INTEGRITY_IDS.filter(function (id) {
+    return !document.getElementById(id);
+  });
+  if (integrityMissing.length) {
+    var integrityReloaded = false;
+    try { integrityReloaded = sessionStorage.getItem(INTEGRITY_KEY) === "1"; } catch (eInt1) {}
+    if (!integrityReloaded) {
+      try { sessionStorage.setItem(INTEGRITY_KEY, "1"); } catch (eInt2) {}
+      location.reload();
+      return; // 開き直すので、壊れたままの状態では動かさない
+    }
+    var integrityBar = document.createElement("div");
+    integrityBar.setAttribute("role", "alert");
+    integrityBar.style.cssText = "position:sticky;top:0;z-index:9999;background:#b3261e;color:#fff;"
+      + "padding:10px 14px;font-size:14px;line-height:1.6;";
+    integrityBar.textContent = "アプリの更新が途中の状態で開かれています。このタブをいったん閉じて、開き直してください。"
+      + "（それでも直らないときは、ほかのタブで開いたままのこのアプリを閉じてから、もう一度お試しください）";
+    if (document.body) {
+      document.body.insertBefore(integrityBar, document.body.firstChild);
+      document.body.classList.remove("booting"); // 目隠しを外して案内を見えるようにする
+    }
+    return; // ここで止める（入力しても保存されない状態で触らせない）
+  }
+  try { sessionStorage.removeItem(INTEGRITY_KEY); } catch (eInt3) {}
+
   var MASTER_KEY = NS + "-master-v1"; // 料金マスタ（全担当・全端末で共通）
   var STATE_KEY = NS + "-state-v1";   // 見積もり（担当グループごとに分かれる）
   // 見積もりデータは担当グループごとに別領域へ保存する（担当Aは従来キーを引き継ぐ）
@@ -97,7 +136,8 @@
   }
   /* ①〜⑨の丸数字を、いまの並び順に合わせて振り直す。
    * 番号はカードの見出しと「?」の説明の題名に出る。
-   * （説明文の中に出てくる丸数字は、初期の並びを前提にした文のため触らない） */
+   * 説明文やボタンの文の中に出てくる丸数字（「⑦の事務手数料」など）は、
+   * remapCircled() でその都度置き換える。 */
   var CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
   function renumberQuoteCards() {
     var order = quoteCardOrder();
@@ -110,6 +150,25 @@
       if (typeof QUOTE_HELP === "object" && QUOTE_HELP && QUOTE_HELP[k] && QUOTE_HELP[k].t) {
         QUOTE_HELP[k].t = QUOTE_HELP[k].t.replace(/^[①-⑨]/, CIRCLED[i]);
       }
+    });
+    /* 画面（index.html）に直書きの説明文のうち、data-remap-circled の印が
+     * 付いたものは文中の番号も追随させる。元の文を data-orig に控えておき、
+     * 毎回そこから置き換える（置き換えの上に置き換えを重ねない）。 */
+    document.querySelectorAll("[data-remap-circled]").forEach(function (el) {
+      if (!el.getAttribute("data-orig")) el.setAttribute("data-orig", el.innerHTML);
+      el.innerHTML = remapCircled(el.getAttribute("data-orig")); // 元は直書きの固定文だけ（入力値は入らない）
+    });
+  }
+  /* 文中の丸数字を、いまの並び順の番号に置き換える。
+   * 説明文はどれも初期の並び（①契約内容 … ⑨備考）を前提に書いてあるため、
+   * 「その番号のカードが、いま何番目にあるか」で置き換える。初期の並びなら何もしない。
+   * 注意: 「①〜⑨」のような範囲の言い方には使わない（範囲の意味が壊れるため）。 */
+  function remapCircled(text) {
+    var order = quoteCardOrder();
+    if (order.join(",") === QUOTE_CARDS.join(",")) return String(text);
+    return String(text).replace(/[①-⑨]/g, function (d) {
+      var pos = order.indexOf(QUOTE_CARDS[CIRCLED.indexOf(d)]);
+      return pos >= 0 ? CIRCLED[pos] : d;
     });
   }
   /* 並びの指定どおりにカードを差し替える。既定の並びのときは何もせず、
@@ -2521,8 +2580,8 @@
     var miss = ienakaOn() && !(r && r.dSet > 0);
     el.hidden = !miss;
     if (miss) {
-      el.textContent = "スマホ側で「ドコモ光／home 5G セット割」を選んでいません。"
-        + "対象のプランであれば、見積もりタブの③割引でチェックを入れてください。";
+      el.textContent = remapCircled("スマホ側で「ドコモ光／home 5G セット割」を選んでいません。"
+        + "対象のプランであれば、見積もりタブの③割引でチェックを入れてください。");
     }
   }
   function ienakaOn() {
@@ -6795,7 +6854,7 @@
     var instIdx = -1;
     b.lines.forEach(function (ln, i) { if (instIdx < 0 && /分割支払金|分割払金/.test(String(ln.n))) instIdx = i; });
     if (instIdx >= 0) {
-      h += '<button class="btn-sub" type="button" data-cb-toinst="' + instIdx + '">この分割金を⑤の「現在の分割支払金」へ</button>';
+      h += '<button class="btn-sub" type="button" data-cb-toinst="' + instIdx + '">' + remapCircled("この分割金を⑤の「現在の分割支払金」へ") + "</button>";
     }
     h += "</div>";
     h += '<p class="hint" id="cbSumLine"></p>';
@@ -7013,7 +7072,7 @@
         state.currentInst = Math.max(0, Math.round(num(ln.a)));
         syncFormFromState();
         recalc();
-        say("⑤端末代金の「現在の分割支払金」に " + yen(state.currentInst) + " を入れました。残り回数がわかれば⑤で入力してください。");
+        say(remapCircled("⑤端末代金の「現在の分割支払金」に " + yen(state.currentInst) + " を入れました。残り回数がわかれば⑤で入力してください。"));
       }
     });
   }
@@ -8186,7 +8245,7 @@
 
     // キャンペーン割引（名称・期間・割引額を編集可）
     h += '<div class="master-plan" data-mroom="docomo"><h3>キャンペーン割引</h3>';
-    h += '<p class="hint">対象プラン選択時に「②割引」へ表示されます。終了したキャンペーンは×で削除してください。</p>';
+    h += '<p class="hint">' + remapCircled("対象プラン選択時に「③割引」へ表示されます。") + "終了したキャンペーンは×で削除してください。</p>";
     (MASTER.campaigns || []).forEach(function (c, i) {
       h += '<div class="adhoc-row">'
         + '<input type="text" value="' + esc(c.name) + '" placeholder="キャンペーン名" data-cp-name="' + i + '">'
@@ -8279,7 +8338,7 @@
           + '<input type="number" value="' + (on ? num(pl.discounts[dl[0]]) : "") + '" placeholder="0" data-pl-disamt="' + pi + ":" + dl[0] + '"' + (on ? "" : " disabled") + ">円"
           + "</label>";
       });
-      h += "</div><p class=\"hint\">チェックを外した割引は、このプランを選んだときに③の欄へ出しません。</p></div>";
+      h += '</div><p class="hint">' + remapCircled("チェックを外した割引は、このプランを選んだときに③の欄へ出しません。") + "</p></div>";
 
       h += '<details class="plan-more"><summary>詳細設定</summary><div class="plan-sec">';
       h += '<label class="plan-f"><span>爆アゲ セレクションの区分</span>'
@@ -8378,7 +8437,7 @@
     // 見積もり画面の並べ替え（本物の画面の上で長押しドラッグ）
     h += '<div class="master-plan" data-mroom="tools"><h3>見積もり画面の並べ替え</h3>';
     h += '<p class="hint">本物の見積もり画面に移って、<strong>長押しでつかんで動かす</strong>だけで並べ替えられます（iPhoneのホーム画面と同じ要領）。動かせるのは、'
-      + '<strong>①〜⑨のカード</strong>・<strong>④⑥⑦のタイル</strong>（④はカテゴリをまたいで移動可）・<strong>④のカテゴリ名</strong>（丸ごと移動）の3種類。'
+      + '<strong>①〜⑨のカード</strong>・<strong>' + remapCircled("④⑥⑦").split("").sort().join("") + 'のタイル</strong>（' + remapCircled("④") + 'はカテゴリをまたいで移動可）・<strong>' + remapCircled("④") + 'のカテゴリ名</strong>（丸ごと移動）の3種類。'
       + '<strong>カードを並び替えると、①〜⑨の番号も新しい並び順に振り直されます。</strong>動かしたそばから本番と同じ見た目で確認できます。</p>';
     h += '<div class="actions"><button class="btn-main" data-arrange-start="1" type="button">並べ替えを開始</button>';
     if (quoteCardOrder().join(",") !== QUOTE_CARDS.join(",")) {
@@ -8405,25 +8464,25 @@
 
     // 初期費用の定番項目（手数料・コーティング等の一括もの）
     h += '<div class="master-plan" data-mroom="docomo"><h3>初期費用の定番項目（ドコモ・手数料など）</h3>';
-    h += '<p class="hint">契約時に一括で支払うもの。「⑦初期費用」にチェックボックスとして表示されます。「<strong>店舗独自</strong>」にチェックを入れると「お店の商材」の一覧へ移ります。</p>';
+    h += '<p class="hint">契約時に一括で支払うもの。「' + remapCircled("⑦初期費用") + '」にチェックボックスとして表示されます。「<strong>店舗独自</strong>」にチェックを入れると「お店の商材」の一覧へ移ります。</p>';
     h += listEditor(MASTER.feeItems, "fi", feeExtra, isCarrier);
     h += '<div class="actions">'
       + '<button class="btn-sub" data-add="feeItems" type="button">＋ ドコモの商材を追加</button></div></div>';
 
     h += '<div class="master-plan" data-mroom="shop"><h3>初期費用の店舗独自項目（コーティングなど）</h3>';
-    h += '<p class="hint">お店で扱う一括のもの。「⑦初期費用」にチェックボックスとして表示されます。「<strong>店舗独自</strong>」のチェックを外すと「ドコモの料金」の一覧へ戻ります。</p>';
+    h += '<p class="hint">お店で扱う一括のもの。「' + remapCircled("⑦初期費用") + '」にチェックボックスとして表示されます。「<strong>店舗独自</strong>」のチェックを外すと「ドコモの料金」の一覧へ戻ります。</p>';
     h += listEditor(MASTER.feeItems, "fi", feeExtra, isOwn);
     h += '<div class="actions">'
       + '<button class="btn-sub" data-add="feeItemsOwn" type="button">＋ 店舗独自サービスを追加</button></div></div>';
 
     // アクセサリの定番商品
     h += '<div class="master-plan" data-mroom="shop"><h3>アクセサリの定番商品（docomo select など）</h3>';
-    h += '<p class="hint">「⑥アクセサリ」にタイルとして表示されます。単価は店舗の取扱商品に合わせて編集を。<br>'
-      + '<strong>置き場所</strong>でカテゴリを選ぶと、「⑥アクセサリ」ではなく<strong>オプションのそのカテゴリ</strong>に並びます。'
+    h += '<p class="hint">「' + remapCircled("⑥アクセサリ") + '」にタイルとして表示されます。単価は店舗の取扱商品に合わせて編集を。<br>'
+      + '<strong>置き場所</strong>でカテゴリを選ぶと、「' + remapCircled("⑥アクセサリ") + '」ではなく<strong>オプションのそのカテゴリ</strong>に並びます。'
       + '一括・分割の選び方は変わりません。<strong>初期の支払い</strong>は、タイルを押したときに最初に入る払い方です。</p>';
     h += listEditor(MASTER.accessories, "ac", function (a) {
       return '<select data-ac-cat="' + a.__i + '">'
-        + '<option value="">置き場所: ⑥アクセサリ</option>'
+        + '<option value="">置き場所: ' + remapCircled("⑥アクセサリ") + "</option>"
         + optCategories().map(function (c) {
             return '<option value="' + c + '"' + (a.category === c ? " selected" : "") + ">置き場所: " + c + "</option>";
           }).join("")
@@ -9910,7 +9969,7 @@
     bar = document.createElement("div");
     bar.id = "arrangeBar";
     bar.className = "no-print";
-    bar.innerHTML = '<span>並べ替え中：カード・タイル・④のカテゴリ名を<b>長押しでつかんで</b>動かします</span>'
+    bar.innerHTML = '<span>並べ替え中：カード・タイル・' + remapCircled("④") + 'のカテゴリ名を<b>長押しでつかんで</b>動かします</span>'
       + '<button class="btn-main" id="arrangeDone" type="button">完了</button>';
     document.body.insertBefore(bar, document.body.firstChild);
     document.getElementById("arrangeDone").addEventListener("click", exitArrange);
@@ -11746,7 +11805,9 @@
     var h = QUOTE_HELP[key], pop = $("helpPop");
     if (!h || !pop || !btn) return;
     $("helpPopTitle").textContent = h.t;
-    $("helpPopBody").innerHTML = h.b;  // 文面はこのファイルに直書きの固定文だけ（入力値は入らない）
+    // 文面はこのファイルに直書きの固定文だけ（入力値は入らない）。
+    // 文中の丸数字（「⑦の事務手数料」など）は、カードの並び順に合わせて置き換える
+    $("helpPopBody").innerHTML = remapCircled(h.b);
     // 大きさを測るために、いったん出してから位置を決める
     pop.style.left = "0px";
     pop.style.top = "0px";
