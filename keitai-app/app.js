@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.133.2";
+  var APP_VERSION = "1.134.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3897,6 +3897,14 @@
   function isDevUser() {
     return !!(CLOUD.user && devUid() && CLOUD.user.uid === devUid());
   }
+  /* 保守モードで店舗を選んで、その店舗のデータを見ている状態か。
+   * この状態では、担当者コードとマスタ設定のパスワードの関門を通さない。
+   * 開発者は店舗の担当者コードやマスタのパスワードを知らないため、
+   * 関門があると中身の確認（サポート・修理）が何もできない。
+   * 保守アカウント自体のログインで本人確認は済んでいる。 */
+  function devActing() {
+    return isDevUser() && !!CLOUD.actAsUid;
+  }
   // いま「どの店舗のデータ」を見ているか（保守モードで店舗を選んだときだけ変わる）
   function effectiveUid() {
     return (isDevUser() && CLOUD.actAsUid) ? CLOUD.actAsUid : (CLOUD.user && CLOUD.user.uid);
@@ -4464,7 +4472,9 @@
     renderStaffGateNotice();
     // コードを設定していない担当者は、名前を押して入れるようにする
     // （一部の担当者だけコードを付けた場合に、他の担当者が入れなくなるのを防ぐ）
-    var free = config.staff.filter(function (s) { return String(s.code || "").trim() === ""; });
+    // 保守モードはコードを知らないため、全担当を名前で選べるようにする
+    var free = devActing() ? config.staff
+      : config.staff.filter(function (s) { return String(s.code || "").trim() === ""; });
     var wrap = $("staffFreeWrap");
     if (wrap) {
       wrap.hidden = !free.length;
@@ -4849,6 +4859,9 @@
     // 社内版にはログインが無いので、自動ログアウトも掛けない
     armIdle(!INTERNAL && (lockEnabled() || cloudOn()));
     if (takeHandoffFromIenaka()) { bootDone(); return; }
+    /* 保守モード: 担当者コードは聞かずにそのまま中へ入る
+     * （開発者は店舗のコードを知らない。誰の担当画面かは赤い保守バーで分かる） */
+    if (devActing()) { enterStaff(activeStaff()); bootDone(); return; }
     // まだ一度も設定していない店舗は、先に初期設定を出す
     if (wizNeeded()) { wizShow(true); bootDone(); return; }
     if (anyStaffCode()) showStaffGate(true);
@@ -8688,6 +8701,9 @@
   }
   function masterGateAdminMode() { return adminLockEnabled() && !masterGateFallback; }
   function masterGateOn() {
+    // 保守モードは関門を掛けない（開発者は店舗のパスワードを知らないため。
+    // 実績の全担当表示も同じ判定を使っているので、あわせて見られるようになる）
+    if (devActing()) return false;
     // 社内版はログインが無いため、クラウド同期中でも関門は掛けない（従来どおり）
     return !masterUnlocked && (adminLockEnabled() || lockEnabled() || (cloudOn() && !INTERNAL));
   }
