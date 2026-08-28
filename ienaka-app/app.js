@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.8.2";
+  var APP_VERSION = "2.8.3";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -9,13 +9,21 @@
    * 生成・コピー元はどちらも このファイル（ienaka-app/app.js）。 */
   var INTERNAL = typeof window !== "undefined" && !!window.IENAKA_INTERNAL;
   var DEMO = typeof window !== "undefined" && !!window.IENAKA_DEMO;
-  /* 保存領域は3者で完全に分ける。同じサイト（同一オリジン）に同居しているため、
-   * 同じ名前を使うと、実際の店舗で使った内容がデモ版に出てしまう。 */
-  var KEY = INTERNAL ? "ienaka-internal-v1" : DEMO ? "ienaka-demo-v1" : "ienaka-app-v1";
+  /* 社内版を複数の店舗で使うときの「店舗の札」。tools/build-internal.js が
+   * 店舗ごとのURL（例: /ienaka-tokiwahigashi/）を作るときに window.IENAKA_STORE へ
+   * 札（例: "tokiwahigashi"）を入れる。札があると、端末内の保存領域と
+   * クラウドの同期先が店舗ごとに完全に分かれる。札なし＝阪南（従来どおり）。 */
+  var STORE_TAG = (typeof window !== "undefined" && window.IENAKA_STORE) ? String(window.IENAKA_STORE) : "";
+  /* 保存領域は版・店舗ごとに完全に分ける。同じサイト（同一オリジン）に同居しているため、
+   * 同じ名前を使うと、実際の店舗で使った内容が別の店舗やデモ版に出てしまう。 */
+  var KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-v1" : "ienaka-internal-v1")
+    : DEMO ? "ienaka-demo-v1" : "ienaka-app-v1";
   /* ケータイ見積もりとの引き渡し（店舗名・担当者名・お客様名）。
    * 社内版どうし・製品版どうしでだけやり取りする。デモ版は相手がいないので
-   * 受け取らない（実際のお客様名を拾ってしまわないように）。 */
-  var HANDOFF_KEY = DEMO ? "" : INTERNAL ? "dq-handoff-v1" : "kq-handoff-v1";
+   * 受け取らない（実際のお客様名を拾ってしまわないように）。
+   * 店舗の札つき（阪南以外）も、同居する阪南のケータイ見積もりの内容を
+   * 拾ってしまわないよう受け取らない。 */
+  var HANDOFF_KEY = DEMO ? "" : INTERNAL ? (STORE_TAG ? "" : "dq-handoff-v1") : "kq-handoff-v1";
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
   var PRODUCTS = {
@@ -194,7 +202,8 @@
    * 店舗名は端末ごとの設定として保存する（クラウド利用時は端末間で揃う）。
    * 見積もりは全端末・全員で共通の1枚（2026-08-24 に担当者ごとの分離をやめた）。
    * 担当者名は見積もり本体（state.staffName）に入れて一緒に保存・同期する。 */
-  var CFG_KEY = INTERNAL ? "ienaka-internal-config-v1" : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
+  var CFG_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-config-v1" : "ienaka-internal-config-v1")
+    : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
   function defaultConfig() { return { storeName: "" }; }
   var config = defaultConfig();
   var oldCfg = null; // 担当者分離時代の設定（見積もりの引き継ぎにだけ使う）
@@ -1092,8 +1101,11 @@
   }
   function storeDoc() {
     /* 社内版はログインを使わないため、決め打ちの置き場と同期する。
-     * ケータイ見積もりの社内版（settings/docomoQuoteStore）とは別のドキュメント。 */
-    if (INTERNAL) return CLOUD.db.collection("settings").doc("ienakaInternalStore");
+     * ケータイ見積もりの社内版（settings/docomoQuoteStore）とは別のドキュメント。
+     * 店舗の札つきは店舗ごとの置き場（settings/ienakaStore_札）。
+     * 新しい札を増やしたら、recipe-box のFirestoreルールにもその置き場を足すこと。 */
+    if (INTERNAL) return CLOUD.db.collection("settings")
+      .doc(STORE_TAG ? "ienakaStore_" + STORE_TAG : "ienakaInternalStore");
     return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
   }
   /* 見積もりは全員共通の1枚。担当者別（quotes/{担当id}）だったころの
