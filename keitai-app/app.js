@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.134.0";
+  var APP_VERSION = "1.135.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -813,10 +813,86 @@
     }, function (v) { if (v) done(v); });
   }
 
+  /* 成約の確認画面。実績に数える項目の一覧を出し、−・＋で件数をその場で
+   * 直せる（数え違い・「これは付けていない」をその場で正せるように）。
+   * done(担当id, 補正) — 補正は {項目キー: ±差分}（直していなければ null）。 */
+  function askWonItems(itemsMap, done) {
+    var dlg = $("resultDlg");
+    if (!dlg) {
+      if (window.confirm("この応対を「成約」として実績に記録します。よろしいですか？")) done(activeStaff().id, null);
+      return;
+    }
+    var keys = Object.keys(itemsMap);
+    var adj = {};
+    $("resultDlgTitle").textContent = "成約として記録";
+    $("resultDlgLead").textContent = keys.length
+      ? "実績に、次の項目を数えます。"
+      : "数える項目はありません（成約1件としてだけ記録されます）。";
+    var wrapI = $("resultDlgItems"), list = $("resultDlgItemList");
+    function rowHtml(k) {
+      var n = itemsMap[k].n + (adj[k] || 0);
+      return '<div class="res-item' + (n === 0 ? " res-zero" : "") + '" data-resk="' + esc(k) + '">'
+        + '<span class="res-name">' + esc(itemsMap[k].name) + "</span>"
+        + '<button type="button" class="adjb" data-res-d="-1" aria-label="1件減らす">−</button>'
+        + '<b class="res-n">' + n + "</b>"
+        + '<button type="button" class="adjb" data-res-d="1" aria-label="1件増やす">＋</button>'
+        + "</div>";
+    }
+    function renderList() { if (list) list.innerHTML = keys.map(rowHtml).join(""); }
+    if (wrapI) { wrapI.hidden = !keys.length; renderList(); }
+    // 決めた担当の選択は、担当が2名以上の店舗だけ（従来どおり）
+    var multi = config.staff.length >= 2;
+    var sw = $("resultDlgStaffWrap"), sel = $("resultDlgStaff");
+    if (sw) sw.hidden = !multi;
+    if (multi && sel) {
+      sel.innerHTML = config.staff.map(function (s2) {
+        return '<option value="' + esc(s2.id) + '">' + esc(s2.name || s2.id) + "</option>";
+      }).join("");
+      sel.value = activeStaff().id;
+      sw.querySelector("label").textContent = "成約を決めた担当";
+    }
+    $("resultDlgOk").textContent = "記録する";
+    dlg.hidden = false;
+    function onList(e) {
+      var b = e.target.closest && e.target.closest("[data-res-d]");
+      if (!b) return;
+      var k = b.closest("[data-resk]").getAttribute("data-resk");
+      var d = parseInt(b.getAttribute("data-res-d"), 10);
+      var next = itemsMap[k].n + (adj[k] || 0) + d;
+      if (next < 0 || next > 99) return;
+      adj[k] = (adj[k] || 0) + d;
+      if (!adj[k]) delete adj[k];
+      renderList();
+    }
+    function close() {
+      dlg.hidden = true;
+      if (wrapI) wrapI.hidden = true;
+      if (sw) sw.hidden = false;   // 担当引き渡しなど、他の用途の表示を戻す
+      if (list) { list.removeEventListener("click", onList); list.innerHTML = ""; }
+      $("resultDlgOk").removeEventListener("click", ok);
+      $("resultDlgCancel").removeEventListener("click", close);
+    }
+    function ok() {
+      var v = multi && sel ? sel.value : activeStaff().id;
+      var a = Object.keys(adj).length ? adj : null;
+      close();
+      done(v, a);
+    }
+    if (list) list.addEventListener("click", onList);
+    $("resultDlgOk").addEventListener("click", ok);
+    $("resultDlgCancel").addEventListener("click", close);
+  }
   function recordOutcome(result) {
+    if (result === "won") {
+      // いま画面の内容がそのまま「成約した内容」になる（recordOutcome2 と同じ元データ）
+      askWonItems(statsDataItems(JSON.parse(JSON.stringify(store)), true), function (byStaff, wonAdj) {
+        recordOutcome2(result, byStaff, wonAdj);
+      });
+      return;
+    }
     askResult(result, function (byStaff) { recordOutcome2(result, byStaff); });
   }
-  function recordOutcome2(result, byStaff) {
+  function recordOutcome2(result, byStaff, wonAdj) {
     var label = result === "won" ? "成約" : "見送り";
     var src = propSrcId ? savedList.filter(function (x) { return x.id === propSrcId; })[0] : null;
     var it;
@@ -843,8 +919,11 @@
     it.upAt = Date.now();
     if (result === "won") {
       it.wonData = JSON.parse(JSON.stringify(store));
+      // 成約の確認画面で −・＋した補正。押し直したときは新しい補正で置き換える
+      if (wonAdj) it.wonAdj = wonAdj; else delete it.wonAdj;
     } else {
       delete it.wonData;
+      delete it.wonAdj;
     }
     delete it.wonPattern;
     persistSaved();
@@ -873,11 +952,15 @@
   function setSavedResult(id, result) {
     var it = savedList.filter(function (x) { return x.id === id; })[0];
     if (!it) return;
-    if (!result) { setSavedResult2(it, result, ""); return; }   // 「提案中」に戻すだけ
-    askResult(result, function (byStaff) { setSavedResult2(it, result, byStaff); });
-  }
-  function setSavedResult2(it, result, byStaff) {
+    if (!result) { setSavedResult2(it, result, "", null, false); return; }   // 「提案中」に戻すだけ
     if (result === "won") {
+      if (it.noQuote) {
+        // 見積もりなしの成約は、チェックした項目がそのまま中身（wonData は使わない）
+        askWonItems(statsSavedItems(it, true, true), function (byStaff, wonAdj) {
+          setSavedResult2(it, "won", byStaff, wonAdj, false);
+        });
+        return;
+      }
       /* いま開いている内容＝店頭で最後に調整した内容。これを成約内容として
        * 記録すれば、保存したときの「最初の提案」と比べられる。 */
       var useCurrent = window.confirm(
@@ -885,17 +968,29 @@
         + "OK：いま画面に開いている見積もりを『成約した内容』として記録します\n"
         + "（保存したときの提案内容と分けて実績に集計されます）\n\n"
         + "キャンセル：保存したときの内容のまま成約にします");
+      var base = useCurrent ? store : it.data;
+      askWonItems(statsDataItems(JSON.parse(JSON.stringify(base)), true), function (byStaff, wonAdj) {
+        setSavedResult2(it, "won", byStaff, wonAdj, useCurrent);
+      });
+      return;
+    }
+    askResult(result, function (byStaff) { setSavedResult2(it, result, byStaff, null, false); });
+  }
+  function setSavedResult2(it, result, byStaff, wonAdj, useCurrent) {
+    if (result === "won") {
       /* 回線1・2・3 は1商談の中の別の番号なので、どれか1つを選ばせない。
        * 使っているパターンぶんがそのまま成約として数えられる。 */
       if (useCurrent) {
         it.wonData = JSON.parse(JSON.stringify(store));
-      } else {
+      } else if (!it.noQuote) {
         delete it.wonData;
       }
+      if (wonAdj) it.wonAdj = wonAdj; else delete it.wonAdj;
       delete it.wonPattern;
     } else {
       delete it.wonData;
       delete it.wonPattern;
+      delete it.wonAdj;
     }
     it.result = result;
     it.resultAt = result ? Date.now() : 0;
@@ -1214,22 +1309,39 @@
     return out;
   }
 
-  // 1件の保存から項目を拾う。wonOnly は「成約した内容」だけ
-  function statsSavedItems(it, wonOnly) {
+  // 1件の保存から項目を拾う。wonOnly は「成約した内容」だけ。
+  // noAdj は成約の確認画面用（−・＋の補正を掛ける前の素の件数を出す）
+  function statsSavedItems(it, wonOnly, noAdj) {
     /* 見積もりなしの成約は、チェックした項目がそのまま成約の中身。
      * 金額をお見せしていないので、提案には数えない。 */
+    var out;
     if (it.noQuote) {
       if (!wonOnly) return {};
       var cat0 = statsCatalog();
-      var outNQ = {};
+      out = {};
       Object.keys(it.noQuoteItems || {}).forEach(function (k) {
-        if (it.noQuoteItems[k]) outNQ[k] = { name: cat0[k] || k, n: 1 };
+        if (it.noQuoteItems[k]) out[k] = { name: cat0[k] || k, n: 1 };
       });
-      return outNQ;
+    } else {
+      if (!wonOnly) return statsDataItems(it.data);
+      // 成約時に記録した内容があればそれを、無ければ保存した内容を使う
+      out = statsDataItems(it.wonData || it.data, true);
     }
-    if (!wonOnly) return statsDataItems(it.data);
-    // 成約時に記録した内容があればそれを、無ければ保存した内容を使う
-    return statsDataItems(it.wonData || it.data, true);
+    /* 成約の確認画面で −・＋した補正を反映する。0件になった項目は数えない */
+    if (!noAdj && it.wonAdj) {
+      var cat1 = null;
+      Object.keys(it.wonAdj).forEach(function (k) {
+        var d = num(it.wonAdj[k]);
+        if (!d) return;
+        if (!out[k]) {
+          cat1 = cat1 || statsCatalog();
+          out[k] = { name: cat1[k] || k, n: 0 };
+        }
+        out[k].n = Math.max(0, out[k].n + d);
+        if (!out[k].n) delete out[k];
+      });
+    }
+    return out;
   }
 
   /* 成約・見送りを決めた担当。入っていない古い保存は、その保存を作った

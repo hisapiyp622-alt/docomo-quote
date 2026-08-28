@@ -1103,6 +1103,11 @@
   <div class="login-box">
     <h2 id="resultDlgTitle">実績に記録</h2>
     <p class="login-lead" id="resultDlgLead"></p>
+    <!-- 成約のとき: 実績に数える項目の一覧。−・＋で件数をその場で直せる -->
+    <div id="resultDlgItems" hidden>
+      <div id="resultDlgItemList"></div>
+      <p class="hint">数が違うときは −・＋で直せます。<b>0にした項目は数えません。</b></p>
+    </div>
     <div class="field" id="resultDlgStaffWrap">
       <label for="resultDlgStaff">成約・見送りを決めた担当</label>
       <select id="resultDlgStaff"></select>

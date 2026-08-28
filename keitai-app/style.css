@@ -802,6 +802,12 @@ h3.stats-sub{font-size:15px;margin:14px 0 0}
   cursor:pointer;font-weight:700
 }
 .adjb:active{background:#eee}
+/* 成約の確認画面: 実績に数える項目の一覧（resultDlg 内） */
+#resultDlgItemList{max-height:40vh;overflow-y:auto;margin:6px 0;border-top:1px solid #eee}
+.res-item{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #eee}
+.res-item.res-zero{opacity:.45}
+.res-item .res-name{flex:1;font-size:13px;line-height:1.3}
+.res-item .res-n{min-width:1.8em;text-align:center;font-size:15px}
 .stats-table td.warn-cell{color:#C62828;font-weight:700}
 .stats-table td.ok-cell{color:#1B7E45;font-weight:700}
 
