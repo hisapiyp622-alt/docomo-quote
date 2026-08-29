@@ -202,6 +202,10 @@
       dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
+      /* 転用（タイプC）のいまの回線設備。hikari=光回線（工事なし）／coax=同軸ケーブル
+       * （光への切り替え工事あり。工事はケーブルテレビ会社が行う・2026-08-29共有）。
+       * typecKoji はその工事料（同社の案内額。わかるときだけ入れる・初期費用に載る） */
+      typecLine: "hikari", typecKoji: null,
       curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング・奪還比較の入口）
       /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
        * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
@@ -403,6 +407,13 @@
     }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
+    }
+    /* 転用（タイプC）で、いまの回線が同軸ケーブルの場合の光切り替え工事料。
+     * 工事はケーブルテレビ会社が行い、金額も同社の案内による（2026-08-29共有）。
+     * 金額がわかっているときだけ入力してもらい、一括の初期費用として載せる。 */
+    if (isHikari() && state.applyType === "kirikae"
+        && (state.typecLine || "hikari") === "coax" && num(state.typecKoji) > 0) {
+      initRows.push({ name: "光切り替え工事料（ケーブルテレビ会社の請求）", amount: num(state.typecKoji) });
     }
     state.extraInitial.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -692,6 +703,14 @@
     $("ieTypecKeepField").hidden = !isC;
     $("ieTypecHint").hidden = !isC;
     if (document.activeElement !== $("ieTypecKeep")) $("ieTypecKeep").value = state.typecKeepAmt || "";
+    // 転用（タイプC）: いまの回線設備で工事の有無が変わる
+    var isKirikae = isC && state.applyType === "kirikae";
+    var coax = (state.typecLine || "hikari") === "coax";
+    $("ieTypecLineField").hidden = !isKirikae;
+    $("ieTypecLine").value = state.typecLine || "hikari";
+    $("ieTypecKojiField").hidden = !(isKirikae && coax);
+    $("ieTypecLineHint").hidden = !(isKirikae && coax);
+    if (document.activeElement !== $("ieTypecKoji")) $("ieTypecKoji").value = state.typecKoji || "";
     $("ieProviderTypeField").hidden = !ptOn;
     // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す
     $("ieVisitWrap").hidden = $("ieProviderField").hidden || state.provider !== "@nifty";
@@ -928,6 +947,8 @@
     });
     $("ieStoreCash").addEventListener("input", function () { state.storeCash = num(this.value); recalc(); });
     $("ieTypecKeep").addEventListener("input", function () { state.typecKeepAmt = num(this.value); recalc(); });
+    $("ieTypecLine").addEventListener("change", function () { state.typecLine = this.value; syncForm(); recalc(); });
+    $("ieTypecKoji").addEventListener("input", function () { state.typecKoji = num(this.value); recalc(); });
     $("ieStorePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
     $("ieDcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
     $("ieDcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
@@ -1097,7 +1118,13 @@
       step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
       step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug", "本日から");
     } else if (PRODUCTS[state.product].typec) {
-      if (state.applyType === "kirikae") {
+      if (state.applyType === "kirikae" && (state.typecLine || "hikari") === "coax") {
+        /* いまが同軸ケーブルの場合は、光への切り替え工事が入る（工事はケーブルテレビ会社） */
+        step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切り替え）", "shop", "本日");
+        step("光への切り替え工事（立ち会いをお願いします）", "いまの同軸ケーブルから光回線へ切り替える工事です。ケーブルテレビ会社が行います（日程・工事料は同社からのご案内をご確認ください）", "tools", "後日");
+        step("ご利用開始", "切り替え前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "工事の当日から");
+        noteTo("ご利用開始", "お電話・テレビはケーブルテレビのご契約のまま続きます（ドコモとケーブルテレビで請求が分かれます）");
+      } else if (state.applyType === "kirikae") {
         step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切替）", "shop", "本日");
         step("回線切替日", "工事や設定変更はありません。いまお使いの機器のままです", "router", "切替日");
         step("ご利用開始", "切替前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "切替日から");
