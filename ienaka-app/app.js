@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.8.3";
+  var APP_VERSION = "2.8.4";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -788,7 +788,9 @@
     if (sg.to == null) return sg.from === 1 ? "毎月" : sg.from + "か月目以降";
     return (sg.from === 1 ? "〜" : sg.from + "〜") + sg.to + "か月目";
   }
-  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "切替" };
+  /* kirikae（内部の値の名前は昔のまま）＝ケーブルテレビのネットからタイプCへの
+   * 乗り換え。表記は「転用（タイプC）」（店舗の指定・2026-08-29。工事なしの扱いは変わらない） */
+  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用（タイプC）" };
   function productLabel() {
     if (state.product === "home5g") return "";
     var parts = [state.housing === "ht" ? "戸建" : "マンション"];
@@ -1006,7 +1008,7 @@
       var o = $("applyType").querySelector('option[value="' + v + '"]');
       if (o) o.hidden = isC;
     });
-    /* 「切替」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
+    /* 「転用（タイプC）」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
     $("applyType").value = state.applyType || "shinki";
     $("typecKeepField").hidden = !isC;
     $("typecHint").hidden = !isC;
