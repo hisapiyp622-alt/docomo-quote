@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.135.0";
+  var APP_VERSION = "1.135.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -823,23 +823,45 @@
       return;
     }
     var keys = Object.keys(itemsMap);
+    /* 見積もりから拾えなかった項目もすべて出せるようにする（0件から＋で足す）。
+     * 一覧が長くなるので、ふだんは畳んでおき「ほかの項目を足す」で開く。 */
+    var catalog = statsCatalog();
+    var extraKeys = Object.keys(catalog).filter(function (k) { return !itemsMap[k]; });
+    var extraOpen = false;
+    var baseOf = {};   // 項目キー → 補正前の件数
+    keys.forEach(function (k) { baseOf[k] = itemsMap[k].n; });
+    extraKeys.forEach(function (k) { baseOf[k] = 0; });
+    var nameOf = {};
+    keys.forEach(function (k) { nameOf[k] = itemsMap[k].name; });
+    extraKeys.forEach(function (k) { nameOf[k] = catalog[k]; });
     var adj = {};
     $("resultDlgTitle").textContent = "成約として記録";
     $("resultDlgLead").textContent = keys.length
       ? "実績に、次の項目を数えます。"
-      : "数える項目はありません（成約1件としてだけ記録されます）。";
+      : "見積もりから拾える項目はありません（「ほかの項目を足す」から足せます）。";
     var wrapI = $("resultDlgItems"), list = $("resultDlgItemList");
     function rowHtml(k) {
-      var n = itemsMap[k].n + (adj[k] || 0);
+      var n = baseOf[k] + (adj[k] || 0);
       return '<div class="res-item' + (n === 0 ? " res-zero" : "") + '" data-resk="' + esc(k) + '">'
-        + '<span class="res-name">' + esc(itemsMap[k].name) + "</span>"
+        + '<span class="res-name">' + esc(nameOf[k]) + "</span>"
         + '<button type="button" class="adjb" data-res-d="-1" aria-label="1件減らす">−</button>'
         + '<b class="res-n">' + n + "</b>"
         + '<button type="button" class="adjb" data-res-d="1" aria-label="1件増やす">＋</button>'
         + "</div>";
     }
-    function renderList() { if (list) list.innerHTML = keys.map(rowHtml).join(""); }
-    if (wrapI) { wrapI.hidden = !keys.length; renderList(); }
+    function renderList() {
+      if (!list) return;
+      var h = keys.map(rowHtml).join("");
+      if (extraOpen) {
+        h += '<p class="hint" style="margin:10px 0 2px"><b>ほかの項目</b>（見積もりに無いものは、＋で足すと実績に数えます）</p>';
+        h += extraKeys.map(rowHtml).join("");
+      } else if (extraKeys.length) {
+        h += '<div class="actions" style="margin-top:8px">'
+          + '<button type="button" class="btn-sub" data-res-more="1">＋ ほかの項目を足す（全項目を表示）</button></div>';
+      }
+      list.innerHTML = h;
+    }
+    if (wrapI) { wrapI.hidden = false; renderList(); }
     // 決めた担当の選択は、担当が2名以上の店舗だけ（従来どおり）
     var multi = config.staff.length >= 2;
     var sw = $("resultDlgStaffWrap"), sel = $("resultDlgStaff");
@@ -854,11 +876,13 @@
     $("resultDlgOk").textContent = "記録する";
     dlg.hidden = false;
     function onList(e) {
+      var more = e.target.closest && e.target.closest("[data-res-more]");
+      if (more) { extraOpen = true; renderList(); return; }
       var b = e.target.closest && e.target.closest("[data-res-d]");
       if (!b) return;
       var k = b.closest("[data-resk]").getAttribute("data-resk");
       var d = parseInt(b.getAttribute("data-res-d"), 10);
-      var next = itemsMap[k].n + (adj[k] || 0) + d;
+      var next = baseOf[k] + (adj[k] || 0) + d;
       if (next < 0 || next > 99) return;
       adj[k] = (adj[k] || 0) + d;
       if (!adj[k]) delete adj[k];
