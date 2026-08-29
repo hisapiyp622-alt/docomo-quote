@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.8.5";
+  var APP_VERSION = "2.9.0";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -191,6 +191,10 @@
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
+      /* 転用（タイプC）のいまの回線設備。hikari=光回線（工事なし）／coax=同軸ケーブル
+       * （光への切り替え工事あり。工事はケーブルテレビ会社が行う・2026-08-29共有）。
+       * typecKoji はその工事料（同社の案内額。わかるときだけ入れる・初期費用に載る） */
+      typecLine: "hikari", typecKoji: null,
       curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング）
       /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
        * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
@@ -452,6 +456,13 @@
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
     }
+    /* 転用（タイプC）で、いまの回線が同軸ケーブルの場合の光切り替え工事料。
+     * 工事はケーブルテレビ会社が行い、金額も同社の案内による（2026-08-29共有）。
+     * 金額がわかっているときだけ入力してもらい、一括の初期費用として載せる。 */
+    if (isHikari() && state.applyType === "kirikae"
+        && (state.typecLine || "hikari") === "coax" && num(state.typecKoji) > 0) {
+      initRows.push({ name: "光切り替え工事料（ケーブルテレビ会社の請求）", amount: num(state.typecKoji) });
+    }
     state.extraInitial.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
       initRows.push({ name: a.name || "追加項目", amount: num(a.amount) });
@@ -551,7 +562,13 @@
       step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
       step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug", "本日から");
     } else if (PRODUCTS[state.product].typec) {
-      if (state.applyType === "kirikae") {
+      if (state.applyType === "kirikae" && (state.typecLine || "hikari") === "coax") {
+        /* いまが同軸ケーブルの場合は、光への切り替え工事が入る（工事はケーブルテレビ会社） */
+        step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切り替え）", "shop", "本日");
+        step("光への切り替え工事（立ち会いをお願いします）", "いまの同軸ケーブルから光回線へ切り替える工事です。ケーブルテレビ会社が行います（日程・工事料は同社からのご案内をご確認ください）", "tools", "後日");
+        step("ご利用開始", "切り替え前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "工事の当日から");
+        noteTo("ご利用開始", "お電話・テレビはケーブルテレビのご契約のまま続きます（ドコモとケーブルテレビで請求が分かれます）");
+      } else if (state.applyType === "kirikae") {
         step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切替）", "shop", "本日");
         step("回線切替日", "工事や設定変更はありません。いまお使いの機器のままです", "router", "切替日");
         step("ご利用開始", "切替前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "切替日から");
@@ -1025,6 +1042,14 @@
     $("typecKeepField").hidden = !isC;
     $("typecHint").hidden = !isC;
     if (document.activeElement !== $("typecKeep")) $("typecKeep").value = state.typecKeepAmt || "";
+    // 転用（タイプC）: いまの回線設備で工事の有無が変わる
+    var isKirikae = isC && state.applyType === "kirikae";
+    var coax = (state.typecLine || "hikari") === "coax";
+    $("typecLineField").hidden = !isKirikae;
+    $("typecLine").value = state.typecLine || "hikari";
+    $("typecKojiField").hidden = !(isKirikae && coax);
+    $("typecLineHint").hidden = !(isKirikae && coax);
+    if (document.activeElement !== $("typecKoji")) $("typecKoji").value = state.typecKoji || "";
     $("providerTypeField").hidden = !ptOn;
     // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す
     $("visitWrap").hidden = $("providerField").hidden || state.provider !== "@nifty";
@@ -1672,7 +1697,13 @@
       r.optKojiRows.forEach(function (x) { h += row("　内訳: " + esc(x.name), yen(x.amount)); });
       if (r.koji > 0) h += row("工事費 実質0円特典", state.kojiFree ? "適用（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）" : "適用なし");
     } else if (isHikari()) {
-      h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
+      if (state.applyType === "kirikae" && (state.typecLine || "hikari") === "coax") {
+        // 同軸ケーブルからの転用（タイプC）は、光への切り替え工事あり（ケーブルテレビ会社の請求）
+        h += row("工事費（光切り替え・ケーブルテレビ会社）", num(state.typecKoji) > 0
+          ? yen(num(state.typecKoji)) : "ケーブルテレビ会社の案内による");
+      } else {
+        h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
+      }
     }
     r.tvRegRows.forEach(function (x) { h += row(esc(x.name), yen(x.amount)); });
     if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
@@ -1817,6 +1848,8 @@
   });
   $("storeCash").addEventListener("input", function () { state.storeCash = num(this.value); recalc(); });
   $("typecKeep").addEventListener("input", function () { state.typecKeepAmt = num(this.value); recalc(); });
+  $("typecLine").addEventListener("change", function () { state.typecLine = this.value; syncForm(); recalc(); });
+  $("typecKoji").addEventListener("input", function () { state.typecKoji = num(this.value); recalc(); });
   $("storePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
   $("setWariTotal").addEventListener("input", function () { state.setWariTotal = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
