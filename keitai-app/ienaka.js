@@ -215,6 +215,9 @@
   function applyDefaults() {
     if (!state) return;
     var p = PRODUCTS[state.product];
+    /* タイプCはマンションタイプの提供がない（提携ケーブルテレビの提供条件）。
+     * 料金を引く前に戸建へ寄せる（マンションのまま引くと金額がずれる） */
+    if (p.typec && state.housing !== "ht") state.housing = "ht";
     if (state.product === "home5g") {
       state.baseMonthly = p.monthly;
       state.kojiFee = 0; state.kojiFree = false;
@@ -585,11 +588,21 @@
   function syncForm() {
     if (!state) return;
     $("ieProduct").value = state.product;
+    /* タイプC: 関西の提携ケーブルテレビはマンションタイプを提供していない
+     * （店舗の共有・2026-08-29）。住居タイプは戸建だけにする。 */
+    var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec);
+    if (isCms && state.housing !== "ht") state.housing = "ht";
+    Array.prototype.forEach.call($("ieHousing").options, function (o) {
+      if (o.value !== "ht") { o.disabled = isCms; o.hidden = isCms; }
+    });
     $("ieHousing").value = state.housing;
     /* 100M の設備を選んだときの案内。月額はマンションと同じ。
      * 10ギガは対応設備が要るので、組み合わせが合っていないことを知らせる。 */
     var hn = $("ieHousingNote");
-    if (state.housing !== "ms100" || state.product === "home5g") {
+    if (isCms) {
+      hn.hidden = false;
+      hn.innerHTML = "タイプCは<strong>マンションタイプの提供がありません</strong>（提携ケーブルテレビの提供条件）。戸建のみです。";
+    } else if (state.housing !== "ms100" || state.product === "home5g") {
       hn.hidden = true;
     } else {
       hn.hidden = false;
