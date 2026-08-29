@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.135.1";
+  var APP_VERSION = "1.135.2";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -534,7 +534,7 @@
 
   /* ---------- 見積もりなしの成約 ----------
    * 故障・操作・問合せなどで来店され、見積もりを作らずに何かが決まったとき、
-   * 成約した項目だけをチェックで残す。応対1件としても数える。 */
+   * 成約した項目を −・＋の件数で残す（2台の機種変更なら2件）。応対1件としても数える。 */
   function openNoQuoteDlg() {
     var dlg = $("nqDlg");
     if (!dlg) return;
@@ -549,16 +549,38 @@
       for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
       return nqOrder.length;
     }
-    iWrap.innerHTML = Object.keys(cat).sort(function (a2, b2) {
+    var nqKeys = Object.keys(cat).sort(function (a2, b2) {
       return (nqRank(a2) - nqRank(b2)) || (cat[a2] < cat[b2] ? -1 : 1);
-    }).map(function (k) {
-      return '<label class="check"><input type="checkbox" data-nqi="' + esc(k) + '"> ' + esc(cat[k]) + "</label>";
-    }).join("");
+    });
+    // 成約の確認画面と同じ −・＋の行。0のままの項目は数えない
+    var counts = {};
+    function nqRow(k) {
+      var n = counts[k] || 0;
+      return '<div class="res-item' + (n === 0 ? " res-zero" : "") + '" data-nqk="' + esc(k) + '">'
+        + '<span class="res-name">' + esc(cat[k]) + "</span>"
+        + '<button type="button" class="adjb" data-nq-d="-1" aria-label="1件減らす">−</button>'
+        + '<b class="res-n">' + n + "</b>"
+        + '<button type="button" class="adjb" data-nq-d="1" aria-label="1件増やす">＋</button>'
+        + "</div>";
+    }
+    function nqRender() { iWrap.innerHTML = nqKeys.map(nqRow).join(""); }
+    nqRender();
+    function onItems(e) {
+      var b = e.target.closest && e.target.closest("[data-nq-d]");
+      if (!b) return;
+      var k = b.closest("[data-nqk]").getAttribute("data-nqk");
+      var next = (counts[k] || 0) + parseInt(b.getAttribute("data-nq-d"), 10);
+      if (next < 0 || next > 99) return;
+      if (next) counts[k] = next; else delete counts[k];
+      nqRender();
+    }
+    iWrap.addEventListener("click", onItems);
     err.hidden = true;
     dlg.hidden = false;
 
     function close() {
       dlg.hidden = true;
+      iWrap.removeEventListener("click", onItems);
       $("nqGo").removeEventListener("click", go);
       $("nqCancel").removeEventListener("click", close);
     }
@@ -567,11 +589,10 @@
       Array.prototype.forEach.call(vWrap.querySelectorAll("[data-nqv]"), function (c) {
         if (c.checked) vis[c.getAttribute("data-nqv")] = true;
       });
-      Array.prototype.forEach.call(iWrap.querySelectorAll("[data-nqi]"), function (c) {
-        if (c.checked) { its[c.getAttribute("data-nqi")] = true; nItems++; }
-      });
+      // 件数をそのまま持つ（以前の保存の true は「1件」として読む）
+      Object.keys(counts).forEach(function (k) { its[k] = counts[k]; nItems++; });
       if (!nItems) {
-        err.textContent = "成約した項目を1つ以上選んでください。";
+        err.textContent = "成約した項目に、＋で件数を入れてください。";
         err.hidden = false;
         return;
       }
@@ -1344,7 +1365,10 @@
       var cat0 = statsCatalog();
       out = {};
       Object.keys(it.noQuoteItems || {}).forEach(function (k) {
-        if (it.noQuoteItems[k]) out[k] = { name: cat0[k] || k, n: 1 };
+        var v = it.noQuoteItems[k];
+        // 以前の保存はチェック式（true）＝1件。いまは −・＋の件数がそのまま入る
+        var n = v === true ? 1 : Math.max(0, num(v));
+        if (n) out[k] = { name: cat0[k] || k, n: n };
       });
     } else {
       if (!wonOnly) return statsDataItems(it.data);
