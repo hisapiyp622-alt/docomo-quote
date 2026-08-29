@@ -427,7 +427,9 @@
     if (sg.to == null) return sg.from === 1 ? "毎月" : sg.from + "か月目以降";
     return (sg.from === 1 ? "〜" : sg.from + "〜") + sg.to + "か月目";
   }
-  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "切替" };
+  /* kirikae（内部の値の名前は昔のまま）＝ケーブルテレビのネットからタイプCへの
+   * 乗り換え。表記は「転用（タイプC）」（店舗の指定・2026-08-29。工事なしの扱いは変わらない） */
+  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用（タイプC）" };
   function productLabel() {
     if (state.product === "home5g") return "";
     var parts = [HOUSING_LABEL[state.housing] || "戸建"];
@@ -660,7 +662,7 @@
     if (hOpt) hOpt.hidden = !typecOk;
     var zOpt = $("ieCurLine") && $("ieCurLine").querySelector('option[value="ztv"]');
     if (zOpt) zOpt.hidden = !typecOk;
-    /* タイプC: 申込種別は「新規／切替」だけ。他の商材では「切替」を出さない。
+    /* タイプC: 申込種別は「新規／転用（タイプC）」（内部値 kirikae）だけ。他の商材では出さない。
      * ケーブルテレビ設備なのでフレッツ転用・事業者変更は当たらないため。 */
     var isC = !!PRODUCTS[state.product].typec;
     if (isC && (state.applyType === "tenyo" || state.applyType === "jigyosha")) state.applyType = "kirikae";
@@ -669,7 +671,7 @@
       var o = $("ieApplyType").querySelector('option[value="' + v + '"]');
       if (o) o.hidden = isC;
     });
-    /* 「切替」は常に出す（機能スイッチが切の店舗を除く）。タイプC以外で
+    /* 「転用（タイプC）」は常に出す（機能スイッチが切の店舗を除く）。タイプC以外で
      * 選んだら、商材を自動でタイプCへ切り替える（受け取り側で処理）。 */
     var kOptF = $("ieApplyType").querySelector('option[value="kirikae"]');
     if (kOptF) kOptF.hidden = !typecOk;
@@ -846,7 +848,7 @@
       var prevDef = dpointDefaultFor(state.product, state.applyType);
       var wasC = !!PRODUCTS[state.product].typec;
       state.product = this.value;
-      /* タイプCを選んだ直後は「切替」を既定にする（主な使いどころが
+      /* タイプCを選んだ直後は「転用（タイプC）」を既定にする（主な使いどころが
        * ケーブルテレビのネットからの切替のため）。逆に出たら新規へ戻す。 */
       var nowC = !!PRODUCTS[state.product].typec;
       if (nowC && !wasC) state.applyType = "kirikae";
@@ -896,7 +898,7 @@
     $("ieApplyType").addEventListener("change", function () {
       var prevDef = dpointDefaultFor(state.product, state.applyType);
       state.applyType = this.value;
-      /* ケーブルテレビからの「切替」を選んだら、商材も自動でタイプCにする。
+      /* 「転用（タイプC）」を選んだら、商材も自動でタイプCにする。
        * 切替はケーブルテレビ設備（タイプC）でしか起きないため。 */
       if (this.value === "kirikae" && !PRODUCTS[state.product].typec) {
         state.product = "hikaric";
