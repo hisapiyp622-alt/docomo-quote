@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.8.4";
+  var APP_VERSION = "2.8.5";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -264,6 +264,9 @@
   /* 商材・住居・タイプ変更時に標準料金をセット */
   function applyDefaults() {
     var p = PRODUCTS[state.product];
+    /* タイプCはマンションタイプの提供がない（提携ケーブルテレビの提供条件）。
+     * 料金を引く前に戸建へ寄せる（マンションのまま引くと金額がずれる） */
+    if (p.typec && state.housing !== "ht") state.housing = "ht";
     if (state.product === "home5g") {
       state.baseMonthly = p.monthly;
       state.kojiFee = 0; state.kojiFree = false;
@@ -989,6 +992,15 @@
 
   function syncForm() {
     $("product").value = state.product;
+    /* タイプC: 関西の提携ケーブルテレビはマンションタイプを提供していない
+     * （店舗の共有・2026-08-29）。住居タイプは戸建だけにする。 */
+    var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec);
+    if (isCms && state.housing !== "ht") state.housing = "ht";
+    Array.prototype.forEach.call($("housing").options, function (o) {
+      if (o.value !== "ht") { o.disabled = isCms; o.hidden = isCms; }
+    });
+    var hNote = $("housingNote");
+    if (hNote) hNote.hidden = !isCms;
     $("housing").value = state.housing;
     $("ptype").value = state.ptype;
     $("baseMonthly").value = state.baseMonthly || "";
