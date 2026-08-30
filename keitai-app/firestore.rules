@@ -39,17 +39,66 @@ service cloud.firestore {
             && (!('trialEndsAt' in contractData())
                 || request.time < contractData().trialEndsAt));
     }
+    /* 上位アカウント（代理店・エリア）。roles/{アカウントUID} に販売側が
+     * コンソールから { type: "agency"|"area", org: "札", area: "札" } を書くと、
+     * そのアカウントは「契約の器（contracts）の org（エリアは area も）が一致する
+     * 店舗」だけを読み書きできます。所属の札は contracts にあり、contracts は
+     * アプリから書き込めないため、店舗が自分の所属を書き換えて他店を覗くことは
+     * できません。roles が無い普通の店舗アカウントには何も起きません。 */
+    function roleData() {
+      return get(/databases/$(database)/documents/roles/$(request.auth.uid)).data;
+    }
+    function hasRole() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid));
+    }
+    function storeContract(storeId) {
+      return get(/databases/$(database)/documents/contracts/$(storeId)).data;
+    }
+    function roleCanSee(storeId) {
+      return hasRole()
+        && exists(/databases/$(database)/documents/contracts/$(storeId))
+        && ('org' in storeContract(storeId))
+        && storeContract(storeId).org == roleData().org
+        && (roleData().type == 'agency'
+            || (('area' in storeContract(storeId))
+                && storeContract(storeId).area == roleData().area));
+    }
+    /* 上位アカウントの書き込みは、見ている店舗の契約が有効なときだけ。
+     * contractOk() は「書き込む本人（＝上位アカウント自身）」の契約しか見ないため、
+     * それだけだと停止・お試し切れの店舗へも上位経由で書けてしまう。
+     * 読み取りは従来どおり（停止店舗も読める＝データは消えない）。 */
+    function storeContractOk(storeId) {
+      return storeContract(storeId).status == 'active'
+        || (storeContract(storeId).status == 'trial'
+            && (!('trialEndsAt' in storeContract(storeId))
+                || request.time < storeContract(storeId).trialEndsAt));
+    }
+    function roleCanWrite(storeId) {
+      return roleCanSee(storeId) && storeContractOk(storeId);
+    }
+
+    // roles/{アカウントUID}: 上位アカウントの役割。本人が読めるだけ（書き込みは販売側のコンソール操作のみ）
+    match /roles/{accountId} {
+      allow read: if (request.auth != null && request.auth.uid == accountId) || isDev();
+      allow write: if false;
+    }
 
     // contracts/{店舗のUID}: 契約状態。店舗は自分のぶんを読めるだけ（書き込みは販売側のコンソール操作のみ）
+    // 上位アカウントは、所属の札（org／area）が一致する店舗のぶんを読める（店舗一覧づくりに使う）
     match /contracts/{storeId} {
-      allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+      allow read: if (request.auth != null && request.auth.uid == storeId) || isDev()
+        || (hasRole()
+            && ('org' in resource.data) && resource.data.org == roleData().org
+            && (roleData().type == 'agency'
+                || (('area' in resource.data) && resource.data.area == roleData().area)));
       allow write: if false;
     }
 
     // stores/{店舗のUID}: 店舗情報＋料金マスタ
     match /stores/{storeId} {
-      allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
-      allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
+      allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
+      allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
         && contractOk()
         && sizeOk()
         && request.resource.data.keys().hasOnly(
@@ -58,36 +107,36 @@ service cloud.firestore {
 
       // quotes/{担当者ID}: 作業中の見積もり
       match /quotes/{staffId} {
-        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['data', 'clientId', 'updatedAtMs', 'updatedAt']);
       }
       // saved/{担当者ID}: 保存した見積もり（del は削除の記録）
       match /saved/{staffId} {
-        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['list', 'del', 'clientId', 'updatedAtMs', 'updatedAt']);
       }
       // templates/{担当者ID}: テンプレート（_store は店舗共通テンプレート）
       match /templates/{staffId} {
-        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev())
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['list', 'clientId', 'updatedAtMs', 'updatedAt']);
       }
       // history/{履歴ID}: 料金マスタの履歴
       match /history/{histId} {
-        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev()) && contractOk() && sizeOk();
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId)) && contractOk() && sizeOk();
       }
       // 上記以外のサブコレクションは作らせない
       match /{other}/{doc} {
-        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev();
+        allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
         allow write: if false;
       }
     }

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.136.0";
+  var APP_VERSION = "1.137.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4018,6 +4018,8 @@
    * Firebaseを設定していない場合は、ログイン画面を出さずに端末内保存のみで動作する。 */
   var CLOUD = {
     enabled: false, user: null, db: null, auth: null,
+    role: null,         // 上位アカウント（代理店・エリア）の役割。roles/{uid} から読む
+    roleFetched: false, // 役割を確かめ終えたか（店舗は該当なしのまま進む）
     suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
     quoteSynced: false, // クラウドの見積もりを一度受け取るまで、この端末からは送らない
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
@@ -4057,6 +4059,18 @@
   function isDevUser() {
     return !!(CLOUD.user && devUid() && CLOUD.user.uid === devUid());
   }
+  /* 上位アカウント（代理店・エリア）。roles/{uid} に販売側がコンソールで
+   * { type: "agency"（代理店・全店）|"area"（エリア）, org: "札", area: "札" } を
+   * 書いたアカウントは、担当範囲の店舗を選んで、その店舗として表示・編集できる。
+   * 店舗のログイン・使い勝手には影響しない（設計は内部資料 LOGIN_HIERARCHY.md）。 */
+  function isRoleUser() {
+    return !!CLOUD.role;
+  }
+  function roleDoc() {
+    return CLOUD.db.collection("roles").doc(CLOUD.user.uid);
+  }
+  // 「このUIDは上位アカウントだと確認できた」端末内の控え（通信できない起動時の安全弁）
+  var ROLE_HINT_KEY = NS + "-was-role-uid";
   /* 保守モードで店舗を選んで、その店舗のデータを見ている状態か。
    * この状態では、担当者コードとマスタ設定のパスワードの関門を通さない。
    * 開発者は店舗の担当者コードやマスタのパスワードを知らないため、
@@ -4065,9 +4079,15 @@
   function devActing() {
     return isDevUser() && !!CLOUD.actAsUid;
   }
-  // いま「どの店舗のデータ」を見ているか（保守モードで店舗を選んだときだけ変わる）
+  /* 保守（開発者）または上位アカウントで、店舗を選んで見ている状態。
+   * どちらも店舗の担当者コード・マスタ設定のパスワードを知らない立場で、
+   * 本人確認はそのアカウントのログインで済んでいるため、関門を通さない。 */
+  function superActing() {
+    return (isDevUser() || isRoleUser()) && !!CLOUD.actAsUid;
+  }
+  // いま「どの店舗のデータ」を見ているか（保守モード・上位アカウントで店舗を選んだときだけ変わる）
   function effectiveUid() {
-    return (isDevUser() && CLOUD.actAsUid) ? CLOUD.actAsUid : (CLOUD.user && CLOUD.user.uid);
+    return ((isDevUser() || isRoleUser()) && CLOUD.actAsUid) ? CLOUD.actAsUid : (CLOUD.user && CLOUD.user.uid);
   }
   function storeDoc() {
     // 社内版はログインを使わないため、決め打ちの置き場（従来と同じ）と同期する
@@ -4497,6 +4517,7 @@
       renderStoreConfig();
       syncFormFromState();
       recalc();
+      renderDevBar(); // 店舗名が届いたら、保守・上位アカウントのバーもID表示から店名に描き直す
     } finally { CLOUD.suppress = false; }
     /* 担当が本当に消えたときだけ選び直してもらう。
      * マスタ設定を開いている最中や、ログイン画面を出している最中は割り込まない。 */
@@ -4632,8 +4653,8 @@
     renderStaffGateNotice();
     // コードを設定していない担当者は、名前を押して入れるようにする
     // （一部の担当者だけコードを付けた場合に、他の担当者が入れなくなるのを防ぐ）
-    // 保守モードはコードを知らないため、全担当を名前で選べるようにする
-    var free = devActing() ? config.staff
+    // 保守モード・上位アカウントはコードを知らないため、全担当を名前で選べるようにする
+    var free = superActing() ? config.staff
       : config.staff.filter(function (s) { return String(s.code || "").trim() === ""; });
     var wrap = $("staffFreeWrap");
     if (wrap) {
@@ -4797,6 +4818,7 @@
       renderMasterTab();
       syncFormFromState();
       recalc();
+      renderDevBar(); // 店舗名が届いたら、保守・上位アカウントのバーもID表示から店名に描き直す
     } finally { CLOUD.suppress = false; }
   }
 
@@ -4828,6 +4850,7 @@
       if (list) list.innerHTML = h || '<p class="hint">店舗がまだありません。</p>';
       Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
         b.addEventListener("click", function () {
+          detachActingStore(); // 前に見ていた店舗への購読・送信を止めてから切り替える
           CLOUD.actAsUid = b.getAttribute("data-dev-uid");
           ov.remove();
           onSignedIn(CLOUD.user); // 選んだ店舗として通常の流れをやり直す
@@ -4838,22 +4861,131 @@
       if (list) list.innerHTML = '<p class="hint">一覧を読めませんでした。firestore.rules に保守用UIDの例外（DEV_UID_HERE の置き換え）が入っているか確認してください。<br>' + esc(String(err)) + "</p>";
     });
   }
-  /* 保守モード中の上部バー（どの店舗を見ているか常に分かるように） */
+  /* 保守・上位アカウントが「見る店舗」を替えるときの片付け。
+   * 前の店舗への購読（見積もり・保存・テンプレ・店舗情報）と、送信待ちの
+   * タイマーをすべて止める。残したままだと、前の店舗の内容が次の店舗や
+   * 上位アカウント自身の領域（stores/{上位UID}）へ書き込まれてしまう。 */
+  function detachActingStore() {
+    ["unsubStore", "unsubQuote", "unsubSaved", "unsubTpl", "unsubTplStore"].forEach(function (k) {
+      if (CLOUD[k]) { try { CLOUD[k](); } catch (eD) {} CLOUD[k] = null; }
+    });
+    CLOUD.watchingStaffId = null;
+    CLOUD.watchingSavedId = null;
+    CLOUD.watchingTplId = null;
+    ["cfgTimer", "quoteTimer", "masterTimer", "savedTimer", "tplTimer", "tplStoreTimer"].forEach(function (k) {
+      if (CLOUD[k]) { clearTimeout(CLOUD[k]); CLOUD[k] = null; }
+    });
+    CLOUD.quoteSynced = false; // 次の店舗の見積もりを受け取るまで、この端末からは送らない
+  }
+  /* 上位アカウント（代理店・エリア）の店舗選択。
+   * 契約の器（contracts）を所属の札（org・エリアは area も）で絞って一覧にし、
+   * 店舗名は stores から1件ずつ補う（ルール上、担当範囲の店舗しか読めない）。 */
+  function roleScopeName() {
+    var role = CLOUD.role || {};
+    return role.type === "agency" ? esc(role.org || "") + "・全店" : "エリア: " + esc(role.area || "");
+  }
+  function showRolePicker() {
+    var old = document.getElementById("devPicker");
+    if (old) old.remove();
+    var role = CLOUD.role || {};
+    var ov = document.createElement("div");
+    ov.id = "devPicker";
+    ov.className = "login-overlay no-print";
+    ov.innerHTML = '<div class="login-box"><h2>店舗を選択（' + roleScopeName() + '）</h2>'
+      + '<p class="hint">選んだ店舗の実績・マスタを表示・編集できます。店舗側の操作には影響しません。</p>'
+      + '<div id="devPickList"><p class="hint">読み込み中…</p></div>'
+      + '<div class="actions"><button class="btn-sub" id="devPickLogout" type="button">ログアウト</button></div></div>';
+    document.body.appendChild(ov);
+    document.getElementById("devPickLogout").addEventListener("click", function () {
+      CLOUD.auth.signOut();
+      ov.remove();
+    });
+    var q = CLOUD.db.collection("contracts").where("org", "==", String(role.org || ""));
+    if (role.type !== "agency") q = q.where("area", "==", String(role.area || ""));
+    q.get().then(function (qs) {
+      var ids = [];
+      qs.forEach(function (doc) { ids.push(doc.id); });
+      if (!ids.length) {
+        var l0 = document.getElementById("devPickList");
+        if (l0) l0.innerHTML = '<p class="hint">担当範囲の店舗がまだ登録されていません。販売元へご連絡ください。</p>';
+        return;
+      }
+      // 店舗名を stores から補う（読めなかった店舗はIDのまま出す）
+      Promise.all(ids.map(function (id) {
+        return CLOUD.db.collection("stores").doc(id).get().then(function (s) {
+          var d = s.exists ? (s.data() || {}) : {};
+          return { id: id, name: d.storeName || "" };
+        }, function () { return { id: id, name: "" }; });
+      })).then(function (list) {
+        var h = "";
+        list.forEach(function (st2) {
+          h += '<button class="btn-sub dev-pick" data-dev-uid="' + esc(st2.id) + '" type="button" style="display:block;width:100%;text-align:left;margin-bottom:6px">'
+            + "<b>" + esc(st2.name || "（店舗名未設定）") + "</b><br>"
+            + '<span style="font-size:11px;color:#888">' + esc(st2.id) + "</span></button>";
+        });
+        var l1 = document.getElementById("devPickList");
+        if (l1) l1.innerHTML = h;
+        Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
+          b.addEventListener("click", function () {
+            detachActingStore(); // 前に見ていた店舗への購読・送信を止めてから切り替える
+            CLOUD.actAsUid = b.getAttribute("data-dev-uid");
+            ov.remove();
+            onSignedIn(CLOUD.user); // 選んだ店舗として通常の流れをやり直す
+          });
+        });
+      });
+    }, function (err) {
+      var l2 = document.getElementById("devPickList");
+      if (l2) l2.innerHTML = '<p class="hint">一覧を読めませんでした。新しい firestore.rules（roles・org/area 対応版）が公開されているかご確認ください。<br>' + esc(String(err)) + "</p>";
+    });
+  }
+  /* 上位アカウントの役割（roles）を読めなかったときの案内。
+   * 「前回まで上位アカウントだった」ことが分かっているのに店舗として動かすと、
+   * 端末の内容を消してしまうため、ここで止めて再試行してもらう。 */
+  function showRoleRetry(err) {
+    var old = document.getElementById("devPicker");
+    if (old) old.remove();
+    var ov = document.createElement("div");
+    ov.id = "devPicker";
+    ov.className = "login-overlay no-print";
+    ov.innerHTML = '<div class="login-box"><h2>役割を確認できません</h2>'
+      + '<p class="hint">通信の状態を確認して「再試行」を押してください。上位アカウントの登録が外れた場合は、販売元へご連絡ください。<br>'
+      + esc(String((err && err.message) || err || "")) + "</p>"
+      + '<div class="actions"><button class="btn-sub" id="rolePickLogout" type="button">ログアウト</button>'
+      + '<button class="btn-main" id="roleRetryBtn" type="button">再試行</button></div></div>';
+    document.body.appendChild(ov);
+    document.getElementById("rolePickLogout").addEventListener("click", function () {
+      CLOUD.auth.signOut();
+      ov.remove();
+    });
+    document.getElementById("roleRetryBtn").addEventListener("click", function () {
+      ov.remove();
+      onSignedIn(CLOUD.user);
+    });
+  }
+  /* 保守モード・上位アカウント中の上部バー（どの店舗を見ているか常に分かるように）。
+   * 保守（開発者）は赤、上位アカウント（代理店・エリア）は青で区別する。 */
   function renderDevBar() {
     var bar = document.getElementById("devBar");
-    if (!(isDevUser() && CLOUD.actAsUid)) { if (bar) bar.remove(); return; }
+    if (!superActing()) { if (bar) bar.remove(); return; }
     if (!bar) {
       bar = document.createElement("div");
       bar.id = "devBar";
       bar.className = "no-print";
-      bar.style.cssText = "position:sticky;top:0;z-index:60;background:#B33;color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center";
       document.body.insertBefore(bar, document.body.firstChild);
     }
-    bar.innerHTML = '<span>保守モード：<b>' + esc((MASTER && MASTER.storeName) || $("storeNameInput") && $("storeNameInput").value || CLOUD.actAsUid) + "</b> のデータを表示中</span>"
+    bar.style.cssText = "position:sticky;top:0;z-index:60;color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center;background:"
+      + (isDevUser() ? "#B33" : "#1565C0");
+    var name = esc((MASTER && MASTER.storeName) || $("storeNameInput") && $("storeNameInput").value || CLOUD.actAsUid);
+    bar.innerHTML = (isDevUser()
+        ? "<span>保守モード：<b>" + name + "</b> のデータを表示中</span>"
+        : "<span><b>" + name + "</b> を表示中（" + roleScopeName() + "）</span>")
       + '<button class="btn-sub" id="devSwitchStore" type="button" style="margin-left:auto">店舗を切り替える</button>';
     document.getElementById("devSwitchStore").addEventListener("click", function () {
+      detachActingStore(); // 前の店舗への購読・送信待ちを止める
       CLOUD.actAsUid = null;
-      showDevPicker();
+      renderDevBar();      // バーを消す（残っているとピッカーの上に被さる）
+      if (isDevUser()) showDevPicker(); else showRolePicker();
     });
   }
   function onSignedIn(user) {
@@ -4862,6 +4994,47 @@
       // 保守モード: まず「どの店舗を見るか」を選んでもらう
       showLogin(false);
       showDevPicker();
+      return;
+    }
+    /* 上位アカウント（代理店・エリア）かどうかを、ログイン後に1回だけ確かめる。
+     * 普通の店舗は roles に載っていない（読めない）ので、そのまま店舗として続く。
+     * 新しいルールが未公開の環境では読み取りが権限エラーになるが、
+     * その場合も店舗として続行するので何も壊れない。 */
+    if (!isDevUser() && !CLOUD.roleFetched) {
+      showLogin(false);
+      syncStatus("確認中…", "");
+      roleDoc().get().then(function (snap) {
+        CLOUD.roleFetched = true;
+        var d = snap.exists ? (snap.data() || null) : null;
+        CLOUD.role = (d && d.type && d.org) ? d : null;
+        /* 「このUIDは上位アカウント」の控え。通信できない起動時に、上位アカウントを
+         * 誤って店舗として動かして端末の内容を消してしまわないための安全弁 */
+        try {
+          if (CLOUD.role) localStorage.setItem(ROLE_HINT_KEY, user.uid);
+          else if (localStorage.getItem(ROLE_HINT_KEY) === user.uid) localStorage.removeItem(ROLE_HINT_KEY);
+        } catch (eRH) {}
+        onSignedIn(user);
+      }, function (err) {
+        /* 読めない理由は2通り: 権限（普通の店舗・旧ルール）と通信できない。
+         * 前回まで上位アカウントだったと分かっているときは、店舗として続行しない
+         * （店舗として動くと switchStoreIfNeeded が端末の内容を消してしまう） */
+        var wasRole = false;
+        try { wasRole = localStorage.getItem(ROLE_HINT_KEY) === user.uid; } catch (eRH2) {}
+        if (wasRole) {
+          CLOUD.roleFetched = false; // 再試行でもう一度読み直す
+          showRoleRetry(err);
+          return;
+        }
+        CLOUD.roleFetched = true;
+        CLOUD.role = null;
+        onSignedIn(user);
+      });
+      return;
+    }
+    if (isRoleUser() && !CLOUD.actAsUid) {
+      // 上位アカウント: 担当範囲の店舗を選んでもらう
+      showLogin(false);
+      showRolePicker();
       return;
     }
     rememberStoreId(String(user.email || "").replace(/@.*$/, ""));
@@ -4887,6 +5060,8 @@
   function onSignedOut() {
     CLOUD.user = null;
     CLOUD.actAsUid = null;
+    CLOUD.role = null;
+    CLOUD.roleFetched = false;
     renderDevBar();
     masterUnlocked = false;
     statsUnlocked = false;
@@ -5019,9 +5194,9 @@
     // 社内版にはログインが無いので、自動ログアウトも掛けない
     armIdle(!INTERNAL && (lockEnabled() || cloudOn()));
     if (takeHandoffFromIenaka()) { bootDone(); return; }
-    /* 保守モード: 担当者コードは聞かずにそのまま中へ入る
-     * （開発者は店舗のコードを知らない。誰の担当画面かは赤い保守バーで分かる） */
-    if (devActing()) { enterStaff(activeStaff()); bootDone(); return; }
+    /* 保守モード・上位アカウント: 担当者コードは聞かずにそのまま中へ入る
+     * （店舗のコードを知らない立場。どの店舗を見ているかは上部バーで分かる） */
+    if (superActing()) { enterStaff(activeStaff()); bootDone(); return; }
     // まだ一度も設定していない店舗は、先に初期設定を出す
     if (wizNeeded()) { wizShow(true); bootDone(); return; }
     if (anyStaffCode()) showStaffGate(true);
@@ -8861,9 +9036,9 @@
   }
   function masterGateAdminMode() { return adminLockEnabled() && !masterGateFallback; }
   function masterGateOn() {
-    // 保守モードは関門を掛けない（開発者は店舗のパスワードを知らないため。
+    // 保守モード・上位アカウントは関門を掛けない（店舗のパスワードを知らないため。
     // 実績の全担当表示も同じ判定を使っているので、あわせて見られるようになる）
-    if (devActing()) return false;
+    if (superActing()) return false;
     // 社内版はログインが無いため、クラウド同期中でも関門は掛けない（従来どおり）
     return !masterUnlocked && (adminLockEnabled() || lockEnabled() || (cloudOn() && !INTERNAL));
   }
