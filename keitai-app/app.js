@@ -4069,6 +4069,8 @@
   function roleDoc() {
     return CLOUD.db.collection("roles").doc(CLOUD.user.uid);
   }
+  // 「このUIDは上位アカウントだと確認できた」端末内の控え（通信できない起動時の安全弁）
+  var ROLE_HINT_KEY = NS + "-was-role-uid";
   /* 保守モードで店舗を選んで、その店舗のデータを見ている状態か。
    * この状態では、担当者コードとマスタ設定のパスワードの関門を通さない。
    * 開発者は店舗の担当者コードやマスタのパスワードを知らないため、
@@ -4848,6 +4850,7 @@
       if (list) list.innerHTML = h || '<p class="hint">店舗がまだありません。</p>';
       Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
         b.addEventListener("click", function () {
+          detachActingStore(); // 前に見ていた店舗への購読・送信を止めてから切り替える
           CLOUD.actAsUid = b.getAttribute("data-dev-uid");
           ov.remove();
           onSignedIn(CLOUD.user); // 選んだ店舗として通常の流れをやり直す
@@ -4857,6 +4860,22 @@
       var list = document.getElementById("devPickList");
       if (list) list.innerHTML = '<p class="hint">一覧を読めませんでした。firestore.rules に保守用UIDの例外（DEV_UID_HERE の置き換え）が入っているか確認してください。<br>' + esc(String(err)) + "</p>";
     });
+  }
+  /* 保守・上位アカウントが「見る店舗」を替えるときの片付け。
+   * 前の店舗への購読（見積もり・保存・テンプレ・店舗情報）と、送信待ちの
+   * タイマーをすべて止める。残したままだと、前の店舗の内容が次の店舗や
+   * 上位アカウント自身の領域（stores/{上位UID}）へ書き込まれてしまう。 */
+  function detachActingStore() {
+    ["unsubStore", "unsubQuote", "unsubSaved", "unsubTpl", "unsubTplStore"].forEach(function (k) {
+      if (CLOUD[k]) { try { CLOUD[k](); } catch (eD) {} CLOUD[k] = null; }
+    });
+    CLOUD.watchingStaffId = null;
+    CLOUD.watchingSavedId = null;
+    CLOUD.watchingTplId = null;
+    ["cfgTimer", "quoteTimer", "masterTimer", "savedTimer", "tplTimer", "tplStoreTimer"].forEach(function (k) {
+      if (CLOUD[k]) { clearTimeout(CLOUD[k]); CLOUD[k] = null; }
+    });
+    CLOUD.quoteSynced = false; // 次の店舗の見積もりを受け取るまで、この端末からは送らない
   }
   /* 上位アカウント（代理店・エリア）の店舗選択。
    * 契約の器（contracts）を所属の札（org・エリアは area も）で絞って一覧にし、
@@ -4908,6 +4927,7 @@
         if (l1) l1.innerHTML = h;
         Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
           b.addEventListener("click", function () {
+            detachActingStore(); // 前に見ていた店舗への購読・送信を止めてから切り替える
             CLOUD.actAsUid = b.getAttribute("data-dev-uid");
             ov.remove();
             onSignedIn(CLOUD.user); // 選んだ店舗として通常の流れをやり直す
@@ -4917,6 +4937,30 @@
     }, function (err) {
       var l2 = document.getElementById("devPickList");
       if (l2) l2.innerHTML = '<p class="hint">一覧を読めませんでした。新しい firestore.rules（roles・org/area 対応版）が公開されているかご確認ください。<br>' + esc(String(err)) + "</p>";
+    });
+  }
+  /* 上位アカウントの役割（roles）を読めなかったときの案内。
+   * 「前回まで上位アカウントだった」ことが分かっているのに店舗として動かすと、
+   * 端末の内容を消してしまうため、ここで止めて再試行してもらう。 */
+  function showRoleRetry(err) {
+    var old = document.getElementById("devPicker");
+    if (old) old.remove();
+    var ov = document.createElement("div");
+    ov.id = "devPicker";
+    ov.className = "login-overlay no-print";
+    ov.innerHTML = '<div class="login-box"><h2>役割を確認できません</h2>'
+      + '<p class="hint">通信の状態を確認して「再試行」を押してください。上位アカウントの登録が外れた場合は、販売元へご連絡ください。<br>'
+      + esc(String((err && err.message) || err || "")) + "</p>"
+      + '<div class="actions"><button class="btn-sub" id="rolePickLogout" type="button">ログアウト</button>'
+      + '<button class="btn-main" id="roleRetryBtn" type="button">再試行</button></div></div>';
+    document.body.appendChild(ov);
+    document.getElementById("rolePickLogout").addEventListener("click", function () {
+      CLOUD.auth.signOut();
+      ov.remove();
+    });
+    document.getElementById("roleRetryBtn").addEventListener("click", function () {
+      ov.remove();
+      onSignedIn(CLOUD.user);
     });
   }
   /* 保守モード・上位アカウント中の上部バー（どの店舗を見ているか常に分かるように）。
@@ -4938,7 +4982,9 @@
         : "<span><b>" + name + "</b> を表示中（" + roleScopeName() + "）</span>")
       + '<button class="btn-sub" id="devSwitchStore" type="button" style="margin-left:auto">店舗を切り替える</button>';
     document.getElementById("devSwitchStore").addEventListener("click", function () {
+      detachActingStore(); // 前の店舗への購読・送信待ちを止める
       CLOUD.actAsUid = null;
+      renderDevBar();      // バーを消す（残っているとピッカーの上に被さる）
       if (isDevUser()) showDevPicker(); else showRolePicker();
     });
   }
@@ -4961,8 +5007,24 @@
         CLOUD.roleFetched = true;
         var d = snap.exists ? (snap.data() || null) : null;
         CLOUD.role = (d && d.type && d.org) ? d : null;
+        /* 「このUIDは上位アカウント」の控え。通信できない起動時に、上位アカウントを
+         * 誤って店舗として動かして端末の内容を消してしまわないための安全弁 */
+        try {
+          if (CLOUD.role) localStorage.setItem(ROLE_HINT_KEY, user.uid);
+          else if (localStorage.getItem(ROLE_HINT_KEY) === user.uid) localStorage.removeItem(ROLE_HINT_KEY);
+        } catch (eRH) {}
         onSignedIn(user);
-      }, function () {
+      }, function (err) {
+        /* 読めない理由は2通り: 権限（普通の店舗・旧ルール）と通信できない。
+         * 前回まで上位アカウントだったと分かっているときは、店舗として続行しない
+         * （店舗として動くと switchStoreIfNeeded が端末の内容を消してしまう） */
+        var wasRole = false;
+        try { wasRole = localStorage.getItem(ROLE_HINT_KEY) === user.uid; } catch (eRH2) {}
+        if (wasRole) {
+          CLOUD.roleFetched = false; // 再試行でもう一度読み直す
+          showRoleRetry(err);
+          return;
+        }
         CLOUD.roleFetched = true;
         CLOUD.role = null;
         onSignedIn(user);

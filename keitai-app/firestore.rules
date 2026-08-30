@@ -64,6 +64,19 @@ service cloud.firestore {
             || (('area' in storeContract(storeId))
                 && storeContract(storeId).area == roleData().area));
     }
+    /* 上位アカウントの書き込みは、見ている店舗の契約が有効なときだけ。
+     * contractOk() は「書き込む本人（＝上位アカウント自身）」の契約しか見ないため、
+     * それだけだと停止・お試し切れの店舗へも上位経由で書けてしまう。
+     * 読み取りは従来どおり（停止店舗も読める＝データは消えない）。 */
+    function storeContractOk(storeId) {
+      return storeContract(storeId).status == 'active'
+        || (storeContract(storeId).status == 'trial'
+            && (!('trialEndsAt' in storeContract(storeId))
+                || request.time < storeContract(storeId).trialEndsAt));
+    }
+    function roleCanWrite(storeId) {
+      return roleCanSee(storeId) && storeContractOk(storeId);
+    }
 
     // roles/{アカウントUID}: 上位アカウントの役割。本人が読めるだけ（書き込みは販売側のコンソール操作のみ）
     match /roles/{accountId} {
@@ -85,7 +98,7 @@ service cloud.firestore {
     // stores/{店舗のUID}: 店舗情報＋料金マスタ
     match /stores/{storeId} {
       allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
-      allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId))
+      allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
         && contractOk()
         && sizeOk()
         && request.resource.data.keys().hasOnly(
@@ -95,7 +108,7 @@ service cloud.firestore {
       // quotes/{担当者ID}: 作業中の見積もり
       match /quotes/{staffId} {
         allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId))
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['data', 'clientId', 'updatedAtMs', 'updatedAt']);
@@ -103,7 +116,7 @@ service cloud.firestore {
       // saved/{担当者ID}: 保存した見積もり（del は削除の記録）
       match /saved/{staffId} {
         allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId))
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['list', 'del', 'clientId', 'updatedAtMs', 'updatedAt']);
@@ -111,7 +124,7 @@ service cloud.firestore {
       // templates/{担当者ID}: テンプレート（_store は店舗共通テンプレート）
       match /templates/{staffId} {
         allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId))
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
           && request.resource.data.keys().hasOnly(['list', 'clientId', 'updatedAtMs', 'updatedAt']);
@@ -119,7 +132,7 @@ service cloud.firestore {
       // history/{履歴ID}: 料金マスタの履歴
       match /history/{histId} {
         allow read: if (request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId);
-        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanSee(storeId)) && contractOk() && sizeOk();
+        allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId)) && contractOk() && sizeOk();
       }
       // 上記以外のサブコレクションは作らせない
       match /{other}/{doc} {
