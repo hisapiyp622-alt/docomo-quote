@@ -1,5 +1,5 @@
 /* シンプルなオフラインキャッシュ（ネット優先・失敗時キャッシュ） */
-var CACHE = "kq-v257";
+var CACHE = "kq-v258";
 var ASSETS = ["./", "index.html", "style.css", "app.js", "changelog.js",
   "data.js", "qr.js", "ienaka.js", "firebase-config.js",
   "manifest.webmanifest", "icon.svg",

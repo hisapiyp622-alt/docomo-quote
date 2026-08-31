@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.137.0";
+  var APP_VERSION = "1.138.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -65,7 +65,7 @@
    * この一覧にも id を足す。 */
   var INTEGRITY_IDS = ["planId", "voiceTiles", "optionList", "accTileList",
     "feeItemList", "pointApply", "dCardSub", "mnpBenefitWrap", "summaryBar",
-    "masterBody", "helpPop"];
+    "masterBody", "helpPop", "mailTile"];
   var INTEGRITY_KEY = NS + "-integrity-reload";
   var integrityMissing = INTEGRITY_IDS.filter(function (id) {
     return !document.getElementById(id);
@@ -6567,19 +6567,32 @@
   }
   function renderMailOpt() {
     var mo = mailOptDef();
-    var sel = $("mailOpt");
     var paid = !!mo && mailPaidPlan();
     var field = $("mailField");
     if (field) field.hidden = !paid;
     $("mailHint").hidden = !paid;
     /* 標準込みのプランへ切り替えたら、残っていた有料メールの選択は外す。
      * 隠れたまま月額に乗り続けるのを防ぐ（続くrecalcで金額にも反映される）。 */
-    if (!paid && mo && state.options[mo.id]) delete state.options[mo.id];
+    if (!paid && mo && (state.options[mo.id] || state.optionKubun[mo.id])) {
+      state.options[mo.id] = false;
+      delete state.optionKubun[mo.id];
+    }
     if (!paid) return;
-    sel.disabled = false;
-    sel.value = state.options[mo.id] ? "yes" : "no";
-    sel.options[1].textContent = "有り（" + yen(mo.price) + "/月）";
-    $("mailHint").textContent = "このプランはドコモメールが有料オプションです（" + yen(mo.price) + "/月）。ご希望をご確認ください。";
+    // ④のオプションタイルと同じ形: タップで選び、タイルの中で新規／継続／廃止を選ぶ
+    var on = !!state.options[mo.id];
+    var kb = state.optionKubun[mo.id] || (on ? "new" : "");
+    var isOff = kb === "off";
+    var kubunHtml = (on || isOff)
+      ? '<span class="t-kubun">'
+        + [["new", "新規"], ["keep", "継続"], ["off", "廃止"]].map(function (k) {
+            return '<label class="kb' + (kb === k[0] ? " on" : "") + '">'
+              + '<input type="checkbox" data-mailkubun="' + esc(mo.id) + '" value="' + k[0] + '"'
+              + (kb === k[0] ? " checked" : "") + "> " + k[1] + "</label>";
+          }).join("") + "</span>"
+      : "";
+    var priceHtml = '<span class="t-price">' + yen(optPrice(mo, state)) + "/月</span>";
+    $("mailTile").innerHTML = tileHtml("data-mail", mo.id, mo.name, on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
+    $("mailHint").textContent = "このプランはドコモメールが有料オプションです（" + yen(mo.price) + "/月）。タイルを押して選び、中の新規／継続／廃止で区分を選べます（廃止は月額に入れません）。";
   }
   function tileHtml(attr, id, name, on, priceHtml, extraClass) {
     return '<div class="tile' + (on ? " on" : "") + (extraClass ? " " + extraClass : "")
@@ -7787,12 +7800,16 @@
      * state.options に入っている。ここを state.mailOpt（どこにも入らない値）で
      * 見ていたため、付けても必ず「無し」になっていた（1.89.3〜1.107.1）。 */
     var mailDefSheet = mailOptDef();
-    var mailOnSheet = !!(mailDefSheet && state.options[mailDefSheet.id]);
+    var mailKbSheet = mailDefSheet
+      ? (state.optionKubun[mailDefSheet.id] || (state.options[mailDefSheet.id] ? "new" : ""))
+      : "";
     h += row("ドコモメール", !mailPaidPlan()
       ? "プランに標準で込み"
-      : mailOnSheet
-        ? "有り　" + yen(optPrice(mailDefSheet, state)) + "/月"
-        : "無し");
+      : mailKbSheet === "off"
+        ? '<b style="color:var(--red)">廃止</b>'
+        : mailKbSheet
+          ? (mailKbSheet === "keep" ? "継続" : "<b>新規</b>") + "　" + yen(optPrice(mailDefSheet, state)) + "/月"
+          : "無し");
     h += "</tbody></table>";
 
     var secContract = h; h = "";
@@ -11216,9 +11233,37 @@
       var t = e.target.closest && e.target.closest("[data-voice]");
       if (t) { e.preventDefault(); pickVoiceTile(t); }
     });
-    $("mailOpt").addEventListener("change", function () {
+    /* ②のドコモメールのタイル。タップで対象／対象外を切り替え、
+     * タイルの中の新規／継続／廃止で区分を選ぶ（④のオプションタイルと同じ動き） */
+    function toggleMailTile(e) {
+      if (e.target.closest(".t-kubun")) return; // 区分の操作ではタイルの選択を変えない
+      var tile = e.target.closest("[data-mail]");
+      if (!tile) return;
       var mo = mailOptDef();
-      if (mo) { state.options[mo.id] = this.value === "yes"; }
+      if (!mo) return;
+      if (state.options[mo.id] || state.optionKubun[mo.id] === "off") {
+        state.options[mo.id] = false;
+        delete state.optionKubun[mo.id];
+      } else {
+        state.options[mo.id] = true;
+        state.optionKubun[mo.id] = "new";
+      }
+      renderMailOpt();
+      recalc();
+    }
+    $("mailTile").addEventListener("click", toggleMailTile);
+    $("mailTile").addEventListener("keydown", function (e) {
+      if (e.key !== " " && e.key !== "Enter") return;
+      if (e.target.classList && e.target.classList.contains("tile")) { e.preventDefault(); toggleMailTile(e); }
+    });
+    $("mailTile").addEventListener("change", function (e) {
+      var kid = e.target.getAttribute("data-mailkubun");
+      if (!kid) return;
+      if (e.target.checked) {
+        state.optionKubun[kid] = e.target.value;
+        state.options[kid] = e.target.value !== "off"; // 廃止は月額に含めない
+      }
+      renderMailOpt(); // チェックを外した場合は元の区分に戻す
       recalc();
     });
 
@@ -12136,7 +12181,7 @@
     purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします（複数可）。金額には影響しません。\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
     proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
     c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
-    c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: mini・ahamo・irumo など<b>メールが有料オプションのプランを選んだときだけ</b>選択欄が出ます。「有り」にすると月額に入ります。標準で込みのプラン（MAX等）では欄ごと出ません" },
+    c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: mini・ahamo・irumo など<b>メールが有料オプションのプランを選んだときだけ</b>タイルが出ます。タップで選び、タイルの中で新規／継続／廃止を選びます。新規・継続は月額に入り、廃止は入りません。標準で込みのプラン（MAX等）ではタイルごと出ません" },
     c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: 券種は頭文字で選びます（R=dカード／G=GOLD／U=GOLD U／P=PLATINUM）。券種で⑧のdカード還元の自動計算も変わります\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・子育てサポート割引: みんなドコモ割とは重ねられません（重なったときは計算に入れません）。子育てサポート割引とも同時適用できず、片方を選ぶともう片方は外れます\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
     c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定タブで変えられます（タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },
