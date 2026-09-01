@@ -3,8 +3,12 @@
 """ドコモ新着ウォッチ（フロントーク料金ウォッチ）
 毎日の定期実行（Routine）が使う。手で試すときは python3 tools/docomo-watch.py。
 カーソルの保存・取得は tools/docomo-watch-sync.sh pull / push で（ブランチ docomo-watch-state）。
-RSSフィード2本を読み、前回カーソル（docomo-watch-state.json）より新しい記事を出す。
-料金に関係しそうなキーワードに掛かる記事は HIT として印を付ける。
+ドコモ公式のRSSフィード8本（通信障害専用の network を除く全部）を読み、
+前回カーソル（docomo-watch-state.json）より新しい記事を出す。
+料金に関係しそうなキーワードに掛かる記事と、タイトルに「重要」を含む記事は
+HIT として印を付ける。
+（2026-09-01 教訓: 「お知らせ」だけに載った重要な料金改定を、フィード2本
+　だけの監視で見落とした。以後、カテゴリの取りこぼしをしない。）
 - 引数なし: 読み取りのみ（stateは書き換えない）
 - --write : 新しいカーソルを docomo-watch-state.json に書き込む
 判断・修正・PR作成はこのスクリプトの外（Routineのセッション）で行う。
@@ -14,8 +18,14 @@ import json, re, sys, os, urllib.request
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(BASE, "docomo-watch-state.json")
 FEEDS = {
-    "whatsnew":     "https://www.docomo.ne.jp/info/rss/whatsnew.rdf",
-    "news_release": "https://www.docomo.ne.jp/info/rss/news_release.rdf",
+    "whatsnew":     "https://www.docomo.ne.jp/info/rss/whatsnew.rdf",      # 新着情報
+    "news_release": "https://www.docomo.ne.jp/info/rss/news_release.rdf",  # 報道発表
+    "notice":       "https://www.docomo.ne.jp/info/rss/notice.rdf",        # お知らせ（【重要】の料金改定はここに載る）
+    "charge":       "https://www.docomo.ne.jp/info/rss/charge.rdf",        # 料金・割引（2024年から更新停止中だが復活に備えて監視）
+    "service":      "https://www.docomo.ne.jp/info/rss/service.rdf",       # サービス・機能
+    "support":      "https://www.docomo.ne.jp/info/rss/support.rdf",       # お客様サポート（手続き・手数料の変更が載りうる）
+    "product":      "https://www.docomo.ne.jp/info/rss/product.rdf",       # 製品
+    "other":        "https://www.docomo.ne.jp/info/rss/other.rdf",         # その他
 }
 # 拾うキーワード（RSS_WATCH.md と揃える）
 KEYWORDS = [
@@ -25,7 +35,8 @@ KEYWORDS = [
     "爆アゲ", "ポイ活", "dカード", "dポイント", "あんしん", "補償",
     "eximo", "irumo", "ahamo", "ドコモ MAX", "ドコモMAX", "ドコモ mini", "ドコモmini",
     "ギガホ", "ギガライト", "U15", "U22", "はじめてスマホ", "キッズケータイ",
-    "データプラス", "いつでもカエドキ", "事務手数料", "頭金",
+    "データプラス", "いつでもカエドキ", "事務手数料", "手数料", "頭金",
+    "年会費", "進呈", "解約金", "違約金", "月額",
     "ドコモ光", "home 5G", "ドコモでんき", "ドコモガス",
 ]
 # タイトルにこれが入っていたら機械的に除外（機種のソフトウェア更新などの定型ノイズ）
@@ -81,7 +92,8 @@ def main():
             title = i["title"]
             if any(x in title for x in EXCLUDE):
                 continue
-            hit = any(k in title for k in KEYWORDS)
+            # 「重要」と銘打たれた記事は、キーワードに関わらず必ずHITにする
+            hit = ("重要" in title) or any(k in title for k in KEYWORDS)
             new_items.append({"feed": name, "date": i["date"], "hit": hit, "title": title, "link": i["link"]})
     new_items.sort(key=lambda x: x["date"])
     for i in new_items:
