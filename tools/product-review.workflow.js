@@ -1,12 +1,11 @@
 export const meta = {
   name: 'frontalk-product-review',
-  description: 'フロントーク製品化レビュー: 13の観点で欠点を洗い出し、反証で確定し、優先順位付きの改善計画を日本語でまとめる',
+  description: 'フロントーク製品化レビュー: 13の観点で欠点を洗い出し、5人でまとめて反証し、優先順位付きの改善計画を日本語でまとめる（合計25人）',
   whenToUse: '製品化・大規模展開の前に、アプリ・運用・契約・保守の弱点を網羅的に洗い直すとき',
   phases: [
     { title: '理解', detail: '6人の読み手が担当領域の地図を作る' },
     { title: '発見', detail: '13の観点ごとに欠点・改善点を挙げる' },
-    { title: '反証', detail: '1件ごとに別々の視点で反証し、生き残ったものだけ確定' },
-    { title: '補完', detail: '見落とした観点を洗い出して追加で探す' },
+    { title: '反証', detail: '近い観点を束ねた5人が、指摘をまとめて検証して確定' },
     { title: '統合', detail: '優先順位付きの改善計画を日本語のレポートに' },
   ],
 }
@@ -75,26 +74,18 @@ const FINDINGS_SCHEMA = {
   },
   required: ['findings', 'coverage_note'],
 }
-const VERDICT_SCHEMA = {
+const BATCH_VERDICT_SCHEMA = {
   type: 'object',
   properties: {
-    refuted: { type: 'boolean' },
-    reason: { type: 'string' },
-    severity: { type: 'string', enum: ['致命', '重大', '中', '軽'], description: '検証後に妥当と思う重さ' },
+    verdicts: { type: 'array', items: { type: 'object', properties: {
+      id: { type: 'integer' },
+      refuted: { type: 'boolean' },
+      reason: { type: 'string', description: '短く。事実誤認／すでに対策済み／製品として困らない、のどれか＋根拠' },
+      severity: { type: 'string', enum: ['致命', '重大', '中', '軽'], description: '検証後に妥当と思う重さ' },
+    }, required: ['id', 'refuted', 'reason', 'severity'] } },
   },
-  required: ['refuted', 'reason', 'severity'],
+  required: ['verdicts'],
 }
-const CRITIC_SCHEMA = {
-  type: 'object',
-  properties: {
-    missing_angles: { type: 'array', items: { type: 'object', properties: {
-      name: { type: 'string' }, prompt: { type: 'string', description: 'その観点で探すための具体的な指示（日本語）' } },
-      required: ['name', 'prompt'] } },
-    unverified_claims: { type: 'array', items: { type: 'string' } },
-  },
-  required: ['missing_angles', 'unverified_claims'],
-}
-
 /* ───────── 共通の前置き ───────── */
 const PREAMBLE = `あなたはフロントーク（ドコモショップ向けの料金見積もりアプリ・PWA）の製品化レビューの担当です。
 リポジトリ: ${ROOT}（keitai-app=ケータイ見積もり本体, ienaka-app=イエナカ単体版, dakkan-app=別製品（今回は対象外）, tools=ビルド・監視, tests=自動テスト, keitai-app/*.md=約款類, HANDOVER*.md=引き継ぎ, CLAUDE.md=開発の決まり）。
@@ -150,66 +141,37 @@ ${mapText}
 - 確信の持てない指摘は confidence を下げて正直に書く（あとで別の担当が反証する）
 - 一般論・想像・「〜かもしれない」だけの指摘は書かない`
 
-const LENSES = {
-  fact: (f) => `${PREAMBLE}
-
-【役割: 反証フェーズ／視点「事実確認」】
-次の指摘が事実として正しいか、該当箇所のコード・文書を実際に読んで確かめてください。存在しない挙動・読み違い・古い情報なら refuted=true。
-迷ったら refuted=true（確信が持てない指摘は残さない）。
-
-指摘: ${f.title}
-場所: ${f.file}${f.line ? ':' + f.line : ''}
-根拠: ${f.evidence}
-影響: ${f.impact}`,
-  product: (f) => `${PREAMBLE}
-
-【役割: 反証フェーズ／視点「製品化の観点で本当に問題か」】
-次の指摘は、ドコモショップで店員が毎日使い、代理店が複数店舗に売る製品として、実際に困ることか。
-「理屈上の懸念」「起きる確率が極めて低い」「店舗運用で自然に吸収される」なら refuted=true。困るなら refuted=false とし、重さを付け直す。
-
-指摘: ${f.title}
-場所: ${f.file}${f.line ? ':' + f.line : ''}
-根拠: ${f.evidence}
-影響: ${f.impact}
-改善案: ${f.fix}`,
-  handled: (f) => `${PREAMBLE}
-
-【役割: 反証フェーズ／視点「すでに対策済み・意図的な設計ではないか」】
-次の指摘が、別の場所ですでに対策されている、CLAUDE.md や HANDOVER.md・changelog.js・内部資料で意図的な設計として説明されている、または既知の課題の言い換えに過ぎないなら refuted=true。
-未対策・未記載なら refuted=false。
-
-指摘: ${f.title}
-場所: ${f.file}${f.line ? ':' + f.line : ''}
-根拠: ${f.evidence}`,
-}
-
+/* ───────── まとめ検証（人数を抑える）─────────
+ * 観点ごとに1人ではなく、近い観点を束ねて1人が担当し、その束の指摘を
+ * 全件まとめて検証する。1件ずつ別担当を立てる方式（数百人）はやめた。 */
+const GROUPS = [
+  { name: '安全とデータ', dims: ['セキュリティ・権限', 'データ保全・同期'] },
+  { name: '金額と改定', dims: ['金額計算の正しさ', 'ドコモ改定への追従'] },
+  { name: '店頭と製品', dims: ['店頭の使い勝手・業務適合', '製品としての完成度・差別化', '性能・端末互換・アクセシビリティ'] },
+  { name: '展開と運用', dims: ['多店舗・多代理店への展開', '信頼性・更新の配信', '保守性・引き継ぎ可能性'] },
+  { name: '契約と販売', dims: ['法務・契約・個人情報', '販売・導入・サポートの運用', '既知の課題の再検証'] },
+]
 const key = (f) => ((f.file || '') + '|' + (f.title || '').replace(/[\s　、。・「」（）()]/g, '').slice(0, 24))
 
-async function verifyAll(findings, phaseName) {
-  /* 人数を抑えつつ厳しさは保つ:
-   *   致命・重大 → 事実確認＋対策済みか の2人。両方が残して確定
-   *   中・軽     → 事実確認 1人。棄却なら落とす
-   *   軽で自信の低いもの（confidence < 0.5）は反証前に落とす（人数の節約） */
-  // 軽は反証せず「未検証（参考）」としてレポートに回す（利用枠の節約。呼び出し側で扱う）
-  const targets = findings.filter((f) => f.severity !== '軽')
-  return await parallel(targets.map((f) => async () => {
-    const heavy = f.severity === '致命' || f.severity === '重大'
-    const lenses = heavy ? ['fact', 'handled'] : ['fact']
-    const votes = (await parallel(lenses.map((l) => () =>
-      agent(LENSES[l](f), { label: `反証:${l}:${f.title.slice(0, 18)}`, phase: phaseName, schema: VERDICT_SCHEMA, effort: heavy ? 'medium' : 'low' })
-    ))).filter(Boolean)
-    if (!votes.length) return null
-    const survives = votes.every((v) => !v.refuted)
-    const order = ['致命', '重大', '中', '軽']
-    // 反証担当が付け直した重さのうち、最も軽いものを採用（甘くしない）
-    const idx = votes.map((v) => order.indexOf(v.severity)).filter((i) => i >= 0)
-    const finalSev = order[Math.max(...idx, order.indexOf(f.severity))] || f.severity
-    return { ...f, severity: finalSev, survives, votes: votes.map((v) => ({ refuted: v.refuted, reason: v.reason })) }
-  }))
-}
+const batchVerifyPrompt = (g, items) => `${PREAMBLE}
+
+【役割: 反証フェーズ／担当の束「${g.name}」】
+次の指摘を1件ずつ、該当箇所のコード・文書を実際に読んで検証してください。判定は3つの目で行います:
+  (1) 事実か（存在しない挙動・読み違い・古い情報なら refuted）
+  (2) すでに対策済み・意図的な設計として CLAUDE.md／HANDOVER.md／changelog.js／内部資料に説明があるなら refuted
+  (3) ドコモショップで毎日使い、代理店が複数店舗に売る製品として、実際に困るか（理屈だけ・極めて稀・運用で吸収できるなら refuted）
+迷ったら refuted=true（確信の持てない指摘は残さない）。残す場合は重さを付け直す（甘くしない）。
+必ず全件について verdicts を返すこと（id を対応させる）。
+
+指摘一覧:
+${items.map((f) => `#${f.id} [${f.severity}] ${f.title}
+  場所: ${f.file}${f.line ? ':' + f.line : ''}
+  根拠: ${f.evidence}
+  影響: ${f.impact}
+  改善案: ${f.fix}`).join('\n\n')}`
 
 /* ───────── 実行 ───────── */
-log(`製品化レビュー開始（${DATE}）。理解 6 → 発見 ${DIMENSIONS.length} → 反証 → 補完 → 統合`)
+log(`製品化レビュー開始（${DATE}）。理解 6 → 発見 ${DIMENSIONS.length} → まとめて反証 5 → 統合 1（計 25 人）`)
 
 phase('理解')
 const maps = (await parallel(AREAS.map((a) => () =>
@@ -219,54 +181,40 @@ const mapText = maps.map((m) => `■ ${m.area}\n${m.summary}\n気になった点
 log(`理解フェーズ完了: ${maps.length}/${AREAS.length} 領域`)
 
 phase('発見')
+const found = (await parallel(DIMENSIONS.map((d) => () =>
+  agent(findPrompt(d, mapText), { label: `発見:${d.name}`, phase: '発見', schema: FINDINGS_SCHEMA })
+))).filter(Boolean)
+const coverageNotes = found.map((r) => r.coverage_note)
 const seen = new Set()
+let id = 0
+const all = found.flatMap((r) => r.findings).filter((f) => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
+  .map((f) => ({ ...f, id: ++id }))
+const unverified = all.filter((f) => f.severity === '軽')   // 軽は反証を省略して「未検証・参考」
+const targets = all.filter((f) => f.severity !== '軽')
+log(`発見: ${all.length} 件（重複除去後）。うち致命・重大・中 ${targets.length} 件を5人でまとめて検証、軽 ${unverified.length} 件は未検証扱い`)
+
+phase('反証')
 const confirmed = []
 const rejected = []
-const unverified = []   // 軽（反証を省略したもの）
-let coverageNotes = []
-
-async function findAndVerify(dims, phaseFind, phaseVerify) {
-  const found = (await parallel(dims.map((d) => () =>
-    agent(findPrompt(d, mapText), { label: `発見:${d.name}`, phase: phaseFind, schema: FINDINGS_SCHEMA })
-  ))).filter(Boolean)
-  coverageNotes.push(...found.map((r, i) => `${dims[i] ? dims[i].name : '?'}: ${r.coverage_note}`))
-  const all = found.flatMap((r) => r.findings)
-  const fresh = all.filter((f) => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
-  const light = fresh.filter((f) => f.severity === '軽')
-  unverified.push(...light)
-  log(`${phaseFind}: ${all.length} 件（重複除去後 ${fresh.length} 件、うち軽 ${light.length} 件は未検証扱い）→ 反証へ`)
-  const verified = (await verifyAll(fresh, phaseVerify)).filter(Boolean)
-  const ok = verified.filter((v) => v.survives)
-  confirmed.push(...ok)
-  rejected.push(...verified.filter((v) => !v.survives))
-  log(`${phaseVerify}: ${ok.length} 件確定 / ${verified.length - ok.length} 件棄却`)
-  return ok.length
-}
-
-await findAndVerify(DIMENSIONS, '発見', '反証')
-
-phase('補完')
-let round = 0
-while (round < 1) {
-  round++
-  const critic = await agent(`${PREAMBLE}
-
-【役割: 補完フェーズ／完全性の批評】
-ここまでに確定した指摘の一覧です:
-${confirmed.map((f) => `- [${f.severity}] ${f.title}（${f.file}）`).join('\n')}
-
-各観点の担当が「読めなかった・見られなかった」と申告した内容:
-${coverageNotes.join('\n')}
-
-問い: 製品化レビューとして、まだ探していない観点・読まれていないファイル・検証されていない主張は何か。
-最大6つの「追加で探すべき観点」を、具体的な調査指示（どのファイルの何を、どういう目でみるか）付きで挙げてください。もう十分なら空配列でよい。`,
-    { label: `補完:批評 第${round}回`, phase: '補完', schema: CRITIC_SCHEMA })
-  if (!critic || !critic.missing_angles.length) { log(`補完 第${round}回: 追加観点なし`); break }
-  log(`補完 第${round}回: 追加観点 ${critic.missing_angles.length} 件`)
-  const extra = critic.missing_angles.slice(0, 4).map((m, i) => ({ key: `extra${round}_${i}`, name: m.name, prompt: m.prompt }))
-  const added = await findAndVerify(extra, '補完', '補完')
-  if (!added) { log(`補完 第${round}回: 新たな確定なし → 打ち切り`); break }
-}
+await parallel(GROUPS.map((g) => async () => {
+  const items = targets.filter((f) => g.dims.indexOf(f.dimension) >= 0)
+  const rest = targets.filter((f) => !GROUPS.some((h) => h.dims.indexOf(f.dimension) >= 0))
+  const mine = g === GROUPS[GROUPS.length - 1] ? items.concat(rest) : items   // 観点名が合わないものは最後の束へ
+  if (!mine.length) return
+  const r = await agent(batchVerifyPrompt(g, mine), { label: `反証:${g.name}（${mine.length}件）`, phase: '反証', schema: BATCH_VERDICT_SCHEMA, effort: 'high' })
+  if (!r) return
+  const byId = {}
+  r.verdicts.forEach((v) => { byId[v.id] = v })
+  const order = ['致命', '重大', '中', '軽']
+  mine.forEach((f) => {
+    const v = byId[f.id]
+    if (!v) { rejected.push({ ...f, votes: [{ refuted: true, reason: '判定が返らなかった（未検証のため落とす）' }] }); return }
+    const sev = order[Math.max(order.indexOf(v.severity), order.indexOf(f.severity))] || f.severity
+    const out = { ...f, severity: sev, votes: [{ refuted: v.refuted, reason: v.reason }] }
+    if (v.refuted) rejected.push(out); else confirmed.push(out)
+  })
+  log(`反証:${g.name}: ${mine.length} 件中 ${mine.filter((f) => byId[f.id] && !byId[f.id].refuted).length} 件確定`)
+}))
 
 phase('統合')
 const order = ['致命', '重大', '中', '軽']
