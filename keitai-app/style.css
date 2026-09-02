@@ -771,7 +771,8 @@ body.sorting .sort-chip{cursor:grabbing}
    お客様にお見せする紙なので、印刷では下線を消して普通の文字にする。 */
 .svc-link{
   font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;
-  border-bottom:1px dotted #9AA3AA;cursor:pointer;text-align:inherit
+  border-bottom:1px dotted #9AA3AA;cursor:pointer;text-align:inherit;
+  text-decoration:none                     /* リンクにしたときも文字の見た目を揃える */
 }
 .svc-link:hover,.svc-link:focus{color:var(--blue,#0B62B5);border-bottom-color:currentColor}
 .svc-box{max-width:420px}
