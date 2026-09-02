@@ -186,19 +186,25 @@ const LENSES = {
 const key = (f) => ((f.file || '') + '|' + (f.title || '').replace(/[\s　、。・「」（）()]/g, '').slice(0, 24))
 
 async function verifyAll(findings, phaseName) {
-  return await parallel(findings.map((f) => async () => {
+  /* 人数を抑えつつ厳しさは保つ:
+   *   致命・重大 → 事実確認＋対策済みか の2人。両方が残して確定
+   *   中・軽     → 事実確認 1人。棄却なら落とす
+   *   軽で自信の低いもの（confidence < 0.5）は反証前に落とす（人数の節約） */
+  const dropped = findings.filter((f) => f.severity === '軽' && (f.confidence || 0) < 0.5)
+  if (dropped.length) log(`${phaseName}: 軽・自信の低い ${dropped.length} 件は反証せず除外`)
+  const targets = findings.filter((f) => !(f.severity === '軽' && (f.confidence || 0) < 0.5))
+  return await parallel(targets.map((f) => async () => {
     const heavy = f.severity === '致命' || f.severity === '重大'
-    const lenses = heavy ? ['fact', 'product', 'handled'] : ['fact', 'handled']
+    const lenses = heavy ? ['fact', 'handled'] : ['fact']
     const votes = (await parallel(lenses.map((l) => () =>
-      agent(LENSES[l](f), { label: `反証:${l}:${f.title.slice(0, 18)}`, phase: phaseName, schema: VERDICT_SCHEMA })
+      agent(LENSES[l](f), { label: `反証:${l}:${f.title.slice(0, 18)}`, phase: phaseName, schema: VERDICT_SCHEMA, effort: heavy ? 'medium' : 'low' })
     ))).filter(Boolean)
     if (!votes.length) return null
-    const alive = votes.filter((v) => !v.refuted).length
-    const survives = heavy ? alive >= 2 : alive === votes.length
-    const sev = votes.map((v) => v.severity)
+    const survives = votes.every((v) => !v.refuted)
     const order = ['致命', '重大', '中', '軽']
     // 反証担当が付け直した重さのうち、最も軽いものを採用（甘くしない）
-    const finalSev = order[Math.max(...sev.map((s) => order.indexOf(s)).filter((i) => i >= 0), order.indexOf(f.severity))] || f.severity
+    const idx = votes.map((v) => order.indexOf(v.severity)).filter((i) => i >= 0)
+    const finalSev = order[Math.max(...idx, order.indexOf(f.severity))] || f.severity
     return { ...f, severity: finalSev, survives, votes: votes.map((v) => ({ refuted: v.refuted, reason: v.reason })) }
   }))
 }
