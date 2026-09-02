@@ -1037,7 +1037,7 @@
   <form class="login-box" id="staffForm">
     <h2>担当者コード</h2>
     <p class="login-lead"><span id="staffGateLead">ご自身の担当者コードを入力してください。</span><br>
-      <span class="login-note">入力すると、新しいお客様の見積もりとして最初から始まります。作りかけの内容は「保存」タブに残しておけます。</span></p>
+      <span class="login-note">入ったあと、新しいお客様の見積もりとして始まります。作りかけの見積もりが残っているときは「続きから開く」を選べます。</span></p>
     <p class="login-err" id="staffErr" hidden></p>
     <p class="staff-note" id="staffUpdateNote" hidden></p>
     <div id="staffCodeWrap">
@@ -1128,6 +1128,20 @@
       <button class="btn-sub" id="resultDlgCancel" type="button">キャンセル</button>
       <button class="btn-main" id="resultDlgOk" type="button">記録する</button>
     </div>
+  </div>
+</div>
+
+<!-- 担当者コードで入り直したとき、作りかけの見積もりが残っていれば出す
+     （黙って消さない。「新しいお客様」を選んでも「保存」タブに自動控えとして残る） -->
+<div class="login-overlay no-print" id="resumeDlg" hidden>
+  <div class="login-box">
+    <h2>作りかけの見積もりがあります</h2>
+    <p class="login-lead" id="resumeDlgLead"></p>
+    <div class="row-btns">
+      <button class="btn-sub" id="resumeDlgNew" type="button">新しいお客様として始める</button>
+      <button class="btn-main" id="resumeDlgCont" type="button">続きから開く</button>
+    </div>
+    <p class="login-lead"><span class="login-note">「新しいお客様として始める」を選んでも、いまの内容は「保存」タブに「自動控え」として残ります（3件まで）。</span></p>
   </div>
 </div>
 
