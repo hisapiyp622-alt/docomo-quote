@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.141.0";
+  var APP_VERSION = "1.142.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -497,6 +497,7 @@
   var quickSaveTimer = null;
   // いま開いている3パターン一式を保存する
   function saveQuote(name) {
+    if (viewOnlyStop()) return null;
     var r = calc();
     var item = {
       id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -538,6 +539,7 @@
     return true;
   }
   function deleteSavedQuote(id) {
+    if (viewOnlyStop()) return;
     savedList = savedList.filter(function (x) { return x.id !== id; });
     var del = loadSavedDel();
     del[id] = Date.now();
@@ -558,6 +560,7 @@
    * 故障・操作・問合せなどで来店され、見積もりを作らずに何かが決まったとき、
    * 成約した項目を −・＋の件数で残す（2台の機種変更なら2件）。応対1件としても数える。 */
   function openNoQuoteDlg() {
+    if (viewOnlyStop()) return;
     var dlg = $("nqDlg");
     if (!dlg) return;
     var vWrap = $("nqVisits"), iWrap = $("nqItems"), err = $("nqErr");
@@ -650,6 +653,7 @@
    * resultStaff（記録を付けた担当）のまま変わらない。
    * お客様名は端末内だけの情報なので渡さない。 */
   function forwardSaved(id) {
+    if (viewOnlyStop()) return;
     var it = savedList.filter(function (x) { return x.id === id; })[0];
     if (!it) return;
     var others = activeStaffList().filter(function (s2) { return s2.id !== activeStaff().id; });
@@ -1017,6 +1021,7 @@
    * 最初の提案（提案数）と実際の成約（成約数）を分けて集計できる。
    * マークとwonDataは保存リストと一緒にクラウドへ同期される（お客様名は除く）。 */
   function setSavedResult(id, result) {
+    if (viewOnlyStop()) return;
     var it = savedList.filter(function (x) { return x.id === id; })[0];
     if (!it) return;
     if (!result) { setSavedResult2(it, result, "", null, false); return; }   // 「提案中」に戻すだけ
@@ -1519,13 +1524,16 @@
     /* 全担当の保存を読む。担当者の画面に他人の数字は出さないが、
      * 「自分が成約を決めた件」が他の担当（コンデザ）の保存に入っていることが
      * あるため、集計の材料としては全担当分が要る。 */
+    /* 上位・保守で見ているときは、この端末に店舗の保存を持っていないので
+     * 全担当ぶんをクラウドから読む（自分の分＝手元、が成り立たないため）。 */
+    var viewing = storeViewOnly();
     config.staff.forEach(function (s) {
-      lists[s.id] = s.id === mine ? savedList : local(s.id);
+      lists[s.id] = (!viewing && s.id === mine) ? savedList : local(s.id);
     });
     if (!cloudOn()) { statsCloudOk = true; statsLists = lists; done(); return; }
     statsCloudOk = true;
     var jobs = config.staff.map(function (s) {
-      if (s.id === mine) return Promise.resolve(); // 自分の分は手元が最新
+      if (!viewing && s.id === mine) return Promise.resolve(); // 自分の分は手元が最新
       return savedDoc(s.id).get().then(function (snap) {
         var d = snap.exists ? snap.data() : null;
         if (d && d.list) lists[s.id] = JSON.parse(d.list) || [];
@@ -1817,6 +1825,7 @@
   /* 確定済みの月の保存（自分のぶん）を消して、保存の枠を空ける。
    * 数字は確定データに残っているので、実績の表示は変わらない。 */
   function statsPurgeSettled() {
+    if (storeViewOnly()) return 0;   // 閲覧のみのときは店舗の保存を消さない
     var snaps = statsSnapshots();
     if (!Object.keys(snaps).length) return 0;
     var del = loadSavedDel();
@@ -4025,6 +4034,10 @@
      * この状態は内部的に担当1として動いているため、ここで書くと
      * 担当1の作りかけの見積もりを黙って上書きし、クラウドへも送ってしまう。 */
     if (typeof masterOnly !== "undefined" && masterOnly) return;
+    /* 上位・保守で店舗を開いているあいだは、この端末にも書かない。
+     * 書くとクラウドから届いた店舗の見積もりが本部の端末に溜まり、
+     * 次に開いたときに古い内容として送られる恐れがある。 */
+    if (storeViewOnly()) return;
     lsSet(quoteKey(), JSON.stringify(store));
     markQuoteAt(activeStaff().id, Date.now());
     markLocalEdit();
@@ -4108,6 +4121,26 @@
    * 本人確認はそのアカウントのログインで済んでいるため、関門を通さない。 */
   function superActing() {
     return (isDevUser() || isRoleUser()) && !!CLOUD.actAsUid;
+  }
+  /* 上位アカウント（代理店・エリア）・保守モードで店舗を開いているあいだは、
+   * その店舗の「見積もり・保存した見積もり・テンプレート」は見るだけにする。
+   * 本部の画面で見積もりを触ると、店舗の担当者が接客中に作っている見積もりが
+   * 差し替わってしまい（逆に店頭の入力が本部の画面に降りてくる）、
+   * 店舗側からは原因が分からないため。
+   * 料金マスタ・店舗設定・実績の確認は、従来どおり行える（本来の用途）。 */
+  function storeViewOnly() {
+    return superActing();
+  }
+  /* 閲覧のみのときに書き替えの操作を止めて案内する。
+   * true が返ったら、呼び出し側は何もしない。 */
+  function viewOnlyStop() {
+    if (!storeViewOnly()) return false;
+    window.alert("この画面は閲覧のみです。\n\n"
+      + "代理店・エリア（または保守）のアカウントで店舗を開いているあいだは、"
+      + "その店舗の見積もり・保存した見積もり・テンプレートは変えられません。\n"
+      + "店頭で作りかけの見積もりを、本部の操作で書き替えてしまわないためです。\n\n"
+      + "料金マスタ・店舗設定・実績の確認は、これまでどおり行えます。");
+    return true;
   }
   // いま「どの店舗のデータ」を見ているか（保守モード・上位アカウントで店舗を選んだときだけ変わる）
   function effectiveUid() {
@@ -4293,6 +4326,7 @@
   }
   function markLocalEdit() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeViewOnly()) return;   // 上位・保守で見ているだけのときは店舗の見積もりを書き替えない
     /* ログイン・担当切替の直後、クラウドの見積もりを受け取る前は送らない。
      * ここで送ると、この端末に残っていた古い（空の）見積もりが予約され、
      * その予約がある間はクラウドから届く内容も無視されるため、
@@ -4342,6 +4376,7 @@
   function tplDoc(staffId) { return storeDoc().collection("templates").doc(staffId || activeStaff().id); }
   function pushTemplates() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeViewOnly()) return;   // 同上（テンプレート）
     var sid = activeStaff().id;
     if (CLOUD.tplTimer) clearTimeout(CLOUD.tplTimer);
     syncStatus("同期中…", "");
@@ -4353,6 +4388,7 @@
   }
   function watchTemplates() {
     if (!cloudOn() || !config.activeStaffId) return;
+    if (storeViewOnly()) return;   // 同上
     var sid = activeStaff().id;
     if (CLOUD.unsubTpl && CLOUD.watchingTplId === sid) return;
     if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
@@ -4374,6 +4410,7 @@
   // 店舗共通テンプレート（templates/_store）。担当者に関係なく店舗で1つ
   function pushStoreTemplates() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeViewOnly()) return;   // 同上（店舗共通テンプレート）
     if (CLOUD.tplStoreTimer) clearTimeout(CLOUD.tplStoreTimer);
     syncStatus("同期中…", "");
     CLOUD.tplStoreTimer = setTimeout(function () {
@@ -4402,6 +4439,7 @@
   function savedDoc(staffId) { return storeDoc().collection("saved").doc(staffId || activeStaff().id); }
   function pushSaved() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeViewOnly()) return;   // 同上（保存した見積もり）
     var sid = activeStaff().id;
     if (CLOUD.savedTimer) clearTimeout(CLOUD.savedTimer);
     syncStatus("同期中…", "");
@@ -4424,6 +4462,7 @@
   }
   function watchSaved() {
     if (!cloudOn() || !config.activeStaffId) return;
+    if (storeViewOnly()) return;   // 同上（実績は loadAllSaved で読む）
     var sid = activeStaff().id;
     if (CLOUD.unsubSaved && CLOUD.watchingSavedId === sid) return;
     if (CLOUD.unsubSaved) { CLOUD.unsubSaved(); CLOUD.unsubSaved = null; }
@@ -4609,6 +4648,9 @@
   }
   function watchQuote() {
     if (!cloudOn() || !config.activeStaffId) return;
+    /* 上位・保守で見ているときは購読しない。店舗の担当者が接客中に
+     * 入れている内容が本部の画面に流れ込むのを防ぐ（実績は別途読む）。 */
+    if (storeViewOnly()) return;
     var sid = activeStaff().id;
     if (CLOUD.unsubQuote && CLOUD.watchingStaffId === sid) return;
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
@@ -5027,7 +5069,8 @@
     ov.id = "devPicker";
     ov.className = "login-overlay no-print";
     ov.innerHTML = '<div class="login-box"><h2>店舗を選択（' + roleScopeName() + '）</h2>'
-      + '<p class="hint">選んだ店舗の実績・マスタを表示・編集できます。店舗側の操作には影響しません。</p>'
+      + '<p class="hint">選んだ店舗の実績を確認し、料金マスタ・店舗設定を直せます。'
+      + '見積もり・保存した見積もり・テンプレートは<b>閲覧のみ</b>で、店舗側の内容は変わりません。</p>'
       + '<div id="devPickList"><p class="hint">読み込み中…</p></div>'
       + '<div class="actions"><button class="btn-sub" id="devPickLogout" type="button">ログアウト</button></div></div>';
     document.body.appendChild(ov);
@@ -5113,8 +5156,8 @@
       + (isDevUser() ? "#B33" : "#1565C0");
     var name = esc((MASTER && MASTER.storeName) || $("storeNameInput") && $("storeNameInput").value || CLOUD.actAsUid);
     bar.innerHTML = (isDevUser()
-        ? "<span>保守モード：<b>" + name + "</b> のデータを表示中</span>"
-        : "<span><b>" + name + "</b> を表示中（" + roleScopeName() + "）</span>")
+        ? "<span>保守モード：<b>" + name + "</b> のデータを表示中（見積もりは閲覧のみ）</span>"
+        : "<span><b>" + name + "</b> を表示中（" + roleScopeName() + "）／見積もりは閲覧のみ</span>")
       + '<button class="btn-sub" id="devSwitchStore" type="button" style="margin-left:auto">店舗を切り替える</button>';
     document.getElementById("devSwitchStore").addEventListener("click", function () {
       detachActingStore(); // 前の店舗への購読・送信待ちを止める
@@ -6459,6 +6502,7 @@
     if (text) setTimeout(function () { if ($("tplMsg").textContent === text) $("tplMsg").textContent = ""; }, 4000);
   }
   function tplSave(i, isStore) {
+    if (viewOnlyStop()) return;
     // iPadのホーム画面起動(PWA)ではprompt()が使えないため、画面内の入力欄で名前を付ける
     var plan = currentPlan();
     var procLabel = { shinki: "新規", mnp: "MNP", kishu: "機種変更", plan_only: "プラン変更" }[state.procType] || "";
@@ -11706,8 +11750,10 @@
      * 急いでいるとお客様の氏名を入れてしまいやすい。 */
     var quickSave = $("quickSaveBtn");
     if (quickSave) quickSave.addEventListener("click", function () {
+      if (viewOnlyStop()) return;   // 閲覧のみのときは、プランの確認より先に案内する
       if (!state.planId && !window.confirm("料金プランを選んでいません。このまま保存しますか？")) return;
       var it = saveQuote("");
+      if (!it) return;
       var m = $("quickSaveMsg");
       if (!m) return;
       m.innerHTML = "「" + esc(it.name) + "」として保存しました。"
@@ -11726,6 +11772,7 @@
       saveBtn.addEventListener("click", function () {
         var nm = $("saveQuoteName");
         var it = saveQuote(nm.value);
+        if (!it) return;
         nm.value = "";
         var m = $("saveQuoteMsg");
         m.textContent = "「" + it.name + "」を保存しました。";
