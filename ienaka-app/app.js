@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.9.3";
+  var APP_VERSION = "2.9.4";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -507,7 +507,9 @@
     { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
     { id: "rakuten", name: "楽天ひかり" },
     { id: "ztv", name: "ZTV", cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
-    { id: "cable", name: "ケーブルテレビのネット" },
+    /* 「ケーブルテレビのネット」は選択肢から外した（タイプCは会社名で選ぶため）。
+     * 過去の見積もりで選んである場合だけ表示に残す。 */
+    { id: "cable", name: "ケーブルテレビのネット", retired: true },
     { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     { id: "other", name: "その他" }
   ];
@@ -972,6 +974,11 @@
         clSel.appendChild(o);
       });
     }
+    /* 選択肢から外した項目は隠す（すでに選んである見積もりでは残す） */
+    CUR_LINES.forEach(function (c, i) {
+      var o = clSel.options[i];
+      if (o) o.hidden = !!c.retired && c.id !== state.curLine;
+    });
     clSel.value = state.curLine || "";
     $("ieCurLineOtherField").hidden = state.curLine !== "other";
     $("ieCurLineOther").value = state.curLineOther || "";

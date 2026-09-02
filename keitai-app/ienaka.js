@@ -1132,7 +1132,9 @@
     { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
     { id: "rakuten", name: "楽天ひかり" }
   ].concat(CATV_LINES, [
-    { id: "cable", name: "ケーブルテレビのネット" },
+    /* 「ケーブルテレビのネット」は 1.140.2 で選択肢から外した（タイプCの提携会社を
+     * 会社名で選ぶようにしたため）。過去の見積もりで選んである場合だけ表示に残す。 */
+    { id: "cable", name: "ケーブルテレビのネット", retired: true },
     { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     { id: "other", name: "その他" }
   ]);
@@ -1163,6 +1165,7 @@
     var h = featVal("curLinesHide");
     if (!!id && Array.isArray(h) && h.indexOf(id) >= 0) return true;
     var c = curLineById(id);
+    if (c && c.retired) return true;   // 選択肢から外した項目（選んである見積もりだけ残す）
     if (!c || !c.catv) return false;
     if (!typecFeatOn()) return true;   // タイプCを切っている店舗
     return !catvOn(c);                 // ケーブルテレビ会社は既定で出さない（ZTVを含む）
