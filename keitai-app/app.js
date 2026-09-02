@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.140.2";
+  var APP_VERSION = "1.141.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4686,7 +4686,7 @@
     var hasCode = anyStaffCode();
     var cw = $("staffCodeWrap"); if (cw) cw.hidden = !hasCode;
     var gl = $("staffGateLead"); if (gl) gl.textContent = hasCode ? "ご自身の担当者コードを入力してください。" : "ご自身の名前を押してください。";
-    var fl2 = $("staffFreeLead"); if (fl2) fl2.textContent = hasCode ? "コードを設定していない担当者は、名前を押してください。" : "名前を押すと、新しいお客様の見積もりとして始まります。";
+    var fl2 = $("staffFreeLead"); if (fl2) fl2.textContent = hasCode ? "コードを設定していない担当者は、名前を押してください。" : "名前を押すと入れます。作りかけの見積もりが残っていれば、続きから開くか選べます。";
     // コードを設定していない担当者は、名前を押して入れるようにする
     // （一部の担当者だけコードを付けた場合に、他の担当者が入れなくなるのを防ぐ）
     // 保守モード・上位アカウントはコードを知らないため、全担当を名前で選べるようにする
@@ -4759,6 +4759,90 @@
     // 前の内容で上書きされないよう、watchQuote より先に呼ぶ
     saveState();
   }
+  /* ---- 作りかけの見積もりを黙って消さない ----
+   * 回線1〜3か光・5Gのどれかに入力があるか。
+   * 店舗名・担当者名・電話番号は自動で入るので「入力」には数えない。 */
+  function quoteHasInput() {
+    var used = store.patterns.some(function (pt) {
+      var m = Object.assign(defaultState(), pt || {});
+      return isPatternUsed(m) || !!m.planId || !!m.procType;
+    });
+    if (used) return true;
+    var ie = store.ienaka || {};
+    return !!(ie.enabled || ie.curLine);
+  }
+  /* 新しいお客様として始める前に、いまの内容を「保存」タブへ自動控えとして1件残す。
+   * 手で保存した内容と同じなら残さない。自動控えは古いものから減らし、
+   * AUTO_STASH_MAX 件までにする（成約・見送り・引き渡し済みのものは減らさない）。 */
+  var AUTO_STASH_MAX = 3;
+  function stashQuoteAuto() {
+    if (!quoteHasInput()) return null;
+    var cur = JSON.stringify(store);
+    if (savedList.some(function (it) { return !it.slim && it.data && JSON.stringify(it.data) === cur; })) return null;
+    var r = null;
+    try { r = calc(); } catch (e) {}
+    var d = new Date();
+    var hhmm = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+    var item = {
+      id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: ("自動控え " + savedDefaultName() + " " + hhmm).slice(0, 40),
+      auto: true,
+      custName: state.custName || "",
+      planName: (state.planId && r) ? r.plan.name : "",
+      monthly: r ? r.segs[0].monthly : 0,
+      initial: r ? r.initialTotal : 0,
+      savedAt: Date.now(),
+      upAt: Date.now(),
+      data: JSON.parse(cur)
+    };
+    var autos = savedList.filter(function (it) { return it.auto && !it.result && !it.sentTo; })
+      .sort(function (a2, b2) { return (b2.savedAt || 0) - (a2.savedAt || 0); });
+    var old = autos.slice(AUTO_STASH_MAX - 1);
+    if (old.length) {
+      var del = loadSavedDel();
+      old.forEach(function (it) {
+        del[it.id] = Date.now();   // 他の端末でも消えるように削除の記録を残す
+        savedList = savedList.filter(function (x) { return x.id !== it.id; });
+      });
+      saveSavedDel(null, del);
+    }
+    savedList.unshift(item);
+    savedList = trimSavedList(savedList);
+    persistSaved();
+    renderSaved();
+    return item;
+  }
+  /* 「続きから開く／新しいお客様として始める」を選んでもらう。done(true)=続きから */
+  function askResumeQuote(done) {
+    var dlg = $("resumeDlg");
+    var bits = [];
+    if (state.custName) bits.push("お客様: " + state.custName);
+    if (state.planId) { try { bits.push("プラン: " + currentPlan().name); } catch (e) {} }
+    if (store.ienaka && store.ienaka.enabled && typeof KQ_IENAKA !== "undefined") {
+      try { bits.push("光・5G: " + KQ_IENAKA.label()); } catch (e2) {}
+    }
+    var at = quoteAt(activeStaff().id);
+    if (at) bits.push("最後の入力: " + savedWhen(at));
+    var lead = bits.length ? bits.join("　") : "回線1〜3のどれかに入力が残っています。";
+    if (!dlg) {
+      done(window.confirm("作りかけの見積もりが残っています。続きから開きますか？\n" + lead
+        + "\n\nキャンセル: 新しいお客様として始めます（いまの内容は「保存」タブに自動控えとして残ります）"));
+      return;
+    }
+    $("resumeDlgLead").textContent = lead;
+    dlg.hidden = false;
+    var bc = $("resumeDlgCont"), bn = $("resumeDlgNew");
+    function close() {
+      dlg.hidden = true;
+      bc.removeEventListener("click", cont);
+      bn.removeEventListener("click", fresh);
+    }
+    function cont() { close(); done(true); }
+    function fresh() { close(); done(false); }
+    bc.addEventListener("click", cont);
+    bn.addEventListener("click", fresh);
+    setTimeout(function () { bc.focus(); }, 50);
+  }
   // fresh=true … 担当者コード画面から入ったとき（新しいお客様として始める）
   function enterStaff(s, fresh) {
     masterOnly = false; // 担当者が決まったので通常の画面に戻す
@@ -4772,7 +4856,17 @@
     loadTemplates();
     renderTplBar();
     state = store.patterns[store.active];
-    if (fresh) resetQuoteForNewCustomer();
+    /* 入り直したとき、この担当の作りかけの見積もりが残っていれば黙って消さず、
+     * 「続きから開く」か「新しいお客様として始める」かを選んでもらう。
+     * （以前は、ページの更新や担当の入れ替わりのたびに入力が消えていた） */
+    if (fresh && quoteHasInput()) {
+      askResumeQuote(function (cont) { enterStaffDone(!cont); });
+      return;
+    }
+    enterStaffDone(fresh);
+  }
+  function enterStaffDone(fresh) {
+    if (fresh) { stashQuoteAuto(); resetQuoteForNewCustomer(); }
     else applyStoreDefaults(false); // 空欄なら店舗設定から補う
     syncFormFromState();
     renderStaffBar();
