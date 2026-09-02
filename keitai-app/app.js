@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.142.0";
+  var APP_VERSION = "1.142.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3399,9 +3399,17 @@
     var o = svcFind(key);
     return !!(o && (svcUrlOk(o.url) || o.desc || o.img));
   }
-  /* 見積書に出す名前。説明かリンクがあるときだけボタンにする（印刷では普通の文字）。 */
+  /* 見積書に出す名前。説明かリンクがあるときだけボタンにする（印刷では普通の文字）。
+   * ご案内文・写真が無く、リンクだけのサービスは、
+   * 「詳しい内容は公式ページで…」の小窓をはさまず、そのままページを開く（店舗の指定）。
+   * ふつうのリンクにしておくと、iPadのホーム画面起動（PWA）でも別のタブで確実に開く。 */
   function svcName(name, key) {
     if (!svcHas(key)) return esc(name);
+    var o = svcFind(key);
+    if (o && !o.desc && !o.img && svcUrlOk(o.url)) {
+      return '<a class="svc-link" href="' + esc(String(o.url).trim()) + '" target="_blank" rel="noopener noreferrer"'
+        + ' data-svc="' + esc(key) + '">' + esc(name) + "</a>";
+    }
     return '<button type="button" class="svc-link" data-svc="' + esc(key) + '">' + esc(name) + "</button>";
   }
   function openSvcDlg(key) {
@@ -12471,7 +12479,11 @@
     }
     if (!e.target.closest("#helpPop") || e.target.id === "helpPopClose") closeHelpPop();
     var b = e.target.closest(".svc-link");
-    if (b) { openSvcDlg(b.getAttribute("data-svc")); return; }
+    if (b) {
+      if (b.tagName === "A") return;   // リンクのときは小窓をはさまず、そのままページを開く
+      openSvcDlg(b.getAttribute("data-svc"));
+      return;
+    }
     var dlg = $("svcDlg");
     if (dlg && !dlg.hidden && (e.target === dlg || e.target.id === "svcDlgClose")) dlg.hidden = true;
   });
