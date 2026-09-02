@@ -1036,17 +1036,19 @@
 <div class="login-overlay no-print" id="staffOverlay" hidden>
   <form class="login-box" id="staffForm">
     <h2>担当者コード</h2>
-    <p class="login-lead">ご自身の担当者コードを入力してください。<br>
+    <p class="login-lead"><span id="staffGateLead">ご自身の担当者コードを入力してください。</span><br>
       <span class="login-note">入力すると、新しいお客様の見積もりとして最初から始まります。作りかけの内容は「保存」タブに残しておけます。</span></p>
     <p class="login-err" id="staffErr" hidden></p>
     <p class="staff-note" id="staffUpdateNote" hidden></p>
-    <div class="field">
-      <label for="staffCode">担当者コード</label>
-      <input type="password" id="staffCode" inputmode="numeric" autocomplete="off" required>
+    <div id="staffCodeWrap">
+      <div class="field">
+        <label for="staffCode">担当者コード</label>
+        <input type="password" id="staffCode" inputmode="numeric" autocomplete="off">
+      </div>
+      <button class="btn-main" type="submit">開く</button>
     </div>
-    <button class="btn-main" type="submit">開く</button>
     <div class="staff-free" id="staffFreeWrap" hidden>
-      <p class="login-lead">コードを設定していない担当者は、名前を押してください。</p>
+      <p class="login-lead" id="staffFreeLead">コードを設定していない担当者は、名前を押してください。</p>
       <div id="staffFreeList"></div>
     </div>
     <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">マスタ設定を開く（料金・担当者の登録）</button><br>
