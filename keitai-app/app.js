@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.142.2";
+  var APP_VERSION = "1.143.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3908,6 +3908,11 @@
    * 画面を開くだけでも自動保存が走って時刻が今に更新されるため、
    * クラウドと比べるときは“開く前の値”を使う。 */
   var quoteAtLoaded = {};
+  /* 読み込んだ直後の見積もりの中身（担当ID → 文字列）。
+   * いまの中身と見比べて「この端末で実際に入力があったか」を判断する。
+   * 圏外で開いて入力し、あとで通信が戻ったとき、その入力がクラウドの
+   * 古い控えで消されないようにするために使う。 */
+  var quoteSigLoaded = {};
   function loadState() {
     try { quoteAtLoaded[activeStaff().id] = quoteAt(activeStaff().id); } catch (eQ) {}
     try {
@@ -3930,6 +3935,7 @@
     var savedIe = null;
     try { savedIe = JSON.parse(localStorage.getItem(quoteKey()) || "null"); } catch (e2) {}
     applyIenaka(savedIe && savedIe.ienaka);
+    try { quoteSigLoaded[activeStaff().id] = quotePayload(); } catch (e3) {}
   }
   /* 光の内容を差し替える。無い・壊れている場合は初期値に戻す。
    * イエナカ側は store.ienaka の参照を握っているので、
@@ -4632,6 +4638,7 @@
       markQuoteAt(activeStaff().id, num(d.updatedAtMs) || Date.now());
       syncFormFromState();
       recalc();
+      try { quoteSigLoaded[activeStaff().id] = quotePayload(); } catch (eS) {}
       cloudOk();
     } catch (e) {} finally { CLOUD.suppress = false; }
   }
@@ -4640,7 +4647,14 @@
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
     CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
-      if (!d) { pushConfig(); markMasterEdit(); return; } // 初回ログイン → この端末の内容を初期値にする
+      if (!d) {
+        /* 「クラウドに何も無い」は、初めてログインした店舗のときだけ本当。
+         * 通信できていないときも同じ形で届く（端末内の控え由来）ので、
+         * そのときは送らない。送ると、圏外で開いた予備の端末の古い
+         * 料金マスタ・担当者一覧が、あとで店舗中の端末に配られてしまう。 */
+        if (snap.metadata && snap.metadata.fromCache) { syncStatus("同期:オフライン", "err"); return; }
+        pushConfig(); markMasterEdit(); return; // 初回ログイン → この端末の内容を初期値にする
+      }
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
       applyRemoteStore(d);
       cloudOk();
@@ -4664,11 +4678,21 @@
     if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
     CLOUD.watchingStaffId = sid;
     CLOUD.quoteSynced = false; // 初回スナップショットを受け取るまで、この端末からの送信を止める
+    /* 見張り始めた時点の中身を控える。ここから変わっていれば「この端末で
+     * 入力があった」と判断する（店舗名の自動補完などは控えたあとに起きない）。 */
+    try { quoteSigLoaded[sid] = quotePayload(); } catch (eQ2) {}
     CLOUD.unsubQuote = quoteDoc(sid).onSnapshot(function (snap) {
+      /* 端末内の控え（キャッシュ）から届いたお知らせは、通信できていない
+       * ときにも来る。「クラウドに何も無い」ことの証拠にはならないので、
+       * この端末の内容を送らず、送信の解禁（quoteSynced）もしない。 */
+      var cached = !!(snap.metadata && snap.metadata.fromCache);
       var first = !CLOUD.quoteSynced;
-      CLOUD.quoteSynced = true;
+      if (!cached) CLOUD.quoteSynced = true;
       var d = snap.exists ? snap.data() : null;
-      if (!d) { markLocalEdit(); return; } // クラウドに見積もりが無ければ、この端末の内容を初期値にする
+      if (!d) {
+        if (cached) { syncStatus("同期:オフライン", "err"); return; }
+        markLocalEdit(); return; // クラウドに見積もりが無ければ、この端末の内容を初期値にする
+      }
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
       /* 初回はクラウドの内容を取り込む（別の端末で続きを開くための動き）。
        * ただし、この端末の方が新しいときは取り込まない。
@@ -4677,7 +4701,12 @@
       if (first) {
         var rAt = num(d.updatedAtMs);
         var lAt = num(quoteAtLoaded[sid]);   // 開く前の時刻（自動保存で更新される前）
-        if (lAt && rAt && lAt > rAt && localQuoteHasContent()) {
+        /* この端末で実際に入力があったか（読み込んだ直後の中身と見比べる）。
+         * 圏外で開いて入力したぶんは、通信が戻ったときにクラウドの古い
+         * 控えで消さずに、こちらを新しいものとして送る。 */
+        var edited = false;
+        try { edited = !!quoteSigLoaded[sid] && quotePayload() !== quoteSigLoaded[sid]; } catch (eE) {}
+        if ((edited || (lAt && rAt && lAt > rAt)) && localQuoteHasContent()) {
           markLocalEdit(); cloudOk(); return;
         }
       }
