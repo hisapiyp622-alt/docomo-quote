@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.139.0";
+  var APP_VERSION = "1.139.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4182,6 +4182,11 @@
     return !f || f[key] !== false;
   }
   window.KQ_FEAT = featOn;   // 光・5Gタブ（ienaka.js）からも同じ判定を使う
+  /* 機能スイッチの値そのもの（一覧や名前の置き換えなど、真偽以外の設定用） */
+  window.KQ_FEATVAL = function (key) {
+    var f = contractInfo && contractInfo.features;
+    return f ? f[key] : undefined;
+  };
   /* スイッチが切り替わったら、出し分けのある画面を描き直す */
   function applyFeaturesUi() {
     try { if (typeof KQ_IENAKA !== "undefined" && store && store.ienaka) KQ_IENAKA.syncForm(); } catch (e) {}
