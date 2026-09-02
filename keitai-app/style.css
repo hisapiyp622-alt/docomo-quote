@@ -458,6 +458,9 @@ body.booting>header,body.booting>main{visibility:hidden}
   border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--muted);cursor:pointer;
 }
 .staff-row .del:hover{color:var(--red);border-color:var(--red)}
+.staff-retired{margin-top:12px;padding-top:8px;border-top:1px dashed var(--line)}
+.staff-row.retired{color:var(--muted)}
+.staff-row.retired .staff-retired-name{flex:1 1 auto;min-width:0;text-decoration:line-through}
 
 /* 店舗ログインの設定（設定タブ） */
 #lockBox .field input{

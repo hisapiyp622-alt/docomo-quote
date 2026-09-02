@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.138.2";
+  var APP_VERSION = "1.139.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -259,9 +259,20 @@
   }
   function activeStaff() {
     var s2 = config.staff.filter(function (x) { return x.id === config.activeStaffId; })[0];
-    if (!s2) { s2 = config.staff[0]; config.activeStaffId = s2.id; }
+    if (!s2) { s2 = activeStaffList()[0] || config.staff[0]; config.activeStaffId = s2.id; }
     return s2;
   }
+  /* 担当者一覧のうち、いま在籍している人。退職・異動で一覧から外した人は
+   * config.staff に retired: true を付けて残す（保存した見積もり・成約の実績を
+   * 集計に残すため。クラウドの器の形も変えずに済む）。
+   * 「完全に削除」したときだけ配列から消える。 */
+  function activeStaffList() {
+    return config.staff.filter(function (s2) { return !s2.retired; });
+  }
+  function retiredStaffList() {
+    return config.staff.filter(function (s2) { return !!s2.retired; });
+  }
+  function staffLabel(s2) { return (s2.name || s2.id) + (s2.retired ? "（退職）" : ""); }
   /* 担当者のID。空き番号の再利用はしない。
    * 以前は最小の空き番号を使っていたため、退職者を消して新しい人を足すと
    * 同じIDになり、クラウドに残った前任者の保存見積もり・テンプレを
@@ -314,13 +325,24 @@
     if (telEl && telEl.value !== (config.storeTel || "")) telEl.value = config.storeTel || "";
     var list = $("staffList");
     if (!list) return;
-    list.innerHTML = config.staff.map(function (s2, i) {
+    var act = activeStaffList(), ret = retiredStaffList();
+    list.innerHTML = act.map(function (s2) {
       return '<div class="staff-row">'
-        + '<input type="text" value="' + esc(s2.name) + '" data-staffname="' + i + '" placeholder="担当者名">'
-        + '<input type="text" value="' + esc(s2.code || "") + '" data-staffcode="' + i + '" placeholder="コード" inputmode="numeric">'
-        + (config.staff.length > 1 ? '<button class="del" data-staffdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
+        + '<input type="text" value="' + esc(s2.name) + '" data-staffname="' + esc(s2.id) + '" placeholder="担当者名">'
+        + '<input type="text" value="' + esc(s2.code || "") + '" data-staffcode="' + esc(s2.id) + '" placeholder="コード" inputmode="numeric">'
+        + (act.length > 1 ? '<button class="del" data-staffdel="' + esc(s2.id) + '" type="button" aria-label="一覧から外す" title="一覧から外す">×</button>' : "")
         + "</div>";
-    }).join("");
+    }).join("")
+    /* 一覧から外した担当者。データは残っているので、戻すことも、
+     * 二重の確認のうえで完全に消すこともできる */
+    + (ret.length
+      ? '<div class="staff-retired"><div class="hint">一覧から外した担当者（保存した見積もり・実績は残っていて、集計にも含まれます）</div>'
+        + ret.map(function (s2) {
+            return '<div class="staff-row retired"><span class="staff-retired-name">' + esc(s2.name || s2.id) + "</span>"
+              + '<button class="btn-sub" data-staffrestore="' + esc(s2.id) + '" type="button">一覧に戻す</button>'
+              + '<button class="btn-sub saved-del" data-staffpurge="' + esc(s2.id) + '" type="button">完全に削除</button></div>';
+          }).join("") + "</div>"
+      : "");
   }
 
   /* ---------- 保存した見積もり ----------
@@ -630,7 +652,7 @@
   function forwardSaved(id) {
     var it = savedList.filter(function (x) { return x.id === id; })[0];
     if (!it) return;
-    var others = config.staff.filter(function (s2) { return s2.id !== activeStaff().id; });
+    var others = activeStaffList().filter(function (s2) { return s2.id !== activeStaff().id; });
     if (!others.length) { savedNote("渡せる担当がいません。マスタ設定で担当者を追加してください。"); return; }
     pickStaff({
       title: "担当へ渡す",
@@ -748,7 +770,7 @@
             : (it.slim
                 ? '<span class="saved-slim">実績用（開けません）</span>'
                 : '<button class="btn-sub" data-savedload="' + it.id + '" type="button">開く</button>'))
-        + (config.staff.length > 1 && !it.fromStaff && !it.sentTo && !it.noQuote
+        + (activeStaffList().length > 1 && !it.fromStaff && !it.sentTo && !it.noQuote
             ? '<button class="btn-sub" data-savedsend="' + it.id + '" type="button">担当へ渡す</button>' : "")
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
         + (it.result === "won" && it.wonData
@@ -822,7 +844,7 @@
   }
   function askResult(result, done) {
     var label = result === "won" ? "成約" : "見送り";
-    if (!$("resultDlg") || config.staff.length < 2) {
+    if (!$("resultDlg") || activeStaffList().length < 2) {
       if (window.confirm("この応対を「" + label + "」として実績に記録します。よろしいですか？")) done(activeStaff().id);
       return;
     }
@@ -830,7 +852,7 @@
       title: label + "として記録",
       lead: "この応対を「" + label + "」として実績に記録します。",
       label: label + "を決めた担当",
-      choices: config.staff, value: activeStaff().id, okText: "記録する"
+      choices: activeStaffList(), value: activeStaff().id, okText: "記録する"
     }, function (v) { if (v) done(v); });
   }
 
@@ -884,11 +906,11 @@
     }
     if (wrapI) { wrapI.hidden = false; renderList(); }
     // 決めた担当の選択は、担当が2名以上の店舗だけ（従来どおり）
-    var multi = config.staff.length >= 2;
+    var multi = activeStaffList().length >= 2;
     var sw = $("resultDlgStaffWrap"), sel = $("resultDlgStaff");
     if (sw) sw.hidden = !multi;
     if (multi && sel) {
-      sel.innerHTML = config.staff.map(function (s2) {
+      sel.innerHTML = activeStaffList().map(function (s2) {
         return '<option value="' + esc(s2.id) + '">' + esc(s2.name || s2.id) + "</option>";
       }).join("");
       sel.value = activeStaff().id;
@@ -1865,7 +1887,7 @@
     if (staffSel.parentElement) staffSel.parentElement.style.display = viewAll ? "" : "none";
     var sPrev = staffSel.value || "all";
     staffSel.innerHTML = '<option value="all">全員</option>' + config.staff.map(function (s) {
-      return '<option value="' + esc(s.id) + '">' + esc(s.name) + "</option>";
+      return '<option value="' + esc(s.id) + '">' + esc(staffLabel(s)) + "</option>";
     }).join("");
     staffSel.value = config.staff.some(function (s) { return s.id === sPrev; }) ? sPrev : "all";
     // 管理者以外は、常に自分（ログイン中の担当）の実績だけ
@@ -1874,7 +1896,7 @@
     var sName = "全員";
     if (sFil !== "all") {
       var ssNow = config.staff.filter(function (s) { return s.id === sFil; })[0];
-      sName = (ssNow && ssNow.name) || sFil;
+      sName = (ssNow && staffLabel(ssNow)) || sFil;
     }
 
     var agg;
@@ -1955,7 +1977,7 @@
      * 店舗の判断で「公開する」を選んだ場合（openAll）は出さない。 */
     if (viewAll && !statsUnlocked && !statsCfg().openAll
         && !adminLockEnabled() && !lockEnabled() && !cloudOn()
-        && config.staff.length > 1) {
+        && activeStaffList().length > 1) {
       h += '<div class="stats-undone"><b style="color:var(--red)">いまは全担当の実績が全員に見えています。</b>'
         + "店舗ログインもマスタ設定のパスワードも設定していないため、担当者ごとに仕切れない状態です。"
         + "担当者ごとに分けたいときは、マスタ設定で「マスタ設定のパスワード」を設定してください。"
@@ -2141,7 +2163,7 @@
       if (sFil === "all" && iKeys.length && config.staff.length > 1) {
         h += "<h3>担当 × 項目（成約）</h3>";
         h += '<div class="stats-scroll"><table class="stats-table"><tr><th>項目</th>'
-          + config.staff.map(function (s) { return "<th>" + esc(s.name) + "</th>"; }).join("")
+          + config.staff.map(function (s) { return "<th>" + esc(staffLabel(s)) + "</th>"; }).join("")
           + "<th>合計</th></tr>";
         iKeys.forEach(function (k) {
           if (!items[k].won) return;
@@ -2870,19 +2892,21 @@
     if (wizStep === 4) wizRenderSummary();
   }
   function wizRenderStaff() {
+    var nAct = activeStaffList().length;
     $("setupStaffList").innerHTML = (config.staff || []).map(function (s, i) {
+      if (s.retired) return "";   // 一覧から外した担当は初期設定には出さない（データは残す）
       return '<div class="setup-row">'
         + '<input type="text" value="' + esc(s.name || "") + '" data-wizname="' + i + '" placeholder="担当者名">'
         + '<input type="text" value="' + esc(s.code || "") + '" data-wizcode="' + i + '" placeholder="コード" inputmode="numeric">'
-        + (config.staff.length > 1 ? '<button class="del" data-wizdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
+        + (nAct > 1 ? '<button class="del" data-wizdel="' + i + '" type="button" aria-label="削除">×</button>' : "")
         + "</div>";
     }).join("");
   }
   function wizRenderSummary() {
-    var codes = (config.staff || []).filter(function (s) { return String(s.code || "").trim(); }).length;
+    var codes = activeStaffList().filter(function (s) { return String(s.code || "").trim(); }).length;
     var h = "<li>店舗名: <b>" + esc(config.storeName || "（未入力）") + "</b></li>";
     h += "<li>電話番号: " + esc(config.storeTel || "（未入力）") + "</li>";
-    h += "<li>担当者: <b>" + config.staff.length + "名</b>"
+    h += "<li>担当者: <b>" + activeStaffList().length + "名</b>"
       + (codes ? "（うち " + codes + "名にコードを設定）" : "（コードなし）") + "</li>";
     h += "<li>マスタ設定のパスワード: " + (adminLockEnabled() ? "<b>設定しました</b>" : "設定していません") + "</li>";
     $("setupSummary").innerHTML = h;
@@ -2902,10 +2926,10 @@
     if (wizStep === 2) {
       // 名前もコードも空の行は捨てる
       var list = (config.staff || []).filter(function (s) {
-        return String(s.name || "").trim() || String(s.code || "").trim();
+        return s.retired || String(s.name || "").trim() || String(s.code || "").trim();
       });
-      if (!list.length) return "担当者を1名以上登録してください。";
-      var blank = list.filter(function (s) { return !String(s.name || "").trim(); });
+      if (!list.some(function (s) { return !s.retired; })) return "担当者を1名以上登録してください。";
+      var blank = list.filter(function (s) { return !s.retired && !String(s.name || "").trim(); });
       if (blank.length) return "担当者名を入力してください。";
       var seen = {}, dup = false;
       list.forEach(function (s) {
@@ -2916,8 +2940,8 @@
       });
       if (dup) return "同じ担当者コードが複数あります。別の番号にしてください。";
       config.staff = list;
-      if (!config.staff.some(function (s) { return s.id === config.activeStaffId; })) {
-        config.activeStaffId = config.staff[0].id;
+      if (!activeStaffList().some(function (s) { return s.id === config.activeStaffId; })) {
+        config.activeStaffId = activeStaffList()[0].id;
       }
       saveConfig();
       renderStoreConfig();
@@ -4525,8 +4549,8 @@
       if (masterOnly) return;
       var lv = $("loginOverlay");
       if (lv && !lv.hidden) return;
-      if (anyStaffCode()) showStaffGate(true);
-      else enterStaff(config.staff[0]);
+      if (needStaffGate()) showStaffGate(true);
+      else enterStaff(activeStaff());
     }
   }
   function applyRemoteQuote(d) {
@@ -4651,11 +4675,18 @@
     if (f) { f.value = ""; setTimeout(function () { f.focus(); }, 50); }
     var e2 = $("staffErr"); if (e2) e2.hidden = true;
     renderStaffGateNotice();
+    /* コードを1つも設定していない店舗では、コード入力欄は出さず名前だけで選ぶ
+     * （担当が2人以上いれば、コードが無くても端末ごとに別の担当で入れるように。
+     * 以前は全端末が先頭の担当として入り、同じ見積もりを上書きし合っていた） */
+    var hasCode = anyStaffCode();
+    var cw = $("staffCodeWrap"); if (cw) cw.hidden = !hasCode;
+    var gl = $("staffGateLead"); if (gl) gl.textContent = hasCode ? "ご自身の担当者コードを入力してください。" : "ご自身の名前を押してください。";
+    var fl2 = $("staffFreeLead"); if (fl2) fl2.textContent = hasCode ? "コードを設定していない担当者は、名前を押してください。" : "名前を押すと、新しいお客様の見積もりとして始まります。";
     // コードを設定していない担当者は、名前を押して入れるようにする
     // （一部の担当者だけコードを付けた場合に、他の担当者が入れなくなるのを防ぐ）
     // 保守モード・上位アカウントはコードを知らないため、全担当を名前で選べるようにする
-    var free = superActing() ? config.staff
-      : config.staff.filter(function (s) { return String(s.code || "").trim() === ""; });
+    var free = superActing() ? activeStaffList()
+      : activeStaffList().filter(function (s) { return String(s.code || "").trim() === ""; });
     var wrap = $("staffFreeWrap");
     if (wrap) {
       wrap.hidden = !free.length;
@@ -4666,7 +4697,12 @@
   }
   // 担当者コードが1つも設定されていない場合は、コード入力を省いて先頭の担当で始める
   function anyStaffCode() {
-    return config.staff.some(function (s) { return String(s.code || "").trim() !== ""; });
+    return activeStaffList().some(function (s) { return String(s.code || "").trim() !== ""; });
+  }
+  /* 担当者を選ぶ画面を出すか。コードがあるとき、または担当が2人以上のとき。
+   * 1人だけの店舗はそのまま入る（従来どおり）。 */
+  function needStaffGate() {
+    return anyStaffCode() || activeStaffList().length > 1;
   }
   /* 担当者コード（またはお名前）で入り直したときは、新しいお客様として最初から始める。
    * 前のお客様の入力が残っていると、そのまま次の接客に持ち込んでしまうため。
@@ -5199,7 +5235,7 @@
     if (superActing()) { enterStaff(activeStaff()); bootDone(); return; }
     // まだ一度も設定していない店舗は、先に初期設定を出す
     if (wizNeeded()) { wizShow(true); bootDone(); return; }
-    if (anyStaffCode()) showStaffGate(true);
+    if (needStaffGate()) showStaffGate(true);
     else enterStaff(activeStaff());
     bootDone();
   }
@@ -5252,7 +5288,7 @@
     $("staffForm").addEventListener("submit", function (e) {
       e.preventDefault();
       var code = String($("staffCode").value || "").trim();
-      var hit = config.staff.filter(function (s) {
+      var hit = activeStaffList().filter(function (s) {
         return code !== "" && String(s.code || "").trim() === code;
       })[0];
       if (!hit) {
@@ -5265,8 +5301,8 @@
     });
     var sw2 = $("switchStaffBtn");
     if (sw2) sw2.addEventListener("click", function () {
-      if (!anyStaffCode()) {
-        // コード未設定のときは、設定タブで担当者を登録してもらう
+      if (!needStaffGate()) {
+        // 担当が1人でコード未設定のときは、設定タブで担当者を登録してもらう
         switchTab("master");
         return;
       }
@@ -5280,7 +5316,7 @@
     if (fl) fl.addEventListener("click", function (e) {
       var id = e.target.getAttribute && e.target.getAttribute("data-staffpick");
       if (!id) return;
-      var hit = config.staff.filter(function (s) { return s.id === id; })[0];
+      var hit = activeStaffList().filter(function (s) { return s.id === id; })[0];
       if (hit) enterStaff(hit, true);
     });
     // 設定を開く逃げ道（担当者の登録・コードの変更ができなくなるのを防ぐ）
@@ -5289,7 +5325,7 @@
       histSettle(); // 設定を離れるので、ここでひと区切り
       masterOnly = false;
       switchTab("quote"); // 設定の内容をコード入力画面の裏に残さない
-      if (anyStaffCode()) { clearActiveStaff(); showStaffGate(true); }
+      if (needStaffGate()) { clearActiveStaff(); showStaffGate(true); }
     });
     var sc = $("staffToSetting");
     if (sc) sc.addEventListener("click", function () {
@@ -5301,7 +5337,7 @@
         return;
       }
       showStaffGate(false);
-      if (!config.activeStaffId) enterStaff(config.staff[0]);
+      if (!config.activeStaffId) enterStaff(activeStaff());
       switchTab("master");
       enterMasterOnly();
     });
@@ -9161,7 +9197,7 @@
         var fromGate = masterGateFrom === "staff";
         if (fromGate) {
           masterGateFrom = null;
-          if (!config.activeStaffId) enterStaff(config.staff[0]);
+          if (!config.activeStaffId) enterStaff(activeStaff());
         }
         switchTab("master");
         if (fromGate) enterMasterOnly();
@@ -9543,7 +9579,7 @@
     if (!d || d.from !== "ienaka") return false;   // 自分が書いたものは読まない
     try { localStorage.removeItem(HANDOFF_KEY); } catch (e) {}
     if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return false;
-    var hit = config.staff.filter(function (s) { return (s.name || "") === d.staffName; })[0];
+    var hit = activeStaffList().filter(function (s) { return (s.name || "") === d.staffName; })[0];
     if (!hit) return false;   // 登録が無い担当者なら、いつもどおりコードを聞く
     enterStaff(hit);
     if (d.custName && state && !state.custName) {
@@ -11813,46 +11849,76 @@
     }
     var staffList = $("staffList");
     if (staffList) {
+      function staffById(id) { return config.staff.filter(function (s2) { return s2.id === id; })[0]; }
       staffList.addEventListener("input", function (e) {
-        var t = e.target, i;
+        var t = e.target, s2;
         if (t.hasAttribute("data-staffname")) {
-          i = +t.getAttribute("data-staffname");
-          config.staff[i].name = t.value;
+          s2 = staffById(t.getAttribute("data-staffname"));
+          if (s2) s2.name = t.value;
         } else if (t.hasAttribute("data-staffcode")) {
-          i = +t.getAttribute("data-staffcode");
-          config.staff[i].code = t.value.trim();
+          s2 = staffById(t.getAttribute("data-staffcode"));
+          if (s2) s2.code = t.value.trim();
         } else return;
         saveConfig();
         renderStaffBar();
         applyStoreDefaults(true); // 担当者名を変えたら見積書の表示にも反映する
       });
+      /* × は「一覧から外す」。データ（保存した見積もり・テンプレ・実績）は
+       * 端末にもクラウドにも残し、集計にも含め続ける。以前は確認なしで
+       * 端末とクラウドから即削除しており、隣の×に触れただけで当月の
+       * 実績まで消える事故が起きうる作りだった（2026-09 製品化レビュー 3-2）。 */
       staffList.addEventListener("click", function (e) {
         var t = e.target;
-        if (!t.hasAttribute("data-staffdel")) return;
-        var i = +t.getAttribute("data-staffdel");
-        if (config.staff.length <= 1) return;
-        var removed = config.staff.splice(i, 1)[0];
-        try {
-          localStorage.removeItem(quoteKey(removed.id));
-          localStorage.removeItem(savedKey(removed.id));
-          localStorage.removeItem(tplKey(removed.id));
-        } catch (e2) {}
-        /* クラウド側の保存（見積もり・保存済み・テンプレ）も消す。
-         * 残しておくと、IDが同じ担当者を作ったときに引き継がれてしまう。 */
-        if (cloudOn()) {
+        var delId = t.getAttribute("data-staffdel");
+        var restoreId = t.getAttribute("data-staffrestore");
+        var purgeId = t.getAttribute("data-staffpurge");
+        if (delId) {
+          if (activeStaffList().length <= 1) return;
+          var s2 = staffById(delId);
+          if (!s2) return;
+          var nSaved = (readJson(savedKey(s2.id)) || []).length;
+          if (!window.confirm("「" + (s2.name || "担当") + "」を担当者一覧から外します。\n\n"
+              + "この担当の保存した見積もり（この端末に " + nSaved + " 件）と成約の実績は消えず、実績の集計にも残ります。\n"
+              + "あとで「一覧に戻す」「完全に削除」もできます。よろしいですか？")) return;
+          s2.retired = true;
+          s2.retiredAt = Date.now();
+          if (config.activeStaffId === s2.id) {
+            config.activeStaffId = activeStaffList()[0].id;
+            loadState(); syncFormFromState(); recalc();
+          }
+          saveConfig(); renderStoreConfig(); renderStaffBar();
+          return;
+        }
+        if (restoreId) {
+          var r = staffById(restoreId);
+          if (!r) return;
+          delete r.retired; delete r.retiredAt;
+          saveConfig(); renderStoreConfig(); renderStaffBar();
+          return;
+        }
+        if (purgeId) {
+          var p = staffById(purgeId);
+          if (!p) return;
+          var nS = (readJson(savedKey(p.id)) || []).length;
+          if (!window.confirm("「" + (p.name || "担当") + "」を完全に削除します。\n\n"
+              + "保存した見積もり（この端末に " + nS + " 件）・テンプレート・作りかけの見積もりを、この端末と店舗の全端末から消します。"
+              + "実績の集計からもこの担当の分が消えます。\n元に戻せません。本当に削除しますか？")) return;
+          if (!window.confirm("最終確認: 「" + (p.name || "担当") + "」のデータを完全に削除します。よろしいですか？")) return;
+          config.staff = config.staff.filter(function (x) { return x.id !== p.id; });
           try {
-            quoteDoc(removed.id).delete().catch(function () {});
-            savedDoc(removed.id).delete().catch(function () {});
-            tplDoc(removed.id).delete().catch(function () {});
-          } catch (e3) {}
+            localStorage.removeItem(quoteKey(p.id));
+            localStorage.removeItem(savedKey(p.id));
+            localStorage.removeItem(tplKey(p.id));
+          } catch (e2) {}
+          if (cloudOn()) {
+            try {
+              quoteDoc(p.id).delete().catch(function () {});
+              savedDoc(p.id).delete().catch(function () {});
+              tplDoc(p.id).delete().catch(function () {});
+            } catch (e3) {}
+          }
+          saveConfig(); renderStoreConfig(); renderStaffBar();
         }
-        if (config.activeStaffId === removed.id) {
-          config.activeStaffId = config.staff[0].id;
-          loadState(); syncFormFromState(); recalc();
-        }
-        saveConfig();
-        renderStoreConfig();
-        renderStaffBar();
       });
     }
 
