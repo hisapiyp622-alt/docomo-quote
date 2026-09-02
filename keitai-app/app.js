@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.142.1";
+  var APP_VERSION = "1.142.2";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -9519,15 +9519,31 @@
       var k = e.target && e.target.getAttribute && e.target.getAttribute("data-calc");
       if (k) calcKey(k);
     });
+    /* 電卓のどこかを触ったら、キーボードは電卓宛てにする（入力欄からは離れる）。
+     * ブラウザによってはボタンを押しても選択が移らないため、ここで移しておく。 */
+    var cbox = $("calcBox");
+    if (cbox) cbox.addEventListener("pointerdown", function () {
+      try { cbox.focus({ preventScroll: true }); } catch (e4) { try { cbox.focus(); } catch (e5) {} }
+    });
     var t10 = $("calcTax10");
     if (t10) t10.addEventListener("click", function () { calcTimes(1.1); });
     var tex = $("calcTaxEx");
     if (tex) tex.addEventListener("click", function () { calcTimes(1 / 1.1); });
-    // キーボードでも打てるようにする（PCで使うとき）
+    /* キーボードでも打てるようにする（PCで使うとき）。
+     * ただし、入力欄に文字を打っているあいだは電卓は一切反応しない。
+     * 端末代金を入れながら電卓を開いておくことが多く、以前は打った数字が
+     * 電卓にも入ってしまっていた（電卓の中身は見積もりから完全に独立）。 */
     document.addEventListener("keydown", function (e) {
       var d = $("calcDlg");
       if (!d || d.hidden) return;
+      var a = document.activeElement;
+      var box = $("calcBox");
+      var inCalc = !!(a && box && box.contains(a));
+      var inField = !!(a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable));
+      if (inField && !inCalc) return;   // 入力欄を打っている＝電卓宛てではない
       var k = e.key;
+      // 電卓のボタンを選んだ状態でのスペースは、そのボタンをもう一度押してしまうので止める
+      if (k === " " || k === "Spacebar") { e.preventDefault(); return; }
       if (/^[0-9.]$/.test(k)) { calcKey(k); e.preventDefault(); }
       else if (k === "+" || k === "-" || k === "*" || k === "/") { calcKey(k); e.preventDefault(); }
       else if (k === "Enter" || k === "=") { calcKey("="); e.preventDefault(); }
