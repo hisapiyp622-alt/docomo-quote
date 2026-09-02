@@ -190,9 +190,8 @@ async function verifyAll(findings, phaseName) {
    *   致命・重大 → 事実確認＋対策済みか の2人。両方が残して確定
    *   中・軽     → 事実確認 1人。棄却なら落とす
    *   軽で自信の低いもの（confidence < 0.5）は反証前に落とす（人数の節約） */
-  const dropped = findings.filter((f) => f.severity === '軽' && (f.confidence || 0) < 0.5)
-  if (dropped.length) log(`${phaseName}: 軽・自信の低い ${dropped.length} 件は反証せず除外`)
-  const targets = findings.filter((f) => !(f.severity === '軽' && (f.confidence || 0) < 0.5))
+  // 軽は反証せず「未検証（参考）」としてレポートに回す（利用枠の節約。呼び出し側で扱う）
+  const targets = findings.filter((f) => f.severity !== '軽')
   return await parallel(targets.map((f) => async () => {
     const heavy = f.severity === '致命' || f.severity === '重大'
     const lenses = heavy ? ['fact', 'handled'] : ['fact']
@@ -223,6 +222,7 @@ phase('発見')
 const seen = new Set()
 const confirmed = []
 const rejected = []
+const unverified = []   // 軽（反証を省略したもの）
 let coverageNotes = []
 
 async function findAndVerify(dims, phaseFind, phaseVerify) {
@@ -232,7 +232,9 @@ async function findAndVerify(dims, phaseFind, phaseVerify) {
   coverageNotes.push(...found.map((r, i) => `${dims[i] ? dims[i].name : '?'}: ${r.coverage_note}`))
   const all = found.flatMap((r) => r.findings)
   const fresh = all.filter((f) => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
-  log(`${phaseFind}: ${all.length} 件（重複除去後 ${fresh.length} 件）→ 反証へ`)
+  const light = fresh.filter((f) => f.severity === '軽')
+  unverified.push(...light)
+  log(`${phaseFind}: ${all.length} 件（重複除去後 ${fresh.length} 件、うち軽 ${light.length} 件は未検証扱い）→ 反証へ`)
   const verified = (await verifyAll(fresh, phaseVerify)).filter(Boolean)
   const ok = verified.filter((v) => v.survives)
   confirmed.push(...ok)
@@ -245,7 +247,7 @@ await findAndVerify(DIMENSIONS, '発見', '反証')
 
 phase('補完')
 let round = 0
-while (round < 2) {
+while (round < 1) {
   round++
   const critic = await agent(`${PREAMBLE}
 
@@ -261,7 +263,7 @@ ${coverageNotes.join('\n')}
     { label: `補完:批評 第${round}回`, phase: '補完', schema: CRITIC_SCHEMA })
   if (!critic || !critic.missing_angles.length) { log(`補完 第${round}回: 追加観点なし`); break }
   log(`補完 第${round}回: 追加観点 ${critic.missing_angles.length} 件`)
-  const extra = critic.missing_angles.map((m, i) => ({ key: `extra${round}_${i}`, name: m.name, prompt: m.prompt }))
+  const extra = critic.missing_angles.slice(0, 4).map((m, i) => ({ key: `extra${round}_${i}`, name: m.name, prompt: m.prompt }))
   const added = await findAndVerify(extra, '補完', '補完')
   if (!added) { log(`補完 第${round}回: 新たな確定なし → 打ち切り`); break }
 }
@@ -278,6 +280,9 @@ const report = await agent(`${PREAMBLE}
 確定した指摘（反証を生き残ったもの）:
 ${JSON.stringify(confirmed.map((f) => ({ severity: f.severity, title: f.title, dimension: f.dimension, file: f.file, line: f.line, evidence: f.evidence, impact: f.impact, fix: f.fix, effort: f.effort, known: f.known, votes: f.votes })), null, 1)}
 
+反証を省略した軽い指摘（「未検証・参考」として第5章に短く載せる。確定扱いにしない）:
+${JSON.stringify(unverified.map((f) => ({ title: f.title, file: f.file, line: f.line, fix: f.fix, confidence: f.confidence })), null, 1)}
+
 棄却された指摘（参考。理由付き。レポートには「検討したが問題なしと判断したもの」として短く載せる）:
 ${JSON.stringify(rejected.map((f) => ({ title: f.title, votes: f.votes })), null, 1)}
 
@@ -288,7 +293,7 @@ ${JSON.stringify(rejected.map((f) => ({ title: f.title, votes: f.votes })), null
 2. 数字（確定件数の内訳、観点別）
 3. 「売る前に必ず」（致命・重大）: 1件ずつ、何が困るか／どう直すか／手間の目安。根拠のファイル:行も添える
 4. 「導入後すぐ」（中）
-5. 「規模が増えたら」（軽・将来）
+5. 「規模が増えたら」（軽・将来。反証を省略した「未検証・参考」もここに区別して載せる）
 6. 既知の課題の現状（known=true のもの: 未解決・解決済みの整理）
 7. 検討したが問題なしと判断したもの（棄却分・1行ずつ）
 8. 推奨する進め方（順番・まとまり・依存関係。数週間の計画に落とす）
@@ -302,6 +307,7 @@ return {
   confirmedCount: confirmed.length,
   bySeverity: order.map((s) => [s, confirmed.filter((f) => f.severity === s).length]),
   rejectedCount: rejected.length,
+  unverifiedCount: unverified.length,
   conclusion: report,
   confirmed: confirmed.map((f) => ({ severity: f.severity, title: f.title, file: f.file, line: f.line, effort: f.effort, known: f.known })),
 }
