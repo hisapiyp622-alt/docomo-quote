@@ -632,10 +632,19 @@
       if (!clSel.options.length) {
         CUR_LINES.forEach(function (c) {
           var o = document.createElement("option");
-          o.value = c.id; o.textContent = c.name;
+          o.value = c.id;
           clSel.appendChild(o);
         });
       }
+      /* 店舗ごとの表示調整（契約の器の features）: 名前の置き換えと、出さない選択肢。
+       * 毎回描き直す（機能スイッチはログイン後に届くため） */
+      CUR_LINES.forEach(function (c, i) {
+        var o = clSel.options[i];
+        if (!o) return;
+        o.textContent = curLineName(c);
+        o.hidden = curLineHidden(c.id);
+      });
+      if (state.curLine && curLineHidden(state.curLine)) state.curLine = "";
       clSel.value = state.curLine || "";
       $("ieCurLineOtherField").hidden = state.curLine !== "other";
       $("ieCurLineOther").value = state.curLineOther || "";
@@ -685,7 +694,7 @@
     var hOpt = $("ieProduct").querySelector('option[value="hikaric"]');
     if (hOpt) hOpt.hidden = !typecOk;
     var zOpt = $("ieCurLine") && $("ieCurLine").querySelector('option[value="ztv"]');
-    if (zOpt) zOpt.hidden = !typecOk;
+    if (zOpt) zOpt.hidden = !typecOk || curLineHidden("ztv");
     /* タイプC: 申込種別は「新規／転用（タイプC）」（内部値 kirikae）だけ。他の商材では出さない。
      * ケーブルテレビ設備なのでフレッツ転用・事業者変更は当たらないため。 */
     var isC = !!PRODUCTS[state.product].typec;
@@ -1071,6 +1080,19 @@
     { id: "other", name: "その他" }
   ];
   var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
+  /* 店舗ごとの表示調整（契約の器の features に販売側が書く）:
+   *   curLinesHide: ["jcom", "cable", ...]  … その店舗では出さない現在回線
+   *   curLineNames: { ztv: "ZTV" }           … 表示名の置き換え
+   * 例: 特定の代理店向けデモでは、扱わない回線を隠して名前を短くする。 */
+  function featVal(key) { return typeof window.KQ_FEATVAL === "function" ? window.KQ_FEATVAL(key) : undefined; }
+  function curLineHidden(id) {
+    var h = featVal("curLinesHide");
+    return !!id && Array.isArray(h) && h.indexOf(id) >= 0;
+  }
+  function curLineName(c) {
+    var m = featVal("curLineNames");
+    return (m && typeof m === "object" && m[c.id]) ? String(m[c.id]) : c.name;
+  }
   /* ヒアリング内容を1行にまとめる（引き継ぎシート用） */
   function curHearingText() {
     if (!state) return "";
@@ -1098,7 +1120,7 @@
   function curLineLabel() {
     var d = curLineDef();
     if (!d) return "";
-    return d.id === "other" ? (state.curLineOther || "その他") : d.name;
+    return d.id === "other" ? (state.curLineOther || "その他") : curLineName(d);
   }
 
   /* ---------- 開通までの流れ（見積書のお客様説明用） ----------
@@ -1238,7 +1260,7 @@
         step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "**（ネットのみ）**" : ""),
           "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
         noteTo("の解約", cl.tel
-          ? "解約のご連絡先: " + cl.name + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
+          ? "解約のご連絡先: " + curLineName(cl) + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
           : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
         /* J:COMはテレビ・お電話を残したままネットだけ乗り換えるご案内がある。
          * まとめて解約されると事故になるため、連絡時の言い方を必ず載せる。 */
