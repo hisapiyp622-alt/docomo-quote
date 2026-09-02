@@ -652,7 +652,8 @@
       var cd = curLineDef();
       if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
         clh.hidden = false;
-        clh.textContent = (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
+        clh.textContent = (cd.catv && (cd.prefs || []).length ? "提供エリア: " + cd.prefs.join("・") + "　" : "")
+          + (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
           + (state.applyType === "jigyosha" && cd.jgTel
               ? "　／　承諾番号の窓口: " + cd.jgTel + (cd.jgTelNote ? "（" + cd.jgTelNote + "）" : "")
               : "")
@@ -693,8 +694,6 @@
     var typecOk = typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
     var hOpt = $("ieProduct").querySelector('option[value="hikaric"]');
     if (hOpt) hOpt.hidden = !typecOk;
-    var zOpt = $("ieCurLine") && $("ieCurLine").querySelector('option[value="ztv"]');
-    if (zOpt) zOpt.hidden = !typecOk || curLineHidden("ztv");
     /* タイプC: 申込種別は「新規／転用（タイプC）」（内部値 kirikae）だけ。他の商材では出さない。
      * ケーブルテレビ設備なのでフレッツ転用・事業者変更は当たらないため。 */
     var isC = !!PRODUCTS[state.product].typec;
@@ -1058,6 +1057,63 @@
    * 開通までの流れに解約のご案内を出すのにも使う。
    * tel は一次情報で確認できたものだけ載せる（誤った番号のご案内は事故になるため。
    * 確認でき次第、ここに追加する）。 */
+  /* ドコモ光 タイプC の提携ケーブルテレビ会社（関西・中部。2026-09-03 に公式の
+   * 「ドコモ光 1ギガ タイプC」提携CATV一覧で確認）。
+   * 「現在のネット回線」の選択肢に並ぶが、<b>ZTV以外は既定では出さない</b>。
+   * 店舗ごとに、契約の器（contracts）の features で出す会社を選ぶ:
+   *   catvShow:  ["baycom", "katch"]  … 出す会社のID（下の id）
+   *   catvPrefs: ["大阪", "兵庫"]      … その県で提供している会社をまとめて出す
+   * ZTVは従来どおり既定で出す（出したくない店舗は curLinesHide に "ztv"）。
+   * 会社を増やすときは、必ず公式の提携CATV一覧で確認してからここに足す。 */
+  var CATV_LINES = [
+    { id: "ztv", name: "ZTV", prefs: ["三重", "滋賀", "京都", "和歌山"],
+      cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
+    { id: "kcnkyoto", name: "KCN京都", prefs: ["京都"] },
+    { id: "komadori", name: "こまどりケーブル", prefs: ["奈良"] },
+    { id: "kisiwada", name: "テレビ岸和田", prefs: ["大阪"] },
+    { id: "baycom", name: "ベイ・コミュニケーションズ", prefs: ["大阪", "兵庫"] },
+    { id: "ccnet", name: "CCNet", prefs: ["岐阜", "愛知", "三重"] },
+    { id: "goolight", name: "Goolight", prefs: ["長野"] },
+    { id: "tam", name: "TAM", prefs: ["富山"] },
+    { id: "tokai", name: "TOKAIケーブルネットワーク", prefs: ["静岡"] },
+    { id: "asagao", name: "あさがおテレビ", prefs: ["石川"] },
+    { id: "tonamieiseitsuusin", name: "となみ衛星通信テレビ", prefs: ["富山"] },
+    { id: "himawari", name: "ひまわりネットワーク", prefs: ["岐阜", "愛知"] },
+    { id: "advancecope", name: "アドバンスコープ", prefs: ["三重"] },
+    { id: "ecocitykomagatake", name: "エコーシティー・駒ヶ岳", prefs: ["長野"] },
+    { id: "nct", name: "エヌ・シィ・ティ", prefs: ["新潟"] },
+    { id: "lcv", name: "エルシーブイ", prefs: ["長野"] },
+    { id: "katch", name: "キャッチネットワーク", prefs: ["愛知"] },
+    { id: "greencity", name: "グリーンシティコム", prefs: ["愛知"] },
+    { id: "kani", name: "ケーブルテレビ可児", prefs: ["岐阜"] },
+    { id: "toyama", name: "ケーブルテレビ富山", prefs: ["富山"] },
+    { id: "suzuka", name: "ケーブルネット鈴鹿", prefs: ["三重"] },
+    { id: "ccn", name: "シーシーエヌ", prefs: ["岐阜"] },
+    { id: "cty", name: "シー・ティーワイ", prefs: ["三重"] },
+    { id: "starcat", name: "スターキャット", prefs: ["愛知"] },
+    { id: "komatsu", name: "テレビ小松", prefs: ["石川"] },
+    { id: "newmedia", name: "ニューメディア", prefs: ["北海道", "山形", "福島", "新潟"] },
+    { id: "mics", name: "ミクスネットワーク", prefs: ["愛知"] },
+    { id: "ueda", name: "上田ケーブルビジョン", prefs: ["長野"] },
+    { id: "jouetsu", name: "上越ケーブルビジョン", prefs: ["新潟"] },
+    { id: "igaueno", name: "伊賀上野ケーブルテレビ", prefs: ["三重"] },
+    { id: "oogaki", name: "大垣ケーブルテレビ", prefs: ["岐阜"] },
+    { id: "imizu", name: "射水ケーブルネットワーク", prefs: ["富山"] },
+    { id: "omaezaki", name: "御前崎ケーブルテレビ", prefs: ["静岡"] },
+    { id: "arakawainfo", name: "新川インフォメーションセンター", prefs: ["富山"] },
+    { id: "kawaguchiko", name: "河口湖有線テレビ放送", prefs: ["山梨"] },
+    { id: "chitamedias", name: "知多メディアスネットワーク", prefs: ["愛知"] },
+    { id: "chitahantou", name: "知多半島ケーブルネットワーク", prefs: ["愛知"] },
+    { id: "clovertv", name: "西尾張シーエーティーヴィ", prefs: ["愛知"] },
+    { id: "takaoka", name: "高岡ケーブルネットワーク", prefs: ["富山"] }
+  ];
+  CATV_LINES.forEach(function (c) {
+    c.catv = true;
+    if (!c.cancel) {
+      c.cancel = "タイプCへ切り替える場合、ネットの解約手続き・精算方法はケーブルテレビ会社ごとに異なります（"
+        + c.name + "にご確認ください）。テレビ・お電話は" + c.name + "のご契約のまま続きます";
+    }
+  });
   var CUR_LINES = [
     { id: "", name: "（未ヒアリング）" },
     { id: "none", name: "利用なし（固定回線なし）" },
@@ -1073,21 +1129,39 @@
     { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
     { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
     { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
-    { id: "rakuten", name: "楽天ひかり" },
-    { id: "ztv", name: "ZTV（タイプCへ切替）", cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
+    { id: "rakuten", name: "楽天ひかり" }
+  ].concat(CATV_LINES, [
     { id: "cable", name: "ケーブルテレビのネット" },
     { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     { id: "other", name: "その他" }
-  ];
+  ]);
   var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
   /* 店舗ごとの表示調整（契約の器の features に販売側が書く）:
    *   curLinesHide: ["jcom", "cable", ...]  … その店舗では出さない現在回線
    *   curLineNames: { ztv: "ZTV" }           … 表示名の置き換え
    * 例: 特定の代理店向けデモでは、扱わない回線を隠して名前を短くする。 */
   function featVal(key) { return typeof window.KQ_FEATVAL === "function" ? window.KQ_FEATVAL(key) : undefined; }
+  function curLineById(id) {
+    return CUR_LINES.filter(function (c) { return c.id === id; })[0] || null;
+  }
+  /* タイプCの機能スイッチ（切の店舗ではケーブルテレビ会社を一切出さない） */
+  function typecFeatOn() {
+    return typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
+  }
+  /* その店舗で出すケーブルテレビ会社か（catvShow のID、または catvPrefs の県で一致） */
+  function catvOn(c) {
+    var show = featVal("catvShow");
+    if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
+    var prefs = featVal("catvPrefs");
+    return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
   function curLineHidden(id) {
     var h = featVal("curLinesHide");
-    return !!id && Array.isArray(h) && h.indexOf(id) >= 0;
+    if (!!id && Array.isArray(h) && h.indexOf(id) >= 0) return true;
+    var c = curLineById(id);
+    if (!c || !c.catv) return false;
+    if (!typecFeatOn()) return true;             // タイプCを切っている店舗
+    return c.id === "ztv" ? false : !catvOn(c);  // ZTVは従来どおり既定で表示
   }
   function curLineName(c) {
     var m = featVal("curLineNames");
