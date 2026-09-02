@@ -642,9 +642,10 @@
         var o = clSel.options[i];
         if (!o) return;
         o.textContent = curLineName(c);
-        o.hidden = curLineHidden(c.id);
+        /* いま選んでいる会社は、出さない設定でも選択肢に残す
+         * （保存した見積もりを開き直したときに、ヒアリングの記録が黙って消えないように） */
+        o.hidden = curLineHidden(c.id) && c.id !== state.curLine;
       });
-      if (state.curLine && curLineHidden(state.curLine)) state.curLine = "";
       clSel.value = state.curLine || "";
       $("ieCurLineOtherField").hidden = state.curLine !== "other";
       $("ieCurLineOther").value = state.curLineOther || "";
@@ -1148,8 +1149,11 @@
   function typecFeatOn() {
     return typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
   }
-  /* その店舗で出すケーブルテレビ会社か（catvShow のID、または catvPrefs の県で一致） */
+  /* その店舗で出すケーブルテレビ会社か（catvShow のID、または catvPrefs の県で一致）。
+   * 社内版（阪南・常盤東）は契約の器そのものが無く設定できないため、
+   * 従来どおり ZTV だけは出す（この2店舗はZTVエリアのため）。 */
   function catvOn(c) {
+    if (window.KEITAI_INTERNAL && c.id === "ztv") return true;
     var show = featVal("catvShow");
     if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
     var prefs = featVal("catvPrefs");
@@ -1160,8 +1164,8 @@
     if (!!id && Array.isArray(h) && h.indexOf(id) >= 0) return true;
     var c = curLineById(id);
     if (!c || !c.catv) return false;
-    if (!typecFeatOn()) return true;             // タイプCを切っている店舗
-    return c.id === "ztv" ? false : !catvOn(c);  // ZTVは従来どおり既定で表示
+    if (!typecFeatOn()) return true;   // タイプCを切っている店舗
+    return !catvOn(c);                 // ケーブルテレビ会社は既定で出さない（ZTVを含む）
   }
   function curLineName(c) {
     var m = featVal("curLineNames");
