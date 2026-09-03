@@ -662,7 +662,7 @@
       var cd = curLineDef();
       if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
         clh.hidden = false;
-        clh.textContent = (cd.catv && (cd.prefs || []).length ? "提供エリア: " + cd.prefs.join("・") + "　" : "")
+        clh.textContent = ((cd.catv || cd.optIn) && (cd.prefs || []).length ? "提供エリア: " + cd.prefs.join("・") + "　" : "")
           + (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
           + (state.applyType === "jigyosha" && cd.jgTel
               ? "　／　承諾番号の窓口: " + cd.jgTel + (cd.jgTelNote ? "（" + cd.jgTelNote + "）" : "")
@@ -1143,7 +1143,18 @@
     { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
     { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
     { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
-    { id: "rakuten", name: "楽天ひかり" }
+    { id: "rakuten", name: "楽天ひかり" },
+    /* コミュファ光（中部テレコミュニケーション・中部電力系）。フレッツ光の
+     * コラボではない独自回線なので、ドコモ光へは転用・事業者変更ができず
+     * 「新規」扱い（工事が必要）。解約金・工事費の残債にも注意。
+     * 提供エリアは愛知・岐阜・三重・静岡・長野（一部を除く）。窓口とガイダンスは
+     * 公式（help.commufa.jp コンタクトセンターの営業時間と連絡先）で確認・2026-09-03。
+     * 既定では出さない。店舗ごとに契約の器の features で出す（下の curLineOptInOn）。 */
+    { id: "commufa", name: "コミュファ光", optIn: true,
+      prefs: ["愛知", "岐阜", "三重", "静岡", "長野"],
+      tel: "0120-218-919",
+      telNote: "コミュファ コンタクトセンター・10:00〜18:00 年中無休。回線解約は固定電話から 1-3／携帯から 2-1-3",
+      cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" }
   ].concat(CATV_LINES, [
     /* 「ケーブルテレビのネット」は 1.140.2 で選択肢から外した（タイプCの提携会社を
      * 会社名で選ぶようにしたため）。過去の見積もりで選んである場合だけ表示に残す。 */
@@ -1154,6 +1165,8 @@
   var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
   /* 店舗ごとの表示調整（契約の器の features に販売側が書く）:
    *   curLinesHide: ["jcom", "cable", ...]  … その店舗では出さない現在回線
+   *   curLinesShow: ["commufa"]              … 既定では出さない回線を出す（optIn の回線）
+   *   curLinePrefs: ["愛知", "岐阜"]         … その県で提供している回線をまとめて出す
    *   curLineNames: { ztv: "ZTV" }           … 表示名の置き換え
    * 例: 特定の代理店向けデモでは、扱わない回線を隠して名前を短くする。 */
   function featVal(key) { return typeof window.KQ_FEATVAL === "function" ? window.KQ_FEATVAL(key) : undefined; }
@@ -1174,11 +1187,21 @@
     var prefs = featVal("catvPrefs");
     return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
   }
+  /* 既定では出さない回線（コミュファ光など）を、その店舗で出すか。
+   * curLinesShow のID、または curLinePrefs の県で一致したときだけ出す。
+   * 菱和テレコムの東海エリア向けに用意（2026-09-03）。 */
+  function curLineOptInOn(c) {
+    var show = featVal("curLinesShow");
+    if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
+    var prefs = featVal("curLinePrefs");
+    return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
   function curLineHidden(id) {
     var h = featVal("curLinesHide");
     if (!!id && Array.isArray(h) && h.indexOf(id) >= 0) return true;
     var c = curLineById(id);
     if (c && c.retired) return true;   // 選択肢から外した項目（選んである見積もりだけ残す）
+    if (c && c.optIn) return !curLineOptInOn(c);   // 既定では出さない回線
     if (!c || !c.catv) return false;
     if (!typecFeatOn()) return true;   // タイプCを切っている店舗
     return !catvOn(c);                 // ケーブルテレビ会社は既定で出さない（ZTVを含む）
