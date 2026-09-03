@@ -1245,3 +1245,8 @@ body.present .sheet{box-shadow:none}
 .mu-ended{border:1px solid var(--red);border-radius:8px;background:#fff;padding:8px 10px;margin:8px 0}
 .mu-ended ul{margin:6px 0 0;padding-left:1.2em}
 .mu-ended li{font-size:13px;margin:2px 0}
+
+/* 調子が悪いときの情報（製品化レビュー 4-26） */
+.about-diag{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.about-diag .diag-text{max-height:220px;overflow:auto;background:#FAFAFA;border:1px solid var(--line);
+  border-radius:6px;padding:8px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-all;margin:6px 0}

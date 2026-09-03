@@ -81,9 +81,20 @@
 1. 変更後 `node --check`・`node tests/run-calc-tests.js`・`node tests/run-bill-tests.js`・
    `node tests/run-ienaka-tests.js`（光・5G。統合版と単体版の一致も見る）・
    `node tests/run-master-update-tests.js`（料金表の配信と受付終了）・
+   `node tests/run-diag-tests.js`（調子が悪いときの情報）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh` も）
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す
 3. **`node tools/build-internal.js` を実行**してルートを再生成する（社内版のキャッシュ名も追従する）
-4. コミット → `git rebase --onto origin/main HEAD~N` → force-with-lease で push → PR作成 → squashマージ
-5. GitHub Pages に新バージョンが出るまで確認してから完了報告する
+4. `node tools/release-check.js`（版の一致・キャッシュ名・生成物の鮮度。CIでも見ています）
+5. コミット → `git rebase --onto origin/main HEAD~N` → force-with-lease で push → PR作成 → squashマージ
+6. 配信（frontalk へ反映して版のタグを打つ）:
+   ```
+   sh tools/release.sh          # テスト＋決まりの確認＋出荷用を作る（配信はしない）
+   sh tools/release.sh --ship   # 配信用リポジトリへ反映し、git tag v<版> を打つ
+   ```
+7. 公開されるまで確認してから完了報告する
+   （`curl -s https://frontalk.curacon.co.jp/app.js | grep -m1 APP_VERSION`）
+
+**配った版を戻したいとき**は、タグから出荷用を作り直して配信用リポジトリへ入れ直します。
+手順は非公開リポジトリ `docomo-quote-internal` の `OPERATIONS.md`。

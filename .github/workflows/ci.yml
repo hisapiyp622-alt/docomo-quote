@@ -45,6 +45,8 @@ jobs:
         run: node tests/run-ienaka-tests.js
       - name: 料金表の配信（受付終了）のテスト
         run: node tests/run-master-update-tests.js
+      - name: 調子が悪いときの情報（診断）のテスト
+        run: node tests/run-diag-tests.js
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js
 
@@ -65,3 +67,8 @@ jobs:
       - name: 料金表を変えたら版と基準日も上げているか
         if: github.event_name == 'pull_request'
         run: node tools/check-master-version.js "${{ github.event.pull_request.base.sha }}"
+
+      # 版・キャッシュ名・更新履歴・生成物の食い違いを止める（レビュー4-33）
+      - name: リリースの決まり（版の一致・キャッシュ名・生成物の鮮度）
+        if: github.event_name == 'pull_request'
+        run: node tools/release-check.js "${{ github.event.pull_request.base.sha }}"
