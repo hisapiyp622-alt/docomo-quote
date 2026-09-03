@@ -1,6 +1,6 @@
 /* このファイルは tools/build-internal.js が ienaka-app/sw.js から生成します。直接編集しないでください。 */
 /* イエナカ見積もり（単体版）— ネット優先・失敗時キャッシュ */
-var CACHE = "ienaka-internal-v41";
+var CACHE = "ienaka-internal-v42";
 var ASSETS = ["./", "index.html", "../ienaka-app/style.css", "../ienaka-app/app.js", "../keitai-app/qr.js", "../firebase-config.js", "manifest.webmanifest", "../ienaka-app/icon.svg"];
 
 self.addEventListener("install", function (e) {
@@ -27,6 +27,20 @@ self.addEventListener("fetch", function (e) {
     // no-cache: ブラウザのHTTPキャッシュを飛ばしてサーバーへ再検証し、常に最新を取得
     fetch(e.request, { cache: "no-cache" })
       .then(function (res) {
+        /* 正常な応答だけを控える（ケータイ側 keitai-app/sw.js と同じ判定・製品化レビュー 4-29）。
+         * 店頭Wi-Fiの認証（キャプティブポータル）が返すHTMLや、サーバーの
+         * エラー応答を app.js 等として保存すると、次のオフライン時に壊れた
+         * アプリが配信され、サイトデータの削除まで復旧できなくなる。
+         * ・自サイトのファイル: 200系で、かつ他のサイトへ転送されていないもの
+         * ・他サイト（Firebase SDK等）: 200系または opaque（中身を確認できない
+         *   no-cors応答。従来どおり控えて、オフライン起動の望みを残す） */
+        var sameOrigin = e.request.url.indexOf(self.location.origin) === 0;
+        var cacheable = res && (sameOrigin
+          ? (res.ok && res.url.indexOf(self.location.origin) === 0)
+          : (res.ok || res.type === "opaque"));
+        if (!cacheable) {
+          return caches.match(e.request).then(function (c) { return c || res; });
+        }
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
         return res;

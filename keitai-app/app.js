@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.152.0";
+  var APP_VERSION = "1.153.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -200,6 +200,37 @@
    * localStorage への大事な保存はすべて lsSet() を通す。
    * 容量超過などで保存に失敗すると、以前は何も出ないまま「保存できたつもり」に
    * なり、あとからデータが消えた形で発覚していた。失敗したら画面上部に警告を出す。 */
+  /* ---------- 不具合の記録（製品化レビュー 4-26） ----------
+   * これまで、店舗で何かおかしくなっても手がかりが1つも残らなかった
+   * （エラーの記録なし／同期の失敗も「オフライン」か「権限エラー」の二択だけ）。
+   * 直近 100 件を<b>この端末の中だけ</b>に控え、「情報」画面から読めるようにする。
+   *
+   * 入れないもの: お客様名・電話番号・見積もりの中身・パスワード。
+   * 記録するのは「いつ・どこで・どんな種類の不具合が起きたか」だけ。
+   * どこにも自動送信しない（店舗が「コピー」を押して伝えるときだけ外に出る）。 */
+  var LOG_MAX = 100;
+  var LOG_KEY = NS + "-log-v1";
+  var logBuf = [];
+  function logLoad() {
+    try {
+      var a = JSON.parse(localStorage.getItem(LOG_KEY) || "[]");
+      if (a && a.length) logBuf = a.slice(-LOG_MAX);
+    } catch (e) {}
+  }
+  function logAdd(kind, msg) {
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    logBuf.push({
+      at: (d.getMonth() + 1) + "/" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes()) + ":" + z(d.getSeconds()),
+      k: String(kind || ""),
+      m: String(msg == null ? "" : msg).slice(0, 300),
+      v: APP_VERSION
+    });
+    if (logBuf.length > LOG_MAX) logBuf = logBuf.slice(-LOG_MAX);
+    /* 記録そのものの保存に失敗しても、警告は出さない（本題ではないため）。
+     * lsSet を通すと「端末に保存できません」の赤帯が記録のせいで出てしまう。 */
+    try { localStorage.setItem(LOG_KEY, JSON.stringify(logBuf)); } catch (e) {}
+  }
   var lsFail = {};   // いま端末に保存できていない項目
   function lsWrite(key, value) {
     try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
@@ -222,6 +253,7 @@
     // いっぱいなら、古い履歴の本文を端末から外して場所を空け、もう一度だけ試す
     if (lsMakeRoom() && lsWrite(key, value)) { lsDone(key); return true; }
     lsFail[key] = true;
+    logAdd("端末保存", "保存できませんでした（" + key + "・使用量 " + storageUsageText() + "）");
     storageWarn();
     return false;
   }
@@ -4477,6 +4509,7 @@
     roleFetched: false, // 役割を確かめ終えたか（店舗は該当なしのまま進む）
     suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
     metaTimer: null,      // 店舗の版の記録（4-12）
+    lastOkAt: 0,          // 最後に同期できた時刻（「情報」画面に出す・4-26）
     storeSigSeen: "",     // 最後に取り込んだ店舗情報の中身（版の記録だけの更新は当て直さない）
     quoteSynced: false, // クラウドの見積もりを一度受け取るまで、この端末からは送らない
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
@@ -4493,11 +4526,16 @@
   /* 端末に保存できていないときに「同期✓」だけ出すと、消えたことに気づけない。
    * クラウドへ送れていても、端末側が失敗していればそれが分かる表示にする（4-20）。 */
   function cloudOk() {
+    CLOUD.lastOkAt = Date.now();   // 「情報」画面の最終同期（4-26）
     if (lsFailed()) { syncStatus("同期✓（端末に保存できず）", "err"); return; }
     syncStatus("同期✓", "ok");
   }
   function cloudNg(err) {
     var denied = /permission|insufficient/i.test(String(err));
+    /* 中身も残す。これまでは「オフライン」「権限エラー」の二択だけで、
+     * 実際に何が起きたのか（どのルールで弾かれたのか）が追えなかった（4-26）。 */
+    logAdd("同期", (denied ? "権限エラー: " : "失敗: ")
+      + String((err && (err.code || err.message)) || err || ""));
     syncStatus(denied ? "同期:権限エラー" : "同期:オフライン", "err");
     /* 権限エラーは通信の一時的な不調と違い、放っておいても直らない。
      * 気づかないまま使い続けると、この端末の内容がほかの端末へ渡らないので、
@@ -10500,6 +10538,42 @@
         body.innerHTML = '<p class="hint">読み込めませんでした。通信環境をご確認のうえ、もう一度お試しください。</p>';
       });
   }
+  /* ---------- 調子が悪いときの情報（製品化レビュー 4-26） ----------
+   * 店舗から「動かない」と言われたときに、こちらが最初に聞きたいことを
+   * ひとまとめにして、店舗が押してコピーするだけで伝えられるようにする。
+   * お客様の情報・見積もりの中身は入れない。自動送信もしない。 */
+  function diagText() {
+    function t(ms) {
+      if (!ms) return "まだありません";
+      var d = new Date(num(ms));
+      function z(n) { return ("0" + n).slice(-2); }
+      return (d.getMonth() + 1) + "/" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+    }
+    var st = $("syncStatus");
+    var lines = [
+      "アプリ版: " + APP_VERSION,
+      "料金表: v" + num(MASTER.masterVersion) + "（" + (MASTER.updated || "") + "）",
+      "店舗ID: " + (storeUid() || "（ログインしていません）"),
+      "担当ID: " + ((activeStaff() && activeStaff().id) || "（未選択）"),
+      "この端末のID: " + CLOUD.clientId,
+      "同期の表示: " + (st ? (st.textContent || "（無し）") : "（無し）"),
+      "最後に同期できた時刻: " + t(CLOUD.lastOkAt),
+      "端末の保存領域: " + storageUsageText() + (lsFailed() ? "（保存できていない項目あり）" : ""),
+      "保存した見積もり: " + (savedList || []).length + "件",
+      "画面の大きさ: " + window.innerWidth + "×" + window.innerHeight,
+      "ブラウザ: " + String(navigator.userAgent || "").slice(0, 120),
+      "ネット: " + (navigator.onLine ? "つながっています" : "つながっていません"),
+      "", "--- 直近の記録（新しい順・最大" + LOG_MAX + "件） ---"
+    ];
+    var recent = logBuf.slice().reverse().map(function (e) {
+      return e.at + " [" + e.k + "] " + e.m + (e.v && e.v !== APP_VERSION ? "（版 " + e.v + "）" : "");
+    });
+    return lines.join("\n") + "\n" + (recent.length ? recent.join("\n") : "（記録はありません）");
+  }
+  function storeUid() {
+    if (CLOUD.actAsUid) return CLOUD.actAsUid + "（保守・上位で表示中）";
+    return (CLOUD.user && CLOUD.user.uid) || "";
+  }
   function showAbout(show) {
     var el = $("aboutOverlay");
     if (!el) return;
@@ -10516,6 +10590,11 @@
       $("aboutMeta").innerHTML = rows.map(function (r) {
         return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
       }).join("");
+      // 調子が悪いときの情報は、毎回たたんだ状態から（4-26）
+      var dg = $("aboutDiagBox");
+      if (dg) dg.hidden = true;
+      var dgm = $("aboutDiagMsg");
+      if (dgm) dgm.hidden = true;
       var n = newSinceSeen();
       var lb = $("aboutLogBtn");
       if (lb) lb.textContent = n > 0 ? "更新履歴（新着 " + n + "件）" : "更新履歴を見る";
@@ -10595,6 +10674,37 @@
     $("aboutLogBtn").addEventListener("click", function () {
       var box = $("aboutLogBox");
       box.hidden = !box.hidden;
+    });
+    // 調子が悪いときの情報（4-26）
+    var dgB = $("aboutDiagBtn");
+    if (dgB) dgB.addEventListener("click", function () {
+      var box = $("aboutDiagBox");
+      box.hidden = !box.hidden;
+      if (!box.hidden) $("aboutDiagText").textContent = diagText();
+    });
+    var dgC = $("aboutDiagCopy");
+    if (dgC) dgC.addEventListener("click", function () {
+      var txt = diagText();
+      var msg = $("aboutDiagMsg");
+      function done(okFlag) {
+        if (!msg) return;
+        msg.textContent = okFlag ? "コピーしました" : "コピーできませんでした（長押しで選んでコピーしてください）";
+        msg.hidden = false;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); });
+        return;
+      }
+      /* iPad のホーム画面起動などで clipboard が使えないことがある。
+       * そのときは選択できる形にして、店舗が手でコピーできるようにする。 */
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        done(document.execCommand("copy"));
+        document.body.removeChild(ta);
+      } catch (e) { done(false); }
     });
     // 前回開いたときより新しくなっていたら、情報ボタンに印を付ける
     if (seenVersion() && seenVersion() !== APP_VERSION) {
@@ -13363,6 +13473,35 @@
     };
   }
 
+  /* 画面で起きたエラーを、そのまま端末の記録に残す（製品化レビュー 4-26）。
+   * これまでは何も残らず、店舗から「動かない」と言われても手がかりが無かった。 */
+  logLoad();
+  window.addEventListener("error", function (ev) {
+    logAdd("エラー", (ev && ev.message ? ev.message : "不明")
+      + (ev && ev.filename ? "（" + String(ev.filename).replace(/^.*\//, "") + ":" + (ev.lineno || 0) + "）" : ""));
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    var r = ev && ev.reason;
+    logAdd("エラー", "処理の失敗: " + String((r && (r.message || r.code)) || r || "不明"));
+  });
+  logAdd("起動", "アプリ版 " + APP_VERSION);
+  /* ---------- 配信元がふたつある問題（製品化レビュー 4-28） ----------
+   * 製品版は frontalk.curacon.co.jp から配信する。開発用のアドレス
+   * （github.io）でも同じものが開けてしまい、同じクラウドに書けるため、
+   * 版がずれた2つのアプリが同じ店舗のデータを触る事故が起きうる。
+   * こちらのアドレスで開かれたときは、正しいアドレスへ案内する。
+   * 社内版（阪南・常盤東）は別のクラウドなので、この案内は出さない。 */
+  if (!INTERNAL && /github\.io$/i.test(String(location.hostname || ""))) {
+    (function () {
+      var el = document.getElementById("cloudWarn");
+      if (!el) return;
+      el.innerHTML = "⚠ こちらは<b>開発用のアドレス</b>です。ご利用は "
+        + '<a href="https://frontalk.curacon.co.jp/" style="color:#fff">frontalk.curacon.co.jp</a>'
+        + " からお願いします（こちらで入力した内容は、お店の端末に届かないことがあります）。";
+      el.hidden = false;
+      logAdd("配信元", "開発用アドレスで開かれました（" + location.hostname + "）");
+    }());
+  }
   loadConfig();
   loadMaster();
   loadState();

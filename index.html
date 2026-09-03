@@ -1072,6 +1072,17 @@
       <button class="btn-sub" id="aboutTourBtn" type="button">使い方（チュートリアル）</button>
       <div id="aboutLogBox" hidden></div>
     </div>
+    <!-- 不具合のお問い合わせ用（製品化レビュー 4-26）。中身は端末の中だけ。押さなければ何も出ません -->
+    <div class="about-diag">
+      <button class="btn-sub" id="aboutDiagBtn" type="button">調子が悪いときの情報を見る</button>
+      <div id="aboutDiagBox" hidden>
+        <p class="hint">うまく動かないときは、この内容をコピーしてお問い合わせにお貼りください。
+          <strong>お客様のお名前や見積もりの中身は入っていません。</strong></p>
+        <pre id="aboutDiagText" class="diag-text"></pre>
+        <button class="btn-sub" id="aboutDiagCopy" type="button">この内容をコピー</button>
+        <span class="hint" id="aboutDiagMsg" hidden></span>
+      </div>
+    </div>
     <p class="about-links">
       <button type="button" class="link-btn" data-doc="keitai-app/STATS_GUIDE.md" data-doc-title="実績の使い方">実績の使い方</button>
       <button type="button" class="link-btn" data-doc="keitai-app/TERMS.md" data-doc-title="利用規約">利用規約</button>
