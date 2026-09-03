@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.9.6";
+  var APP_VERSION = "2.9.7";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -515,6 +515,17 @@
     { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
     { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
     { id: "rakuten", name: "楽天ひかり" },
+    /* コミュファ光（中部テレコミュニケーション・中部電力系）。フレッツ光の
+     * コラボではない独自回線なので、ドコモ光へは転用・事業者変更ができず
+     * 「新規」扱い（工事が必要）。解約金・工事費の残債にも注意。
+     * 提供エリアは愛知・岐阜・三重・静岡・長野（一部を除く）。窓口とガイダンスは
+     * 公式（help.commufa.jp コンタクトセンターの営業時間と連絡先）で確認・2026-09-03。
+     * 既定では出さない。店舗ごとに契約の器の features で出す（下の curLineOptInOn）。 */
+    { id: "commufa", name: "コミュファ光", optIn: true,
+      prefs: ["愛知", "岐阜", "三重", "静岡", "長野"],
+      tel: "0120-218-919",
+      telNote: "コミュファ コンタクトセンター・10:00〜18:00 年中無休。回線解約は固定電話から 1-3／携帯から 2-1-3",
+      cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" },
     { id: "ztv", name: "ZTV", cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
     /* 「ケーブルテレビのネット」は選択肢から外した（タイプCは会社名で選ぶため）。
      * 過去の見積もりで選んである場合だけ表示に残す。 */
@@ -986,7 +997,10 @@
     /* 選択肢から外した項目は隠す（すでに選んである見積もりでは残す） */
     CUR_LINES.forEach(function (c, i) {
       var o = clSel.options[i];
-      if (o) o.hidden = !!c.retired && c.id !== state.curLine;
+      /* 選択肢から外した項目と、既定では出さない回線（optIn。店舗ごとの設定は
+       * ケータイ見積もり側の仕組みなので、単体版では常に出さない）は隠す。
+       * すでに選んである見積もりでは残す。 */
+      if (o) o.hidden = (!!c.retired || !!c.optIn) && c.id !== state.curLine;
     });
     clSel.value = state.curLine || "";
     $("ieCurLineOtherField").hidden = state.curLine !== "other";
@@ -995,7 +1009,8 @@
     var cd = curLineDef();
     if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
       clh.hidden = false;
-      clh.textContent = (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
+      clh.textContent = ((cd.catv || cd.optIn) && (cd.prefs || []).length ? "提供エリア: " + cd.prefs.join("・") + "　" : "")
+        + (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
         + (state.applyType === "jigyosha" && cd.jgTel
             ? "　／　承諾番号の窓口: " + cd.jgTel + (cd.jgTelNote ? "（" + cd.jgTelNote + "）" : "")
             : "")
