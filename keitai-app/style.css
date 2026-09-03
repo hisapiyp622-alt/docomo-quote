@@ -1053,6 +1053,9 @@ h3.stats-sub{font-size:15px;margin:14px 0 0}
 .trial-bar{background:#fff8e1;color:#7a5c00;border-bottom:1px solid #f2dfa0;
   font-size:13px;padding:7px 14px;text-align:center}
 .trial-bar b{color:#8a5a00}
+/* 残り3日を切ったお試し期間（終わると使えなくなるので目立たせる） */
+.trial-bar.soon{background:#fdecea;color:#8c1d18;border-bottom-color:#f3b8b2}
+.trial-bar.soon b{color:#B3261E}
 
 /* 保存タブの検索・絞り込み */
 .saved-filter{display:flex;gap:8px;margin-bottom:10px}
