@@ -242,8 +242,10 @@
                    : "まず")
       + "保存タブの古い見積もりを消して、空きを作ってください。";
     el.hidden = false;
-    /* 保存できていないのに「同期✓」だけが出ていると気づけない。表示も直す */
-    if (typeof CLOUD !== "undefined" && CLOUD.enabled) cloudOk();
+    /* 保存できていないのに「同期✓」だけが出ていると気づけない。
+     * すでに出ている「同期✓」だけを書き替える（オフラインなどの表示は消さない）。 */
+    var st = document.getElementById("syncStatus");
+    if (st && /^同期✓/.test(st.textContent || "")) cloudOk();
   }
   function storageWarnHide() {
     var el = document.getElementById("storageWarn");
