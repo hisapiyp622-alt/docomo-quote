@@ -215,6 +215,13 @@
           <label class="check" title="dカード GOLD U"><input type="checkbox" data-dcard="goldu"> U</label>
           <label class="check" title="dカード PLATINUM"><input type="checkbox" data-dcard="platinum"> P</label>
         </div>
+        <div class="wari-sub" id="platRateWrap" hidden>
+          <div class="field">
+            <label for="platRate">PLATINUM の還元率</label>
+            <input type="number" id="platRate" inputmode="numeric" min="10" max="20" step="1"> ％
+          </div>
+          <p class="hint">初年度は<strong>20%</strong>です。<strong>2年目以降</strong>は前年のショッピングご利用額により<strong>10〜20%</strong>に変わるため、お客様のカードの率に合わせてここを直してください（⑧のdカード還元特典の自動計算に使います）。</p>
+        </div>
       </div>
       <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
       <div id="chokiWrap">
@@ -673,6 +680,11 @@
           <option value="platinum">PLATINUM（利用料金の20%還元）</option>
         </select>
       </div>
+      <div class="field" id="iePlatRateField" hidden>
+        <label for="iePlatRate">PLATINUM の還元率</label>
+        <input type="number" id="iePlatRate" inputmode="numeric" min="10" max="20" step="1"> ％
+      </div>
+      <p class="hint" id="iePlatRateHint" hidden>初年度は<strong>20%</strong>です。<strong>2年目以降</strong>は前年のショッピングご利用額により<strong>10〜20%</strong>に変わるため、お客様のカードの率に合わせてここを直してください。</p>
       <div class="field" id="ieDcardPtField" hidden>
         <label for="ieDcardPt">毎月の還元ポイント</label>
         <input type="number" id="ieDcardPt" inputmode="numeric" min="0"> pt/月

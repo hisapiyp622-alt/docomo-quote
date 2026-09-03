@@ -54,6 +54,10 @@ const CASES = {
   'max_choki10': { planId: 'max', choki: 'y10' },
   'max_choki20_full': { planId: 'max', minna: '3', dSet: true, dCard: 'gold', dDenki: true, choki: 'y20' },
   'u15_dcard_gold': { planId: 'u15_debut', tierIdx: 0, dCard: 'gold' },
+  /* 2026-09-04 追加（製品化レビュー 5-1）。PLATINUM の還元率は
+   * 初年度20%／2年目以降は前年のご利用額により10〜20%。率を選べるようにした。 */
+  'max_platinum': { planId: 'max', dCard: 'platinum' },
+  'max_platinum_12': { planId: 'max', dCard: 'platinum', dcardPlatRate: 12 },
   /* 2026-09-03 追加（製品化レビュー 4-4・4-5）。手計算の根拠:
    * ・dマガジン 580（コンテンツ使用料）は還元の対象外。月額は 5,148＋580＝5,728 でも
    *   対象額は 5,148 → 4×100pt = 400pt（直す前は 5×100pt = 500pt だった）
@@ -171,6 +175,12 @@ const HAND = {
    * 5,698 −550 ＝5,148 から U22割 −2,728 → 2,420 が対象 → 2×100pt ＝200pt。
    * 8か月目からは 5,148 → 4×100pt ＝400pt */
   gold_u22_campaign: { seg1: 2420, seg2: 5148, dcardPt: 200, dcardPtAfter: 400 },
+  /* dカード PLATINUM（5-1）。お支払割は GOLD 系と同じ 550 円。
+   * 5,698 −550 ＝5,148 が還元の対象額。
+   * ・20%（初年度） … 5,148 ÷1,100 ＝4.68 → 4×200pt ＝800pt
+   * ・12%（2年目以降の例）… 同じ 4 に対し 4×120pt ＝480pt */
+  max_platinum: { seg1: 5148, dcardPt: 800 },
+  max_platinum_12: { seg1: 5148, dcardPt: 480 },
 
   /* ---- 2026-09-04 追加（製品化レビュー 4-8）。今まで1件も通っていなかった道 ---- */
   // 5,698 −ハーティ 1,980 ＝3,718（通話オプションを付けない場合）
@@ -307,6 +317,37 @@ function serve() {
   for (const [name, patch] of Object.entries(CASES)) {
     results[name] = await page.evaluate((p) => window.__KQ_TEST__.run(p), patch);
   }
+
+  /* PLATINUM の還元率の欄が、画面でも出入りするか（製品化レビュー 5-1）。
+   * 計算だけ直っていても、欄が出なければお店からは率を変えられない。 */
+  const uiBad = [];
+  await page.selectOption('#planId', 'max').catch(() => {});
+  await page.waitForTimeout(300);
+  const shown = (id) => page.$eval(id, (e) => {
+    for (var n = e; n; n = n.parentElement) if (n.hidden) return false;
+    return getComputedStyle(e).display !== 'none';
+  }).catch(() => null);
+  const dcPt = () => page.$eval('#dcardAutoLabel', (e) => Number((e.textContent.match(/(\d+)pt\/月/) || [])[1] || 0));
+  if (await shown('#platRateWrap') !== false) uiBad.push('dカードを選ぶ前から、還元率の欄が出ています');
+  await page.check('#dCardOn'); await page.waitForTimeout(200);
+  await page.check('[data-dcard="gold"]'); await page.waitForTimeout(300);
+  if (await shown('#platRateWrap') !== false) uiBad.push('GOLD のとき、還元率の欄が出ています');
+  const goldPt = await dcPt();
+  await page.check('[data-dcard="platinum"]'); await page.waitForTimeout(300);
+  if (await shown('#platRateWrap') !== true) uiBad.push('PLATINUM を選んでも還元率の欄が出ません');
+  if (await page.inputValue('#platRate') !== '20') uiBad.push('還元率の初期値が 20 ではありません');
+  const at20 = await dcPt();
+  if (!(at20 > 0 && at20 === goldPt * 2)) {
+    uiBad.push(`PLATINUM 20% が GOLD 10% の2倍になりません（GOLD ${goldPt}pt / PLATINUM ${at20}pt）`);
+  }
+  await page.fill('#platRate', '10'); await page.dispatchEvent('#platRate', 'input');
+  await page.waitForTimeout(300);
+  const at10 = await dcPt();
+  if (at10 !== goldPt) uiBad.push(`10% にしても GOLD と同じになりません（${at10}pt / GOLD ${goldPt}pt）`);
+  await page.fill('#platRate', '99'); await page.dispatchEvent('#platRate', 'change');
+  await page.waitForTimeout(300);
+  if (await page.inputValue('#platRate') !== '20') uiBad.push('10〜20 の外の値が直りません');
+
   await browser.close();
   srv.close();
 
@@ -314,6 +355,11 @@ function serve() {
     console.error('JSエラーが発生しました:\n' + errors.join('\n'));
     process.exit(1);
   }
+  if (uiBad.length) {
+    console.error('PLATINUM の還元率の欄に問題があります:\n  ✗ ' + uiBad.join('\n  ✗ '));
+    process.exit(1);
+  }
+  console.log('PLATINUM の還元率の欄: 問題なし');
 
   /* 手計算の期待値との突き合わせ（4-8・4-36）。
    * golden.json を作り直しても、ここは人が書いた数字のまま残る。 */

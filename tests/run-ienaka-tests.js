@@ -36,6 +36,11 @@ const CASES = {
   'hikari1g_gold': { dcard: 'gold' },                              // 既定は充当しない（4-7）
   'hikari1g_gold_apply': { dcard: 'gold', dcardApply: true },      // 充当する場合
   'hikari1g_platinum': { dcard: 'platinum' },
+  /* PLATINUM の還元率（5-1）。初年度は20%、2年目以降は前年のご利用額で10〜20%。
+   * 率を下げたぶん、還元ポイントもきちんと下がることを見る。
+   * 光1ギガ（戸建・A）の対象月額から 1,100円ごとに 率×10pt */
+  'hikari1g_platinum_12': { dcard: 'platinum', dcardPlatRate: 12 },
+  'hikari1g_platinum_10_apply': { dcard: 'platinum', dcardPlatRate: 10, dcardApply: true },
   'home5g': { product: 'home5g' },
   'typec_hikari': { product: 'hikari1g', applyType: 'kirikae' },
   'typec_coax_koji': { product: 'hikari1g', applyType: 'kirikae', typecLine: 'coax', typecKoji: 11000 },
@@ -93,6 +98,38 @@ async function runOn(page, url, port) {
 
   const integrated = await runOn(page, '/keitai-app/?kqtest=1', port);
   const standalone = await runOn(page, '/ienaka-app/', port);
+
+  /* PLATINUM の還元率の欄が、画面でもきちんと出入りするか（製品化レビュー 5-1）。
+   * 計算だけ直っていても、欄が出なければお店からは率を変えられない。
+   * ここは単体版の画面で見る（この時点で /ienaka-app/ を開いている）。 */
+  const uiBad = [];
+  async function shown(id) {
+    return page.$eval(id, (e) => !e.hidden && getComputedStyle(e).display !== 'none').catch(() => null);
+  }
+  async function rateCheck(sel, rateId, hintId) {
+    await page.selectOption(sel, 'none'); await page.waitForTimeout(200);
+    if (await shown(rateId + 'Field') !== false) uiBad.push('dカードなしのとき、還元率の欄が出ています');
+    await page.selectOption(sel, 'gold'); await page.waitForTimeout(200);
+    if (await shown(rateId + 'Field') !== false) uiBad.push('GOLD のとき、還元率の欄が出ています');
+    await page.selectOption(sel, 'platinum'); await page.waitForTimeout(200);
+    if (await shown(rateId + 'Field') !== true) uiBad.push('PLATINUM を選んでも還元率の欄が出ません');
+    if (await shown(hintId) !== true) uiBad.push('PLATINUM を選んでも還元率の説明が出ません');
+    if (await page.inputValue(rateId) !== '20') uiBad.push('還元率の初期値が 20 ではありません');
+    // 率を下げると、還元ポイントも下がる
+    const pt = () => page.$eval('#dcardHint', (e) => (e.textContent.match(/→ (\d+)pt/) || [])[1]);
+    const at20 = await pt();
+    await page.fill(rateId, '10'); await page.dispatchEvent(rateId, 'input'); await page.waitForTimeout(300);
+    const at10 = await pt();
+    if (!(Number(at10) > 0 && Number(at10) * 2 === Number(at20))) {
+      uiBad.push(`率を 20%→10% にしてもポイントが半分になりません（${at20}pt → ${at10}pt）`);
+    }
+    // 10〜20 の外を入れたら 20 に直る
+    await page.fill(rateId, '99'); await page.dispatchEvent(rateId, 'change'); await page.waitForTimeout(300);
+    if (await page.inputValue(rateId) !== '20') uiBad.push('10〜20 の外の値が直りません');
+    await page.selectOption(sel, 'none'); await page.waitForTimeout(200);
+  }
+  await rateCheck('#dcard', '#platRate', '#platRateHint');
+
   await browser.close();
   srv.close();
 
@@ -124,6 +161,11 @@ async function runOn(page, url, port) {
     if (JSON.stringify(golden[name]) === JSON.stringify(integrated[name])) ok++;
     else bad.push({ name, want: golden[name], got: integrated[name] });
   }
+  if (uiBad.length) {
+    console.error('PLATINUM の還元率の欄に問題があります:\n  ✗ ' + uiBad.join('\n  ✗ '));
+    process.exit(1);
+  }
+  console.log('PLATINUM の還元率の欄: 問題なし');
   console.log(`光・5Gの金額テスト: ${ok}/${Object.keys(CASES).length} OK`
     + `（統合版と単体版の一致: ${Object.keys(CASES).length - diffs.length}/${Object.keys(CASES).length}）`);
   bad.forEach((b) => {

@@ -509,6 +509,66 @@
       }
     ]
   },
+  "max_platinum": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 800,
+    "dcardPtAfter": 800,
+    "bakuagePt": 0,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
+  "max_platinum_12": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 480,
+    "dcardPtAfter": 480,
+    "bakuagePt": 0,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
   "gold_dmagazine_content": {
     "initial": 0,
     "store": 0,

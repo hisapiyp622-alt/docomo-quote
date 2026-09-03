@@ -350,6 +350,86 @@
       }
     ]
   },
+  "hikari1g_platinum_12": {
+    "monthly": 6911,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 600,
+    "dcardPt": 600,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6911
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5720
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4529
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      }
+    ]
+  },
+  "hikari1g_platinum_10_apply": {
+    "monthly": 6411,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 500,
+    "dcardPt": 500,
+    "dcardEligible": 5720,
+    "dcardApply": true,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6411
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5220
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4029
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5220
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      },
+      {
+        "name": "dカードPLATINUM還元 充当（利用料金の10%）",
+        "amount": -500
+      }
+    ]
+  },
   "home5g": {
     "monthly": 5280,
     "initial": 4950,

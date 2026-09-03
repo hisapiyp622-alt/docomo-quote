@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.9.7-demo";
+  var APP_VERSION = "2.9.9-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -182,6 +182,9 @@
       denwaBanpo: "mnp", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780, router10gPay: "once",
       dcard: "none", dcardPt: null,
+      /* dカード PLATINUM の還元率（％）。初年度20%／2年目以降は前年の
+       * ショッピングご利用額により 10〜20%。お客様のカードごとに違うので選べるようにする。 */
+      dcardPlatRate: 20,
       /* dカード還元を月額から差し引くか。既定は差し引かない（もらえるポイントとして案内）。
        * ケータイ見積もり側の⑧「ポイントの扱い」と同じ考え方に揃えた（製品化レビュー 4-7）。 */
       dcardApply: false, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
@@ -293,6 +296,16 @@
     });
   }
 
+  /* PLATINUM の還元率（％）。10〜20 の外の値・空欄は 20 として扱う
+   * （この項目が無い古い保存も 20 に落ちる）。 */
+  function platRate() {
+    var v = Math.round(num(state.dcardPlatRate));
+    if (!v) return 20;
+    return Math.min(20, Math.max(10, v));
+  }
+  // 画面・見積書に出す「10%」「20%」などの文字
+  function dcardRateText() { return state.dcard === "gold" ? "10" : String(platRate()); }
+
   /* ---------- 計算 ---------- */
   function calc() {
     var p = PRODUCTS[state.product];
@@ -321,14 +334,15 @@
     rows.forEach(function (x) { if (x.amount > 0 && !x.noDcard) dcardEligible += x.amount; });
     /* ahamo光は還元の対象外（公式「ドコモ光（ahamo光を除く）」・2026-09-03 確認）。 */
     var dcardOk = PRODUCTS[state.product].dcard !== false;
-    var dcardRate = !dcardOk ? 0 : state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
+    var dcardRate = !dcardOk ? 0 : state.dcard === "gold" ? 100
+      : state.dcard === "platinum" ? platRate() * 10 : 0;
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
     var dcardPt = (state.dcard === "none" || !dcardOk) ? 0
       : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
     var dcardApply = state.dcardApply === true;
     if (dcardPt > 0 && dcardApply) {
       // ポイント進呈ではなく、毎月の料金へ自動充当される体裁で月額から差引
-      rows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元 充当（利用料金の" + (state.dcard === "gold" ? "10" : "20") + "%）", amount: -dcardPt });
+      rows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元 充当（利用料金の" + dcardRateText() + "%）", amount: -dcardPt });
     }
 
     // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
@@ -1058,6 +1072,7 @@
     $("dpointField").hidden = !isHikari();
     $("dpointHint").hidden = !isHikari();
     $("dcard").value = state.dcard || "none";
+    $("platRate").value = platRate();
     var r10gOn = canBuy10gRouter() && state.router10g !== false;
     $("router10gWrap").hidden = !canBuy10gRouter();
     $("router10g").checked = state.router10g !== false;
@@ -1356,6 +1371,9 @@
     } else { kp.hidden = true; }
     // dカードGOLD/PLATINUM還元
     var dcOn = state.dcard !== "none";
+    /* PLATINUM のときだけ還元率を出す（初年度20%、2年目以降は10〜20%） */
+    $("platRateField").hidden = state.dcard !== "platinum";
+    $("platRateHint").hidden = state.dcard !== "platinum";
     $("dcardPtField").hidden = !dcOn;
     $("dcardApplyField").hidden = !dcOn;
     $("dcardApply").checked = state.dcardApply === true;
@@ -1369,7 +1387,7 @@
         $("dcardHint").textContent = "ahamo光は dカードGOLD／PLATINUM のご利用料金還元の対象外です（公式「ドコモ光（ahamo光を除く）」）。この見積もりには還元を入れていません。";
       } else
       $("dcardHint").textContent = "自動計算: 対象月額" + yen(r.dcardEligible) + " → " + (r.dcardAutoPt || 0)
-        + "pt/月（1,100円ごとに" + (state.dcard === "gold" ? "100pt・10%" : "200pt・20%") + "）。還元対象・上限はカード規約をご確認ください。数値は直接編集できます。";
+        + "pt/月（1,100円ごとに" + (state.dcard === "gold" ? "100pt・10%" : (platRate() * 10) + "pt・" + platRate() + "%") + "）。還元対象・上限はカード規約をご確認ください。数値は直接編集できます。";
     }
     save();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
@@ -1420,7 +1438,7 @@
       /* 充当しないときは、毎月もらえるポイントとしてこちらに載せる（月額からは引かない）。 */
       if (!r.dcardApply && r.dcardPt > 0) {
         ptRows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM")
-          + "特典（利用料金の" + (state.dcard === "gold" ? "10" : "20") + "%・毎月）", pt: r.dcardPt, monthly: true });
+          + "特典（利用料金の" + dcardRateText() + "%・毎月）", pt: r.dcardPt, monthly: true });
     }
     if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
       ptRows.push({ name: "新規工事料 実質0円特典（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）", pt: r.koji });
@@ -1533,7 +1551,7 @@
       h += "</tbody></table>";
     }
     if (state.dcard !== "none" && r.dcardPt > 0) {
-      h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + (state.dcard === "gold" ? "10" : "20") + '%）は'
+      h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + dcardRateText() + '%）は'
           + (r.dcardApply
               ? '毎月のお支払いへ自動充当した金額です。'
               : '毎月進呈されるポイントです（上の月額からは差し引いていません）。')
@@ -1841,6 +1859,14 @@
   $("setWariTotal").addEventListener("input", function () { state.setWariTotal = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
+  /* PLATINUM の還元率。10〜20 の外は入力欄から離れたときに直す
+   * （打っている途中の空欄で毎回 20 に戻ると入力しづらいため） */
+  $("platRate").addEventListener("input", function () {
+    state.dcardPlatRate = num(this.value); recalc();
+  });
+  $("platRate").addEventListener("change", function () {
+    state.dcardPlatRate = platRate(); this.value = state.dcardPlatRate; recalc();
+  });
   $("dcardApply").addEventListener("change", function () { state.dcardApply = this.checked; recalc(); });
   $("router10g").addEventListener("change", function () {
       state.router10g = this.checked;
