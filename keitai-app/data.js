@@ -10,7 +10,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 8,
+  "masterVersion": 9,
   "updated": "2026-09-03",
   "fees": {
     "jimu_shinki": 4950,
@@ -930,7 +930,12 @@ const DEFAULT_DATA = {
           "a": 550
         }
       ],
-      "note": "22歳以下・最大7か月。ボーナスパケット27GB/月付き"
+      "note": "22歳以下・最大7か月。ボーナスパケット27GB/月付き",
+      "group": "u_wari",
+      "suppress": [
+        "denki",
+        "choki"
+      ]
     },
     {
       "id": "u29",
@@ -953,7 +958,12 @@ const DEFAULT_DATA = {
           "a": 550
         }
       ],
-      "note": "23〜29歳・最大3か月。ボーナスパケット27GB/月付き"
+      "note": "23〜29歳・最大3か月。ボーナスパケット27GB/月付き",
+      "group": "u_wari",
+      "suppress": [
+        "denki",
+        "choki"
+      ]
     },
     {
       "id": "ahamo_max",

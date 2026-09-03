@@ -79,6 +79,7 @@
 ## リリース手順（共通）
 
 1. 変更後 `node --check`・`node tests/run-calc-tests.js`・`node tests/run-bill-tests.js`・
+   `node tests/run-ienaka-tests.js`（光・5G。統合版と単体版の一致も見る）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す
 3. **`node tools/build-internal.js` を実行**してルートを再生成する（社内版のキャッシュ名も追従する）

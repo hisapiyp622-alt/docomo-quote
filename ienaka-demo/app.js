@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.9.5-demo";
+  var APP_VERSION = "2.9.6-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -181,7 +181,10 @@
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
       denwaBanpo: "mnp", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
       router10g: true, router10gPrice: 6780, router10gPay: "once",
-      dcard: "none", dcardPt: null, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
+      dcard: "none", dcardPt: null,
+      /* dカード還元を月額から差し引くか。既定は差し引かない（もらえるポイントとして案内）。
+       * ケータイ見積もり側の⑧「ポイントの扱い」と同じ考え方に揃えた（製品化レビュー 4-7）。 */
+      dcardApply: false, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
@@ -322,7 +325,8 @@
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
     var dcardPt = (state.dcard === "none" || !dcardOk) ? 0
       : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
-    if (dcardPt > 0) {
+    var dcardApply = state.dcardApply === true;
+    if (dcardPt > 0 && dcardApply) {
       // ポイント進呈ではなく、毎月の料金へ自動充当される体裁で月額から差引
       rows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元 充当（利用料金の" + (state.dcard === "gold" ? "10" : "20") + "%）", amount: -dcardPt });
     }
@@ -463,7 +467,7 @@
       monthly: segs[0].monthly, koji: koji, kojiPt: kojiPt,
       kojiTotal: kojiTotal, optKojiRows: optKojiRows, tvRegRows: tvRegRows,
       tvOn: tvOn,
-      dcardAutoPt: dcardAutoPt, dcardPt: dcardPt, dcardEligible: dcardEligible,
+      dcardAutoPt: dcardAutoPt, dcardPt: dcardPt, dcardEligible: dcardEligible, dcardApply: dcardApply,
       initRows: initRows, initial: Math.max(0, initial)
     };
   }
@@ -1338,6 +1342,8 @@
     // dカードGOLD/PLATINUM還元
     var dcOn = state.dcard !== "none";
     $("dcardPtField").hidden = !dcOn;
+    $("dcardApplyField").hidden = !dcOn;
+    $("dcardApply").checked = state.dcardApply === true;
     $("dcardHint").hidden = !dcOn;
     if (dcOn) {
       if (state.dcardPt == null && document.activeElement !== $("dcardPt")) {
@@ -1395,6 +1401,11 @@
     // 店舗独自特典のポイントはdポイントなので進呈特典と合算して表示
     if (num(state.storePt) > 0) {
       ptRows.push({ name: "店舗独自特典ポイント進呈", pt: Math.round(num(state.storePt)) });
+      }
+      /* 充当しないときは、毎月もらえるポイントとしてこちらに載せる（月額からは引かない）。 */
+      if (!r.dcardApply && r.dcardPt > 0) {
+        ptRows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM")
+          + "特典（利用料金の" + (state.dcard === "gold" ? "10" : "20") + "%・毎月）", pt: r.dcardPt, monthly: true });
     }
     if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
       ptRows.push({ name: "新規工事料 実質0円特典（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）", pt: r.koji });
@@ -1507,7 +1518,11 @@
       h += "</tbody></table>";
     }
     if (state.dcard !== "none" && r.dcardPt > 0) {
-      h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + (state.dcard === "gold" ? "10" : "20") + '%）は毎月のお支払いへ自動充当した金額です。還元対象・上限はカード規約によります。</p>';
+      h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + (state.dcard === "gold" ? "10" : "20") + '%）は'
+          + (r.dcardApply
+              ? '毎月のお支払いへ自動充当した金額です。'
+              : '毎月進呈されるポイントです（上の月額からは差し引いていません）。')
+          + '還元対象・上限はカード規約によります。</p>';
     }
 
     h += '<p class="memo">※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（本見積もりの月額には含まれません）。</p>';
@@ -1811,6 +1826,7 @@
   $("setWariTotal").addEventListener("input", function () { state.setWariTotal = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
   $("dcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
+  $("dcardApply").addEventListener("change", function () { state.dcardApply = this.checked; recalc(); });
   $("router10g").addEventListener("change", function () {
       state.router10g = this.checked;
       /* 購入に切り替えたら、レンタルのタイルを外す（どちらか一方のため） */
@@ -1941,6 +1957,33 @@
     });
   }
 
+
+  /* ---------- 検算テスト用の窓口（tests/run-ienaka-tests.js から呼ぶ） ----------
+   * 代表パターンの入力を当てて calc() の結果を返す。呼び出し前の内容は戻す。
+   * 画面には触らないので、開いている見積もりは変わらない。 */
+  window.__IE_TEST__ = {
+    version: APP_VERSION,
+    run: function (patch) {
+      var keep = JSON.parse(JSON.stringify(state));
+      var d = defaultState();
+      Object.keys(state).forEach(function (k) { delete state[k]; });
+      Object.keys(d).forEach(function (k) { state[k] = d[k]; });
+      Object.keys(patch || {}).forEach(function (k) { state[k] = patch[k]; });
+      applyDefaults();
+      var r = calc();
+      var out = {
+        monthly: r.monthly, initial: r.initial, koji: r.koji, kojiPt: r.kojiPt,
+        dcardAutoPt: r.dcardAutoPt, dcardPt: r.dcardPt, dcardEligible: r.dcardEligible,
+        dcardApply: !!r.dcardApply,
+        segs: r.segs.map(function (sg) { return { from: sg.from, to: sg.to == null ? "inf" : sg.to, monthly: sg.monthly }; }),
+        rows: r.rows.map(function (x) { return { name: x.name, amount: x.amount }; })
+      };
+      Object.keys(state).forEach(function (k) { delete state[k]; });
+      Object.keys(keep).forEach(function (k) { state[k] = keep[k]; });
+      applyDefaults();
+      return out;
+    }
+  };
   /* ---------- 起動 ---------- */
   takeHandoff();
   syncForm();

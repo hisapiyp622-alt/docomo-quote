@@ -39,5 +39,7 @@ jobs:
         run: node tests/run-calc-tests.js
       - name: 請求内訳の読み取りテスト
         run: node tests/run-bill-tests.js
+      - name: 光・5G（イエナカ）の金額テスト
+        run: node tests/run-ienaka-tests.js
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js

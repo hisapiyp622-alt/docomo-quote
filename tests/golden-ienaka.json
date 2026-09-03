@@ -1,0 +1,525 @@
+{
+  "hikari1g_ht_A_shinki": {
+    "monthly": 6911,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6911
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5720
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4529
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      }
+    ]
+  },
+  "hikari1g_mansion": {
+    "monthly": 5591,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 4400,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 5591
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 4400
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 3209
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 4400
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（マンション・タイプA・新規）",
+        "amount": 4400
+      }
+    ]
+  },
+  "hikari1g_typeB": {
+    "monthly": 7131,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5940,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 7131
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5940
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4749
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5940
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプB・新規）",
+        "amount": 5940
+      }
+    ]
+  },
+  "hikari10g": {
+    "monthly": 1691,
+    "initial": 11730,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6380,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 6,
+        "monthly": 1691
+      },
+      {
+        "from": 7,
+        "to": 7,
+        "monthly": 7571
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 6380
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 5189
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 6380
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 10ギガ（戸建・タイプA・新規）",
+        "amount": 6380
+      }
+    ]
+  },
+  "ahamo1g": {
+    "monthly": 6141,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 4950,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6141
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 4950
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 3759
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 4950
+      }
+    ],
+    "rows": [
+      {
+        "name": "ahamo光 1ギガ（戸建・新規）",
+        "amount": 4950
+      }
+    ]
+  },
+  "ahamo1g_gold": {
+    "monthly": 6141,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 4950,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6141
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 4950
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 3759
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 4950
+      }
+    ],
+    "rows": [
+      {
+        "name": "ahamo光 1ギガ（戸建・新規）",
+        "amount": 4950
+      }
+    ]
+  },
+  "hikari1g_gold": {
+    "monthly": 6911,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 500,
+    "dcardPt": 500,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6911
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5720
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4529
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      }
+    ]
+  },
+  "hikari1g_gold_apply": {
+    "monthly": 6411,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 500,
+    "dcardPt": 500,
+    "dcardEligible": 5720,
+    "dcardApply": true,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6411
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5220
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4029
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5220
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      },
+      {
+        "name": "dカードGOLD還元 充当（利用料金の10%）",
+        "amount": -500
+      }
+    ]
+  },
+  "hikari1g_platinum": {
+    "monthly": 6911,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 1000,
+    "dcardPt": 1000,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6911
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5720
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4529
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      }
+    ]
+  },
+  "home5g": {
+    "monthly": 5280,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5280,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5280
+      }
+    ],
+    "rows": [
+      {
+        "name": "home 5G",
+        "amount": 5280
+      }
+    ]
+  },
+  "typec_hikari": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
+  "typec_coax_koji": {
+    "monthly": 5720,
+    "initial": 15950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
+  "hikari1g_denwa": {
+    "monthly": 7599,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6270,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 7599
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 6408
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 5079
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 6270
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      },
+      {
+        "name": "ドコモ光電話",
+        "amount": 550
+      }
+    ]
+  },
+  "hikari1g_norouter": {
+    "monthly": 6911,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 6911
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 5720
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 4529
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・新規）",
+        "amount": 5720
+      }
+    ]
+  },
+  "hikari1g_tenyo": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（戸建・タイプA・転用）",
+        "amount": 5720
+      }
+    ]
+  }
+}
