@@ -1,13 +1,20 @@
 /* 金額計算のゴールデンテスト
  *
  * 使い方:
- *   node tests/run-calc-tests.js            … tests/golden.json と突き合わせて検算
- *   node tests/run-calc-tests.js --update   … いまの計算結果で golden.json を作り直す
- *                                             （料金改定など、意図して金額を変えたとき）
+ *   node tests/run-calc-tests.js                  … golden.json と突き合わせて検算
+ *   node tests/run-calc-tests.js --update         … 差分を見せるだけ（書き換えない）
+ *   node tests/run-calc-tests.js --update --yes   … 見たうえで golden.json を作り直す
  *
  * 仕組み: keitai-app を ?kqtest=1 付きで Chromium に読み込み、
  * app.js 内の window.__KQ_TEST__.run() で代表パターンの金額を計算して比較する。
  * Firebase(gstatic) はネットワーク遮断し、端末内モードで動かす。
+ *
+ * 3つの見張り方（製品化レビュー 4-8・4-36）:
+ *  1. golden.json との突き合わせ … 前回から金額が動いていないか
+ *  2. HAND（手計算の期待値）      … 代表ケースは、公式の金額から人が計算した値で固定する。
+ *     golden とは別に持ち、--update では**書き換わらない**。アプリの出力を
+ *     そのまま正解にしてしまう事故（8月の取り違えの原因）を防ぐため
+ *  3. ケースのキー検査            … 書き間違えた指定は黙って無視されるので、実行前に弾く
  */
 const http = require('http');
 const fs = require('fs');
@@ -16,6 +23,9 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const GOLDEN = path.join(__dirname, 'golden.json');
 const UPDATE = process.argv.indexOf('--update') >= 0;
+/* --update は既定で「差分を見せるだけ」。書き換えるには --yes を付ける（製品化レビュー 4-36）。
+ * アプリが出した数字をそのまま正解として焼き直すと、間違いをテストで固定してしまう。 */
+const YES = process.argv.indexOf('--yes') >= 0;
 
 function playwright() {
   try { return require('playwright'); } catch (e) {}
@@ -88,11 +98,140 @@ const CASES = {
   'kosodate_max': { planId: 'max', kosodate: true },
   'kosodate_max_kake': { planId: 'max', kosodate: true, voice: 'kake' },
   'kosodate_hearty_both': { planId: 'max', kosodate: true, hearty: true },
+  /* 2026-09-04 追加（製品化レビュー 4-8）。いままで1件も通っていなかった道:
+   * ハーティ単独・ポイントの充当・dカード還元の充当・カエドキ＋頭金・
+   * 爆アゲ セレクション・MAX の選べる特典。 */
+  'hearty_only': { planId: 'max', hearty: true },
+  'poikatsu_no_apply': { planId: 'poikatsu_max', pointPoikatsu: 5000 },
+  'poikatsu_apply': { planId: 'poikatsu_max', pointPoikatsu: 5000, pointApply: true },
+  /* ⑧「ポイントの扱い」を『月額から充当』にしたとき。dカード還元は
+   * 既定では引かない（dcardGoldAuto: false）ので、引く側の指定も入れる。 */
+  'gold_point_apply': { planId: 'max', dCard: 'gold', pointDcard: 400,
+    pointApply: true, dcardGoldAuto: true },
+  'device_kaedoki_atamakin': { planId: 'max', payMethod: 'kaedoki', devicePrice: 129800,
+    kaedoki23: 58000, atamakin: 11000, deviceName: 'テスト機' },
+  'bakuage_netflix': { planId: 'max', options: { netflix: true }, optionKubun: { netflix: 'new' } },
+  'bakuage_std_plan': { planId: 'poikatsu_20', options: { netflix: true }, optionKubun: { netflix: 'new' } },
+  'maxbonus_two': { planId: 'max', options: { bk_lemino: true, bk_danime: true },
+    optionKubun: { bk_lemino: 'new', bk_danime: 'new' } },
+  'maxbonus_three': { planId: 'max', options: { bk_lemino: true, bk_danime: true, dazn: true },
+    optionKubun: { bk_lemino: 'new', bk_danime: 'new', dazn: 'new' } },
   // --- その他の枠 ---
   'adhoc_monthly': { planId: 'max', adhocMonthly: [{ name: 'テスト割', amount: -550, months: 12 }] },
   'adhoc_initial': { planId: 'max', adhocInitial: [{ name: 'テスト商材', amount: 3300 }] },
   'accessories': { planId: 'max', accessories: [{ name: 'ケース', price: 4400, pay: 'once' }, { name: 'ガラス', price: 3300, pay: 'b24' }] }
 };
+
+/* ---- 手計算の期待値（製品化レビュー 4-8・4-36） ----
+ * data.js の金額（＝公式サイトで確認した値）から、人が計算した数字。
+ * golden.json とは別に持ち、--update では書き換わらない。
+ * ここが合わなくなったら「計算が変わった」か「料金表が変わった」のどちらか。
+ * 料金改定でここを直すときは、必ず計算の式もコメントで直すこと。
+ *
+ * 使っている元の金額（keitai-app/data.js・masterVersion 9 / 基準日 2026-09-03）:
+ *   ドコモ MAX 〜1GB 5,698／1GB超〜3GB 6,798／3GB超〜無制限 8,448
+ *   MAX の割引: みんな2 550・みんな3 1,210・光セット 1,210・dカード 220・
+ *              dカードGOLD 550・でんき 110・長期10年 110・長期20年 220・
+ *              ハーティ 1,980・子育て 1,210
+ *   ミニ 4GB 2,750／10GB 3,850、ahamo 30GB 2,970
+ *   通話オプション: 5分 880（割引 880）・5分（旧）770（割引 770）・
+ *                  かけ放題 1,980（割引 880）・かけ放題（旧）1,870（割引 770）
+ *   事務手数料 4,950、U22割 −2,728（7か月・でんき／長期を止める）
+ *   dカードGOLD の還元: 割引後の月額 1,100円ごとに 100pt */
+const HAND = {
+  // 5,698（割引なし）。事務手数料は指定していないので初期費用0
+  max_kishu: { bill: 0, initial: 0, seg1: 5698 },
+  // 同上＋事務手数料 4,950 → 初期費用と翌月合算に乗る
+  max_shinki: { initial: 4950, bill: 4950, seg1: 5698 },
+  // 5,698 −1,210（みんな3）−1,210（光セット）＝3,278
+  max_minna3_set: { seg1: 3278 },
+  // 5,698 −1,210 −1,210 −550（GOLD）−110（でんき）−220（長期20年）＝2,398
+  //   還元 = 2,398 ÷ 1,100 ＝ 2.18 → 2×100pt ＝ 200pt
+  max_choki20_full: { seg1: 2398, dcardPt: 200 },
+  mini_t1: { seg1: 3850 },
+  ahamo: { seg1: 2970 },
+  // 5,698 ＋ かけ放題 1,980 ＝ 7,678
+  max_voice_full: { seg1: 7678, voicePrice: 1980 },
+  // 5,698 −ハーティ 1,980 ＝3,718。通話は5分（旧）770 −割引 770 ＝0円
+  hearty_v5l: { seg1: 3718, voicePrice: 0 },
+  /* 5,698 −でんき110 −長期110 ＝5,478。
+   * 1〜7か月目は U22割 −2,728 だが、でんき・長期は止まるので +220 → 2,970
+   * 8か月目からは 5,478 */
+  u22_denki_choki: { seg1: 2970, seg2: 5478 },
+  /* 端末 129,800 を24回：129,800 ÷ 24 ＝ 5,408.33 → 毎月 5,408 円、
+   * 端数 129,800 −5,408×24 ＝ 8 円は初回だけ。
+   * 1〜24か月目 5,698 ＋5,408 ＝11,106、25か月目から 5,698 */
+  device_b24: { seg1: 11106, seg2: 5698, deviceMonthly: 5408, firstExtra: 8 },
+  /* いつでもカエドキ 129,800・23回分の総額 58,000:
+   * 58,000 ÷ 23 ＝ 2,521.7 → 毎月 2,521 円、端数 58,000 −2,521×23 ＝17 円は初回。
+   * 1〜23か月目 5,698 ＋2,521 ＝8,219。24か月目に返却しない場合の残価
+   * 129,800 −58,000 ＝71,800 を24回 → 2,991 円（5,698 ＋2,991 ＝8,689） */
+  device_kaedoki: { seg1: 8219, deviceMonthly: 2521, firstExtra: 17, keep2: 8689 },
+  /* GOLD の還元は「各種割引のあと」の金額が対象。
+   * 5,698 −550 ＝5,148 から U22割 −2,728 → 2,420 が対象 → 2×100pt ＝200pt。
+   * 8か月目からは 5,148 → 4×100pt ＝400pt */
+  gold_u22_campaign: { seg1: 2420, seg2: 5148, dcardPt: 200, dcardPtAfter: 400 },
+
+  /* ---- 2026-09-04 追加（製品化レビュー 4-8）。今まで1件も通っていなかった道 ---- */
+  // 5,698 −ハーティ 1,980 ＝3,718（通話オプションを付けない場合）
+  hearty_only: { seg1: 3718 },
+  /* ポイ活 MAX 11,748。⑧が「もらえるポイントとして案内」のときは月額を下げない。
+   * もらえるポイントの合計だけが 5,000pt として出る */
+  poikatsu_no_apply: { seg1: 11748, pointTotal: 5000 },
+  // 同じ入力で⑧を「月額から充当」にすると 11,748 −5,000 ＝6,748
+  poikatsu_apply: { seg1: 6748, pointTotal: 5000 },
+  /* dカード還元 400pt を充当。5,698 −GOLD 550 ＝5,148 −400 ＝4,748。
+   * dcardPt（自動計算 400pt）とは別に、実際に引いた分が pointTotal に出る */
+  gold_point_apply: { seg1: 4748, pointTotal: 400, dcardPt: 400 },
+  /* いつでもカエドキ 129,800・23回分の総額 58,000・頭金 11,000:
+   * 分割するのは 58,000 −11,000 ＝47,000。47,000 ÷ 23 ＝2,043.4 → 毎月 2,043 円、
+   * 端数 47,000 −2,043×23 ＝11 円は初回だけ。1〜23か月目 5,698 ＋2,043 ＝7,741。
+   * 頭金 11,000 は店頭お支払い（初期費用 11,000／翌月合算 0）。
+   * 24か月目に返却しない場合の残価 129,800 −58,000 ＝71,800 ÷24 ＝2,991 → 8,689 */
+  device_kaedoki_atamakin: { initial: 11000, bill: 0, seg1: 7741,
+    deviceMonthly: 2043, firstExtra: 11, keep2: 8689 },
+  /* Netflix 890 を ポイ活20 で。ポイ活20 は「MAX 系ではない」区分なので還元は 10%。
+   * 890 ÷1.1 ＝809.09（税抜）→ 809.09 ×10% ＝80.9 → 切り上げ 81pt。
+   * 月額は ポイ活20 7,898 ＋890 ＝8,788 */
+  bakuage_std_plan: { seg1: 8788, optTotal: 890, bakuagePt: 81 },
+  /* Netflix 890 を MAX で。月額は 5,698 ＋890 ＝6,588。
+   * ※還元ポイントは HAND に入れていない。data.js の注記が
+   *   「MAX系20%（広告つきは15%）」となっているのに、アプリは料金の選び方に
+   *   かかわらず 20% で計算している（890 → 162pt。15% なら 122pt）。
+   *   どちらが正しいかは公式での確認待ち。金額そのものは golden.json が見張る */
+  bakuage_netflix: { seg1: 6588, optTotal: 890 },
+  /* MAX の「選べる特典」は毎月2つまで0円。
+   * Leminoプレミアム 1,540 ＋dアニメストア 660 の2つなら、どちらも0円 →
+   * オプション合計 0・月額は 5,698 のまま。0円のものは還元の対象外なので 0pt */
+  maxbonus_two: { seg1: 5698, optTotal: 0, bakuagePt: 0 },
+  /* 3つ選ぶと、高いほうの2つ（DAZN 4,200・Lemino 1,540）が0円になり、
+   * 残った dアニメストア 660 は支払う。月額 5,698 ＋660 ＝6,358。
+   * 還元は支払っている 660 のみ: 660 ÷1.1 ＝600 → 600 ×10% ＝60pt */
+  maxbonus_three: { seg1: 6358, optTotal: 660, bakuagePt: 60 }
+};
+// 手計算の値と、実際の計算結果を突き合わせる
+function handDiff(name, got) {
+  const want = HAND[name];
+  if (!want || !got) return null;
+  const segs = got.segs || [];
+  const actual = {
+    bill: got.bill, initial: got.initial, store: got.store,
+    dcardPt: got.dcardPt, dcardPtAfter: got.dcardPtAfter,
+    bakuagePt: got.bakuagePt, pointTotal: got.pointTotal,
+    optTotal: got.optTotal, voicePrice: got.voicePrice, firstExtra: got.firstExtra,
+    deviceMonthly: (got.device || {}).monthly,
+    seg1: segs[0] ? segs[0].monthly : undefined,
+    seg2: segs[1] ? segs[1].monthly : undefined,
+    keep2: segs[1] ? segs[1].keep : undefined
+  };
+  /* 手計算の側にも書き間違いがありうる（seg3 など、比べる相手がない名前）。
+   * 黙って通ってしまうと「見張っているつもりで見ていない」状態になる。 */
+  const unknown = Object.keys(want).filter((k) => !(k in actual));
+  if (unknown.length) return unknown.map((k) => `      ${k}: くらべる相手がありません`).join('\n');
+  const bad = Object.keys(want).filter((k) => actual[k] !== want[k]);
+  if (!bad.length) return null;
+  return bad.map((k) => `      ${k}: 手計算 ${want[k]} / アプリ ${actual[k]}`).join('\n');
+}
 
 function serve() {
   const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.md': 'text/markdown', '.webmanifest': 'application/manifest+json' };
@@ -147,6 +286,23 @@ function serve() {
   await page.click('#tourSkip').catch(() => {});
   await page.waitForFunction(() => window.__KQ_TEST__, null, { timeout: 5000 });
 
+  /* ケースの書き間違いを弾く（4-36）。
+   * 見積もりに無い名前を書いても、これまでは黙って無視されていた。
+   * （8月の「長期利用割」の取り違えは、これで通ってしまっていた） */
+  const validKeys = await page.evaluate(() => window.__KQ_TEST__.stateKeys());
+  const keyBad = [];
+  for (const [name, patch] of Object.entries(CASES)) {
+    Object.keys(patch).forEach((k) => {
+      if (validKeys.indexOf(k) < 0) keyBad.push(`  ✗ ${name}: 「${k}」という項目はありません`);
+    });
+  }
+  if (keyBad.length) {
+    await browser.close(); srv.close();
+    console.error('ケースの書き方が違います:\n' + keyBad.join('\n')
+      + '\n\n使える項目は keitai-app/app.js の defaultState() にあるものだけです。');
+    process.exit(1);
+  }
+
   const results = {};
   for (const [name, patch] of Object.entries(CASES)) {
     results[name] = await page.evaluate((p) => window.__KQ_TEST__.run(p), patch);
@@ -159,9 +315,42 @@ function serve() {
     process.exit(1);
   }
 
+  /* 手計算の期待値との突き合わせ（4-8・4-36）。
+   * golden.json を作り直しても、ここは人が書いた数字のまま残る。 */
+  const handBad = [];
+  for (const name of Object.keys(HAND)) {
+    if (!(name in CASES)) { handBad.push(`  ✗ ${name}: 手計算の期待値はあるが、ケースがありません`); continue; }
+    const d = handDiff(name, results[name]);
+    if (d) handBad.push(`  ✗ ${name}\n${d}`);
+  }
+  if (handBad.length) {
+    console.error('手計算の期待値と合いません（' + handBad.length + '件）:\n' + handBad.join('\n')
+      + '\n\n料金表を変えたのなら、tests/run-calc-tests.js の HAND と計算の式も直してください。'
+      + '\nそうでなければ、計算の側が変わっています。');
+    process.exit(1);
+  }
+  console.log(`手計算の期待値: ${Object.keys(HAND).length}/${Object.keys(HAND).length} OK`);
+
   if (UPDATE) {
+    const before = fs.existsSync(GOLDEN) ? JSON.parse(fs.readFileSync(GOLDEN, 'utf8')) : {};
+    const diffs = [];
+    for (const name of Object.keys(results)) {
+      const a2 = JSON.stringify(before[name]);
+      const b2 = JSON.stringify(results[name]);
+      if (a2 !== b2) diffs.push(`  ${name}\n    前: ${a2 === undefined ? '（新しいケース）' : a2}\n    後: ${b2}`);
+    }
+    for (const name of Object.keys(before)) {
+      if (!(name in results)) diffs.push(`  ${name}\n    前: ${JSON.stringify(before[name])}\n    後: （ケースが消えました）`);
+    }
+    if (!diffs.length) { console.log('golden.json との差はありません。'); return; }
+    console.log(`golden.json との差（${diffs.length}件）:\n` + diffs.join('\n'));
+    if (!YES) {
+      console.log('\n中身を確かめて、意図した変更であれば --yes を付けて実行してください:');
+      console.log('  node tests/run-calc-tests.js --update --yes');
+      return;
+    }
     fs.writeFileSync(GOLDEN, JSON.stringify(results, null, 2) + '\n');
-    console.log(`golden.json を更新しました（${Object.keys(results).length}ケース）`);
+    console.log(`\ngolden.json を更新しました（${Object.keys(results).length}ケース）`);
     return;
   }
 

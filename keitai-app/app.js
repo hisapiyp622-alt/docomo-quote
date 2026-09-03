@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.153.1";
+  var APP_VERSION = "1.153.2";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -13402,11 +13402,27 @@
         store.patterns[store.active] = p;
         state = p;
         var r = calc();
+        /* 見張る項目（製品化レビュー 4-8）。
+         * 月額と初期費用だけだと、ポイント・端末の内訳・初回の端数が
+         * 変わっても気づけない。計算の出口をひととおり出す。 */
+        var dv = r.device || {};
         var out = {
           initial: r.initialTotal,
           store: r.storeTotal,
           bill: r.billTotal,
-          dcardPt: r.dcardAutoPt || 0,   // dカード還元の自動計算（割引後ベース）も golden で見張る
+          dcardPt: r.dcardAutoPt || 0,   // dカード還元の自動計算（割引後ベース）
+          dcardPtAfter: r.dcardAutoPtAfter || 0,   // キャンペーン終了後の還元
+          bakuagePt: r.bakuageAutoPt || 0,         // 爆アゲ セレクションの還元
+          pointTotal: r.pointTotal || 0,           // もらえるポイントの合計（pt/月）
+          pointApply: !!r.pointApply,              // 月額から充当しているか
+          optTotal: r.optTotal || 0,               // オプションの合計（月額）
+          voicePrice: r.voicePrice || 0,           // 通話オプション（割引後）
+          firstExtra: r.firstExtra || 0,           // 初回だけ増える端数
+          device: {
+            monthly: dv.monthly || 0, months: dv.months || 0, after: dv.after || 0,
+            firstExtra: dv.firstExtra || 0, zanka: dv.zanka || 0,
+            jisshitsu: dv.jisshitsu || 0, total: dv.total || 0, atama: dv.atama || 0
+          },
           segs: r.segs.map(function (sg) {
             var o = { from: sg.from, to: sg.to === Infinity ? "inf" : sg.to, monthly: sg.monthly };
             if (typeof sg.monthlyKeep === "number") o.keep = sg.monthlyKeep;
@@ -13418,6 +13434,9 @@
         recalc();
         return out;
       },
+      /* 見積もりに入れられる項目の名前（tests/run-calc-tests.js が使う・4-36）。
+       * テストのケースに書き間違いがあっても、これまでは黙って無視されていた。 */
+      stateKeys: function () { return Object.keys(defaultState()); },
       // 請求内訳の読み取り（tests/run-bill-tests.js が使う）
       parseBill: function (t) { return parseBillText(t); },
       // curBill が同期ペイロードに漏れないことの検査用
