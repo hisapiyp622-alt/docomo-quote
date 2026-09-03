@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.153.0";
+  var APP_VERSION = "1.153.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -32,6 +32,15 @@
    * 同期先 settings/docomoQuoteStore）だけが違う。機能・画面は製品版と同じ。
    * root/index.html と root/sw.js は tools/build-internal.js が生成する。 */
   var INTERNAL = typeof window !== "undefined" && !!window.KEITAI_INTERNAL;
+  /* 製品版が「配信元ではないアドレス」で開かれていないか（製品化レビュー 4-28）。
+   * 開発用のアドレス（github.io）でも同じアプリが開けてしまい、そこから
+   * 本番のクラウドにログインできると、版のずれた2つのアプリが同じ店舗の
+   * データを触ることになる。Firebase の「承認済みドメイン」は Google ログイン
+   * などにしか効かず、店舗ID＋パスワードのログインは止められないため、
+   * アプリ側で止める。社内版は別のクラウドなので対象外。 */
+  function devHost() {
+    return !INTERNAL && /github\.io$/i.test(String((typeof location !== "undefined" && location.hostname) || ""));
+  }
   var NS = INTERNAL ? "dq" : "kq";
   if (INTERNAL) {
     /* 旧・社内版（〜2026.08.14-85）のデータを新しいキー名へ一回だけ引っ越す。
@@ -6228,6 +6237,15 @@
       e.preventDefault();
       var err = $("loginErr");
       err.hidden = true;
+      /* 開発用のアドレスからはログインさせない（4-28）。
+       * ここを通すと、版のずれたアプリが同じ店舗のデータを書き替えてしまう。 */
+      if (devHost()) {
+        err.innerHTML = "こちらは開発用のアドレスのため、ログインできません。<br>"
+          + '<a href="https://frontalk.curacon.co.jp/">frontalk.curacon.co.jp</a> からお使いください。';
+        err.hidden = false;
+        logAdd("配信元", "開発用アドレスでのログインを止めました");
+        return;
+      }
       $("loginBtn").disabled = true;
       CLOUD.auth.signInWithEmailAndPassword(storeIdToEmail($("loginStoreId").value), $("loginPass").value)
         .then(function () { $("loginPass").value = ""; }, function (e2) {
@@ -6237,6 +6255,13 @@
         .then(function () { $("loginBtn").disabled = false; });
     });
     CLOUD.auth.onAuthStateChanged(function (u) {
+      /* 開発用のアドレスで、前に入ったままの状態が残っていたら出す（4-28）。
+       * 端末に残っているデータは消さない（次に正しいアドレスで入れば元どおり）。 */
+      if (u && devHost()) {
+        logAdd("配信元", "開発用アドレスでログイン状態だったのでログアウトしました");
+        CLOUD.auth.signOut();
+        return;
+      }
       if (u) onSignedIn(u); else onSignedOut();
     });
   }
@@ -13491,13 +13516,13 @@
    * 版がずれた2つのアプリが同じ店舗のデータを触る事故が起きうる。
    * こちらのアドレスで開かれたときは、正しいアドレスへ案内する。
    * 社内版（阪南・常盤東）は別のクラウドなので、この案内は出さない。 */
-  if (!INTERNAL && /github\.io$/i.test(String(location.hostname || ""))) {
+  if (devHost()) {
     (function () {
       var el = document.getElementById("cloudWarn");
       if (!el) return;
-      el.innerHTML = "⚠ こちらは<b>開発用のアドレス</b>です。ご利用は "
-        + '<a href="https://frontalk.curacon.co.jp/" style="color:#fff">frontalk.curacon.co.jp</a>'
-        + " からお願いします（こちらで入力した内容は、お店の端末に届かないことがあります）。";
+      el.innerHTML = "⚠ こちらは<b>開発用のアドレス</b>です。ログインはできません。<br>"
+        + 'ご利用は <a href="https://frontalk.curacon.co.jp/" style="color:#fff">frontalk.curacon.co.jp</a>'
+        + " からお願いします。";
       el.hidden = false;
       logAdd("配信元", "開発用アドレスで開かれました（" + location.hostname + "）");
     }());

@@ -41,12 +41,14 @@ else if (appVer !== chgVer) {
 } else ok.push(`版の一致: ${appVer}`);
 
 // 3. 更新履歴の日付が未来でないか
+/* 更新履歴の日付は「日本の日付」で書く。CI の機械は世界標準時で動いていて
+ * 日本より9時間遅れているため、そのまま比べると朝のリリースが止まる。 */
 if (chgDay) {
-  const today = new Date();
-  const ymd = today.getFullYear() + '-'
-    + String(today.getMonth() + 1).padStart(2, '0') + '-'
-    + String(today.getDate()).padStart(2, '0');
-  if (chgDay > ymd) ng.push(`更新履歴の先頭の日付（${chgDay}）が未来です`);
+  const jst = new Date(Date.now() + 9 * 3600 * 1000);
+  const ymd = jst.getUTCFullYear() + '-'
+    + String(jst.getUTCMonth() + 1).padStart(2, '0') + '-'
+    + String(jst.getUTCDate()).padStart(2, '0');
+  if (chgDay > ymd) ng.push(`更新履歴の先頭の日付（${chgDay}）が未来です（日本時間の今日は ${ymd}）`);
   else ok.push(`更新履歴の日付: ${chgDay}`);
 }
 

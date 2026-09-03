@@ -26,7 +26,7 @@ const base=`http://127.0.0.1:${srv.address().port}`;
 await p.goto(base+'/keitai-app/?kqtest=1'); await p.waitForTimeout(900);
 await p.click('#setupSkip').catch(()=>{}); await p.waitForTimeout(300);
 await p.click('#tourSkip').catch(()=>{}); await p.waitForTimeout(300);
-let ng=0; function chk(l,ok,x){console.log((ok?'OK  ':'NG  ')+l+(x?'  '+x:''));if(!ok)ng++;}
+let ng=0,okN=0; function chk(l,cond,x){console.log((cond?'OK  ':'NG  ')+l+(x?'  '+x:''));if(cond)okN++;else ng++;}
 
 // わざとエラーを起こして、記録に残るかを見る
 await p.evaluate(()=>{ setTimeout(()=>{ throw new Error('テスト用のエラー'); },0); });
@@ -55,9 +55,65 @@ await p.click('#aboutBtn'); await p.waitForTimeout(300);
 chk('⑦ 開き直すと、また閉じた状態から', await p.evaluate(()=>document.getElementById('aboutDiagBox').hidden)===true);
 // 開発用アドレスの案内は、127.0.0.1 では出ない
 chk('⑧ ふつうのアドレスでは、開発用の帯は出ない', await p.evaluate(()=>document.getElementById('cloudWarn').hidden)===true);
-await b.close(); srv.close();
+await b.close();
+
+/* ---- 配信元がふたつある問題（4-28）。本物のホスト名で開いて確かめる ---- */
+const b2=await chromium.launch({args:['--no-sandbox','--host-resolver-rules=MAP * 127.0.0.1:'+srv.address().port],
+  ...(fs.existsSync('/opt/pw-browsers/chromium')?{executablePath:'/opt/pw-browsers/chromium'}:{})});
+async function openAs(host, internal){
+  const c=await b2.newContext({serviceWorkers:'block'});
+  await c.route('**/*',r=>{const u=new URL(r.request().url());
+    if(u.hostname.includes('gstatic.com'))return r.abort();
+    if(u.pathname.endsWith('firebase-config.js'))return r.fulfill({contentType:'application/javascript',
+      body:'var KEITAI_FIREBASE={projectId:"t"};window.KEITAI_FIREBASE=KEITAI_FIREBASE;'
+        +'var KEITAI_STORE_DOMAIN="keitai-quote.example";var KEITAI_DEV_UID="D";var KEITAI_PROVIDER={};'
+        +(internal?'window.KEITAI_INTERNAL=true;':'')});
+    return r.continue();});
+  const pg=await c.newPage(); pg.setDefaultTimeout(8000);
+  pg.on('dialog',d=>d.accept());
+  await pg.addInitScript(()=>{
+    window.__SIGNIN=0;
+    const auth={onAuthStateChanged(cb){setTimeout(()=>cb(null),0);},
+      signInWithEmailAndPassword(){window.__SIGNIN++;return Promise.resolve();},signOut(){return Promise.resolve();}};
+    const doc={get:()=>Promise.resolve({exists:false,data:()=>null,metadata:{fromCache:false}}),
+      set:()=>Promise.resolve(),onSnapshot:()=>()=>{},
+      collection:()=>({doc:()=>doc,get:()=>Promise.resolve({forEach:()=>{}}),onSnapshot:()=>()=>{},
+        orderBy(){return this;},limit(){return this;},where(){return this;}})};
+    window.firebase={apps:[{}],initializeApp:()=>({}),
+      auth:Object.assign(function(){return auth;},{EmailAuthProvider:{credential:()=>({})}}),
+      firestore:Object.assign(function(){return {collection:()=>({doc:()=>doc,get:()=>Promise.resolve({forEach:()=>{}}),where(){return this;}})};},
+        {FieldValue:{serverTimestamp:()=>'TS'}})};
+  });
+  await pg.goto('http://'+host+'/keitai-app/?kqtest=1');
+  await pg.waitForTimeout(1100);
+  return {pg,c};
+}
+async function trySignIn(pg){
+  await pg.evaluate(()=>{const i=document.getElementById('loginStoreId'),w=document.getElementById('loginPass');
+    if(i)i.value='riwa01'; if(w)w.value='x';
+    document.getElementById('loginForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));});
+  await pg.waitForTimeout(300);
+  return pg.evaluate(()=>window.__SIGNIN);
+}
+let g=await openAs('hisapiyp622-alt.github.io',false);
+chk('⑨ 開発用のアドレスでは、その旨の帯が出る',
+  await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !!e&&!e.hidden&&/開発用/.test(e.textContent);}));
+chk('⑨ 開発用のアドレスからはログインできない', (await trySignIn(g.pg))===0);
+chk('⑨ 画面に理由が出る',
+  await g.pg.evaluate(()=>{const e=document.getElementById('loginErr');return !!e&&!e.hidden&&/開発用/.test(e.textContent);}));
+await g.c.close();
+g=await openAs('frontalk.curacon.co.jp',false);
+chk('⑩ 配信元（frontalk）では帯を出さず、ログインできる',
+  (await g.pg.evaluate(()=>document.getElementById('cloudWarn').hidden))===true && (await trySignIn(g.pg))===1);
+await g.c.close();
+g=await openAs('hisapiyp622-alt.github.io',true);
+chk('⑪ 社内版は同じアドレスでも止めない',
+  (await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !e||e.hidden;}))===true);
+await g.c.close();
+await b2.close();
+srv.close();
 const bad=errs.filter(e=>!/テスト用/.test(e));
 if(bad.length){console.error('JSエラーが発生しました:\n'+bad.join('\n'));process.exit(1);}
 if(ng){console.error('調子が悪いときの情報のテスト: NG '+ng+'件');process.exit(1);}
-console.log('調子が悪いときの情報のテスト: 10/10 OK');
+console.log('調子が悪いときの情報・配信元のテスト: '+okN+'/'+okN+' OK');
 });
