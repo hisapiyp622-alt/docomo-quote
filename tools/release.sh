@@ -70,11 +70,16 @@ fi
 cd "$ROOT"
 echo "-- 5. 版のタグ"
 if git rev-parse "v$VER" >/dev/null 2>&1; then
-  echo "タグ v$VER はすでにあります"
+  echo "タグ v$VER はすでにあります（手元）"
 else
   git tag -a "v$VER" -m "フロントーク $VER"
-  git push -q origin "v$VER"
+fi
+# タグを送れない環境（権限が絞られた自動実行など）でも、配信そのものは終わっているので止めない
+if git push -q origin "v$VER" 2>/dev/null; then
   echo "タグ v$VER を打ちました（戻すときの目印）"
+else
+  echo "※ タグ v$VER を送れませんでした。手元には作ってあります。"
+  echo "  ふだんの環境から  git push origin v$VER  を実行してください（戻すときの目印になります）"
 fi
 
 echo ""
