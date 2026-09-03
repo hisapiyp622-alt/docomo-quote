@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.150.0";
+  var APP_VERSION = "1.151.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3785,6 +3785,7 @@
     syncFormFromState();
     recalc();
     renderStaffGateNotice();
+    pushStoreMeta();   // 適用した版を販売側から見えるようにする（4-12）
   }
   function masterUpdateHtml() {
     if (!masterUpdateAvailable()) return "";
@@ -4316,6 +4317,8 @@
     role: null,         // 上位アカウント（代理店・エリア）の役割。roles/{uid} から読む
     roleFetched: false, // 役割を確かめ終えたか（店舗は該当なしのまま進む）
     suppress: false, cfgTimer: null, quoteTimer: null, masterTimer: null,
+    metaTimer: null,      // 店舗の版の記録（4-12）
+    storeSigSeen: "",     // 最後に取り込んだ店舗情報の中身（版の記録だけの更新は当て直さない）
     quoteSynced: false, // クラウドの見積もりを一度受け取るまで、この端末からは送らない
     unsubStore: null, unsubQuote: null, watchingStaffId: null,
     savedTimer: null, unsubSaved: null, watchingSavedId: null,
@@ -4582,6 +4585,51 @@
       }), { merge: true })
         .then(cloudOk, cloudNg);
     }, 800);
+  }
+  /* ---------- 店舗の「いまの版」の記録（製品化レビュー 4-12） ----------
+   * 料金改定の日に、販売側が「どの店舗がまだ旧料金のままか」を知るすべが無く、
+   * 店舗数が増えると電話で聞いて回ることになる。そこで、店舗が使っている
+   * 料金表の版・適用日・アプリの版を、店舗情報とは別のフィールドで置いておき、
+   * 保守・上位アカウントの店舗一覧に出す。
+   *
+   * 中身は数値と日付だけで、お客様の情報は一切入らない。
+   * 書き込みに失敗しても画面には何も出さない（ルールの公開前でも店舗が困らないように）。 */
+  var MASTER_AT_KEY = NS + "-master-applied";
+  function masterAppliedAt() {
+    var cur = num(MASTER.masterVersion), rec = null;
+    try { rec = JSON.parse(localStorage.getItem(MASTER_AT_KEY) || "null"); } catch (e) {}
+    if (rec && num(rec.v) === cur && num(rec.at) > 0) return num(rec.at);
+    /* 版が変わった（＝料金表を適用した）ときに時刻を控える。
+     * すでに使っている店舗では、この仕組みを入れた日が初回の記録になる。 */
+    var at = Date.now();
+    lsSet(MASTER_AT_KEY, JSON.stringify({ v: cur, at: at }));
+    return at;
+  }
+  function storeMetaFields() {
+    return {
+      masterVersion: num(MASTER.masterVersion),
+      masterUpdated: String(MASTER.updated || ""),
+      masterAppliedAt: num(masterAppliedAt()),
+      appVersion: APP_VERSION,
+      clientId: CLOUD.clientId
+    };
+  }
+  function pushStoreMeta() {
+    if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    /* 上位・保守で店舗を開いているときは書かない。
+     * その端末のアプリの版を、店舗が使っている版として記録してしまうため。 */
+    if (superActing()) return;
+    if (CLOUD.metaTimer) clearTimeout(CLOUD.metaTimer);
+    CLOUD.metaTimer = setTimeout(function () {
+      CLOUD.metaTimer = null;
+      if (!cloudOn() || superActing()) return;
+      var fld = storeMetaFields();
+      var sig = JSON.stringify(fld);
+      /* 送れたときだけ「送った」と覚える。ルールの公開前で弾かれた場合に、
+       * 次に開いたときもう一度送れるようにするため。 */
+      if (CLOUD_SENT.meta === sig) return;
+      storeDoc().set(fld, { merge: true }).then(function () { CLOUD_SENT.meta = sig; }, function () {});
+    }, 4000);
   }
   // 料金マスタ（店舗で共通）の送信
   function markMasterEdit() {
@@ -4941,6 +4989,12 @@
       cloudOk();
     } catch (e) {} finally { CLOUD.suppress = false; }
   }
+  // 店舗情報のうち「取り込む値」だけを並べたもの（版の記録は入れない）
+  function storeDocSig(d) {
+    if (!d) return "";
+    return [d.storeName || "", d.storeTel || "",
+      JSON.stringify(d.staff || []), JSON.stringify(d.adminLock || null), d.master || ""].join("\u0001");
+  }
   function watchStore() {
     if (!cloudOn()) return;
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
@@ -4965,6 +5019,12 @@
         return;
       }
       firstStore = false;
+      /* 版の記録（4-12）だけが変わったお知らせでは、店舗情報・料金マスタを
+       * 当て直さない。当て直すと、マスタ設定を開いている端末の画面が
+       * 作り直されてしまうため。 */
+      var sigNow = storeDocSig(d);
+      if (CLOUD.storeSigSeen && CLOUD.storeSigSeen === sigNow) { cloudOk(); return; }
+      CLOUD.storeSigSeen = sigNow;
       applyRemoteStore(d);
       cloudOk();
     }, function () { syncStatus("同期:接続エラー", "err"); });
@@ -5347,6 +5407,61 @@
     } finally { CLOUD.suppress = false; }
   }
 
+  /* ---------- 店舗一覧の「料金表の版」（製品化レビュー 4-12） ----------
+   * 改定日に、どの店舗が旧料金のままかを一目で分かるようにする。
+   * 記録が無い店舗は「不明」（この仕組みが入る前のアプリのまま、
+   * または一度もクラウドにつないでいない）。 */
+  function storeVerInfo(d) {
+    d = d || {};
+    var cur = num(DEFAULT_DATA.masterVersion);
+    var has = typeof d.masterVersion === "number";
+    var v = num(d.masterVersion);
+    var old = has && v < cur;
+    var when = num(d.masterAppliedAt);
+    var h;
+    if (!has) {
+      h = '<span style="color:#c62828">料金表の版：不明</span>';
+    } else if (old) {
+      h = '<span style="color:#c62828">⚠ 旧料金のまま（v' + v + " → 最新 v" + cur + "）</span>";
+    } else {
+      h = "料金表 v" + v + (d.masterUpdated ? "（" + esc(String(d.masterUpdated)) + "）" : "");
+    }
+    if (has && when) h += "　適用: " + ymdOf(when);
+    if (d.appVersion) {
+      h += "　アプリ " + esc(String(d.appVersion))
+        + (String(d.appVersion) !== APP_VERSION ? "（この端末は " + APP_VERSION + "）" : "");
+    }
+    return { html: h, old: old, unknown: !has };
+  }
+  function ymdOf(ms) {
+    var t = new Date(num(ms));
+    function z(n) { return ("0" + n).slice(-2); }
+    return t.getFullYear() + "/" + z(t.getMonth() + 1) + "/" + z(t.getDate());
+  }
+  // 一覧の1行ぶん（店名・ID・版）。未適用の店舗を上に並べる
+  function storeRowHtml(id, name, d) {
+    var v = storeVerInfo(d);
+    return '<button class="btn-sub dev-pick" data-dev-uid="' + esc(id) + '" type="button"'
+      + ' style="display:block;width:100%;text-align:left;margin-bottom:6px">'
+      + "<b>" + esc(name || "（店舗名未設定）") + "</b><br>"
+      + '<span style="font-size:11px;color:#888">' + esc(id) + "</span><br>"
+      + '<span style="font-size:11px">' + v.html + "</span></button>";
+  }
+  function storeListHtml(rows) {
+    // 旧料金のまま → 版が不明 → 最新、の順に並べる（放っておけない店舗が上に来る）
+    rows.sort(function (a, b) {
+      var ra = a.old ? 0 : (a.unknown ? 1 : 2), rb = b.old ? 0 : (b.unknown ? 1 : 2);
+      if (ra !== rb) return ra - rb;
+      return String(a.name || "").localeCompare(String(b.name || ""), "ja");
+    });
+    var nOld = rows.filter(function (r) { return r.old; }).length;
+    var nUnk = rows.filter(function (r) { return r.unknown; }).length;
+    var head = '<p class="hint">' + rows.length + "店中　"
+      + (nOld ? '<b style="color:#c62828">旧料金のまま ' + nOld + "店</b>　" : "旧料金のままの店舗はありません　")
+      + (nUnk ? "版が不明 " + nUnk + "店（まだ新しいアプリで開いていません）" : "")
+      + "</p>";
+    return head + rows.map(function (r) { return r.html; }).join("");
+  }
   /* 保守モードの店舗選択。stores の一覧を読み、選んだ店舗として動く。 */
   function showDevPicker() {
     var old = document.getElementById("devPicker");
@@ -5364,15 +5479,15 @@
       ov.remove();
     });
     CLOUD.db.collection("stores").get().then(function (qs) {
-      var h = "";
+      var rows = [];
       qs.forEach(function (doc) {
         var d = doc.data() || {};
-        h += '<button class="btn-sub dev-pick" data-dev-uid="' + esc(doc.id) + '" type="button" style="display:block;width:100%;text-align:left;margin-bottom:6px">'
-          + '<b>' + esc(d.storeName || "（店舗名未設定）") + "</b><br>"
-          + '<span style="font-size:11px;color:#888">' + esc(doc.id) + "</span></button>";
+        var v = storeVerInfo(d);
+        rows.push({ name: d.storeName || "", old: v.old, unknown: v.unknown,
+          html: storeRowHtml(doc.id, d.storeName, d) });
       });
       var list = document.getElementById("devPickList");
-      if (list) list.innerHTML = h || '<p class="hint">店舗がまだありません。</p>';
+      if (list) list.innerHTML = rows.length ? storeListHtml(rows) : '<p class="hint">店舗がまだありません。</p>';
       Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
         b.addEventListener("click", function () {
           detachActingStore(); // 前に見ていた店舗への購読・送信を止めてから切り替える
@@ -5397,10 +5512,11 @@
     CLOUD.watchingStaffId = null;
     CLOUD.watchingSavedId = null;
     CLOUD.watchingTplId = null;
-    ["cfgTimer", "quoteTimer", "masterTimer", "savedTimer", "tplTimer", "tplStoreTimer"].forEach(function (k) {
+    ["cfgTimer", "quoteTimer", "masterTimer", "metaTimer", "savedTimer", "tplTimer", "tplStoreTimer"].forEach(function (k) {
       if (CLOUD[k]) { clearTimeout(CLOUD[k]); CLOUD[k] = null; }
     });
     CLOUD.quoteSynced = false; // 次の店舗の見積もりを受け取るまで、この端末からは送らない
+    CLOUD.storeSigSeen = "";
   }
   /* 上位アカウント（代理店・エリア）の店舗選択。
    * 契約の器（contracts）を所属の札（org・エリアは area も）で絞って一覧にし、
@@ -5440,17 +5556,16 @@
       Promise.all(ids.map(function (id) {
         return CLOUD.db.collection("stores").doc(id).get().then(function (s) {
           var d = s.exists ? (s.data() || {}) : {};
-          return { id: id, name: d.storeName || "" };
-        }, function () { return { id: id, name: "" }; });
+          return { id: id, d: d };
+        }, function () { return { id: id, d: {} }; });
       })).then(function (list) {
-        var h = "";
-        list.forEach(function (st2) {
-          h += '<button class="btn-sub dev-pick" data-dev-uid="' + esc(st2.id) + '" type="button" style="display:block;width:100%;text-align:left;margin-bottom:6px">'
-            + "<b>" + esc(st2.name || "（店舗名未設定）") + "</b><br>"
-            + '<span style="font-size:11px;color:#888">' + esc(st2.id) + "</span></button>";
+        var rows = list.map(function (st2) {
+          var v = storeVerInfo(st2.d);
+          return { name: st2.d.storeName || "", old: v.old, unknown: v.unknown,
+            html: storeRowHtml(st2.id, st2.d.storeName, st2.d) };
         });
         var l1 = document.getElementById("devPickList");
-        if (l1) l1.innerHTML = h;
+        if (l1) l1.innerHTML = storeListHtml(rows);
         Array.prototype.forEach.call(ov.querySelectorAll("[data-dev-uid]"), function (b) {
           b.addEventListener("click", function () {
             detachActingStore(); // 前に見ていた店舗への購読・送信を止めてから切り替える
@@ -5655,6 +5770,7 @@
   function cloudFlushNow() {
     // 待ち時間の途中でも、いま送る
     [["cfgTimer", pushConfig], ["masterTimer", markMasterEdit], ["quoteTimer", markLocalEdit],
+      ["metaTimer", pushStoreMeta],
      ["savedTimer", pushSaved], ["tplTimer", pushTemplates], ["tplStoreTimer", pushStoreTemplates]]
       .forEach(function (pair) {
         if (!CLOUD[pair[0]]) return;
@@ -5720,6 +5836,7 @@
   // 店舗ログインを通過したあとの共通処理（担当者コードへ進む）
   function afterStoreLogin() {
     showLogin(false);
+    pushStoreMeta();   // この店舗がいま使っている料金表・アプリの版を記録する（4-12）
     var lo = $("logoutBtn");
     if (lo) lo.hidden = INTERNAL || !(lockEnabled() || cloudOn());
     // 社内版にはログインが無いので、自動ログアウトも掛けない
@@ -9193,7 +9310,9 @@
     });
   }
   function renderMasterTab() {
-    $("masterUpdated").textContent = MASTER.updated + "｜アプリ版 " + APP_VERSION;
+    /* 電話でのサポートのときに「お店の版」をそのまま読み上げてもらえるようにする（4-12） */
+    $("masterUpdated").textContent = MASTER.updated + "（v" + num(MASTER.masterVersion)
+      + "・適用 " + ymdOf(masterAppliedAt()) + "）｜アプリ版 " + APP_VERSION;
     var su = $("storageUsage");
     if (su) su.textContent = "この端末の保存領域の使用量: " + storageUsageText()
       + "（このサイトの全アプリ合計。目安の上限は5MB前後。上限に近いと保存に失敗することがあります）";

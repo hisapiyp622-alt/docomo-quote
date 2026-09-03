@@ -7,7 +7,7 @@ rules_version = '2';
 // 不具合や不正なクライアントによる想定外の書き込みを弾きます。
 //
 // 反映方法（2026-09-03 変更）: 貼り付けではなく Firebase CLI で公開する。
-//   1. sh tools/test-rules.sh   … エミュレータでルールのテスト（23件）を通す
+//   1. sh tools/test-rules.sh   … エミュレータでルールのテスト（25件）を通す
 //   2. npx firebase-tools login （初回だけ）
 //   3. npx firebase-tools deploy --only firestore:rules --project <プロジェクトID>
 // 貼り付けは1文字の消し忘れで全店舗が止まるため、使わない。
@@ -117,8 +117,12 @@ service cloud.firestore {
         && sizeOk()
         && request.resource.data.keys().hasOnly(
              ['storeName', 'storeTel', 'staff', 'adminLock', 'master',
+              // 店舗がいま使っている版の記録（販売側の店舗一覧に出す・4-12）。
+              // 数値と日付だけで、お客様の情報は入らない。
+              'masterVersion', 'masterUpdated', 'masterAppliedAt', 'appVersion',
               'clientId', 'updatedAtMs', 'updatedAt'])
-        && lenOk('master', 900000);
+        && lenOk('master', 900000)
+        && lenOk('masterUpdated', 40) && lenOk('appVersion', 40);
 
       // quotes/{担当者ID}: 作業中の見積もり
       match /quotes/{staffId} {
