@@ -259,6 +259,78 @@
       }
     ]
   },
+  "u22_denki_choki": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 2970
+      },
+      {
+        "from": 8,
+        "to": "inf",
+        "monthly": 5478
+      }
+    ]
+  },
+  "u22_u29_both": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 2970
+      },
+      {
+        "from": 8,
+        "to": "inf",
+        "monthly": 5698
+      }
+    ]
+  },
+  "u29_denki": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": 3,
+        "monthly": 2970
+      },
+      {
+        "from": 4,
+        "to": "inf",
+        "monthly": 5588
+      }
+    ]
+  },
+  "gold_u22_campaign": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 200,
+    "segs": [
+      {
+        "from": 1,
+        "to": 7,
+        "monthly": 2420
+      },
+      {
+        "from": 8,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
   "hearty_kakel": {
     "initial": 0,
     "store": 0,

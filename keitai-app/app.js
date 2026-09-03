@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.144.0";
+  var APP_VERSION = "1.145.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3465,7 +3465,7 @@
   var OPT_TAKE = ["price", "priceChoices", "priceLabels", "carrier",
     "bakuage", "bakuage2", "bakuageFixed", "note", "kubunExist", "url"];
   var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove", "url"];
-  var CAMP_TAKE = ["months", "plans", "amountChoices", "note"];
+  var CAMP_TAKE = ["months", "plans", "amountChoices", "note", "group", "suppress"];
 
   function takeFields(dst, src, keys) {
     keys.forEach(function (k) {
@@ -3905,6 +3905,16 @@
   }
   /* 光・home 5G（イエナカ）は世帯に1本なので、回線ごとのパターンの外に置く。
    * store ごと保存・同期されるため、保存した見積もりやテンプレートにも自然に付いてくる。 */
+  /* 光・5Gのdカード還元を、ケータイ側の⑧「ポイントの扱い」と同じにする。
+   * 同じ見積書の中で、ケータイは「もらえるポイント」・光は「値引き」と
+   * 食い違わないようにするため（製品化レビュー 4-7）。 */
+  function syncIenakaPointApply() {
+    if (!store.ienaka) return;
+    var want = state.pointApply === true;
+    if (store.ienaka.dcardApply === want) return;
+    store.ienaka.dcardApply = want;
+    if (typeof KQ_IENAKA !== "undefined") { KQ_IENAKA.syncForm(); KQ_IENAKA.render(); }
+  }
   function newIenaka() {
     return (typeof KQ_IENAKA !== "undefined" && KQ_IENAKA) ? KQ_IENAKA.defaultState() : {};
   }
@@ -6010,11 +6020,26 @@
       else adhocPerm += curInst;
     }
 
-    // キャンペーン割引（期間限定・対象プランのみ。セグメント計算に合流）
+    /* キャンペーン割引（期間限定・対象プランのみ。セグメント計算に合流）
+     *
+     * ドコモU22割・U29割は「同じ組（group）」で、重ねて適用されない。
+     * 公式の注意事項（2026-09-03 確認）:
+     * ・U22割とU29割・ドコモでんきセット割・長期利用割が条件を満たすときは
+     * 　U22割が優先。U29割も、でんきセット割・長期利用割より優先される
+     * ・その割引が終わったあとは、でんきセット割・長期利用割が継続適用される
+     * そこで、同じ組は料金表の上にあるほう（U22割）だけを適用し、
+     * 適用している月数のあいだは でんき・長期 を足し戻す（＝止める）。 */
     var campaignRows = [];
+    var campGroupUsed = {};
+    var campSuppress = {};   // {denki: 月数, choki: 月数}
+    var campSuppressBy = "";
     (MASTER.campaigns || []).forEach(function (c) {
       if (!st.campaigns[c.id]) return;
       if (c.plans && c.plans.length && c.plans.indexOf(plan.id) < 0) return;
+      if (c.group) {
+        if (campGroupUsed[c.group]) return;   // 同じ組はどれか1つだけ
+        campGroupUsed[c.group] = true;
+      }
       var choices = c.amountChoices || [];
       if (!choices.length) return;
       var amt = choices[0].a;
@@ -6023,9 +6048,22 @@
         amt = st.campaignAmounts[c.id];
       }
       var months = Math.max(1, Math.round(num(c.months)));
-      campaignRows.push({ name: c.name, amount: amt, months: months });
+      campaignRows.push({ name: c.name, amount: amt, months: months, suppress: (c.suppress || []).slice() });
       adhocLimited.push({ name: c.name, amount: -amt, months: months });
+      (c.suppress || []).forEach(function (k) {
+        if (months > (campSuppress[k] || 0)) { campSuppress[k] = months; campSuppressBy = c.name; }
+      });
     });
+    /* 止まっているあいだのぶんを足し戻す（planMonthly では既に引いているため）。
+     * 見積書には行を足さず、「セット割・各種割引」の内訳に注記を出す。 */
+    if (campSuppress.denki && dDenki > 0) {
+      adhocLimited.push({ name: "ドコモでんきセット割（" + campSuppressBy + "の適用中は対象外）",
+        amount: dDenki, months: campSuppress.denki });
+    }
+    if (campSuppress.choki && dChoki > 0) {
+      adhocLimited.push({ name: "長期利用割（" + campSuppressBy + "の適用中は対象外）",
+        amount: dChoki, months: campSuppress.choki });
+    }
 
     // 端末
     var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
@@ -6188,8 +6226,23 @@
       if (bonusFree[o.id]) return;   // 選べる特典で0円のものは支払いが無いため対象外
       dcardGoldBase += optPrice(o, st);
     });
+    /* 期間限定の割引（U22割などのキャンペーン、店舗が入れた期間限定のマイナス）も
+     * 「各種割引適用後のご利用料金」に含める。適用中の月は対象額が下がるので、
+     * その月のポイントで案内し、終了後のぶんはヒントに添える（製品化レビュー 4-3）。
+     * ・campaignRows … ドコモのキャンペーン割引（月額から引かれる）
+     * ・adhocLimited のマイナス … 店舗が入れた期間限定の値引き
+     * ・止まっている でんき／長期 は、対象額としては戻す（引かれないため） */
+    var dcardBaseAfter = dcardGoldBase;     // キャンペーンが終わったあとの対象額
+    /* adhocLimited にはキャンペーン割引も入っている（マイナスで合流済み）ので、
+     * ここはマイナスぶんを数えるだけでよい（二重に引かない）。 */
+    var dcardCut = 0;
+    adhocLimited.forEach(function (a) { if (a.amount < 0) dcardCut += -a.amount; });
+    var dcardBack = (campSuppress.denki ? dDenki : 0) + (campSuppress.choki ? dChoki : 0);
+    dcardGoldBase = Math.max(0, dcardGoldBase + dcardBack - dcardCut);
     // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は還元なし
-    var dcardAutoPt = plan.dcard10 === false ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard);
+    var dcardOff = plan.dcard10 === false;
+    var dcardAutoPt = dcardOff ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard);
+    var dcardAutoPtAfter = dcardOff ? 0 : Math.floor(dcardBaseAfter / 1100) * dcardRatePt(st.dCard);
 
     /* 爆アゲセレクションの還元ポイント。
      * 還元率はプランの区分で変わる（ドコモMAX・ポイ活MAX と、それ以外の対象プラン）。
@@ -6337,8 +6390,10 @@
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
       optRows: optRows, optTotal: optTotal, netRows: net.rows, bonusRows: bonusRows,
       adhocPerm: adhocPerm, adhocLimited: adhocLimited, campaignRows: campaignRows, pointRows: pointRows,
+      campSuppress: campSuppress, campSuppressBy: campSuppressBy,
       pointApply: pointApply, pointTotal: pointTotal, pointOver: pointOver,
       dcardAutoPt: dcardAutoPt, dcardGoldBase: dcardGoldBase,
+      dcardAutoPtAfter: dcardAutoPtAfter, dcardBaseAfter: dcardBaseAfter,
       bakuageRows: bakuageRows, bakuageAutoPt: bakuageAutoPt, bakuageTier: bakuTier,
       accMonthlyRows: accMonthlyRows, accOnceRows: accOnceRows,
       device: device, baseMonthly: baseMonthly,
@@ -7044,8 +7099,12 @@
       } else {
         right = '<span class="price">−' + yen(choices.length ? choices[0].a : 0) + "/月</span>";
       }
+      var supTxt = (c.suppress && c.suppress.length)
+        ? '<div class="hint">この割引の適用中は、ドコモでんきセット割・長期利用割は適用されません（終了後に再開します）。'
+          + (c.group ? "ほかのU割引とは重ねられません。" : "") + "</div>"
+        : "";
       h += '<div class="opt-row"><label class="check"><input type="checkbox" data-cp="' + esc(c.id) + '"' + checked + "> "
-        + esc(c.name) + "（" + c.months + "か月間）</label>" + right + "</div>";
+        + esc(c.name) + "（" + c.months + "か月間）</label>" + right + "</div>" + supTxt;
     });
     $("campaignList").innerHTML = h;
   }
@@ -7187,6 +7246,7 @@
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptBakuage").value = state.pointBakuage || "";
     $("pointApply").value = state.pointApply === true ? "1" : "0";
+    syncIenakaPointApply();   // 光・5Gのdカード還元の扱いも合わせる（保存を開いたときも）
     $("ptDcard").value = state.pointDcard || "";
     $("kaedoki23Field").hidden = state.payMethod !== "kaedoki";
     $("kaedokiFeeField").hidden = state.payMethod !== "kaedoki";
@@ -7795,7 +7855,10 @@
             ? "（" + r.plan.name + "は利用料金還元の対象外プランのため自動計算0pt）"
             : state.dcardGoldAuto === false
               ? "（いまは含めていません。もらえるポイントは " + (r.dcardAutoPt || 0) + "pt/月）"
-              : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）");
+              : "（自動計算: " + (r.dcardAutoPt || 0) + "pt/月・還元" + (dcardRatePt(state.dCard) / 10) + "%・対象額" + yen(r.dcardGoldBase || 0) + "）"
+                + ((r.dcardAutoPtAfter || 0) !== (r.dcardAutoPt || 0)
+                    ? "　期間限定の割引が終わると対象額 " + yen(r.dcardBaseAfter || 0) + "・" + (r.dcardAutoPtAfter || 0) + "pt/月になります。"
+                    : ""));
     }
   }
 
@@ -8380,8 +8443,15 @@
     if (r.dMinna) setWari.push({ key: "x:minna", name: "みんなドコモ割（" + (state.minna === "2" ? "2回線" : "3回線以上") + "）", amt: r.dMinna });
     if (r.dSet) setWari.push({ key: "x:hikari", name: "ドコモ光／home 5G", amt: r.dSet });
     if (r.dCard) setWari.push({ key: "x:dcardpay", name: "dカードお支払割" + (isGoldCard(state.dCard) ? "（GOLD系）" : ""), amt: r.dCard });
-    if (r.dDenki) setWari.push({ key: "x:denki", name: "ドコモでんき", amt: r.dDenki });
-    if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）", amt: r.dChoki });
+    /* U22割・U29割の適用中は、でんきセット割・長期利用割は適用されない
+      * （終わってから継続適用される）。金額はセグメントで調整済みなので、
+      * ここでは「いつから効くか」を内訳に添える。 */
+    var supNote = function (k) {
+      return (r.campSuppress && r.campSuppress[k])
+        ? "（" + esc(r.campSuppressBy) + "の終了後・" + (r.campSuppress[k] + 1) + "か月目から）" : "";
+    };
+    if (r.dDenki) setWari.push({ key: "x:denki", name: "ドコモでんき" + supNote("denki"), amt: r.dDenki });
+    if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）" + supNote("choki"), amt: r.dChoki });
     if (r.dHearty) setWari.push({ key: "x:hearty", name: "ハーティ割引", amt: r.dHearty });
     if (r.dHeartyVoice) setWari.push({ key: "x:hearty", name: "ハーティ割引（通話オプション）", amt: r.dHeartyVoice });
     if (r.dKosodate) setWari.push({ key: "x:kosodate", name: "子育てサポート割引", amt: r.dKosodate });
@@ -11437,14 +11507,32 @@
     });
     $("campaignList").addEventListener("change", function (e) {
       var cid = e.target.getAttribute("data-cp");
-      if (cid) { state.campaigns[cid] = e.target.checked; recalc(); return; }
+      if (cid) {
+        state.campaigns[cid] = e.target.checked;
+        /* 同じ組（U22割・U29割）は重ねられないので、入れた方だけを残す */
+        if (e.target.checked) {
+          var picked = (MASTER.campaigns || []).filter(function (c) { return c.id === cid; })[0];
+          if (picked && picked.group) {
+            (MASTER.campaigns || []).forEach(function (c) {
+              if (c.id !== cid && c.group === picked.group) state.campaigns[c.id] = false;
+            });
+            renderCampaigns();
+          }
+        }
+        recalc();
+        return;
+      }
       var aid = e.target.getAttribute("data-cpamt");
       if (aid) { state.campaignAmounts[aid] = num(e.target.value); recalc(); }
     });
     $("ptPoikatsu").addEventListener("input", function () { state.pointPoikatsu = num(this.value); recalc(); });
     $("ptPoikatsuFamily").addEventListener("input", function () { state.pointPoikatsuFamily = num(this.value); recalc(); });
     $("ptBakuage").addEventListener("input", function () { state.pointBakuage = num(this.value); recalc(); });
-    $("pointApply").addEventListener("change", function () { state.pointApply = this.value === "1"; recalc(); });
+    $("pointApply").addEventListener("change", function () {
+      state.pointApply = this.value === "1";
+      syncIenakaPointApply();   // 光・5Gのdカード還元も同じ扱いに揃える
+      recalc();
+    });
     $("bakuageInclude").addEventListener("change", function () { state.bakuageInclude = this.checked; recalc(); });
     $("bakuageReset").addEventListener("click", function () {
       state.pointBakuage = calcFor(state).bakuageAutoPt;

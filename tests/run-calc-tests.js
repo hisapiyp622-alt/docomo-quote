@@ -53,6 +53,19 @@ const CASES = {
   'gold_dmagazine_content': { planId: 'max', dCard: 'gold', options: { dmagazine: true } },
   'gold_hosho_taisho': { planId: 'max', dCard: 'gold', options: { smart_hosho: true } },
   'hearty_v5l': { planId: 'max', hearty: true, voice: 'v5l' },
+  /* 2026-09-03 追加（製品化レビュー 4-2）。手計算の根拠:
+   * 公式の注意事項「U22割が優先。U22割の割引終了後、でんきセット割・長期利用割は継続適用」。
+   * ・u22_denki_choki: 5,698 −でんき110 −長期110 ＝5,478。1〜7か月目は U22割 −2,728 だが
+   *   でんき・長期は止まるので +220 → 2,970円。8か月目から 5,478円
+   * ・u22_u29_both: 両方入れても U22割だけ（−2,728・7か月）→ 1〜7か月 2,970／8か月目 5,698 */
+  'u22_denki_choki': { planId: 'max', dDenki: true, choki: 'y10', campaigns: { u22: true } },
+  'u22_u29_both': { planId: 'max', campaigns: { u22: true, u29: true } },
+  'u29_denki': { planId: 'max', dDenki: true, campaigns: { u29: true } },
+  /* 2026-09-03 追加（製品化レビュー 4-3）。公式は「各種割引適用後のご利用料金」が
+   * 還元の対象。MAX 5,698 −dカードお支払割(GOLD)550 ＝5,148 から、U22割 −2,728 も
+   * 引いた 2,420円が対象額 → 2×100pt＝200pt（直す前は 5,148円で400pt だった）。
+   * キャンペーンが終わる8か月目からは 5,148円→400pt に戻る（ヒントに表示）。 */
+  'gold_u22_campaign': { planId: 'max', dCard: 'gold', campaigns: { u22: true } },
   'hearty_kakel': { planId: 'max', hearty: true, voice: 'kakel' },
   'kosodate_kakel': { planId: 'max', kosodate: true, voice: 'kakel' },
   // --- キャンペーン ---
