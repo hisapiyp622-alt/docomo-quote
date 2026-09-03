@@ -650,7 +650,7 @@
       CUR_LINES.forEach(function (c, i) {
         var o = clSel.options[i];
         if (!o) return;
-        o.textContent = curLineName(c);
+        o.textContent = curLineName(c) + (c.catvNg ? "（タイプC対象外）" : "");
         /* いま選んでいる会社は、出さない設定でも選択肢に残す
          * （保存した見積もりを開き直したときに、ヒアリングの記録が黙って消えないように） */
         o.hidden = curLineHidden(c.id) && c.id !== state.curLine;
@@ -662,12 +662,28 @@
       var cd = curLineDef();
       if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
         clh.hidden = false;
-        clh.textContent = ((cd.catv || cd.optIn) && (cd.prefs || []).length ? "提供エリア: " + cd.prefs.join("・") + "　" : "")
-          + (cd.tel ? "解約窓口: " + cd.tel + (cd.telNote ? "（" + cd.telNote + "）" : "") : cd.cancel)
-          + (state.applyType === "jigyosha" && cd.jgTel
-              ? "　／　承諾番号の窓口: " + cd.jgTel + (cd.jgTelNote ? "（" + cd.jgTelNote + "）" : "")
-              : "")
-          + "　※ 見積書の「開通までの流れ」に解約のご案内が載ります";
+        var hp = [];
+        /* タイプCの提携先ではない会社は、まずそれを出す。
+         * 「転用できると思って進めてしまう」のがいちばんの事故のため。 */
+        if (cd.catvNg) {
+          hp.push('<strong style="color:var(--red)">⚠ ドコモ光 タイプCの提携先ではありません（'
+            + esc(CATV_NG_ASOF) + "時点）。転用（タイプC）はできず、"
+            + "ドコモ光は<u>新規のお申し込み（工事あり）</u>になります</strong>");
+          if (state.applyType === "kirikae") {
+            hp.push('<strong style="color:var(--red)">いまの申込種別は「転用（タイプC）」です。「新規」に直してください</strong>');
+          }
+        }
+        if ((cd.catv || cd.optIn) && (cd.area || (cd.prefs || []).length)) {
+          hp.push("提供エリア: " + esc(cd.area || cd.prefs.join("・"))
+            + (cd.catv ? "（最新は各社の公式ページでご確認ください）" : ""));
+        }
+        hp.push(cd.tel ? "解約窓口: " + esc(cd.tel) + (cd.telNote ? "（" + esc(cd.telNote) + "）" : "")
+          : esc(cd.cancel));
+        if (state.applyType === "jigyosha" && cd.jgTel) {
+          hp.push("承諾番号の窓口: " + esc(cd.jgTel) + (cd.jgTelNote ? "（" + esc(cd.jgTelNote) + "）" : ""));
+        }
+        hp.push("※ 見積書の「開通までの流れ」に解約のご案内が載ります");
+        clh.innerHTML = hp.join("<br>");
       } else {
         clh.hidden = true;
       }
@@ -1081,45 +1097,84 @@
    * 会社を増やすときは、必ず公式の提携CATV一覧で確認してからここに足す。 */
   var CATV_LINES = [
     { id: "ztv", name: "ZTV", prefs: ["三重", "滋賀", "京都", "和歌山"],
+      area: "三重県津市、松阪市（旧嬉野町）、亀山市、伊勢市、鳥羽市、志摩市（旧磯部町）、尾鷲市、熊野市、度会町、玉城町、南伊勢町、紀北町、御浜町、紀宝町／滋賀県彦根市、長浜市、米原市（一部エリア不可）、大津市、草津市、守山市、栗東市、野洲市、湖南市、近江八幡市、竜王町／和歌山県新宮市、田辺市（旧本宮町）、那智勝浦町、太地町、古座川町、串本町、北山村、日高町、由良町、日高川町／京都府京都市西京区（大枝・御陵・大原野）、亀岡市、京丹波町",
       cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
-    { id: "kcnkyoto", name: "KCN京都", prefs: ["京都"] },
-    { id: "komadori", name: "こまどりケーブル", prefs: ["奈良"] },
-    { id: "kisiwada", name: "テレビ岸和田", prefs: ["大阪"] },
-    { id: "baycom", name: "ベイ・コミュニケーションズ", prefs: ["大阪", "兵庫"] },
-    { id: "ccnet", name: "CCNet", prefs: ["岐阜", "愛知", "三重"] },
-    { id: "goolight", name: "Goolight", prefs: ["長野"] },
-    { id: "tam", name: "TAM", prefs: ["富山"] },
-    { id: "tokai", name: "TOKAIケーブルネットワーク", prefs: ["静岡"] },
-    { id: "asagao", name: "あさがおテレビ", prefs: ["石川"] },
-    { id: "tonamieiseitsuusin", name: "となみ衛星通信テレビ", prefs: ["富山"] },
-    { id: "himawari", name: "ひまわりネットワーク", prefs: ["岐阜", "愛知"] },
-    { id: "advancecope", name: "アドバンスコープ", prefs: ["三重"] },
-    { id: "ecocitykomagatake", name: "エコーシティー・駒ヶ岳", prefs: ["長野"] },
-    { id: "nct", name: "エヌ・シィ・ティ", prefs: ["新潟"] },
-    { id: "lcv", name: "エルシーブイ", prefs: ["長野"] },
-    { id: "katch", name: "キャッチネットワーク", prefs: ["愛知"] },
-    { id: "greencity", name: "グリーンシティコム", prefs: ["愛知"] },
-    { id: "kani", name: "ケーブルテレビ可児", prefs: ["岐阜"] },
-    { id: "toyama", name: "ケーブルテレビ富山", prefs: ["富山"] },
-    { id: "suzuka", name: "ケーブルネット鈴鹿", prefs: ["三重"] },
-    { id: "ccn", name: "シーシーエヌ", prefs: ["岐阜"] },
-    { id: "cty", name: "シー・ティーワイ", prefs: ["三重"] },
-    { id: "starcat", name: "スターキャット", prefs: ["愛知"] },
-    { id: "komatsu", name: "テレビ小松", prefs: ["石川"] },
-    { id: "newmedia", name: "ニューメディア", prefs: ["北海道", "山形", "福島", "新潟"] },
-    { id: "mics", name: "ミクスネットワーク", prefs: ["愛知"] },
-    { id: "ueda", name: "上田ケーブルビジョン", prefs: ["長野"] },
-    { id: "jouetsu", name: "上越ケーブルビジョン", prefs: ["新潟"] },
-    { id: "igaueno", name: "伊賀上野ケーブルテレビ", prefs: ["三重"] },
-    { id: "oogaki", name: "大垣ケーブルテレビ", prefs: ["岐阜"] },
-    { id: "imizu", name: "射水ケーブルネットワーク", prefs: ["富山"] },
-    { id: "omaezaki", name: "御前崎ケーブルテレビ", prefs: ["静岡"] },
-    { id: "arakawainfo", name: "新川インフォメーションセンター", prefs: ["富山"] },
-    { id: "kawaguchiko", name: "河口湖有線テレビ放送", prefs: ["山梨"] },
-    { id: "chitamedias", name: "知多メディアスネットワーク", prefs: ["愛知"] },
-    { id: "chitahantou", name: "知多半島ケーブルネットワーク", prefs: ["愛知"] },
-    { id: "clovertv", name: "西尾張シーエーティーヴィ", prefs: ["愛知"] },
-    { id: "takaoka", name: "高岡ケーブルネットワーク", prefs: ["富山"] }
+    { id: "kcnkyoto", name: "KCN京都", prefs: ["京都"],
+      area: "京都府相楽郡精華町、笠置町、南山城村、木津川市、京田辺市、城陽市、宇治市、久世郡久御山町の一部" },
+    { id: "komadori", name: "こまどりケーブル", prefs: ["奈良"],
+      area: "奈良県宇陀市、大淀町、上北山村、川上村、黒滝村、五條市（西吉野・大塔・生子町）、下市町、下北山村、曽爾村、天川村、十津川村、奈良市（旧月ケ瀬村・旧都祁村）、野迫川村、東吉野村、御杖村、山添村、吉野町" },
+    { id: "kisiwada", name: "テレビ岸和田", prefs: ["大阪"],
+      area: "大阪府岸和田市、泉北郡忠岡町" },
+    { id: "baycom", name: "ベイ・コミュニケーションズ", prefs: ["大阪", "兵庫"],
+      area: "大阪府大阪市福島区、西淀川区、港区、大正区、此花区、西区、浪速区、西成区、住之江区、北区・中央区の一部／兵庫県尼崎市、西宮市、伊丹市" },
+    { id: "ccnet", name: "CCNet", prefs: ["岐阜", "愛知", "三重"],
+      area: "三重県川越町、朝日町、桑名市多度町／愛知県春日井市、小牧市、犬山市、扶桑町、大口町、名古屋市緑区、豊明市、日進市、東郷町、豊川市／岐阜県各務原市、美濃加茂市、川辺町、八百津町、白川町、養老町、本巣市" },
+    { id: "goolight", name: "Goolight", prefs: ["長野"],
+      area: "長野県須坂市、上高井郡小布施町、上高井郡高山村" },
+    { id: "tam", name: "TAM", prefs: ["富山"],
+      area: "富山県滑川市、中新川郡立山町、中新川郡上市町" },
+    { id: "tokai", name: "TOKAIケーブルネットワーク", prefs: ["静岡"],
+      area: "静岡県富士市、富士宮市、沼津市、静岡市（旧蒲原町・由比町）、三島市、裾野市、御殿場市、清水町、長泉町、伊豆の国市、函南町、焼津市、藤枝市、伊豆市の一部、小山町の一部、島田市、吉田町" },
+    { id: "asagao", name: "あさがおテレビ", prefs: ["石川"],
+      area: "石川県白山市（一部エリアを除く）、能美市和佐谷町" },
+    { id: "tonamieiseitsuusin", name: "となみ衛星通信テレビ", prefs: ["富山"],
+      area: "富山県砺波市、南砺市、小矢部市" },
+    { id: "himawari", name: "ひまわりネットワーク", prefs: ["岐阜", "愛知"],
+      area: "愛知県豊田市、みよし市、長久手市、蒲郡市、幸田町／岐阜県多治見市、土岐市、瑞浪市" },
+    { id: "advancecope", name: "アドバンスコープ", prefs: ["三重"],
+      area: "三重県名張市、伊賀市の一部（旧青山町）" },
+    { id: "ecocitykomagatake", name: "エコーシティー・駒ヶ岳", prefs: ["長野"],
+      area: "長野県駒ヶ根市、飯島町、宮田村、中川村" },
+    { id: "nct", name: "エヌ・シィ・ティ", prefs: ["新潟"],
+      area: "新潟県長岡市、三条市、見附市、小千谷市、燕市、柏崎市、加茂市、魚沼市、南魚沼市、十日町市、田上町、出雲崎町、湯沢町、津南町、弥彦村、五泉市" },
+    { id: "lcv", name: "エルシーブイ", prefs: ["長野"],
+      area: "長野県諏訪市、茅野市、岡谷市、下諏訪町、原村、富士見町、辰野町、塩尻市（北小野）" },
+    { id: "katch", name: "キャッチネットワーク", prefs: ["愛知"],
+      area: "愛知県刈谷市、安城市、高浜市、知立市、碧南市、西尾市" },
+    { id: "greencity", name: "グリーンシティコム", prefs: ["愛知"],
+      area: "愛知県名古屋市守山区、尾張旭市、瀬戸市" },
+    { id: "kani", name: "ケーブルテレビ可児", prefs: ["岐阜"],
+      area: "岐阜県可児市、御嵩町" },
+    { id: "toyama", name: "ケーブルテレビ富山", prefs: ["富山"],
+      area: "富山県富山市（旧婦中町・山田村を除く）、中新川郡舟橋村" },
+    { id: "suzuka", name: "ケーブルネット鈴鹿", prefs: ["三重"],
+      area: "三重県鈴鹿市" },
+    { id: "ccn", name: "シーシーエヌ", prefs: ["岐阜"],
+      area: "岐阜県岐阜市、関市、美濃市、羽島市、各務原市川島、瑞穂市、岐南町、笠松町、北方町、山県市" },
+    { id: "cty", name: "シー・ティーワイ", prefs: ["三重"],
+      area: "三重県四日市市、いなべ市、桑名市（長島町のみ）、菰野町、木曽岬町" },
+    { id: "starcat", name: "スターキャット", prefs: ["愛知"],
+      area: "愛知県名古屋市中区、千種区、東区、北区、西区、中村区、昭和区、瑞穂区、熱田区、中川区、港区、南区、名東区、天白区、北名古屋市、岩倉市、江南市、豊山町、清須市西枇杷島町・春日" },
+    { id: "komatsu", name: "テレビ小松", prefs: ["石川"],
+      area: "石川県小松市、能美市" },
+    { id: "newmedia", name: "ニューメディア", prefs: ["北海道", "山形", "福島", "新潟"],
+      area: "北海道函館市、七飯町、北斗市／山形県米沢市、南陽市、高畠町、川西町／福島県福島市／新潟県新潟市" },
+    { id: "mics", name: "ミクスネットワーク", prefs: ["愛知"],
+      area: "愛知県岡崎市（一部エリアを除く）" },
+    { id: "ueda", name: "上田ケーブルビジョン", prefs: ["長野"],
+      area: "長野県上田市（菅平高原・丸子地域・武石地域を除く）、東御市、坂城町、青木村の一部" },
+    { id: "jouetsu", name: "上越ケーブルビジョン", prefs: ["新潟"],
+      area: "新潟県上越市、妙高市、十日町市十日町地区" },
+    { id: "igaueno", name: "伊賀上野ケーブルテレビ", prefs: ["三重"],
+      area: "三重県伊賀市（旧青山町を除く）" },
+    { id: "oogaki", name: "大垣ケーブルテレビ", prefs: ["岐阜"],
+      area: "岐阜県大垣市、海津市、池田町、神戸町、垂井町、関ケ原町、揖斐川町" },
+    { id: "imizu", name: "射水ケーブルネットワーク", prefs: ["富山"],
+      area: "富山県射水市、高岡市の一部（牧野地区）" },
+    { id: "omaezaki", name: "御前崎ケーブルテレビ", prefs: ["静岡"],
+      area: "静岡県御前崎市" },
+    { id: "arakawainfo", name: "新川インフォメーションセンター", prefs: ["富山"],
+      area: "富山県魚津市" },
+    { id: "kawaguchiko", name: "河口湖有線テレビ放送", prefs: ["山梨"],
+      area: "山梨県南都留郡富士河口湖町" },
+    { id: "chitamedias", name: "知多メディアスネットワーク", prefs: ["愛知"],
+      area: "愛知県東海市、大府市、知多市、東浦町、名古屋市・阿久比町の一部" },
+    { id: "chitahantou", name: "知多半島ケーブルネットワーク", prefs: ["愛知"],
+      area: "愛知県常滑市、武豊町、美浜町、南知多町（日間賀島・篠島を除く）" },
+    { id: "clovertv", name: "西尾張シーエーティーヴィ", prefs: ["愛知"],
+      area: "愛知県津島市、愛西市、弥富市、稲沢市（旧平和町）、あま市、海部郡蟹江町、大治町、清須市" },
+    { id: "takaoka", name: "高岡ケーブルネットワーク", prefs: ["富山"],
+      area: "富山県高岡市（牧野地区を除く）" }
   ];
   CATV_LINES.forEach(function (c) {
     c.catv = true;
@@ -1127,6 +1182,111 @@
       c.cancel = "タイプCへ切り替える場合、ネットの解約手続き・精算方法はケーブルテレビ会社ごとに異なります（"
         + c.name + "にご確認ください）。テレビ・お電話は" + c.name + "のご契約のまま続きます";
     }
+  });
+  /* ---------- ドコモ光 タイプC の提携先では「ない」ケーブルテレビ会社（中部・関西） ----------
+   * 上の CATV_LINES は「転用（タイプC）ができる」会社。こちらは<b>できない</b>会社。
+   * お客様が会社名を言われたときに、その場で「転用できるのか／新規工事になるのか」が
+   * 分かるようにするための一覧（菱和テレコムの中部・関西エリア向け・2026-09-03）。
+   *
+   * 出典（いずれも 2026-09-03 に取得）:
+   *   関西 … 総務省 近畿総合通信局「主なケーブルテレビ事業者（近畿総合通信局管内）」
+   *   東海 … 総務省 東海総合通信局「東海管内のケーブルテレビ登録事業者一覧」（令和8年4月1日現在）
+   *   北陸 … 総務省 北陸総合通信局「北陸管内のケーブルテレビ事業者一覧」
+   *   信越 … 総務省 信越総合通信局「ケーブルテレビ事業者一覧」（令和8年6月8日現在）
+   *   提携の有無 … ドコモ公式「ドコモ光 1ギガ タイプC」提携CATV一覧
+   *
+   * 収録のきまり:
+   *   ・会社名がそのままサービス名として通じるものだけ入れている。
+   *     市町村名・組合名だけのもの（例「◯◯市」「◯◯広域事務組合」）は入れていない
+   *   ・J:COM・eo光・コミュファ光は上の CUR_LINES に別項目があるので入れていない
+   *   ・山梨県は関東総合通信局の管内で、一覧の出典が別のため未収録
+   *
+   * <b>提携先は増える</b>（2026年だけでもミクスネットワーク・BTVが追加）。
+   * 「対象外」と言い切らず、画面にも確認日を出す（CATV_NG_ASOF）。
+   * 見直すときは、上のドコモ公式一覧と突き合わせて、提携した会社をこちらから外す。
+   *
+   * 既定ではどの店舗にも出さない。契約の器（contracts）の features で店舗ごとに出す:
+   *   catvNgShow:  ["wink", "banban"]   … 出す会社のID
+   *   catvNgPrefs: ["愛知", "岐阜"]      … その県の会社をまとめて出す */
+  var CATV_NG_ASOF = "2026年9月";
+  var CATV_NG_LINES = [
+    /* --- 関西 --- */
+    { id: "ng_aicomkoka", name: "あいコムこうか", prefs: ["滋賀"], area: "滋賀県甲賀市" },
+    { id: "ng_higashiomi", name: "東近江ケーブルネットワーク（東近江スマイルネット）", prefs: ["滋賀"], area: "滋賀県東近江市" },
+    { id: "ng_actv", name: "全関西ケーブルテレビジョン（ACTV）", prefs: ["京都", "和歌山"], area: "京都府京丹後市／和歌山県紀の川市、有田川町、白浜町、すさみ町" },
+    { id: "ng_kcnnantan", name: "KCNなんたん（南丹市）", prefs: ["京都"], area: "京都府南丹市" },
+    { id: "ng_yosano", name: "与謝野町有線テレビ", prefs: ["京都"], area: "京都府与謝野町" },
+    { id: "ng_kcn", name: "近鉄ケーブルネットワーク（KCN）", prefs: ["奈良", "大阪"], area: "奈良県奈良市、大和高田市、大和郡山市、天理市、橿原市、桜井市、五條市、御所市、生駒市、香芝市、葛城市、平群町、三郷町、斑鳩町、安堵町、川西町、三宅町、田原本町、高取町、明日香村、上牧町、王寺町、広陵町、河合町／大阪府四條畷市" },
+    { id: "ng_wink", name: "姫路ケーブルテレビ（WINK）", prefs: ["兵庫"], area: "兵庫県姫路市、宍粟市、太子町、上郡町、佐用町" },
+    { id: "ng_actv135", name: "明石ケーブルテレビ（ACTV135）", prefs: ["兵庫"], area: "兵庫県明石市" },
+    { id: "ng_banban", name: "BAN-BANネットワークス", prefs: ["兵庫"], area: "兵庫県加古川市、高砂市、稲美町、播磨町" },
+    { id: "ng_awajishima", name: "淡路島テレビジョン（洲本市）", prefs: ["兵庫"], area: "兵庫県洲本市" },
+    { id: "ng_sansan", name: "さんさんネット（南あわじ市）", prefs: ["兵庫"], area: "兵庫県南あわじ市" },
+    { id: "ng_fureai", name: "ふれあいネット（養父市）", prefs: ["兵庫"], area: "兵庫県養父市" },
+    { id: "ng_asago", name: "朝来市ケーブルテレビ", prefs: ["兵庫"], area: "兵庫県朝来市" },
+    { id: "ng_knet", name: "K-net（神河町）", prefs: ["兵庫"], area: "兵庫県神河町" },
+    { id: "ng_yumenet", name: "夢ネット（新温泉町）", prefs: ["兵庫"], area: "兵庫県新温泉町" },
+    { id: "ng_aikis", name: "サイバーリンクス（aikis）", prefs: ["和歌山"], area: "和歌山県田辺市" },
+    /* --- 東海 --- */
+    { id: "ng_amix", name: "アミックスコム", prefs: ["岐阜"], area: "岐阜県恵那市、安八郡輪之内町" },
+    { id: "ng_gujo", name: "インフォメーションネットワーク郡上八幡", prefs: ["岐阜"], area: "岐阜県郡上市（旧八幡町）" },
+    { id: "ng_oribe", name: "おりべネットワーク", prefs: ["岐阜"], area: "岐阜県多治見市、瑞浪市、土岐市" },
+    { id: "ng_hidatakayama", name: "飛騨高山ケーブルネットワーク", prefs: ["岐阜"], area: "岐阜県高山市、飛騨市（旧古川町・旧神岡町）、大野郡白川村" },
+    { id: "ng_izukyu", name: "伊豆急ケーブルネットワーク", prefs: ["静岡"], area: "静岡県熱海市、伊東市、賀茂郡東伊豆町" },
+    { id: "ng_izutaiyo", name: "伊豆太陽サービス", prefs: ["静岡"], area: "静岡県賀茂郡河津町" },
+    { id: "ng_itoantenna", name: "伊東アンテナ協会", prefs: ["静岡"], area: "静岡県伊東市" },
+    { id: "ng_itotvclub", name: "伊東テレビクラブ", prefs: ["静岡"], area: "静岡県伊東市" },
+    { id: "ng_touzu", name: "東豆有線", prefs: ["静岡"], area: "静岡県伊東市" },
+    { id: "ng_higashiizu", name: "東伊豆有線テレビ放送", prefs: ["静岡"], area: "静岡県賀茂郡東伊豆町" },
+    { id: "ng_kobayashi", name: "小林テレビ設備", prefs: ["静岡"], area: "静岡県下田市、賀茂郡南伊豆町" },
+    { id: "ng_shimoda", name: "下田有線テレビ放送", prefs: ["静岡"], area: "静岡県下田市" },
+    { id: "ng_toko", name: "トコちゃんねる静岡", prefs: ["静岡"], area: "静岡県静岡市（葵区・駿河区・清水区）" },
+    { id: "ng_hamamatsu", name: "浜松ケーブルテレビ", prefs: ["静岡"], area: "静岡県浜松市（中央区・浜名区・天竜区）、袋井市、湖西市" },
+    { id: "ng_icc", name: "アイ・シー・シー", prefs: ["愛知"], area: "愛知県一宮市" },
+    { id: "ng_inazawa", name: "稲沢シーエーティーヴィ", prefs: ["愛知"], area: "愛知県稲沢市（旧稲沢市）" },
+    { id: "ng_cac", name: "CAC", prefs: ["愛知"], area: "愛知県半田市、知多郡阿久比町、武豊町" },
+    { id: "ng_toyohashi", name: "豊橋ケーブルネットワーク", prefs: ["愛知"], area: "愛知県豊橋市、新城市、田原市" },
+    { id: "ng_nagoyacv", name: "名古屋ケーブルビジョン", prefs: ["愛知", "岐阜"], area: "愛知県名古屋市（千種区・守山区・緑区・天白区を除く）、春日井市、清須市、あま市、海部郡大治町／岐阜県加茂郡七宗町" },
+    { id: "ng_mikawawan", name: "三河湾ネットワーク", prefs: ["愛知"], area: "愛知県蒲郡市、額田郡幸田町、西尾市" },
+    { id: "ng_matsusaka", name: "松阪ケーブルテレビ・ステーション", prefs: ["三重"], area: "三重県松阪市（旧嬉野町を除く）、志摩市（旧磯部町を除く）、多気町、明和町、大台町、大紀町" },
+    { id: "ng_luckytown", name: "ラッキータウンテレビ", prefs: ["三重"], area: "三重県桑名市（旧桑名市）、員弁郡東員町" },
+    /* --- 北陸 --- */
+    { id: "ng_kaminei", name: "上婦負ケーブルテレビ", prefs: ["富山"], area: "富山県富山市（旧婦中町・旧山田村）" },
+    { id: "ng_nogoshi", name: "能越ケーブルネット", prefs: ["富山", "石川"], area: "富山県氷見市／石川県珠洲市、羽咋市、穴水町" },
+    { id: "ng_kanazawa", name: "金沢ケーブル", prefs: ["石川"], area: "石川県金沢市、野々市市、川北町、津幡町、内灘町、志賀町、宝達志水町" },
+    { id: "ng_kaga", name: "加賀ケーブル", prefs: ["石川"], area: "石川県加賀市" },
+    { id: "ng_fukui", name: "福井ケーブルテレビ", prefs: ["福井"], area: "福井県福井市、池田町、永平寺町、南越前町" },
+    { id: "ng_reinan", name: "嶺南ケーブルネットワーク", prefs: ["福井"], area: "福井県敦賀市" },
+    { id: "ng_wakasaobama", name: "ケーブルテレビ若狭小浜", prefs: ["福井"], area: "福井県小浜市" },
+    { id: "ng_ono", name: "大野ケーブルテレビ", prefs: ["福井"], area: "福井県大野市、勝山市" },
+    { id: "ng_koshino", name: "こしの都ネットワーク", prefs: ["福井"], area: "福井県鯖江市、越前市、越前町" },
+    { id: "ng_sakai", name: "さかいケーブルテレビ", prefs: ["福井"], area: "福井県あわら市、坂井市" },
+    { id: "ng_mikata", name: "美方ケーブルネットワーク", prefs: ["福井", "滋賀"], area: "福井県美浜町、若狭町／滋賀県高島市今津町杉山地区" },
+    /* --- 信越（長野・新潟） --- */
+    { id: "ng_inc", name: "インフォメーション・ネットワーク・コミュニティ（INC）", prefs: ["長野"], area: "長野県長野市、中野市の各一部" },
+    { id: "ng_shinshu", name: "信州ケーブルテレビジョン", prefs: ["長野"], area: "長野県千曲市" },
+    { id: "ng_hokushin", name: "テレビ北信ケーブルビジョン", prefs: ["長野"], area: "長野県中野市、山ノ内町の各一部" },
+    { id: "ng_kyowa", name: "協和ビジョン", prefs: ["長野"], area: "長野県軽井沢町の一部" },
+    { id: "ng_komoro", name: "コミュニティテレビこもろ", prefs: ["長野"], area: "長野県小諸市の一部" },
+    { id: "ng_saku", name: "佐久ケーブルテレビ", prefs: ["長野"], area: "長野県佐久市の一部" },
+    { id: "ng_tateshina", name: "蓼科ケーブルビジョン", prefs: ["長野"], area: "長野県立科町、佐久市の一部" },
+    { id: "ng_nishikaruizawa", name: "西軽井沢ケーブルテレビ", prefs: ["長野"], area: "長野県御代田町の一部" },
+    { id: "ng_maruko", name: "丸子テレビ放送", prefs: ["長野"], area: "長野県上田市の一部" },
+    { id: "ng_azumino", name: "あづみ野テレビ", prefs: ["長野"], area: "長野県安曇野市、池田町、松川村、松本市の一部" },
+    { id: "ng_tvmatsumoto", name: "テレビ松本ケーブルビジョン", prefs: ["長野"], area: "長野県松本市、塩尻市、安曇野市の各一部、山形村、朝日村、筑北村" },
+    { id: "ng_cvn", name: "cvn（旧 飯田ケーブルテレビ）", prefs: ["長野"], area: "長野県飯田市、高森町、天龍村、喬木村、豊丘村、大鹿村、泰阜村、松川町・阿南町・阿智村の各一部" },
+    { id: "ng_inatv", name: "伊那ケーブルテレビジョン", prefs: ["長野"], area: "長野県伊那市、箕輪町、南箕輪村" },
+    { id: "ng_channelu", name: "チャンネル・ユー", prefs: ["長野"], area: "長野県松川町" },
+    { id: "ng_ycom", name: "ワイコム", prefs: ["長野"], area: "長野県小谷村" },
+    { id: "ng_sado", name: "佐渡テレビジョン", prefs: ["新潟"], area: "新潟県佐渡市の一部" }
+  ];
+  CATV_NG_LINES.forEach(function (c) {
+    c.catv = true;
+    c.catvNg = true;   // タイプCの提携先ではない（転用できない）
+    c.cancel = c.name + "はドコモ光 タイプCの提携先ではありません（" + CATV_NG_ASOF + "時点）。"
+      + "転用（タイプC）ができないため、ドコモ光は新規のお申し込み（工事が必要）になり、"
+      + "いまのインターネットは別途ご解約が必要です。解約金・工事費の残り・撤去費が出る場合があります"
+      + "（テレビ・お電話を残すかどうかも、あわせてご確認ください）";
   });
   var CUR_LINES = [
     { id: "", name: "（未ヒアリング）" },
@@ -1155,7 +1315,7 @@
       tel: "0120-218-919",
       telNote: "コミュファ コンタクトセンター・10:00〜18:00 年中無休。回線解約は固定電話から 1-3／携帯から 2-1-3",
       cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" }
-  ].concat(CATV_LINES, [
+  ].concat(CATV_LINES, CATV_NG_LINES, [
     /* 「ケーブルテレビのネット」は 1.140.2 で選択肢から外した（タイプCの提携会社を
      * 会社名で選ぶようにしたため）。過去の見積もりで選んである場合だけ表示に残す。 */
     { id: "cable", name: "ケーブルテレビのネット", retired: true },
@@ -1168,6 +1328,8 @@
    *   curLinesShow: ["commufa"]              … 既定では出さない回線を出す（optIn の回線）
    *   curLinePrefs: ["愛知", "岐阜"]         … その県で提供している回線をまとめて出す
    *   curLineNames: { ztv: "ZTV" }           … 表示名の置き換え
+   *   catvShow / catvPrefs                   … タイプCの提携ケーブルテレビ会社を出す
+   *   catvNgShow / catvNgPrefs               … タイプC「対象外」のケーブルテレビ会社を出す
    * 例: 特定の代理店向けデモでは、扱わない回線を隠して名前を短くする。 */
   function featVal(key) { return typeof window.KQ_FEATVAL === "function" ? window.KQ_FEATVAL(key) : undefined; }
   function curLineById(id) {
@@ -1190,6 +1352,15 @@
   /* 既定では出さない回線（コミュファ光など）を、その店舗で出すか。
    * curLinesShow のID、または curLinePrefs の県で一致したときだけ出す。
    * 菱和テレコムの東海エリア向けに用意（2026-09-03）。 */
+  /* タイプCの提携先ではないケーブルテレビ会社を、その店舗で出すか。
+   * 提携先の一覧（catvShow / catvPrefs）とは別の設定にしてある。
+   * 「対象外の会社まで選択肢に出す」かどうかは店舗の好みが分かれるため。 */
+  function catvNgOn(c) {
+    var show = featVal("catvNgShow");
+    if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
+    var prefs = featVal("catvNgPrefs");
+    return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
   function curLineOptInOn(c) {
     var show = featVal("curLinesShow");
     if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
@@ -1203,6 +1374,10 @@
     if (c && c.retired) return true;   // 選択肢から外した項目（選んである見積もりだけ残す）
     if (c && c.optIn) return !curLineOptInOn(c);   // 既定では出さない回線
     if (!c || !c.catv) return false;
+    /* タイプC対象外の会社は、タイプCを扱わない店舗でも役に立つ
+     * （「この会社からは転用できない」というご案内は同じため）ので、
+     * タイプCの機能スイッチとは切り離して、専用の設定だけで出す。 */
+    if (c.catvNg) return !catvNgOn(c);
     if (!typecFeatOn()) return true;   // タイプCを切っている店舗
     return !catvOn(c);                 // ケーブルテレビ会社は既定で出さない（ZTVを含む）
   }
@@ -1214,7 +1389,8 @@
   function curHearingText() {
     if (!state) return "";
     var a2 = [];
-    if (state.curLine) a2.push("ネット: " + curLineLabel());
+    var clD = curLineDef();
+    if (state.curLine) a2.push("ネット: " + curLineLabel() + (clD && clD.catvNg ? "（タイプC対象外）" : ""));
     if (state.curPhone) a2.push("電話: " + (CUR_PHONE_NAMES[state.curPhone] || state.curPhone));
     if (state.curTv) {
       var tv = state.curTv === "yes" ? "あり" : "なし（アンテナ）";
