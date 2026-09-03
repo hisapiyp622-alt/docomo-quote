@@ -61,6 +61,15 @@ const stamp = (o) => Object.assign({ clientId: 'c1', updatedAtMs: Date.now() }, 
   await check('店舗は自分の店舗情報を読める', () => assertSucceeds(A.doc('stores/storeA').get()));
   await check('店舗は自分の店舗情報を書ける', () =>
     assertSucceeds(A.doc('stores/storeA').set(stamp({ storeName: 'A店', master: '{}' }))));
+  await check('店舗は「いまの版」の記録を書ける（4-12）', () =>
+    assertSucceeds(A.doc('stores/storeA').set({
+      masterVersion: 9, masterUpdated: '2026-09-03', masterAppliedAt: Date.now(),
+      appVersion: '1.151.0', clientId: 'c1'
+    }, { merge: true })));
+  await check('版の記録に長すぎる値は入れられない（4-12）', () =>
+    assertFails(A.doc('stores/storeA').set({
+      masterVersion: 9, appVersion: 'x'.repeat(60), clientId: 'c1'
+    }, { merge: true })));
   await check('店舗は他店を読めない', () => assertFails(A.doc('stores/storeB').get()));
   await check('店舗は他店に書けない', () =>
     assertFails(A.doc('stores/storeB').set(stamp({ storeName: '乗っ取り' }))));
