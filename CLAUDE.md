@@ -81,9 +81,10 @@
 1. 変更後 `node --check`・`node tests/run-calc-tests.js`・`node tests/run-bill-tests.js`・
    `node tests/run-ienaka-tests.js`（光・5G。統合版と単体版の一致も見る）・
    `node tests/run-master-update-tests.js`（料金表の配信と受付終了）・
-   `node tests/run-diag-tests.js`（調子が悪いときの情報）・
+   `node tests/run-diag-tests.js`（調子が悪いときの情報・配信元）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
-   （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh` も）
+   （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、
+   `tools/provision-store.js` を触ったときは `sh tools/test-provision.sh` も）
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す
 3. **`node tools/build-internal.js` を実行**してルートを再生成する（社内版のキャッシュ名も追従する）
 4. `node tools/release-check.js`（版の一致・キャッシュ名・生成物の鮮度。CIでも見ています）

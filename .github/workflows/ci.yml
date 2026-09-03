@@ -59,9 +59,15 @@ jobs:
 
       - name: Firestore ルールのテスト
         run: |
-          npm install --no-audit --no-fund --no-save @firebase/rules-unit-testing firebase-tools >/dev/null
+          npm install --no-audit --no-fund --no-save @firebase/rules-unit-testing firebase-tools firebase-admin >/dev/null
           npx --no-install firebase-tools emulators:exec --only firestore --project demo-frontalk \
             "node tests/rules/run-rules-tests.js"
+
+      # 店舗の開通スクリプト（本番の鍵は使わず、エミュレータで手順どおりに流す・レビュー4-24）
+      - name: 店舗の開通スクリプトのテスト
+        run: |
+          npx --no-install firebase-tools emulators:exec --only auth,firestore --project demo-frontalk \
+            "node tests/run-provision-tests.js"
 
       # 料金表を変えたのに版を上げ忘れると、店舗に改定が届かない（レビュー4-10）
       - name: 料金表を変えたら版と基準日も上げているか
