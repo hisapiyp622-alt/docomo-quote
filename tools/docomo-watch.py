@@ -69,6 +69,10 @@ def main():
     new_items, errors = [], []
     seen_links = set()
     new_cursor = dict(state.get("lastSeen", {}))
+    # 既読の記事（リンク）。同じ時刻の記事を取りこぼさないため、時刻だけでなく
+    # リンクでも既読を判定する（製品化レビュー 4-15。9/1のお知らせは先頭2件が同時刻だった）
+    old_seen = state.get("seenLinks", {}) or {}
+    new_seen = dict((k, list(v)) for k, v in old_seen.items())
     for name, url in FEEDS.items():
         try:
             xml = fetch(url)
@@ -83,8 +87,17 @@ def main():
         newest = max(i["date"] for i in items if i["date"])
         if not cursor or newest > cursor:
             new_cursor[name] = newest
+        seen_feed = set(old_seen.get(name, []))
+        # 今回見たリンクを既読に足す（最大300件・新しいものから）
+        links_now = [i["link"] for i in items if i.get("link")]
+        new_seen[name] = (links_now + [l for l in new_seen.get(name, []) if l not in set(links_now)])[:300]
         for i in items:
-            if not i["date"] or (cursor and i["date"] <= cursor):
+            if not i["date"]:
+                continue
+            # カーソルより古いものは飛ばす。同時刻（==）は既読リンクで判断する
+            if cursor and i["date"] < cursor:
+                continue
+            if i["link"] in seen_feed:
                 continue
             if i["link"] in seen_links:
                 continue
@@ -103,10 +116,11 @@ def main():
     hits = sum(1 for i in new_items if i["hit"])
     print("SUMMARY\tnew=%d\thits=%d\terrors=%d" % (len(new_items), hits, len(errors)))
     if write:
-        json.dump({"lastSeen": new_cursor}, open(STATE, "w", encoding="utf-8"),
+        json.dump({"lastSeen": new_cursor, "seenLinks": new_seen}, open(STATE, "w", encoding="utf-8"),
                   ensure_ascii=False, indent=2)
-        print("STATE\tカーソルを更新しました")
-    return 0
+        print("STATE\tカーソルと既読一覧を更新しました")
+    # 取得に失敗したフィードがあるときは 0 以外で終わる（気づけるように・4-14）
+    return 1 if errors else 0
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.146.0";
+  var APP_VERSION = "1.146.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -505,10 +505,34 @@
     return (d.getFullYear() + "/" + mm + "/" + dd) + (plan ? " " + plan : "");
   }
   var quickSaveTimer = null;
-  // いま開いている3パターン一式を保存する
+  /* 直前の保存が「上書き」だったか（案内の文言を変えるため）。 */
+  var lastSaveOverwrote = false;
+  /* いま開いている3パターン一式を保存する。
+   * 同じ応対で押し直したときは、前に保存した1件へ上書きする。
+   * 押すたびに別件で増えると、実績の提案数が水増しされるため
+   * （製品化レビュー 4-23）。名前を変えて保存したときは別の1件として残す。 */
   function saveQuote(name) {
     if (viewOnlyStop()) return null;
     var r = calc();
+    var nm = String(name || "").trim().slice(0, 40);
+    var prev = propSrcId ? savedList.filter(function (x) {
+      return x.id === propSrcId && !x.result && !x.sentTo && !x.slim && !x.noQuote && !x.auto;
+    })[0] : null;
+    if (prev && (!nm || nm === prev.name)) {
+      if (nm) prev.name = nm;
+      prev.custName = state.custName || "";
+      prev.planName = state.planId ? r.plan.name : "";
+      prev.monthly = r.segs[0].monthly;
+      prev.initial = r.initialTotal;
+      prev.upAt = Date.now();
+      prev.data = JSON.parse(JSON.stringify(store));
+      savedList = trimSavedList(savedList);
+      persistSaved();
+      renderSaved();
+      lastSaveOverwrote = true;
+      return prev;
+    }
+    lastSaveOverwrote = false;
     var item = {
       id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: String(name || "").trim().slice(0, 40) || savedDefaultName(),
@@ -2494,7 +2518,24 @@
   function histSaveLocal() {
     lsSet(HIST_KEY, JSON.stringify(histList));
   }
+  /* 料金マスタを変えた人。保守・上位アカウントで店舗を開いているときは、
+   * 店舗の担当者名ではなく、その立場が分かる名前で残す（製品化レビュー 4-30）。 */
+  function histAccountName() {
+    var em = String((CLOUD.user && CLOUD.user.email) || "");
+    return em.replace(/@.*$/, "") || "不明";
+  }
+  function histMode() {
+    if (isDevUser() && CLOUD.actAsUid) return "dev";
+    if (isRoleUser() && CLOUD.actAsUid) return "role";
+    return "store";
+  }
   function histEditor() {
+    var mode = histMode();
+    if (mode === "dev") return "保守（" + histAccountName() + "）";
+    if (mode === "role") {
+      var role = CLOUD.role || {};
+      return (role.type === "agency" ? "代理店" : "エリア") + "（" + histAccountName() + "）";
+    }
     if (typeof masterOnly !== "undefined" && masterOnly) return "管理者";
     var s = activeStaff();
     return (s && s.name) || "担当";
@@ -2654,6 +2695,8 @@
       id: "h" + Date.now() + Math.random().toString(36).slice(2, 6),
       at: nowStamp(),
       by: histEditor(),
+      byUid: (CLOUD.user && CLOUD.user.uid) || "",   // 誰の操作か（監査用・4-30）
+      mode: histMode(),                              // store / dev / role
       label: String(label || "").slice(0, 40),
       auto: !!auto,
       data: dataJson
@@ -3249,6 +3292,7 @@
     var backEntry = {
       id: "h" + Date.now() + Math.random().toString(36).slice(2, 6),
       at: nowStamp(), by: histEditor(),
+      byUid: (CLOUD.user && CLOUD.user.uid) || "", mode: histMode(),
       label: "バックアップを読み込む前の内容", auto: true,
       data: JSON.stringify(MASTER)
     };
@@ -3275,8 +3319,16 @@
       var hs = (d.history && d.history.length) ? d.history.slice(0, HIST_MAX - 1) : [];
       hs.unshift(backEntry);
       writeLS(HIST_KEY, JSON.stringify(hs));
+      /* 復元した保存が、この端末や他の端末の「削除の記録」で
+       * また消されないようにする（製品化レビュー 4-22）。
+       * ・端末の削除の記録は空にする
+       * ・復元した1件ずつに新しい更新時刻を付け、統合で勝つようにする */
       Object.keys(d.saved || {}).forEach(function (id) {
-        writeLS(SAVED_KEY + ":" + id, JSON.stringify(d.saved[id]));
+        var listR = d.saved[id] || [];
+        var nowR = Date.now();
+        listR.forEach(function (it) { it.upAt = nowR; });
+        writeLS(SAVED_KEY + ":" + id, JSON.stringify(listR));
+        writeLS(SAVED_DEL_KEY + ":" + id, "{}");
       });
       Object.keys(d.templates || {}).forEach(function (id) {
         writeLS(TPL_KEY + ":" + id, JSON.stringify(d.templates[id]));
@@ -3312,7 +3364,8 @@
           ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
           ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
         });
-        jobs.push(savedDoc(id).set(stamp({ list: JSON.stringify(list) })));
+        // 削除の記録も空にして送る（他の端末でも復元品が消されないように）
+        jobs.push(savedDoc(id).set(stamp({ list: JSON.stringify(list), del: "{}" })));
       });
       Object.keys(d.templates || {}).forEach(function (id) {
         jobs.push(tplDoc(id).set(stamp({ list: JSON.stringify(d.templates[id]) })));
@@ -11942,7 +11995,7 @@
       if (!it) return;
       var m = $("quickSaveMsg");
       if (!m) return;
-      m.innerHTML = "「" + esc(it.name) + "」として保存しました。"
+      m.innerHTML = "「" + esc(it.name) + "」" + (lastSaveOverwrote ? "に上書き保存しました" : "として保存しました") + "。"
         + '<button type="button" class="link-btn" id="quickSaveOpen">保存した見積もりを見る</button>';
       m.hidden = false;
       clearTimeout(quickSaveTimer);
@@ -11961,7 +12014,7 @@
         if (!it) return;
         nm.value = "";
         var m = $("saveQuoteMsg");
-        m.textContent = "「" + it.name + "」を保存しました。";
+        m.textContent = "「" + it.name + "」" + (lastSaveOverwrote ? "に上書き保存しました。" : "を保存しました。");
         m.hidden = false;
         setTimeout(function () { m.hidden = true; }, 4000);
       });
