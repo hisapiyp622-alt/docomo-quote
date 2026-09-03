@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.148.0";
+  var APP_VERSION = "1.149.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -200,22 +200,54 @@
    * localStorage への大事な保存はすべて lsSet() を通す。
    * 容量超過などで保存に失敗すると、以前は何も出ないまま「保存できたつもり」に
    * なり、あとからデータが消えた形で発覚していた。失敗したら画面上部に警告を出す。 */
-  function lsSet(key, value) {
-    try {
-      localStorage.setItem(key, value);
-      return true;
-    } catch (e) {
-      storageWarn();
-      return false;
-    }
+  var lsFail = {};   // いま端末に保存できていない項目
+  function lsWrite(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
   }
-  var storageWarnTimer = null;
+  function lsFailed() {
+    for (var k in lsFail) { if (lsFail[k]) return true; }
+    return false;
+  }
+  // 保存できた項目は警告の対象から外す。全部書けたら警告を引っ込める
+  function lsDone(key) {
+    if (!lsFail[key]) return;
+    delete lsFail[key];
+    if (lsFailed()) return;
+    storageWarnHide();
+    // 空きが戻ったら、履歴の本文も端末に置き直す（また入らなければ自動で減らす）
+    if (typeof histRelax === "function") histRelax();
+  }
+  function lsSet(key, value) {
+    if (lsWrite(key, value)) { lsDone(key); return true; }
+    // いっぱいなら、古い履歴の本文を端末から外して場所を空け、もう一度だけ試す
+    if (lsMakeRoom() && lsWrite(key, value)) { lsDone(key); return true; }
+    lsFail[key] = true;
+    storageWarn();
+    return false;
+  }
+  /* 空きを作る。料金マスタの履歴は1件が大きい（写真つきの独自商材があると数百KB）ため、
+   * ここを削るのがいちばん効く。本文はクラウドに残っているので、戻す操作は続けられる。 */
+  function lsMakeRoom() {
+    if (typeof histList === "undefined" || !histList.length || histLocalFull <= 0) return false;
+    histLocalFull = 0;
+    return lsWrite(HIST_KEY, histLocalJson(0));
+  }
   function storageWarn() {
     var el = document.getElementById("storageWarn");
     if (!el) return;
+    el.innerHTML = "⚠ この端末に保存できませんでした（保存領域がいっぱいです：使用量 "
+      + esc(storageUsageText()) + "）。この端末には内容が残らないため、"
+      + "アプリを開き直すと入力が消えます。<br>"
+      + (cloudOn() ? "上の同期の表示が「同期✓」であれば、内容はクラウドには届いています。まず"
+                   : "まず")
+      + "保存タブの古い見積もりを消して、空きを作ってください。";
     el.hidden = false;
-    clearTimeout(storageWarnTimer);
-    storageWarnTimer = setTimeout(function () { el.hidden = true; }, 12000);
+    /* 保存できていないのに「同期✓」だけが出ていると気づけない。表示も直す */
+    if (typeof CLOUD !== "undefined" && CLOUD.enabled) cloudOk();
+  }
+  function storageWarnHide() {
+    var el = document.getElementById("storageWarn");
+    if (el) el.hidden = true;
   }
   // この端末（同じサイトの全アプリ合計）の保存領域の使用量
   function storageUsageText() {
@@ -2547,6 +2579,11 @@
    * クラウド利用時は stores/{UID}/history/{id} に置き、店舗内の全端末で同じ履歴を見る。 */
   var HIST_KEY = NS + "-master-hist-v1";
   var HIST_MAX = 20;
+  /* 端末に「戻すための内容」まで置く件数。写真つきの独自商材があると1件で数百KBになり、
+   * 20件そのまま置くと端末の保存領域（およそ5MB）を食いつぶす。古いものは見出しだけ残し、
+   * 戻すときにクラウドから本文を取り直す（製品化レビュー 4-20／4-39）。 */
+  var HIST_LOCAL_FULL = 5;
+  var histLocalFull = HIST_LOCAL_FULL;
   var HIST_SETTLE_MS = 60 * 1000; // これだけ編集が途切れたら、ひと区切りとみなす
   var histList = [];
   var histLoaded = false;      // クラウドからの読み込みは開いたとき1回だけ
@@ -2557,13 +2594,46 @@
   function histLoadLocal() {
     histList = [];
     histBurstEntry = null;
+    histLocalFull = HIST_LOCAL_FULL;
     try {
       var a = JSON.parse(localStorage.getItem(HIST_KEY) || "null");
       if (a && a.length) histList = a;
     } catch (e) {}
   }
+  // 端末に書く形。先頭 full 件だけ本文を持ち、残りは見出しだけにする
+  function histLocalJson(full) {
+    return JSON.stringify(histList.map(function (e, i) {
+      if (i < full) return e;
+      var c = {}, k;
+      for (k in e) { if (k !== "data") c[k] = e[k]; }
+      c.slim = true;   // 本文はこの端末にない（クラウドから取り直す）
+      return c;
+    }));
+  }
+  /* 場所を空けるために減らした本文を、空きが戻ったら元の件数に戻す */
+  function histRelax() {
+    if (typeof histList === "undefined" || !histList.length) return;
+    if (histLocalFull >= HIST_LOCAL_FULL) return;
+    histLocalFull = HIST_LOCAL_FULL;
+    histSaveLocal();
+  }
   function histSaveLocal() {
-    lsSet(HIST_KEY, JSON.stringify(histList));
+    var tries = [histLocalFull, 2, 1, 0], last = 99, i;
+    for (i = 0; i < tries.length; i++) {
+      if (tries[i] >= last) continue;
+      last = tries[i];
+      if (lsWrite(HIST_KEY, histLocalJson(tries[i]))) {
+        histLocalFull = tries[i];
+        lsDone(HIST_KEY);
+        return true;
+      }
+    }
+    /* 見出しだけでも入らないときは、履歴を端末から外す。
+     * ここで残し続けると、見積もりなど他の保存まで巻き添えで失敗する。 */
+    try { localStorage.removeItem(HIST_KEY); } catch (e) {}
+    lsFail[HIST_KEY] = true;
+    storageWarn();
+    return false;
   }
   /* 料金マスタを変えた人。保守・上位アカウントで店舗を開いているときは、
    * 店舗の担当者名ではなく、その立場が分かる名前で残す（製品化レビュー 4-30）。 */
@@ -2793,9 +2863,27 @@
     return d.getFullYear() + "/" + z(d.getMonth() + 1) + "/" + z(d.getDate())
       + " " + z(d.getHours()) + ":" + z(d.getMinutes());
   }
+  /* 古い履歴は本文をこの端末に置いていない。戻すときにクラウドから取り直す（4-39） */
   function histRestore(id) {
     var e = histList.filter(function (x) { return x.id === id; })[0];
     if (!e) return;
+    if (e.data) { histRestoreDo(e); return; }
+    if (!cloudOn()) {
+      histMsg("この履歴の内容は、この端末には残っていません（古いぶんはクラウドにだけ置いています）。"
+        + "ネットにつながった状態で開き直すと戻せます。");
+      return;
+    }
+    histMsg("履歴を読み込んでいます…");
+    histCol().doc(e.id).get().then(function (doc) {
+      var d = doc && doc.exists ? doc.data() : null;
+      if (!d || !d.data) { histMsg("この履歴の内容が見つかりませんでした。"); return; }
+      e.data = d.data;
+      delete e.slim;
+      histMsg("");
+      histRestoreDo(e);
+    }, function () { histMsg("履歴を読み込めませんでした。通信の状態をご確認ください。"); });
+  }
+  function histRestoreDo(e) {
     histSettle(); // 編集の途中なら、ここでひと区切りにしてから戻す
     // 戻す操作自体もやり直せるように、いまの内容を残しておく
     var back = histAdd("戻す前の内容", JSON.stringify(MASTER), true);
@@ -2834,7 +2922,8 @@
         + '<div class="hist-info">'
         + '<b>' + esc(histTitle(e))
         + (rest > 0 ? '<span class="hist-more">ほか' + rest + "件</span>" : "")
-        + (e.auto ? '<span class="hist-auto">自動</span>' : "") + "</b>"
+        + (e.auto ? '<span class="hist-auto">自動</span>' : "")
+        + (!e.data ? '<span class="hist-auto">クラウド保管</span>' : "") + "</b>"
         + '<span class="hint">' + esc(e.at) + "　" + esc(e.by || "") + "</span>"
         + histChangesHtml(e)
         + "</div>"
@@ -3365,7 +3454,14 @@
       writeLS(MASTER_KEY, JSON.stringify(d.master));
       var hs = (d.history && d.history.length) ? d.history.slice(0, HIST_MAX - 1) : [];
       hs.unshift(backEntry);
-      writeLS(HIST_KEY, JSON.stringify(hs));
+      // 端末に本文まで置くのは直近だけ（4-39）。古いぶんは見出しだけにする
+      writeLS(HIST_KEY, JSON.stringify(hs.map(function (e, i) {
+        if (i < HIST_LOCAL_FULL) return e;
+        var c = {}, k;
+        for (k in e) { if (k !== "data") c[k] = e[k]; }
+        c.slim = true;
+        return c;
+      })));
       /* 復元した保存が、この端末や他の端末の「削除の記録」で
        * また消されないようにする（製品化レビュー 4-22）。
        * ・端末の削除の記録は空にする
@@ -4230,7 +4326,12 @@
     var el = $("syncStatus");
     if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
   }
-  function cloudOk() { syncStatus("同期✓", "ok"); }
+  /* 端末に保存できていないときに「同期✓」だけ出すと、消えたことに気づけない。
+   * クラウドへ送れていても、端末側が失敗していればそれが分かる表示にする（4-20）。 */
+  function cloudOk() {
+    if (lsFailed()) { syncStatus("同期✓（端末に保存できず）", "err"); return; }
+    syncStatus("同期✓", "ok");
+  }
   function cloudNg(err) {
     var denied = /permission|insufficient/i.test(String(err));
     syncStatus(denied ? "同期:権限エラー" : "同期:オフライン", "err");
@@ -4489,7 +4590,12 @@
     CLOUD.masterTimer = setTimeout(function () {
       CLOUD.masterTimer = null;
       if (!cloudOn()) return;
-      var mSig = localStorage.getItem(MASTER_KEY) || "";
+      /* 端末への保存が失敗していると、localStorage には古い内容が残っている。
+       * それを送ると、直した内容が古い内容で上書きされて消える（4-20）。
+       * いま画面で使っている内容をそのまま送る。 */
+      var mSig = "";
+      try { mSig = JSON.stringify(MASTER); } catch (e) { mSig = localStorage.getItem(MASTER_KEY) || ""; }
+      if (!mSig) return;
       if (cloudSame("master", mSig)) { cloudOk(); return; }
       storeDoc().set(stamp({ master: mSig }), { merge: true })
         .then(cloudOk, cloudNg);
@@ -4539,10 +4645,13 @@
     histLoaded = true;
     histCol().orderBy("at", "desc").limit(HIST_MAX).get().then(function (snap) {
       var seen = {};
-      histList.forEach(function (e) { seen[e.id] = true; });
+      histList.forEach(function (e) { seen[e.id] = e; });
       snap.forEach(function (doc) {
         var d = doc.data();
-        if (!d || !d.data || seen[d.id || doc.id]) return;
+        if (!d || !d.data) return;
+        var cur = seen[d.id || doc.id];
+        // 端末には見出しだけ残っている履歴に、クラウドの本文を入れておく（4-39）
+        if (cur) { if (!cur.data) { cur.data = d.data; delete cur.slim; } return; }
         histList.push(d);
       });
       histList.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
@@ -9378,7 +9487,7 @@
     h += '<p class="hint">料金改定の前に戻せます。<strong>編集すると自動で控えが残り、何を変更したのかも記録されます</strong>'
       + '（編集の区切りごとに1件。続けて直しているあいだは1件にまとめます）。'
       + '「変更した内容」を開くと、変更した項目と金額の前後が分かります。'
-      + '大きく変える前は、メモを付けて残しておくと分かりやすくなります（最大' + HIST_MAX + '件・古いものから消えます）。</p>';
+      + '大きく変える前は、メモを付けて残しておくと分かりやすくなります（最大' + HIST_MAX + '件・古いものから消えます）。古いぶんの中身はクラウドに置いているため、戻すときはネットにつないだ状態で操作してください。</p>';
     h += '<div class="hist-save">'
       + '<input type="text" id="histLabel" maxlength="40" placeholder="メモ（例）2026年8月の料金改定">'
       + '<button class="btn-sub" id="histSaveBtn" type="button">いまの内容を履歴に残す</button></div>';
@@ -12700,6 +12809,22 @@
       ensureMailOpt: function () {
         if (!mailOptDef()) MASTER.options.push({ id: "docomomail", name: "ドコモメールオプション", price: 330, category: "その他" });
         renderMailOpt(); recalc();
+      },
+      // 端末の保存領域があふれたときの動きの検査用（製品化レビュー 4-20／4-39）
+      storage: {
+        failed: function () { return lsFailed(); },
+        set: function (k, v) { return lsSet(k, v); },
+        histAdd: function (label, data) { return histAdd(label, data, false); },
+        histSave: function () { return histSaveLocal(); },
+        histFullCount: function () { return histLocalFull; },
+        histRaw: function () { return localStorage.getItem(HIST_KEY) || ""; },
+        histKey: function () { return HIST_KEY; },
+        masterKey: function () { return MASTER_KEY; },
+        masterSig: function () { return JSON.stringify(MASTER); },
+        setMasterFee: function (n) { MASTER.fees.jimu_mnp = n; saveMaster(); },
+        histReload: function () { histLoadLocal(); },
+        histRestore: function (id) { histRestore(id); },
+        histMsg: function () { var e = $("histMsg"); return e ? e.textContent : ""; }
       }
     };
   }
