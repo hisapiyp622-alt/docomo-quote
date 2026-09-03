@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 料金表の版チェックで比較元のコミットを見るため
 
       - uses: actions/setup-node@v4
         with:
@@ -43,3 +45,8 @@ jobs:
         run: node tests/run-ienaka-tests.js
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js
+
+      # 料金表を変えたのに版を上げ忘れると、店舗に改定が届かない（レビュー4-10）
+      - name: 料金表を変えたら版と基準日も上げているか
+        if: github.event_name == 'pull_request'
+        run: node tools/check-master-version.js "${{ github.event.pull_request.base.sha }}"
