@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.151.0";
+  var APP_VERSION = "1.152.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -2753,6 +2753,18 @@
       }
       if (k2 === "tiers") { histDiffTiers(head, va || [], vb || [], out); return; }
       if (k2 === "discounts") { histDiffDisc(head, va || {}, vb || {}, out); return; }
+      /* 受付終了の印（4-11）。ここで日本語にしないと、店舗が最初に読む
+       * 「変わる内容」に英語の項目名がそのまま出てしまう。 */
+      if (k2 === "retiredFrom") {
+        if (!vb) out.push(head + "の受付終了を取り消し（また選べるようになりました）");
+        else if (!va) out.push(head + "は" + ymdText(vb) + "から受付終了");
+        else out.push(head + "の受付終了が" + ymdText(va) + " → " + ymdText(vb) + "に変更");
+        return;
+      }
+      if (k2 === "keepAnyway") {
+        out.push(head + (vb ? "を「うちはまだ使う」にしました" : "の「うちはまだ使う」を外しました"));
+        return;
+      }
       var lab = HIST_FIELD_LABELS[k2] || ("の" + k2);
       if (histIsNum(va) || histIsNum(vb)) {
         out.push(head + lab + " " + histAmt(va, HIST_UNITS[k2]) + " → " + histAmt(vb, HIST_UNITS[k2]));
@@ -3677,6 +3689,77 @@
     dlg.hidden = false;
   }
 
+  /* ---------- 受付終了（提供終了）の印 ---------- 
+   * ドコモが割引・サービスの受付を終えても、これまでは店舗の料金表に残り続け、
+   * 新しい見積もりで選べてしまっていた（製品化レビュー 4-11）。
+   * 配信する料金表（data.js）の項目に retiredFrom（"2026-12-01" の形）を入れると、
+   * その日から「新しくは選べない」項目になる。
+   *
+   * 守っている約束:
+   *  ・項目は消さない。すでに選んである見積もり・保存した見積もり・実績はそのまま残る
+   *  ・計算（calcFor）ではこの判定を<b>絶対に見ない</b>。見ると、去年の見積もりを
+   *    開き直したときに金額が変わってしまう（実績も狂う）。判定は画面に出すときだけ
+   *  ・店舗が「うちはまだ使う」を選べば、その店舗では今までどおり選べる（keepAnyway）
+   *  ・「配信に無い＝終了」とは決してみなさない。店舗が自分で足した商材が消えるため */
+  var stdToday = "";   // テストのときだけ今日の日付を差し替える（?kqtest=1）
+  function todayYmd() {
+    if (stdToday) return stdToday;
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate());
+  }
+  // その項目は「新しくは選べない」か
+  function stdEnded(x) {
+    if (!x || !x.retiredFrom) return false;
+    if (x.keepAnyway) return false;          // 店舗の判断で使い続ける
+    return todayYmd() >= String(x.retiredFrom);
+  }
+  // 受付終了の日が未来（まだ選べるが、もうすぐ終わる）
+  function stdEndingSoon(x) {
+    return !!(x && x.retiredFrom && !x.keepAnyway && todayYmd() < String(x.retiredFrom));
+  }
+  // 画面に出す日付（2026-12-01 → 2026年12月1日）
+  function ymdText(v) {
+    var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? (m[1] + "年" + num(m[2]) + "月" + num(m[3]) + "日") : String(v || "");
+  }
+  /* 見積もり画面の一覧に出すか。
+   * いま選んであるものは、受付終了でも必ず残す（開き直したら消えていた、を防ぐ）。
+   * 「受付が終わったものも出す」を押している間は、終了したものも出す
+   * （継続でお使いのお客様の見積もりを、いまでも作れるようにするため）。 */
+  var showEnded = false;
+  function stdPick(x, chosen) { return !stdEnded(x) || !!chosen || showEnded; }
+  /* いま画面から隠れている（＝受付終了で、選んでもいない）件数を、画面全体で数える。
+   * ④オプションだけで数えると、受付終了がプランや通話オプションにしか無いときに
+   * 「受付が終わったものも出す」のボタンが出ず、戻す道が無くなる（4-11）。 */
+  function stdHiddenAll() {
+    if (showEnded || !state) return 0;
+    var n = 0;
+    (MASTER.plans || []).forEach(function (p) {
+      if (p.group === state.planGroup && stdEnded(p) && p.id !== state.planId) n++;
+    });
+    (MASTER.voiceOptions || []).forEach(function (v) { if (stdEnded(v) && v.id !== state.voice) n++; });
+    (MASTER.options || []).forEach(function (o) {
+      if (stdEnded(o) && !state.options[o.id] && !state.optionKubun[o.id]) n++;
+    });
+    (MASTER.feeItems || []).forEach(function (f2) { if (stdEnded(f2) && !state.feeItems[f2.id]) n++; });
+    (MASTER.campaigns || []).forEach(function (c) { if (stdEnded(c) && !state.campaigns[c.id]) n++; });
+    (MASTER.accessories || []).forEach(function (a) {
+      if (stdEnded(a) && !(state.accSel && state.accSel[a.id])) n++;
+    });
+    return n;
+  }
+  // 「受付が終わったものも出す（N件）」のボタン。隠れているものが無ければ出さない
+  function endedToggleHtml(n) {
+    if (!showEnded && !n) return "";
+    return '<div class="ended-toggle-wrap"><button class="btn-sub" data-ended-toggle="1" type="button">'
+      + (showEnded ? "受付が終わったものを隠す" : "受付が終わったものも出す（" + n + "件）")
+      + "</button></div>";
+  }
+  // 一覧に出す名前。受付終了のものは、そうと分かるようにする
+  function stdName(x) {
+    return (x && x.name ? x.name : "") + (stdEnded(x) ? "（受付終了）" : "");
+  }
   function masterUpdateAvailable() {
     return num(DEFAULT_DATA.masterVersion) > num(MASTER.masterVersion);
   }
@@ -3690,6 +3773,18 @@
   var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove", "url"];
   var CAMP_TAKE = ["months", "plans", "amountChoices", "note", "group", "suppress"];
 
+  /* 受付終了の印だけは、ほかの欄と扱いを分ける。
+   * takeFields は「配信に欄が無ければ何もしない」ので、それに任せると
+   * 配信から印を外しても店舗に残り続け、受付再開を伝えられない。
+   * ここでは「配信に印があれば付ける／無ければ外す」を必ず行う。
+   * 店舗が自分で付けた「うちはまだ使う」（keepAnyway）には触らない。 */
+  function syncRetired(cur, def) {
+    if (def && def.retiredFrom) { cur.retiredFrom = String(def.retiredFrom); return; }
+    delete cur.retiredFrom;
+    /* 受付が再開したら、店舗の「うちはまだ使う」も外す。
+     * 残しておくと、次にまた受付終了を配ったときに、この店舗だけ効かない。 */
+    delete cur.keepAnyway;
+  }
   function takeFields(dst, src, keys) {
     keys.forEach(function (k) {
       if (typeof src[k] === "undefined") return;
@@ -3712,21 +3807,24 @@
     (D.plans || []).forEach(function (dp) {
       var cur = next.plans.filter(function (x) { return x.id === dp.id; })[0];
       if (!cur) {
-        if (removed.indexOf(dp.id) < 0) next.plans.push(JSON.parse(JSON.stringify(dp)));
+        // すでに受付が終わっているものを、いまさら店舗の一覧に足さない
+        if (removed.indexOf(dp.id) < 0 && !stdEnded(dp)) next.plans.push(JSON.parse(JSON.stringify(dp)));
         return;
       }
       takeFields(cur, dp, PLAN_TAKE);
+      syncRetired(cur, dp);
     });
 
     (D.voiceOptions || []).forEach(function (dv) {
       var cur = (next.voiceOptions || []).filter(function (x) { return x.id === dv.id; })[0];
       if (!cur) {
-        if (removed.indexOf(dv.id) < 0) next.voiceOptions.push(JSON.parse(JSON.stringify(dv)));
+        if (removed.indexOf(dv.id) < 0 && !stdEnded(dv)) next.voiceOptions.push(JSON.parse(JSON.stringify(dv)));
         return;
       }
       cur.price = dv.price;
       if (typeof dv.wariOff !== "undefined") cur.wariOff = dv.wariOff;
       if (dv.url) cur.url = dv.url;
+      syncRetired(cur, dv);   // ここは TAKE を通らないので個別に
     });
 
     [["options", OPT_TAKE], ["feeItems", FEE_ITEM_TAKE]].forEach(function (pair) {
@@ -3734,9 +3832,12 @@
       (D[key] || []).forEach(function (di) {
         var cur = (next[key] || []).filter(function (x) { return x.id === di.id; })[0];
         if (!cur) {
-          if (removed.indexOf(di.id) < 0) next[key].push(JSON.parse(JSON.stringify(di)));
+          if (removed.indexOf(di.id) < 0 && !stdEnded(di)) next[key].push(JSON.parse(JSON.stringify(di)));
           return;
         }
+        /* 受付終了は「ドコモが決めた事実」なので、店舗独自の印を付けていても伝える。
+         * 金額や名前（店舗が決めるもの）だけを、独自の印で守る。 */
+        syncRetired(cur, di);
         if (cur.own) return;               // 店舗独自にしているものは触らない
         takeFields(cur, di, take);
       });
@@ -3745,12 +3846,19 @@
     (D.campaigns || []).forEach(function (dc) {
       var cur = (next.campaigns || []).filter(function (x) { return x.id === dc.id; })[0];
       if (!cur) {
-        if (removed.indexOf(dc.id) < 0) next.campaigns.push(JSON.parse(JSON.stringify(dc)));
+        if (removed.indexOf(dc.id) < 0 && !stdEnded(dc)) next.campaigns.push(JSON.parse(JSON.stringify(dc)));
         return;
       }
       takeFields(cur, dc, CAMP_TAKE);
+      syncRetired(cur, dc);
     });
 
+    /* アクセサリは店舗の商材だが、配信で配ったものが終了することもある。
+     * 金額・名前は店舗のものなので触らず、受付終了の印だけ合わせる。 */
+    (D.accessories || []).forEach(function (da) {
+      var cur = (next.accessories || []).filter(function (x) { return x.id === da.id; })[0];
+      if (cur) syncRetired(cur, da);
+    });
     // でんき・ガスの会社は、増えたものだけ足す。店舗が直した番号は上書きしない
     ["denki", "gas"].forEach(function (k) {
       var src = (D.energyCompanies && D.energyCompanies[k]) || [];
@@ -3769,6 +3877,23 @@
   // 更新で何が変わるかの一覧（履歴の差分と同じ仕組みを使う）
   function masterUpdateChanges() {
     return histChanges(JSON.stringify(MASTER), JSON.stringify(buildUpdatedMaster()));
+  }
+  /* 更新で新しく「受付終了」になるもの（4-11）。
+   * 変わる内容の一覧は12件で打ち切られるので、いちばん大事なこれは別枠にして
+   * 必ず店舗の目に触れるようにする。 */
+  function masterUpdateEnded() {
+    var next = buildUpdatedMaster(), out = [];
+    [["plans", MASTER.plans], ["voiceOptions", MASTER.voiceOptions], ["options", MASTER.options],
+     ["feeItems", MASTER.feeItems], ["campaigns", MASTER.campaigns]].forEach(function (pair) {
+      var key = pair[0], cur = pair[1] || [];
+      (next[key] || []).forEach(function (x) {
+        if (!x.retiredFrom) return;
+        var was = cur.filter(function (y) { return y.id === x.id; })[0];
+        if (was && was.retiredFrom === x.retiredFrom) return;   // もう知っている
+        out.push({ name: x.name || x.id, from: x.retiredFrom, soon: todayYmd() < String(x.retiredFrom) });
+      });
+    });
+    return out;
   }
   function applyMasterUpdate() {
     var next = buildUpdatedMaster();
@@ -3792,10 +3917,28 @@
     var c = masterUpdateChanges();
     var lines = (c && c.lines) || [];
     var total = lines.length + ((c && c.more) || 0);
+    var ended = masterUpdateEnded();
     var h = '<div class="master-plan mu-box"><h3>料金表の更新があります</h3>';
     h += '<p class="hint">新しい標準の料金表（' + esc(DEFAULT_DATA.updated || "") + '）が届いています。'
       + '<strong>お店で登録した独自サービス・アクセサリ・店頭頭金・並び順・カテゴリはそのまま残ります。</strong>'
       + '適用する前の内容は履歴に残るので、あとから戻せます。</p>';
+    /* 受付が終わるものは、変わる内容とは別の枠で出す（打ち切りに巻き込まれないように） */
+    if (ended.length) {
+      var nSoon = ended.filter(function (e2) { return e2.soon; }).length;
+      h += '<div class="mu-ended"><b>ドコモの受付が終わるもの（' + ended.length + "件）</b><ul>"
+        + ended.map(function (e2) {
+            return "<li>" + esc(e2.name) + "…" + esc(ymdText(e2.from))
+              + (e2.soon ? "から受付終了（予定）" : "から受付終了") + "</li>";
+          }).join("")
+        + "</ul>"
+        + '<p class="hint">'
+        + (nSoon === ended.length
+            ? "その日が来ると、<strong>新しい見積もりの一覧に出なくなります</strong>。"
+            : "更新すると、日が来たものは<strong>新しい見積もりの一覧に出なくなります</strong>。")
+        + "すでに作った見積もり・保存した見積もり・実績はそのまま残ります。"
+        + remapCircled("継続でお使いのお客様のぶんを作るときは、④オプションなどの下にある")
+        + "「受付が終わったものも出す」から選べます。</p></div>";
+    }
     if (total) {
       h += '<details class="hist-diff" open><summary>変わる内容（' + total + '件）</summary><ul>'
         + lines.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
@@ -3814,7 +3957,18 @@
     if (!el) return;
     var on = masterUpdateAvailable();
     el.hidden = !on;
-    if (on) el.textContent = "料金表の更新が届いています。マスタ設定から適用してください。";
+    if (!on) return;
+    /* 受付終了が含まれるときは、いつもの金額改定と文言を分ける。
+     * マスタ設定は毎日は開かないので、ここが気づいてもらえる唯一の場所（4-11）。 */
+    var list = [];
+    try { list = masterUpdateEnded(); } catch (e) { list = []; }
+    var nNow = list.filter(function (e2) { return !e2.soon; }).length;
+    var nSoon = list.length - nNow;
+    el.textContent = nNow
+      ? "受付が終わった割引・サービスのお知らせが届いています（" + nNow + "件）。マスタ設定から適用してください。"
+      : (nSoon
+          ? "もうすぐ受付が終わる割引・サービスのお知らせが届いています（" + nSoon + "件）。マスタ設定から適用してください。"
+          : "料金表の更新が届いています。マスタ設定から適用してください。");
   }
 
   /* ---------- マスタ読み込み ---------- */
@@ -3942,6 +4096,7 @@
     (DEFAULT_DATA.accessories || []).forEach(function (d) {
       if (MASTER.accessories.some(function (a) { return a.id === d.id; })) return;
       if (MASTER.removedIds && MASTER.removedIds.indexOf(d.id) >= 0) return;
+      if (stdEnded(d)) return;   // すでに受付が終わっているものは足さない（4-11）
       MASTER.accessories.push(JSON.parse(JSON.stringify(d)));
     });
     var defAcc = {};
@@ -4021,12 +4176,14 @@
     (DEFAULT_DATA.options || []).forEach(function (d) {
       if (MASTER.options.some(function (o) { return o.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      if (stdEnded(d)) return;   // 同上
       MASTER.options.push(JSON.parse(JSON.stringify(d)));
     });
     // 初期費用の定番項目も同様に追記
     (DEFAULT_DATA.feeItems || []).forEach(function (d) {
       if (MASTER.feeItems.some(function (f) { return f.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      if (stdEnded(d)) return;   // 同上
       MASTER.feeItems.push(JSON.parse(JSON.stringify(d)));
     });
     /* 通話オプションも同様に追記する。
@@ -4037,6 +4194,7 @@
     (DEFAULT_DATA.voiceOptions || []).forEach(function (d, di) {
       if (MASTER.voiceOptions.some(function (v) { return v.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      if (stdEnded(d)) return;   // 同上
       MASTER.voiceOptions.splice(Math.min(di, MASTER.voiceOptions.length), 0, JSON.parse(JSON.stringify(d)));
     });
     /* 「このプランでは選べない」の指定（hideOnPlans）も初期データから補う。
@@ -4052,6 +4210,7 @@
     (DEFAULT_DATA.plans || []).forEach(function (d) {
       if (MASTER.plans.some(function (p) { return p.id === d.id; })) return;
       if (MASTER.removedIds.indexOf(d.id) >= 0) return;
+      if (stdEnded(d)) return;   // 同上
       var at = -1;
       MASTER.plans.forEach(function (p, i) { if (p.group === d.group) at = i; });
       MASTER.plans.splice(at + 1, 0, JSON.parse(JSON.stringify(d)));
@@ -6306,10 +6465,13 @@
   var VOICE_ERA = { v5: "新", v5l: "旧", kake: "新", kakel: "旧" };
   /* 画面に出す並びで、タイルごとに中身（新旧）をまとめて返す。
    * このプランで選べないもの（hideOnPlans）は外す。 */
+  /* 受付終了の通話オプションはタイルに出さない。ただし、いま選んでいるものは残す（4-11）。
+   * 選んでいるかどうかは、いま画面で作っている見積もり（state）で見る。 */
   function voiceTiles(plan) {
     var tiles = [], byKey = {};
     MASTER.voiceOptions.forEach(function (v) {
       if (voiceHiddenOn(plan, v)) return;
+      if (!stdPick(v, state && v.id === state.voice)) return;
       var key = VOICE_GROUP[v.id] || v.id;
       if (!byKey[key]) {
         byKey[key] = { key: key, name: VOICE_GROUP_NAME[key] || v.name, items: [] };
@@ -6882,8 +7044,57 @@
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     migratePattern(store.patterns[store.active]);
     state = store.patterns[store.active];
+    /* テンプレートに入っていた「受付が終わったもの」は外す（製品化レビュー 4-11）。
+     * 外さないと、終わった割引が満額のままお客様の見積書に載ってしまう。
+     * 外したものは必ず名前で知らせる（黙って減らさない）。
+     * プランは外さない。空にすると同じ世代の別プランに寄せられ、金額が化けるため。 */
+    var dropped = tplDropEnded(state);
     syncFormFromState();
     recalc();
+    if (dropped.length) {
+      tplMsg("このテンプレートの「" + dropped.join("」「")
+        + "」は、ドコモの受付が終わっているため外しました"
+        + "（継続でお使いのお客様のぶんは「受付が終わったものも出す」から選べます）");
+    }
+  }
+  // 受付が終わっているオプション・初期費用・キャンペーンの選択を外し、外した名前を返す
+  function tplDropEnded(st) {
+    var out = [];
+    /* 通話オプションは「外す」と月額が下がるだけなので、同じ内容の後継（新旧の相方）が
+     * あればそちらへ、無ければ「なし」にする。どちらの場合も必ず名前で知らせる。 */
+    var vo = (MASTER.voiceOptions || []).filter(function (v) { return v.id === st.voice; })[0];
+    if (vo && stdEnded(vo)) {
+      // 同じタイル（新旧）の中で、まだ受付しているほうがあればそちらにする
+      var grp = VOICE_GROUP[vo.id] || vo.id;
+      var alt = (MASTER.voiceOptions || []).filter(function (v) {
+        return v.id !== vo.id && (VOICE_GROUP[v.id] || v.id) === grp && !stdEnded(v);
+      })[0];
+      st.voice = alt ? alt.id : "none";
+      out.push(vo.name);
+    }
+    (MASTER.options || []).forEach(function (o) {
+      if (!stdEnded(o)) return;
+      if (!st.options[o.id] && !st.optionKubun[o.id]) return;
+      st.options[o.id] = false;
+      delete st.optionKubun[o.id];
+      out.push(o.name);
+    });
+    (MASTER.feeItems || []).forEach(function (f2) {
+      if (!stdEnded(f2) || !st.feeItems[f2.id]) return;
+      st.feeItems[f2.id] = false;
+      out.push(f2.name);
+    });
+    (MASTER.campaigns || []).forEach(function (c) {
+      if (!stdEnded(c) || !st.campaigns[c.id]) return;
+      st.campaigns[c.id] = false;
+      out.push(c.name);
+    });
+    (MASTER.accessories || []).forEach(function (a) {
+      if (!stdEnded(a) || !(st.accSel && st.accSel[a.id])) return;
+      delete st.accSel[a.id];
+      out.push(a.name);
+    });
+    return out;
   }
   /* テンプレートの長押し削除
    * 長押し（またはPCの右クリック）で、そのテンプレートを消すかどうかを聞く。
@@ -7122,12 +7333,18 @@
   }
   function renderPlanSelect() {
     var sel = $("planId");
-    var opts = MASTER.plans.filter(function (pl) { return pl.group === state.planGroup; });
+    // この世代のプラン。未選択へ戻すかどうかは、必ずこちら（受付終了で絞る前）で見る
+    var all = MASTER.plans.filter(function (pl) { return pl.group === state.planGroup; });
+    /* 受付終了のプランは出さない。ただし、いま選んでいるプランは必ず残す。
+     * 残さないと、下の「未選択へ戻す」で保存した見積もりのプランが消え、
+     * 同じ世代の別プランに寄せられて金額が変わってしまう（4-11）。 */
+    var opts = all.filter(function (pl) { return stdPick(pl, pl.id === state.planId); });
     sel.innerHTML = '<option value="">（未選択）</option>' + opts.map(function (pl) {
-      return '<option value="' + esc(pl.id) + '">' + esc(pl.name) + "</option>";
+      return '<option value="' + esc(pl.id) + '">' + esc(stdName(pl)) + "</option>";
     }).join("");
     // 世代を切り替えて選択中のプランが無くなったときは未選択へ戻す
-    if (state.planId && !opts.some(function (pl) { return pl.id === state.planId; })) {
+    // （受付終了で絞る前の all で見ること。opts で見ると上のとおり事故になる）
+    if (state.planId && !all.some(function (pl) { return pl.id === state.planId; })) {
       state.planId = "";
     }
     sel.value = state.planId;
@@ -7215,6 +7432,9 @@
   function renderVoiceSelect() {
     renderNetSvc();
     var plan = currentPlan();
+    /* 受付終了の通話オプションはタイルに出さない（いま選んでいるものは残す）。
+     * 「選んでいるものは残す」を外すと、保存した見積もりを開いたときに
+     * 別の通話オプションへすり替わり、月額が変わってしまう。 */
     /* このプランで選べないもの（hideOnPlans）は選択肢に出さない。
      * 選択中だった場合は標準版（留守電・キャッチホン無料つき）へ戻す */
     var cur = MASTER.voiceOptions.filter(function (v) { return v.id === state.voice; })[0];
@@ -7241,7 +7461,9 @@
       } else {
         priceHtml = '<span class="t-price">' + (pr === 0 ? "プランに込み" : yen(pr) + "/月") + "</span>";
       }
-      return tileHtml("data-voice", t.key, t.name, on, priceHtml);
+      // 中身が受付終了のときは、タイルの名前にもそう出す（見分けがつかないため）
+      var tName = t.name + (t.items.every(stdEnded) ? "（受付終了）" : "");
+      return tileHtml("data-voice", t.key, tName, on, priceHtml);
     }).join("");
     var hint = $("voiceHint");
     if (hint) {
@@ -7264,12 +7486,17 @@
   }
   function renderMailOpt() {
     var mo = mailOptDef();
-    var paid = !!mo && mailPaidPlan();
+    /* 受付終了のときは、選んでいなければ欄ごと出さない。
+     * 選んである見積もりでは今までどおり出す（黙って消さない・4-11）。 */
+    var mailOn = !!(mo && (state.options[mo.id] || state.optionKubun[mo.id]));
+    var paid = !!mo && mailPaidPlan() && stdPick(mo, mailOn);
     var field = $("mailField");
     if (field) field.hidden = !paid;
     $("mailHint").hidden = !paid;
     /* 標準込みのプランへ切り替えたら、残っていた有料メールの選択は外す。
      * 隠れたまま月額に乗り続けるのを防ぐ（続くrecalcで金額にも反映される）。 */
+    /* 受付終了で隠したときは、ここを通らない（mailOn のときは paid を落とさない）。
+     * 通してしまうと、保存した見積もりを開いた瞬間に選択が黙って外れる。 */
     if (!paid && mo && (state.options[mo.id] || state.optionKubun[mo.id])) {
       state.options[mo.id] = false;
       delete state.optionKubun[mo.id];
@@ -7288,7 +7515,7 @@
           }).join("") + "</span>"
       : "";
     var priceHtml = '<span class="t-price">' + yen(optPrice(mo, state)) + "/月</span>";
-    $("mailTile").innerHTML = tileHtml("data-mail", mo.id, mo.name, on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
+    $("mailTile").innerHTML = tileHtml("data-mail", mo.id, stdName(mo), on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
     $("mailHint").textContent = "このプランはドコモメールが有料オプションです（" + yen(mo.price) + "/月）。タイルを押して選び、中の新規／継続／廃止で区分を選べます（廃止は月額に入れません）。";
   }
   function tileHtml(attr, id, name, on, priceHtml, extraClass) {
@@ -7333,7 +7560,9 @@
       var mailDef = mailOptDef();
       var items = MASTER.options.filter(function (o) {
         if (mailDef && o.id === mailDef.id) return false; // ②で選択するため除外
-        return (o.category || "その他") === cat;
+        if ((o.category || "その他") !== cat) return false;
+        // 受付終了は出さない（いま選んである・区分を付けてあるものは残す）
+        return stdPick(o, state.options[o.id] || state.optionKubun[o.id]);
       });
       var accItems = accInCategory(cat);
       if (!items.length && !accItems.length) return;
@@ -7375,9 +7604,12 @@
         var linkHtml = (on && OPT_INFO_LINKS[o.id])
           ? '<a class="t-link" href="' + OPT_INFO_LINKS[o.id] + '" target="_blank" rel="noopener">公式の料金表を開く ↗</a>'
           : "";
-        return tileHtml("data-opt", o.id, o.name, on, priceHtml + kubunHtml + linkHtml, isOff ? "kubun-off" : "");
+        return tileHtml("data-opt", o.id, stdName(o), on, priceHtml + kubunHtml + linkHtml, isOff ? "kubun-off" : "");
       }).join("") + accItems.map(accTileHtml).join("") + "</div>";
     });
+    /* 継続でお使いのお客様の見積もりを作れるように、受付終了のものも出せる口を残す。
+     * 「消えた」ではなく「ここに移った」と画面で言えるようにするため（4-11）。 */
+    h += endedToggleHtml(stdHiddenAll());
     $("optionList").innerHTML = h;
   }
   /* 初期費用の支払い先。
@@ -7390,11 +7622,13 @@
     return f.pay === "bill" ? "bill" : "store";
   }
   function renderFeeItemList() {
-    var list = MASTER.feeItems || [];
+    var list = (MASTER.feeItems || []).filter(function (f2) {
+      return stdPick(f2, state.feeItems[f2.id]);   // 受付終了は出さない（選んであるものは残す）
+    });
     $("feeItemList").innerHTML = '<div class="tile-grid">' + list.map(function (f) {
       var on = !!state.feeItems[f.id];
       var body = '<span class="t-price">' + yen(f.price) + "</span>";
-      var name = f.name;
+      var name = stdName(f);
       // データ移行の項目は、選んでいるときだけ支払い先をその場で選べるようにする
       if (f.dataMove && on) {
         var cur = feeItemPayOf(state, f);
@@ -7406,13 +7640,15 @@
         name += "（翌月合算）";
       }
       return tileHtml("data-fee", f.id, name, on, body);
-    }).join("") + "</div>";
+    }).join("") + "</div>"
+      + endedToggleHtml(stdHiddenAll());
   }
   /* アクセサリのタイル。
    * カテゴリを設定したものは「⑥アクセサリ」ではなく、オプションのそのカテゴリの中に並べる。
    * 物販でも一括と分割を選べる必要があるため、選択肢はアクセサリのまま持ち回る。 */
   function accInCategory(cat) {
     return (MASTER.accessories || []).filter(function (a) {
+      if (!stdPick(a, state.accSel && state.accSel[a.id])) return false;   // 選んであるものは残す
       return OPT_CATEGORIES.indexOf(a.category) >= 0 && a.category === cat;
     });
   }
@@ -7432,12 +7668,13 @@
       : '<span class="t-price">' + yen(a.price) + "</span>";
     return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
       + '" tabindex="0" data-acc="' + esc(a.id) + '">'
-      + '<span class="t-name">' + esc(a.name) + (on ? "<br>" + yen(a.price) : "") + "</span>"
+      + '<span class="t-name">' + esc(stdName(a)) + (on ? "<br>" + yen(a.price) : "") + "</span>"
       + body + "</div>";
   }
   function renderAccessoryTiles() {
     // カテゴリを設定したものはオプション側に出るため、ここでは除く
     var list = (MASTER.accessories || []).filter(function (a) {
+      if (!stdPick(a, state.accSel && state.accSel[a.id])) return false;   // 受付終了（4-11）
       return OPT_CATEGORIES.indexOf(a.category) < 0;
     });
     if (!list.length) { $("accTileList").innerHTML = ""; return; }
@@ -7482,10 +7719,13 @@
   }
   function renderCampaigns() {
     var plan = currentPlan();
-    var list = (MASTER.campaigns || []).filter(function (c) {
+    var forPlan = (MASTER.campaigns || []).filter(function (c) {
       return !(c.plans && c.plans.length) || c.plans.indexOf(plan.id) >= 0;
     });
-    if (!hasPlan() || !list.length) { $("campaignList").innerHTML = ""; return; }
+    // 受付終了のキャンペーンは出さない（いまチェックが入っているものは残す）
+    var list = forPlan.filter(function (c) { return stdPick(c, state.campaigns[c.id]); });
+    var hiddenN = stdHiddenAll();
+    if (!hasPlan() || (!list.length && !hiddenN)) { $("campaignList").innerHTML = ""; return; }
     var h = '<div class="subhead">キャンペーン割引（このプランで使えるもの）</div>';
     list.forEach(function (c) {
       var checked = state.campaigns[c.id] ? " checked" : "";
@@ -7510,8 +7750,13 @@
           + (c.group ? "ほかのU割引とは重ねられません。" : "") + "</div>"
         : "";
       h += '<div class="opt-row"><label class="check"><input type="checkbox" data-cp="' + esc(c.id) + '"' + checked + "> "
-        + esc(c.name) + "（" + c.months + "か月間）</label>" + right + "</div>" + supTxt;
+        + esc(stdName(c)) + "（" + c.months + "か月間）</label>" + right + "</div>" + supTxt;
+      // もうすぐ受付が終わるものは、その日を出しておく（お客様へのご案内のため）
+      if (stdEndingSoon(c)) {
+        h += '<div class="hint">この割引は' + esc(ymdText(c.retiredFrom)) + "から選べなくなります。</div>";
+      }
     });
+    h += endedToggleHtml(hiddenN);
     $("campaignList").innerHTML = h;
   }
   /* 選んだプランで効かない割引は出さない。
@@ -9327,14 +9572,16 @@
 
     // キャンペーン割引（名称・期間・割引額を編集可）
     h += '<div class="master-plan" data-mroom="docomo"><h3>キャンペーン割引</h3>';
-    h += '<p class="hint">' + remapCircled("対象プラン選択時に「③割引」へ表示されます。") + "終了したキャンペーンは×で削除してください。</p>";
+    h += '<p class="hint">' + remapCircled("対象プラン選択時に「③割引」へ表示されます。")
+      + "<strong>ドコモの受付が終わったものは、料金表の更新を当てると自動で一覧から外れます</strong>（×で消さなくて大丈夫です。すでに作った見積もりはそのまま残ります）。</p>";
     (MASTER.campaigns || []).forEach(function (c, i) {
       h += '<div class="adhoc-row">'
         + '<input type="text" value="' + esc(c.name) + '" placeholder="キャンペーン名" data-cp-name="' + i + '">'
         + '<input type="number" value="' + c.months + '" title="割引期間（か月）" data-cp-months="' + i + '" style="max-width:5em">'
         + '<span class="price">か月</span>'
         + '<button class="del" data-cp-del="' + i + '" type="button" aria-label="削除">×</button>'
-        + "</div>";
+        + "</div>"
+        + endedRowHtml(c, "cp", i);
       (c.amountChoices || []).forEach(function (ch, j) {
         h += '<div class="adhoc-row" style="margin-left:24px">'
           + '<span class="price" style="min-width:9em">' + esc(ch.label || "割引額") + "</span>"
@@ -9380,6 +9627,7 @@
           + '<button class="plan-open-btn" data-pl-open="' + pi + '" type="button">'
           + '<span class="plan-open-name">' + esc(pl.name || "（名前なし）") + "</span>"
           + (pl.group === "legacy" ? '<span class="plan-badge">旧</span>' : "")
+          + (stdEnded(pl) ? '<span class="plan-badge">受付終了</span>' : "")
           + '<span class="plan-sum">' + planPriceSummary(pl) + "</span>"
           + '<span class="plan-open-mark">開く ▾</span>'
           + "</button></div></div>";
@@ -9397,6 +9645,7 @@
         + '<button class="btn-sub" data-pl-copy="' + pi + '" type="button">複製</button>'
         + '<button class="del" data-pl-del="' + pi + '" type="button" aria-label="削除">×</button>'
         + "</div>";
+      h += endedRowHtml(pl, "pl", pi);
 
       h += '<div class="plan-sec"><span class="plan-lbl">基本料金</span>';
       pl.tiers.forEach(function (t, ti) {
@@ -9457,9 +9706,15 @@
     h += '<div class="master-plan" data-mroom="docomo"><h3>通話オプション</h3><div class="master-grid">';
     MASTER.voiceOptions.forEach(function (v, vi) {
       if (v.id === "none") return;
-      h += mInput(esc(v.name), "voiceOptions." + vi + ".price");
+      h += mInput(esc(stdName(v)), "voiceOptions." + vi + ".price");
     });
-    h += "</div></div>";
+    h += "</div>";
+    // 受付終了の通話オプションにも、札と「うちはまだ使う」を出す（4-11）
+    MASTER.voiceOptions.forEach(function (v, vi) {
+      if (v.id === "none" || !v.retiredFrom) return;
+      h += '<div class="adhoc-row"><b>' + esc(v.name) + "</b></div>" + endedRowHtml(v, "vo", vi);
+    });
+    h += "</div>";
 
     // オプション・サービス（すべて月額。追加・削除・並び替え・カテゴリ変更可）
     /* 金額をプルダウンで選ぶ「選択式」の編集。
@@ -9647,6 +9902,7 @@
           + '<label class="own-flag"><input type="checkbox" data-' + prefix + '-own="' + i + '"' + (o.own ? " checked" : "") + ">店舗独自</label>"
           + '<button class="del" data-' + prefix + '-del="' + i + '" type="button" aria-label="削除">×</button>'
           + "</div>"
+          + endedRowHtml(o, prefix, i)
           /* 見積書で名前をタップしたときに出る小窓の中身。空なら押せないままになる。
            * リンク先は店舗独自の商材だけ入力できる（ドコモの商材のURLは
            * 料金表の配信で入れ替わるため、手で書いても次の更新で戻ってしまう）。 */
@@ -9670,6 +9926,41 @@
     function mInput(label, path) {
       return "<label>" + label + '</label><input type="number" min="0" data-mpath="' + path + '" value="' + getPath(path) + '">';
     }
+  }
+  /* マスタ設定の行に出す「受付終了」の札と、店舗の逃げ道（4-11）。
+   * 終了日が違っていた・継続のお客様にご案内したい、というときに、
+   * 店舗が自分で「うちはまだ使う」を選べば今までどおり選べる。
+   * この印は店舗のものなので、配信では上書きしない（syncRetired は触らない）。 */
+  function endedRowHtml(o, prefix, idx) {
+    if (!o || !o.retiredFrom) return "";
+    var past = todayYmd() >= String(o.retiredFrom);   // 日が過ぎたか（「うちはまだ使う」とは別）
+    var ended = stdEnded(o);                          // いま一覧から外れているか
+    return '<div class="ended-note' + (ended ? " on" : "") + '">'
+      + (past
+          ? "<b>ドコモの受付は終了しています（" + esc(ymdText(o.retiredFrom)) + "から）。</b>"
+            + (o.keepAnyway
+                ? "「うちはまだ使う」にしているので、一覧には出したままです。"
+                : "新しい見積もりの一覧には出ません。すでに作った見積もりはそのまま残ります。")
+          : "<b>" + esc(ymdText(o.retiredFrom)) + "からドコモの受付が終わります。</b>"
+            + (o.keepAnyway ? "「うちはまだ使う」にしているので、その日以降も一覧に出したままです。"
+                            : "その日から一覧に出なくなります。"))
+      + '<label class="keep-anyway"><input type="checkbox" data-' + prefix + '-keep="' + idx + '"'
+      + (o.keepAnyway ? " checked" : "") + ">うちはまだ使う（一覧に出したままにする）</label>"
+      + "</div>";
+  }
+  // 受付終了の項目を×で消そうとしたときの確認文（いまの状態に合わせて書き分ける）
+  function endedDelAsk(o) {
+    var nm = "「" + (o.name || "この項目") + "」";
+    var past = todayYmd() >= String(o.retiredFrom);
+    var head = past
+      ? nm + "はドコモの受付が終了しています。\n"
+      : nm + "は" + ymdText(o.retiredFrom) + "にドコモの受付が終わります。\n";
+    var mid = stdEnded(o)
+      ? "消さなくても、新しい見積もりの一覧には出てきません。\n"
+      : (o.keepAnyway
+          ? "いまは「うちはまだ使う」にしているので一覧に出ています。\n"
+          : "その日が来ると、新しい見積もりの一覧には出なくなります。\n");
+    return head + mid + "それでも一覧から消しますか？（次の料金表の更新でも戻りません）";
   }
   function getPath(path) {
     return path.split(".").reduce(function (o, k) { return o == null ? o : o[k]; }, MASTER);
@@ -10440,6 +10731,14 @@
         t += " " + (i2.value || "").toLowerCase();
       });
       r2.hidden = t.indexOf(q) < 0;
+      /* 行のすぐ下に付いている「受付終了」の札も一緒に隠す（4-11）。
+       * 隠さないと、検索で行が消えたのに札と「うちはまだ使う」だけが残る。 */
+      var note = r2.nextElementSibling;
+      while (note && (note.classList.contains("ended-note") || note.classList.contains("svc-desc-row")
+             || note.classList.contains("choice-box"))) {
+        note.hidden = r2.hidden;
+        note = note.nextElementSibling;
+      }
     });
     // 検索中はたたんだ項目も開き、全部屋を表示する（結果を隠さないため）。
     // 空にしたら開閉状態・選んでいた部屋に戻す
@@ -11399,6 +11698,11 @@
 
     if (evType === "change") {
       if ((v = g("group")) != null) { MASTER.plans[+v].group = t.value; planRestructure(); return true; }
+      // 受付終了でも「うちはまだ使う」（4-11）。店舗の印なので配信では上書きしない
+      if ((v = g("keep")) != null) {
+        if (t.checked) MASTER.plans[+v].keepAnyway = true; else delete MASTER.plans[+v].keepAnyway;
+        markEdited(); renderMasterTab(); renderPlanSelect(); recalc(); return true;
+      }
       if ((v = g("baku")) != null) { MASTER.plans[+v].bakuageTier = t.value; planTouch(); return true; }
       if ((v = g("5min")) != null) { MASTER.plans[+v].includes5min = t.checked; planTouch(); return true; }
       if ((v = g("dcard10")) != null) { MASTER.plans[+v].dcard10 = t.checked; planTouch(); return true; }
@@ -11689,6 +11993,15 @@
         list[+attr("baku")].bakuage = Math.max(0, Math.min(100, num(t.value)));
       } else if (evType === "change" && prefix === "op" && attr("gold") != null) {
         list[+attr("gold")].carrier = t.checked;
+      } else if (evType === "change" && attr("keep") != null) {
+        // 受付終了でも「うちはまだ使う」（4-11）
+        var ko = list[+attr("keep")];
+        if (t.checked) ko.keepAnyway = true; else delete ko.keepAnyway;
+        markEdited();
+        renderMasterTab();
+        renderOptionList(); renderFeeItemList(); renderAccessoryTiles(); renderMailOpt();
+        recalc();
+        return true;
       } else if (evType === "change" && attr("own") != null) {
         list[+attr("own")].own = t.checked;
         markEdited();
@@ -11709,6 +12022,9 @@
         list[+attr("dm")].dataMove = t.checked;
       } else if (evType === "click" && attr("del") != null) {
         var o = list[+attr("del")];
+        /* 受付終了のものは、消さなくても新しい見積もりには出てこない。
+         * ここで消すと、次に受付が再開したときにも戻らない（4-11）。 */
+        if (o.retiredFrom && !window.confirm(endedDelAsk(o))) return true;
         store.patterns.forEach(function (pt) { delete pt[def.stateKey][o.id]; });
         if (!MASTER.removedIds) MASTER.removedIds = [];
         MASTER.removedIds.push(o.id); // 初期データからの自動追記で復活させないための記録
@@ -11913,6 +12229,13 @@
       $("kosodateNote").hidden = !this.checked;
       recalc(); renderDiscountHint();
     });
+    // 「受付が終わったものも出す」（キャンペーン欄のぶん・4-11）
+    $("campaignList").addEventListener("click", function (e) {
+      if (!e.target.closest("[data-ended-toggle]")) return;
+      showEnded = !showEnded;
+      renderOptionList(); renderFeeItemList(); renderCampaigns();
+      renderVoiceSelect(); renderMailOpt(); renderAccessoryTiles(); renderPlanSelect();
+    });
     $("campaignList").addEventListener("change", function (e) {
       var cid = e.target.getAttribute("data-cp");
       if (cid) {
@@ -11967,7 +12290,15 @@
       var key = t.getAttribute("data-voice");
       if (voiceTileKey(state.voice) === key) return; // 同じタイルの押し直しでは新旧を変えない
       var sel = t.querySelector("select[data-voice-era]");
-      state.voice = sel ? sel.value : key;
+      if (sel) {
+        state.voice = sel.value;
+      } else {
+        /* 新旧のプルダウンが無いタイル＝中身は1つ。タイルの名札（新旧をまとめた名前）は
+         * 「新」のidと同じなので、そのまま選ぶと、受付終了で画面に出していないほうを
+         * 選んでしまう（4-11）。いま出している中身のidを選ぶ。 */
+        var tl = voiceTiles(currentPlan()).filter(function (x) { return x.key === key; })[0];
+        state.voice = (tl && tl.items[0]) ? tl.items[0].id : key;
+      }
       renderVoiceSelect();
       recalc();
     }
@@ -12017,6 +12348,14 @@
 
     // タイルのタップ／キー操作で選択切替（タイル内のプルダウン操作では切替しない）
     function toggleTile(e) {
+      /* 「受付が終わったものも出す」の切り替え（4-11）。
+       * 継続でお使いのお客様の見積もりを、いまでも作れるようにするための入口。 */
+      if (e.target.closest("[data-ended-toggle]")) {
+        showEnded = !showEnded;
+        renderOptionList(); renderFeeItemList(); renderCampaigns();
+        renderVoiceSelect(); renderMailOpt(); renderAccessoryTiles(); renderPlanSelect();
+        return;
+      }
       // タイル内のリンク（公式の料金表など）のタップでは選択を切り替えない
       if (e.target.closest("select") || e.target.closest(".t-kubun") || e.target.closest("a")) return;
       var tile = e.target.closest(".tile");
@@ -12728,6 +13067,10 @@
       if (others.length && !window.confirm(
             others.join("・") + " にも入力があります。\n回線1〜3をすべて消してよろしいですか？")) return;
       resetPropTracking();
+      /* 「受付が終わったものも出す」は、次のお客様には持ち越さない（4-11）。
+       * 継続のお客様のために開いたまま次の接客に入ると、
+       * 受付が終わったものを新規のお客様にご案内してしまう。 */
+      showEnded = false;
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
       store.patterns = [defaultState(), defaultState(), defaultState()];
@@ -12781,6 +13124,20 @@
     $("masterBody").addEventListener("change", function (e) {
       if (handlePlanEvent(e.target, "change")) return;
       if (handleStatsCfgEvent(e.target, "change")) return;
+      // 通話オプションの「うちはまだ使う」（4-11）
+      if (e.target.hasAttribute && e.target.hasAttribute("data-vo-keep")) {
+        var vk = MASTER.voiceOptions[+e.target.getAttribute("data-vo-keep")];
+        if (e.target.checked) vk.keepAnyway = true; else delete vk.keepAnyway;
+        markEdited(); renderMasterTab(); renderVoiceSelect(); recalc();
+        return;
+      }
+      // キャンペーンの「うちはまだ使う」（4-11）
+      if (e.target.hasAttribute && e.target.hasAttribute("data-cp-keep")) {
+        var ck2 = MASTER.campaigns[+e.target.getAttribute("data-cp-keep")];
+        if (e.target.checked) ck2.keepAnyway = true; else delete ck2.keepAnyway;
+        markEdited(); renderMasterTab(); renderCampaigns(); recalc();
+        return;
+      }
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
@@ -12832,7 +13189,12 @@
       if (t.hasAttribute("data-cp-del")) {
         var ci = +t.getAttribute("data-cp-del");
         var co = MASTER.campaigns[ci];
+        if (co.retiredFrom && !window.confirm(endedDelAsk(co))) return;
         store.patterns.forEach(function (pt) { delete pt.campaigns[co.id]; delete pt.campaignAmounts[co.id]; });
+        /* 消した記録を残す。残さないと、次の料金表の更新で配信から復活してしまう
+         * （プラン・オプションは記録していたのに、キャンペーンだけ抜けていた） */
+        if (!MASTER.removedIds) MASTER.removedIds = [];
+        if (MASTER.removedIds.indexOf(co.id) < 0) MASTER.removedIds.push(co.id);
         MASTER.campaigns.splice(ci, 1);
         markEdited(); renderMasterTab(); renderCampaigns(); recalc();
         return;
@@ -12931,6 +13293,8 @@
         if (!mailOptDef()) MASTER.options.push({ id: "docomomail", name: "ドコモメールオプション", price: 330, category: "その他" });
         renderMailOpt(); recalc();
       },
+      tplSave: function (i) { templates[i] = { name: "検査用", state: tplSnapshot() }; persistTemplates(); },
+      tplApply: function (i) { tplApply(i, false); },
       // 端末の保存領域があふれたときの動きの検査用（製品化レビュー 4-20／4-39）
       storage: {
         failed: function () { return lsFailed(); },
@@ -12946,6 +13310,55 @@
         histReload: function () { histLoadLocal(); },
         histRestore: function (id) { histRestore(id); },
         histMsg: function () { var e = $("histMsg"); return e ? e.textContent : ""; }
+      },
+      /* 料金表の配信と「受付終了」の検査用（製品化レビュー 4-11） */
+      std: {
+        setToday: function (ymd) { stdToday = String(ymd || ""); },
+        today: function () { return todayYmd(); },
+        get: function () { return JSON.parse(JSON.stringify(MASTER)); },
+        set: function (m) { lsSet(MASTER_KEY, JSON.stringify(m)); loadMaster(); },
+        // 配信データを差し替えて、当てた結果と「変わる内容」を見る
+        // DEFAULT_DATA は const なので、入れ替えではなく中身を差し替える
+        setDist: function (d) {
+          Object.keys(DEFAULT_DATA).forEach(function (k) { delete DEFAULT_DATA[k]; });
+          Object.keys(d).forEach(function (k) { DEFAULT_DATA[k] = d[k]; });
+        },
+        dist: function () { return JSON.parse(JSON.stringify(DEFAULT_DATA)); },
+        available: function () { return masterUpdateAvailable(); },
+        buildNext: function () { return buildUpdatedMaster(); },
+        changes: function () { return masterUpdateChanges(); },
+        ended: function () { return masterUpdateEnded(); },
+        apply: function () { applyMasterUpdate(); },
+        isEnded: function (x) { return stdEnded(x); },
+        showEnded: function (v) {
+          showEnded = !!v;
+          renderOptionList(); renderFeeItemList(); renderCampaigns();
+          renderVoiceSelect(); renderMailOpt(); renderAccessoryTiles(); renderPlanSelect();
+        },
+        redraw: function () {
+          renderMasterTab();
+          renderPlanSelect(); renderVoiceSelect(); renderMailOpt();
+          renderOptionList(); renderFeeItemList(); renderAccessoryTiles();
+          renderCampaigns(); renderDiscountHint(); renderStaffGateNotice();
+          syncFormFromState(); recalc();
+        },
+        pick: function (kind, id, on) {
+          if (kind === "plan") { state.planId = id; renderPlanSelect(); }
+          if (kind === "option") { state.options[id] = !!on; if (on) state.optionKubun[id] = "new"; else delete state.optionKubun[id]; }
+          if (kind === "fee") { state.feeItems[id] = !!on; }
+          if (kind === "campaign") { state.campaigns[id] = !!on; }
+          if (kind === "voice") { state.voice = id; }
+          recalc();
+        },
+        totals: function () { var r = calc(); return { initial: r.initialTotal, bill: r.billTotal, store: r.storeTotal }; },
+        picked: function (kind, id) {
+          if (kind === "option") return !!state.options[id];
+          if (kind === "fee") return !!state.feeItems[id];
+          if (kind === "campaign") return !!state.campaigns[id];
+          if (kind === "plan") return state.planId;
+          if (kind === "voice" || !kind) return state.voice;
+          return null;
+        }
       }
     };
   }

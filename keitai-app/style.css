@@ -1233,3 +1233,15 @@ body.present .sheet{box-shadow:none}
 .plan-badge{flex:none;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
 .plan-sum{flex:none;font-size:12.5px;color:var(--muted)}
 .plan-open-mark{flex:none;margin-left:auto;font-size:12px;color:var(--accent, #CC0033)}
+
+/* 受付終了（提供終了）の印まわり（製品化レビュー 4-11） */
+.ended-note{font-size:12px;color:var(--muted);background:#FAFAFA;border:1px dashed var(--line);
+  border-radius:6px;padding:6px 8px;margin:2px 0 8px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.ended-note.on{color:#8A1B2B;background:#FFF7F9;border-color:#F1C7CF}
+.ended-note b{font-weight:600}
+.ended-note .keep-anyway{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.ended-toggle-wrap{margin:8px 0 0}
+.ended-toggle-wrap .btn-sub{font-size:12px}
+.mu-ended{border:1px solid var(--red);border-radius:8px;background:#fff;padding:8px 10px;margin:8px 0}
+.mu-ended ul{margin:6px 0 0;padding-left:1.2em}
+.mu-ended li{font-size:13px;margin:2px 0}
