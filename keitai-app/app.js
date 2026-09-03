@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.143.1";
+  var APP_VERSION = "1.144.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -397,7 +397,17 @@
   var SAVED_MAX = 300;
   var SAVED_FULL = 60;
   /* 実績の集計で見ているパターンの項目。これ以外は古い保存から落とす。 */
-  var HEARTY_VOICE_OFF = 880;   // ハーティ割引の通話オプション割引（税込）
+  var HEARTY_VOICE_OFF = 880;   // ハーティ割引の通話オプション割引（税込・いまのオプション）
+  var VOICE_WARI_OFF_OLD = 770; // 2023年6月30日に受付終了した旧オプションの割引額（税込）
+  /* 通話オプション1つあたりの、ハーティ割引・子育てサポート割引の割引額。
+   * 料金表（data.js）の wariOff を見る。古い料金表のために既定も持っておく。 */
+  function voiceWariOff(vo) {
+    if (!vo) return 0;
+    if (typeof vo.wariOff !== "undefined") return num(vo.wariOff);
+    if (vo.id === "v5" || vo.id === "kake") return HEARTY_VOICE_OFF;
+    if (vo.id === "v5l" || vo.id === "kakel") return VOICE_WARI_OFF_OLD;
+    return 0;
+  }
   /* 子育てサポート割引の通話オプション割引（税込）。
    * 出典: docomo.ne.jp/charge/kosodate_wari/（2026-08-20 確認）
    * 月額の割引額はプランごとに違うため data.js の discounts.kosodate に持つ。 */
@@ -3492,6 +3502,7 @@
         return;
       }
       cur.price = dv.price;
+      if (typeof dv.wariOff !== "undefined") cur.wariOff = dv.wariOff;
       if (dv.url) cur.url = dv.url;
     });
 
@@ -5944,17 +5955,20 @@
     // 通話オプション（プランで選べないものは標準版へ読み替え）
     var vo = effectiveVoice(plan, st.voice);
     var voicePrice = voicePriceFor(plan, vo);
-    /* ハーティ割引は通話オプションも 880円 引く（5分は無料、かけ放題は1,100円）。
-     * 「はじめてスマホプラン」は通話オプションの割引対象外。 */
+    /* ハーティ割引・子育てサポート割引は通話オプションも引く。
+     * いまの5分/かけ放題は 880円、2023年6月30日に受付を終了した旧オプション
+     * （5分770円・かけ放題1,870円）は 770円（公式のハーティ割引・子育て
+     * サポート割引の割引内容・2026-09-03 確認）。割引額は料金表の wariOff に持つ。
+     * 「はじめてスマホプラン」はハーティ割引の通話オプション割引対象外。 */
+    var voiceOff = voiceWariOff(vo);
     var dHeartyVoice = 0;
-    if (dHearty && plan.id !== "hajimete" && (vo.id === "v5" || vo.id === "kake")) {
-      dHeartyVoice = Math.min(HEARTY_VOICE_OFF, voicePrice);
+    if (dHearty && plan.id !== "hajimete" && voiceOff > 0) {
+      dHeartyVoice = Math.min(voiceOff, voicePrice);
       voicePrice -= dHeartyVoice;
     }
-    // 子育てサポート割引も通話オプションを880円引く（ハーティと同じ形。引き切ったら0円まで）
     var dKosodateVoice = 0;
-    if (dKosodate && (vo.id === "v5" || vo.id === "kake")) {
-      dKosodateVoice = Math.min(KOSODATE_VOICE_OFF, voicePrice);
+    if (dKosodate && voiceOff > 0) {
+      dKosodateVoice = Math.min(voiceOff, voicePrice);
       voicePrice -= dKosodateVoice;
     }
     var voiceNote = (plan.includes5min && vo.id === "v5") ? "（プランに標準込み）" : "";

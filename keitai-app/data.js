@@ -10,8 +10,8 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 7,
-  "updated": "2026-08-13",
+  "masterVersion": 8,
+  "updated": "2026-09-03",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -514,32 +514,41 @@ const DEFAULT_DATA = {
       "id": "v5",
       "url": "https://www.docomo.ne.jp/charge/kakeho_light/",
       "name": "5分通話無料オプション",
-      "price": 880
+      "price": 880,
+      "wariOff": 880
     },
     {
       "id": "v5l",
       "url": "https://www.docomo.ne.jp/charge/kakeho_light/",
       "name": "5分通話無料オプション（旧）",
       "price": 770,
-      "hideOnPlans": ["mini"]
+      "hideOnPlans": [
+        "mini"
+      ],
+      "wariOff": 770
     },
     {
       "id": "kake",
       "url": "https://www.docomo.ne.jp/charge/kakeho/",
       "name": "かけ放題オプション",
-      "price": 1980
+      "price": 1980,
+      "wariOff": 880
     },
     {
       "id": "kakel",
       "url": "https://www.docomo.ne.jp/charge/kakeho/",
       "name": "かけ放題オプション（旧）",
       "price": 1870,
-      "hideOnPlans": ["mini"]
+      "hideOnPlans": [
+        "mini"
+      ],
+      "wariOff": 770
     },
     {
       "id": "kake1000",
       "name": "かけ放題オプション(1000)",
-      "price": 1100
+      "price": 1100,
+      "wariOff": 0
     }
   ],
   "options": [
@@ -604,7 +613,7 @@ const DEFAULT_DATA = {
       "price": 682,
       "note": "旧いちおしパック（2026年3月改定・初回31日無料）。dバリューパス＋my daiz＋クラウド容量オプションの3つセット。dバリューパス単体とは同時に選べません",
       "category": "バックアップ",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
@@ -614,7 +623,7 @@ const DEFAULT_DATA = {
       "price": 550,
       "note": "初回31日間無料。dバリューパス パックに含まれているため、パックとは同時に選べません",
       "category": "エンタメ",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
@@ -692,7 +701,7 @@ const DEFAULT_DATA = {
       },
       "category": "エンタメ",
       "note": "スタンダード1,250円／プレミアム1,670円・最大20%還元",
-      "carrier": true,
+      "carrier": false,
       "own": false,
       "bakuage": 20,
       "bakuage2": 10
@@ -704,7 +713,7 @@ const DEFAULT_DATA = {
       "price": 1540,
       "category": "エンタメ",
       "note": "最大20%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true,
+      "carrier": false,
       "own": false,
       "bakuage": 20,
       "bakuage2": 10
@@ -716,7 +725,7 @@ const DEFAULT_DATA = {
       "price": 4200,
       "category": "エンタメ",
       "note": "ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象。爆アゲ セレクションは新規の適用が終了しています",
-      "carrier": true,
+      "carrier": false,
       "own": false,
       "bakuage": 0,
       "bakuage2": 0
@@ -735,7 +744,7 @@ const DEFAULT_DATA = {
       },
       "category": "エンタメ",
       "note": "通常2,728円／ahamo 1,078円・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
@@ -774,7 +783,7 @@ const DEFAULT_DATA = {
       "price": 660,
       "category": "エンタメ",
       "note": "最大10%還元・ドコモ MAX／ポイ活 MAX の選べる特典（毎月2つまで）の対象",
-      "carrier": true,
+      "carrier": false,
       "own": false,
       "bakuage": 10,
       "bakuage2": 5
@@ -819,7 +828,7 @@ const DEFAULT_DATA = {
       "price": 594,
       "category": "エンタメ",
       "note": "毎月フォトブック1冊／L判プリント30枚／こよみフォト1枚のいずれか・初回31日間無料",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
@@ -828,7 +837,7 @@ const DEFAULT_DATA = {
       "price": 580,
       "category": "エンタメ",
       "note": "雑誌読み放題・初回7日間無料",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
@@ -837,7 +846,7 @@ const DEFAULT_DATA = {
       "price": 690,
       "category": "エンタメ",
       "note": "音楽聴き放題",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
@@ -846,7 +855,7 @@ const DEFAULT_DATA = {
       "price": 440,
       "category": "エンタメ",
       "note": "ドコモ公式からのお申し込み・初回31日間無料（App Store／Google Play経由は480円）",
-      "carrier": true,
+      "carrier": false,
       "own": false
     },
     {
