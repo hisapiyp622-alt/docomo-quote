@@ -68,18 +68,23 @@ else
 fi
 
 cd "$ROOT"
-echo "-- 5. 版のタグ"
+echo "-- 5. 版の目印"
+# 配ったものがどのコミットかを、あとから確実にたどれるようにする（戻すときに使う）
 if git rev-parse "v$VER" >/dev/null 2>&1; then
   echo "タグ v$VER はすでにあります（手元）"
 else
   git tag -a "v$VER" -m "フロントーク $VER"
 fi
-# タグを送れない環境（権限が絞られた自動実行など）でも、配信そのものは終わっているので止めない
 if git push -q origin "v$VER" 2>/dev/null; then
   echo "タグ v$VER を打ちました（戻すときの目印）"
 else
-  echo "※ タグ v$VER を送れませんでした。手元には作ってあります。"
-  echo "  ふだんの環境から  git push origin v$VER  を実行してください（戻すときの目印になります）"
+  # タグを送れない環境がある（権限が絞られた自動実行など）。
+  # そのときは同じ意味の「目印のブランチ」を作る。戻す手順はどちらでも同じ。
+  if git push -q origin "HEAD:refs/heads/release/v$VER" 2>/dev/null; then
+    echo "目印のブランチ release/v$VER を作りました（タグは送れなかったため）"
+  else
+    echo "※ 版の目印を送れませんでした。手元のタグ v$VER だけがあります。"
+  fi
 fi
 
 echo ""
