@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.9.4";
+  var APP_VERSION = "2.9.5";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -50,12 +50,14 @@
     },
     ahamo1g: {
       name: "ahamo光 1ギガ",
+      dcard: false,   // dカード還元の対象外（公式「ドコモ光（ahamo光を除く）」）
       monthly: { ht: { A: 4950, B: 4950 }, ms: { A: 3630, B: 3630 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
       note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・プロバイダ一体型。ドコモ光セット割の対象外。ルーターはレンタル330円/月または持込。"
     },
     ahamo10g: {
       name: "ahamo光 10ギガ",
+      dcard: false,   // 同上
       monthly: { ht: { A: 5610, B: 5610 }, ms: { A: 5610, B: 5610 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
       note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。ルーターはレンタル550円/月または持込。"
@@ -330,9 +332,12 @@
     // dカードGOLD/PLATINUM還元: 利用料金1,100円（税込）ごとに100pt（GOLD 10%）/ 200pt（PLATINUM 20%）
     var dcardEligible = 0;
     rows.forEach(function (x) { if (x.amount > 0 && !x.noDcard) dcardEligible += x.amount; });
-    var dcardRate = state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
+    /* ahamo光は還元の対象外（公式「ドコモ光（ahamo光を除く）」・2026-09-03 確認）。 */
+    var dcardOk = PRODUCTS[state.product].dcard !== false;
+    var dcardRate = !dcardOk ? 0 : state.dcard === "gold" ? 100 : state.dcard === "platinum" ? 200 : 0;
     var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
-    var dcardPt = state.dcard === "none" ? 0 : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
+    var dcardPt = (state.dcard === "none" || !dcardOk) ? 0
+      : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
     if (dcardPt > 0) {
       // ポイント進呈ではなく、毎月の料金へ自動充当される体裁で月額から差引
       rows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元 充当（利用料金の" + (state.dcard === "gold" ? "10" : "20") + "%）", amount: -dcardPt });
@@ -1389,6 +1394,10 @@
       if (state.dcardPt == null && document.activeElement !== $("dcardPt")) {
         $("dcardPt").value = r.dcardAutoPt || "";
       }
+      /* ahamo光は対象外。選ばれていても0ptになるので、その理由を出す。 */
+      if (PRODUCTS[state.product].dcard === false) {
+        $("dcardHint").textContent = "ahamo光は dカードGOLD／PLATINUM のご利用料金還元の対象外です（公式「ドコモ光（ahamo光を除く）」）。この見積もりには還元を入れていません。";
+      } else
       $("dcardHint").textContent = "自動計算: 対象月額" + yen(r.dcardEligible) + " → " + (r.dcardAutoPt || 0)
         + "pt/月（1,100円ごとに" + (state.dcard === "gold" ? "100pt・10%" : "200pt・20%") + "）。還元対象・上限はカード規約をご確認ください。数値は直接編集できます。"
         + (state.dcard === "platinum"

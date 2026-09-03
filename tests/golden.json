@@ -190,7 +190,7 @@
       {
         "from": 1,
         "to": "inf",
-        "monthly": 5698
+        "monthly": 5588
       }
     ]
   },
@@ -203,7 +203,7 @@
       {
         "from": 1,
         "to": "inf",
-        "monthly": 2618
+        "monthly": 2398
       }
     ]
   },
@@ -217,6 +217,71 @@
         "from": 1,
         "to": "inf",
         "monthly": 1958
+      }
+    ]
+  },
+  "gold_dmagazine_content": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 400,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5728
+      }
+    ]
+  },
+  "gold_hosho_taisho": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 500,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6138
+      }
+    ]
+  },
+  "hearty_v5l": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 3718
+      }
+    ]
+  },
+  "hearty_kakel": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 4818
+      }
+    ]
+  },
+  "kosodate_kakel": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5588
       }
     ]
   },

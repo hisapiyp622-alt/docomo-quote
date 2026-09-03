@@ -41,9 +41,20 @@ const CASES = {
   'max_dcard': { planId: 'max', dCard: 'normal' },
   'max_dcard_gold': { planId: 'max', dCard: 'gold' },
   'max_denki': { planId: 'max', dDenki: true },
-  'max_choki10': { planId: 'max', choki: 'choki10' },
-  'max_choki20_full': { planId: 'max', minna: '3', dSet: true, dCard: 'gold', dDenki: true, choki: 'choki20' },
+  'max_choki10': { planId: 'max', choki: 'y10' },
+  'max_choki20_full': { planId: 'max', minna: '3', dSet: true, dCard: 'gold', dDenki: true, choki: 'y20' },
   'u15_dcard_gold': { planId: 'u15_debut', tierIdx: 0, dCard: 'gold' },
+  /* 2026-09-03 追加（製品化レビュー 4-4・4-5）。手計算の根拠:
+   * ・dマガジン 580（コンテンツ使用料）は還元の対象外。月額は 5,148＋580＝5,728 でも
+   *   対象額は 5,148 → 4×100pt = 400pt（直す前は 5×100pt = 500pt だった）
+   * ・smartあんしん補償 990（付加機能使用料）は対象。5,148＋990＝6,138 → 5×100pt = 500pt
+   * ・ハーティ/子育ての通話オプション割引は、旧オプション（2023-06-30 まで）は 770円。
+   *   5分（旧）770 → 0円、かけ放題（旧）1,870 → 1,100円 */
+  'gold_dmagazine_content': { planId: 'max', dCard: 'gold', options: { dmagazine: true } },
+  'gold_hosho_taisho': { planId: 'max', dCard: 'gold', options: { smart_hosho: true } },
+  'hearty_v5l': { planId: 'max', hearty: true, voice: 'v5l' },
+  'hearty_kakel': { planId: 'max', hearty: true, voice: 'kakel' },
+  'kosodate_kakel': { planId: 'max', kosodate: true, voice: 'kakel' },
   // --- キャンペーン ---
   'u15_oyako': { planId: 'u15_debut', tierIdx: 0, campaigns: { oyako_u15: true } },
   'max_oyako_family': { planId: 'max', campaigns: { oyako_family: true } },
