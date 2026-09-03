@@ -849,6 +849,8 @@ h3.stats-sub{font-size:15px;margin:14px 0 0}
 #nqDlg #nqItems .check{font-size:13px;padding:4px 0}
 #nqDlg .row-btns{display:flex;gap:8px;margin-top:10px}
 #nqDlg .row-btns button{flex:1;margin:0}
+/* 保存タブ: 過去の見積もり（今月より前）の開け閉め */
+.saved-past{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .saved-slim{
   display:inline-block;padding:4px 10px;border-radius:999px;
   background:#f2f2f2;color:var(--muted);font-size:12px

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.146.1";
+  var APP_VERSION = "1.147.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -460,12 +460,35 @@
     it.slim = true;
     return it;
   }
+  /* クラウドは1件の文書に入る大きさに上限がある（Firestore は1MiB、
+   * ルールでは 880,000文字まで）。超えると送信が拒否され、そのままでは
+   * ずっと「同期:権限エラー」になる。送る前に長さを測り、古いものから
+   * 中身を落として（slim）縮める（製品化レビュー 4-21）。 */
+  var SAVED_SEND_LIMIT = 780000;   // 余裕をみた送信前の目安（文字数）
+  function savedListJson(list) {
+    try { return JSON.stringify(list); } catch (e) { return ""; }
+  }
+  /* 大きすぎるときに縮める。まず古いものから中身を落とし、
+   * それでも収まらなければ古いものを落とす（実績は確定＝スナップショットに残る）。
+   * 縮めたときは true を返す。 */
+  function shrinkSavedList(list, limit) {
+    var changed = false;
+    for (var i = list.length - 1; i >= SAVED_FULL && savedListJson(list).length > limit; i--) {
+      if (list[i] && !list[i].slim) { slimSavedItem(list[i]); changed = true; }
+    }
+    while (list.length > 1 && savedListJson(list).length > limit) {
+      list.pop();          // いちばん古いものから外す（並びは新しい順）
+      changed = true;
+    }
+    return changed;
+  }
   /* 新しい方から SAVED_FULL 件を残して、それより古いものを軽くする。
-   * 件数の上限も合わせてここで掛ける。 */
+   * 件数の上限と、クラウドへ送れる大きさの上限も合わせてここで掛ける。 */
   function trimSavedList(list) {
     list.sort(function (a2, b2) { return (b2.savedAt || 0) - (a2.savedAt || 0); });
     if (list.length > SAVED_MAX) list = list.slice(0, SAVED_MAX);
     for (var i = SAVED_FULL; i < list.length; i++) slimSavedItem(list[i]);
+    shrinkSavedList(list, SAVED_SEND_LIMIT);
     return list;
   }
   var savedList = [];
@@ -764,6 +787,13 @@
     return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + ("0" + d.getDate()).slice(-2)
       + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
   }
+  /* 先月より前の保存を出すか（店舗の要望・2026-09-03）。
+   * ふだんは今月ぶんだけ。古いものは「過去の見積もり」に畳んでおく。
+   * 検索したときは、畳んでいても全部から探す（見つからないと困るため）。 */
+  var savedShowPast = false;
+  function savedIsThisMonth(it) {
+    return statsMonthOf(it.savedAt) === statsMonthOf(Date.now());
+  }
   function renderSaved() {
     var el = $("savedList");
     if (!el) return;
@@ -774,14 +804,31 @@
     // 検索と状態での絞り込み（保存タブの上の欄）
     var q = (($("savedSearch") && $("savedSearch").value) || "").trim().toLowerCase();
     var stFil = ($("savedStatus") && $("savedStatus").value) || "all";
-    var list = savedList.filter(function (it) {
+    var hit = savedList.filter(function (it) {
       if (stFil !== "all" && (it.result || "") !== stFil) return false;
       if (!q) return true;
       var hay = [it.name, it.custName, it.planName, savedWhen(it.savedAt)].join(" ").toLowerCase();
       return hay.indexOf(q) >= 0;
     });
+    var pastCount = hit.filter(function (it) { return !savedIsThisMonth(it); }).length;
+    // 検索中は古いものも出す（探しているものが隠れていると困るため）
+    var showPast = savedShowPast || !!q;
+    var list = showPast ? hit : hit.filter(savedIsThisMonth);
+    var pastHtml = "";
+    if (pastCount > 0 && !q) {
+      pastHtml = '<div class="saved-past">'
+        + '<button class="btn-sub" id="savedPastBtn" type="button">'
+        + (savedShowPast ? "過去の見積もりを隠す" : "過去の見積もりを見る（" + pastCount + "件）")
+        + "</button>"
+        + '<span class="hint">' + (savedShowPast
+            ? "先月より前のぶんも出しています。"
+            : "ふだんは今月ぶんだけ出しています（実績の集計には過去のぶんも入っています）。")
+        + "</span></div>";
+    }
     if (!list.length) {
-      el.innerHTML = '<p class="hint">条件に合う保存が見つかりません。</p>';
+      el.innerHTML = '<p class="hint">'
+        + (pastCount > 0 ? "今月の保存はまだありません。" : "条件に合う保存が見つかりません。")
+        + "</p>" + pastHtml;
       return;
     }
     el.innerHTML = list.map(function (it) {
@@ -833,7 +880,7 @@
               + "（収益はこの担当に付きます）</div>"
             : "")
         + "</div>";
-    }).join("");
+    }).join("") + pastHtml;
   }
 
   /* ---------- 実績のかんたん記録 ----------
@@ -4273,6 +4320,17 @@
     CLOUD_SENT[key] = sig;
     return false;
   }
+  /* 端末で最後に「店舗情報・料金マスタ」「テンプレート」を直した時刻。
+   * 送信は数秒後にまとめて行うため、その前に閉じると送られないまま消えていた。
+   * 時刻を残しておき、次に開いたときにクラウドより新しければ送り直す
+   * （見積もりと同じ考え方・製品化レビュー 4-19）。 */
+  var STORE_AT_KEY = NS + "-store-at";
+  var TPL_AT_KEY = NS + "-tpl-at";
+  function storeAt() { try { return num(localStorage.getItem(STORE_AT_KEY)); } catch (e) { return 0; } }
+  function markStoreAt() { try { localStorage.setItem(STORE_AT_KEY, String(Date.now())); } catch (e) {} }
+  function tplAt(sid) { try { return num(localStorage.getItem(TPL_AT_KEY + ":" + sid)); } catch (e) { return 0; } }
+  function markTplAt(sid) { try { localStorage.setItem(TPL_AT_KEY + ":" + sid, String(Date.now())); } catch (e) {} }
+  var tplAtLoaded = {};
   function stamp(extra) {
     var o = { clientId: CLOUD.clientId, updatedAtMs: Date.now(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     for (var k in extra) if (extra.hasOwnProperty(k)) o[k] = extra[k];
@@ -4405,6 +4463,7 @@
   // 店舗設定（店舗名・担当者一覧）の送信
   function pushConfig() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    markStoreAt();   // 送る前に閉じても、次に開いたときに送り直せるように
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     syncStatus("同期中…", "");
     CLOUD.cfgTimer = setTimeout(function () {
@@ -4424,6 +4483,7 @@
   // 料金マスタ（店舗で共通）の送信
   function markMasterEdit() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    markStoreAt();
     if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
     syncStatus("同期中…", "");
     CLOUD.masterTimer = setTimeout(function () {
@@ -4497,6 +4557,7 @@
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     if (storeViewOnly()) return;   // 同上（テンプレート）
     var sid = activeStaff().id;
+    markTplAt(sid);
     if (CLOUD.tplTimer) clearTimeout(CLOUD.tplTimer);
     syncStatus("同期中…", "");
     CLOUD.tplTimer = setTimeout(function () {
@@ -4512,10 +4573,13 @@
     if (CLOUD.unsubTpl && CLOUD.watchingTplId === sid) return;
     if (CLOUD.unsubTpl) { CLOUD.unsubTpl(); CLOUD.unsubTpl = null; }
     CLOUD.watchingTplId = sid;
+    if (!(sid in tplAtLoaded)) tplAtLoaded[sid] = tplAt(sid);
     CLOUD.unsubTpl = tplDoc(sid).onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
       if (!d || !d.list) return;
       if (d.clientId === CLOUD.clientId) return;
+      // 端末の方が新しい（送れずに閉じた分）ときは取り込まずに送り直す（4-19）
+      if (num(tplAtLoaded[sid]) > num(d.updatedAtMs)) { tplAtLoaded[sid] = 0; pushTemplates(); return; }
       if (CLOUD.tplTimer) return; // 送信待ちのローカル変更がある間は上書きしない
       try {
         var a = JSON.parse(d.list);
@@ -4530,6 +4594,7 @@
   function pushStoreTemplates() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     if (storeViewOnly()) return;   // 同上（店舗共通テンプレート）
+    markTplAt(STORE_TPL_ID);
     if (CLOUD.tplStoreTimer) clearTimeout(CLOUD.tplStoreTimer);
     syncStatus("同期中…", "");
     CLOUD.tplStoreTimer = setTimeout(function () {
@@ -4540,10 +4605,14 @@
   }
   function watchStoreTemplates() {
     if (!cloudOn() || CLOUD.unsubTplStore) return;
+    if (!(STORE_TPL_ID in tplAtLoaded)) tplAtLoaded[STORE_TPL_ID] = tplAt(STORE_TPL_ID);
     CLOUD.unsubTplStore = tplDoc(STORE_TPL_ID).onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
       if (!d || !d.list) return;
       if (d.clientId === CLOUD.clientId) return;
+      if (num(tplAtLoaded[STORE_TPL_ID]) > num(d.updatedAtMs)) {
+        tplAtLoaded[STORE_TPL_ID] = 0; pushStoreTemplates(); return;
+      }
       if (CLOUD.tplStoreTimer) return; // 送信待ちのローカル変更がある間は上書きしない
       try {
         var a = JSON.parse(d.list);
@@ -4572,6 +4641,20 @@
         (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
         ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
       });
+      /* 送る直前にも大きさを測る。超えていたら、この端末の一覧そのものを
+       * 縮めてから送る（縮めないと送信が拒否され、同期が止まったままになる）。 */
+      if (savedListJson(list).length > SAVED_SEND_LIMIT) {
+        savedList = trimSavedList(savedList);
+        lsSet(savedKey(sid), JSON.stringify(savedList));
+        renderSaved();
+        list = JSON.parse(JSON.stringify(savedList));
+        list.forEach(function (it) {
+          it.custName = "";
+          (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+          ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+        });
+        shrinkSavedList(list, SAVED_SEND_LIMIT);
+      }
       savedDoc(sid).set(stamp({
         list: JSON.stringify(list),
         // 削除の記録も一緒に送る（他の端末で該当の保存を消してもらうため）
@@ -4750,6 +4833,7 @@
   function watchStore() {
     if (!cloudOn()) return;
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
+    var firstStore = true;
     CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
       if (!d) {
@@ -4761,6 +4845,15 @@
         pushConfig(); markMasterEdit(); return; // 初回ログイン → この端末の内容を初期値にする
       }
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
+      /* 通信できないうちに直した店舗情報・料金マスタが、クラウドの古い内容で
+       * 消されないようにする。端末の方が新しいときは取り込まずに送り直す
+       * （製品化レビュー 4-19）。 */
+      if (firstStore && num(CLOUD.storeAtLoaded) > num(d.updatedAtMs)) {
+        firstStore = false;
+        pushConfig(); markMasterEdit();
+        return;
+      }
+      firstStore = false;
       applyRemoteStore(d);
       cloudOk();
     }, function () { syncStatus("同期:接続エラー", "err"); });
@@ -5099,6 +5192,8 @@
         if (!k) continue;
         if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
           || k === WIZ_SKIP_KEY                      // 「初期設定は済み」の印（前の店舗のものを持ち込まない）
+          || k === STORE_AT_KEY                       // 店舗情報・料金マスタを最後に直した時刻
+          || k.indexOf(TPL_AT_KEY + ":") === 0        // テンプレートを最後に直した時刻
           || k.indexOf(NS + "-quote-at:") === 0      // 見積もりを最後に直した時刻の控え
           || k.indexOf(STATE_KEY + ":") === 0
           || k.indexOf(SAVED_KEY + ":") === 0
@@ -5359,6 +5454,10 @@
     }
     rememberStoreId(String(user.email || "").replace(/@.*$/, ""));
     switchStoreIfNeeded(effectiveUid()); // 前の店舗の内容を持ち込まない
+    /* この時点＝まだこの端末が何も書いていないときの「最後に直した時刻」。
+     * クラウドの内容と比べて、どちらが新しいかの判断に使う（4-19） */
+    CLOUD.storeAtLoaded = storeAt();
+    tplAtLoaded = {};
     showLogin(false);
     syncStatus("同期中…", "");
     var ai = $("accountInfo");
@@ -5371,7 +5470,8 @@
     // 店舗の担当者一覧を受け取ってから担当者コードを聞く
     storeDoc().get().then(function (snap) {
       var d = snap.exists ? snap.data() : null;
-      if (d) applyRemoteStore(d);
+      // 端末の方が新しいときは取り込まない（4-19。送り直しは watchStore 側で行う）
+      if (d && !(num(CLOUD.storeAtLoaded) > num(d.updatedAtMs))) applyRemoteStore(d);
       afterStoreLogin();
     }, function () {
       afterStoreLogin(); // 取得できなくても端末内の設定で続行する
@@ -12112,6 +12212,7 @@
         var lid = t.getAttribute && t.getAttribute("data-savedload");
         var did = t.getAttribute && t.getAttribute("data-saveddel");
         var rid = t.getAttribute && t.getAttribute("data-savedrid");
+        if (t.id === "savedPastBtn") { savedShowPast = !savedShowPast; renderSaved(); return; }
         var sid2 = t.getAttribute && t.getAttribute("data-savedsend");
         if (sid2) { forwardSaved(sid2); return; }
         if (rid) {
