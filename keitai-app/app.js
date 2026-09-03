@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.145.0";
+  var APP_VERSION = "1.146.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1512,6 +1512,7 @@
 
   // 期間ぶんの補正を足す（「全期間」のときは登録されている月をすべて足す）
   function statsAdjSum(sid, month) {
+    if (month === "today") return { prop: 0, won: 0, lost: 0 };   // 月ぶんの修正は当日に混ぜない
     if (month !== "all") return statsAdjOf(sid, month);
     var per = (MASTER.statsAdjust || {})[sid] || {};
     var out = { prop: 0, won: 0, lost: 0 };
@@ -1575,17 +1576,39 @@
       });
     }
     var perDay = MASTER.statsAdjDay || {};
+    var todayKey = adjTodayKey();
     Object.keys(perDay).forEach(function (s2) {
       if (sid !== "all" && s2 !== sid) return;
       Object.keys(perDay[s2] || {}).forEach(function (day) {
-        if (month !== "all" && day.slice(0, 7) !== month) return;
+        if (month === "today") { if (day !== todayKey) return; }
+        else if (month !== "all" && day.slice(0, 7) !== month) return;
         add(perDay[s2][day]);
       });
     });
-    add(statsAdjItemSum(sid, month));
+    // 月ぶんの手修正は「本日」には入れない（日付が分からないため）
+    if (month !== "today") add(statsAdjItemSum(sid, month));
     return out;
   }
 
+  /* 実績の期間の指定。"today"＝本日ぶんだけ／"all"＝全期間／それ以外は "YYYY/MM"。
+   * 当日の数字は朝礼・締めの声かけで使うので、月とは別に選べるようにしている
+   * （店舗の要望・2026-09-03）。 */
+  function statsDayOf(ms) {
+    var d = new Date(ms || 0);
+    return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + ("0" + d.getDate()).slice(-2);
+  }
+  function statsInPeriod(ms, mFil) {
+    if (mFil === "today") return statsDayOf(ms) === adjTodayKey();
+    return mFil === "all" || statsMonthOf(ms) === mFil;
+  }
+  // 画面に出す期間の名前
+  function statsPeriodLabel(mFil) {
+    if (mFil === "today") {
+      var d = new Date();
+      return "本日（" + (d.getMonth() + 1) + "月" + d.getDate() + "日）";
+    }
+    return mFil === "all" ? "全期間" : mFil;
+  }
   function statsMonthOf(ms) {
     var d = new Date(ms || 0);
     return d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2);
@@ -1609,7 +1632,7 @@
       if (!items[k]) items[k] = { name: name, prop: 0, won: 0, byVisit: {} };
       return items[k];
     }
-    function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
+    function inPeriod(it) { return statsInPeriod(it.savedAt, mFil); }
 
     Object.keys(lists).forEach(function (sid) {
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
@@ -1893,11 +1916,12 @@
     Object.keys(snaps).forEach(function (m) { months[m] = true; });  // 確定済みの月も選べる
     var mKeys = Object.keys(months).sort().reverse();
     var mPrev = monthSel.value || curMonth;
-    monthSel.innerHTML = mKeys.map(function (m) {
-      return '<option value="' + m + '">' + m
-        + (m === curMonth ? "（今月）" : (snaps[m] ? "（確定）" : "")) + "</option>";
-    }).join("") + '<option value="all">全期間</option>';
-    monthSel.value = (mPrev === "all" || months[mPrev]) ? mPrev : curMonth;
+    monthSel.innerHTML = '<option value="today">' + statsPeriodLabel("today") + "</option>"
+      + mKeys.map(function (m) {
+          return '<option value="' + m + '">' + m
+            + (m === curMonth ? "（今月）" : (snaps[m] ? "（確定）" : "")) + "</option>";
+        }).join("") + '<option value="all">全期間</option>';
+    monthSel.value = (mPrev === "all" || mPrev === "today" || months[mPrev]) ? mPrev : curMonth;
 
     var unlockBtn = $("statsUnlockBtn");
     if (unlockBtn) unlockBtn.hidden = viewAll;
@@ -1984,8 +2008,8 @@
      * 担当者は当月の自分ぶんだけ（当日の記録として足し引きされる）。
      * 管理者は担当と月を選んでいればいつでも。 */
     var canAdj = !settled && sFil !== "all" && mFil !== "all"
-      && (admin || (sFil === me && mFil === curMonth));
-    var adjScope = (admin && mFil !== curMonth) ? "month" : "day";
+      && (admin || (sFil === me && (mFil === curMonth || mFil === "today")));
+    var adjScope = (admin && mFil !== curMonth && mFil !== "today") ? "month" : "day";
 
     var h = "";
 
@@ -2012,7 +2036,7 @@
     }
 
     /* ---- 主役: 成約の早見表 ---- */
-    h += "<h3>" + (mFil === "all" ? "全期間" : esc(mFil)) + "の成約"
+    h += "<h3>" + esc(statsPeriodLabel(mFil)) + "の成約"
       + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）")
       + (settled ? '<span class="settled-mark">確定済み</span>' : "") + "</h3>";
     /* この表は「何の応対から何が成約したか」を見るためのもの。
@@ -2199,7 +2223,7 @@
       // 目標と進捗（目標はマスタ設定で入れる）
       var goals = MASTER.statsGoalItems || {};
       var gKeys = Object.keys(goals).filter(function (k) { return num(goals[k]) > 0; });
-      if (gKeys.length && mFil !== "all") {
+      if (gKeys.length && mFil !== "all" && mFil !== "today") {
         var d9 = new Date();
         var isCur = mFil === curMonth;
         var daysIn = new Date(+mFil.slice(0, 4), +mFil.slice(5), 0).getDate();
@@ -2254,7 +2278,7 @@
   var CSV_DOW = ["日", "月", "火", "水", "木", "金", "土"];
   function statsFlatRows(lists, mFil, sFil, mineOnlyFn) {
     var rows = [];
-    function inPeriod(it) { return mFil === "all" || statsMonthOf(it.savedAt) === mFil; }
+    function inPeriod(it) { return statsInPeriod(it.savedAt, mFil); }
     function vLabel(k) { return k === "_none" ? "（未選択）" : VISIT_NAMES[k]; }
     Object.keys(lists).forEach(function (sid) {
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
@@ -2322,7 +2346,7 @@
     var csv = "\uFEFF" + lines.join("\r\n");
     var store2 = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
     var fname = "実績_分析用_" + store2 + "_"
-      + (mFil === "all" ? "全期間" : mFil.replace("/", "")) + ".csv";
+      + (mFil === "all" ? "全期間" : mFil === "today" ? adjTodayKey().replace(/\//g, "") : mFil.replace("/", "")) + ".csv";
     csvDownload(csv, fname);
   }
   // Blobを作ってダウンロードさせる（2つのCSVで同じ処理を使う）
@@ -2342,7 +2366,7 @@
   function downloadStatsCsv() {
     var L = statsLast;
     if (!L) return;
-    var period = L.month === "all" ? "全期間" : L.month;
+    var period = statsPeriodLabel(L.month);
     var lines = [];
     lines.push(["実績", "期間: " + period, "担当: " + L.staffName, "出力: " + savedWhen(Date.now())].map(csvCell).join(","));
 
@@ -2397,7 +2421,8 @@
     var store2 = (config.storeName || "店舗").replace(/[\\/:*?"<>|\s]/g, "");
     var d = new Date();
     function z(n) { return ("0" + n).slice(-2); }
-    var fname = "実績_" + store2 + "_" + (L.month === "all" ? "全期間" : L.month.replace("/", "")) + "_"
+    var fname = "実績_" + store2 + "_"
+      + (L.month === "all" ? "全期間" : L.month === "today" ? adjTodayKey().replace(/\//g, "") : L.month.replace("/", "")) + "_"
       + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + ".csv";
     csvDownload(csv, fname);
   }
@@ -12002,7 +12027,7 @@
         var mSel = $("statsMonth").value;
         if (!sSel || sSel === "all" || !mSel || mSel === "all") return;
         var curM = statsMonthOf(Date.now());
-        var useDay = !statsAdminOk() || mSel === curM;
+        var useDay = !statsAdminOk() || mSel === curM || mSel === "today";
         var bag;
         if (useDay) {
           var day = adjTodayKey();
