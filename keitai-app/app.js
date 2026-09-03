@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.143.0";
+  var APP_VERSION = "1.143.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4259,8 +4259,14 @@
     bar.hidden = !showBar;
     if (showBar) {
       var left = Math.max(0, Math.ceil((c.trialEndsAt - Date.now()) / 86400000));
+      /* お試しは自動で本契約に変わらない（期限が来るとアプリが止まる・2026-09-03 決定）。
+       * 「終わったら使えなくなること」と「いつまでに何をすればよいか」を最初から出す。
+       * 残り3日を切ったら色を変えて目立たせる。 */
+      bar.className = "trial-bar no-print" + (left <= 3 ? " soon" : "");
       bar.innerHTML = "無料お試し期間中です（<b>" + contractDateStr(c.trialEndsAt) + "まで・残り" + left + "日</b>）。"
-        + "続けてお使いいただく場合のお申し込みは " + esc(vendorInfo().contact) + " へ。";
+        + "<b>期間が終わるとご利用いただけなくなります。</b>"
+        + "続けてお使いになる場合は、" + contractDateStr(c.trialEndsAt) + "までに "
+        + esc(vendorInfo().contact) + " へお申し込みください。";
     }
     ov.hidden = !blocked;
     if (!blocked) return;
@@ -4270,7 +4276,7 @@
     $("contractMsg").innerHTML =
       (blocked === "suspended"
         ? "ご契約状況をご確認ください。お心当たりがない場合は、お手数ですが下記までご連絡ください。"
-        : "お試しをご利用いただきありがとうございました。続けてお使いいただくには、ご利用のお申し込みが必要です。")
+        : "お試しをご利用いただきありがとうございました。お試し期間が終わったため、ご利用を停止しています。続けてお使いいただくには、ご利用のお申し込みが必要です（お申し込みの手続きが済むと、すぐに元どおりお使いいただけます）。")
       + "<br>入力済みの見積もり・料金マスタは消えていません。お手続きが済むと、そのままの内容でお使いいただけます。";
     $("contractContact").textContent = "お問い合わせ: " + v.name + "　" + v.contact + (v.hours ? "（" + v.hours + "）" : "");
   }
