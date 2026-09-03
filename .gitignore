@@ -9,3 +9,4 @@ package-lock.json
 # 出荷用の組み立て結果（tools/build-product.js が作る。原本ではない）
 dist-product/
 tools/docomo-watch-state.json
+firestore-debug.log

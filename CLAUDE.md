@@ -81,6 +81,7 @@
 1. 変更後 `node --check`・`node tests/run-calc-tests.js`・`node tests/run-bill-tests.js`・
    `node tests/run-ienaka-tests.js`（光・5G。統合版と単体版の一致も見る）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
+   （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh` も）
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す
 3. **`node tools/build-internal.js` を実行**してルートを再生成する（社内版のキャッシュ名も追従する）
 4. コミット → `git rebase --onto origin/main HEAD~N` → force-with-lease で push → PR作成 → squashマージ

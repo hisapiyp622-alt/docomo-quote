@@ -46,6 +46,19 @@ jobs:
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js
 
+      # ルールを1文字間違えると全店舗が止まる／他店が見える（レビュー4-25）
+      - name: Java 21 を用意（Firestore エミュレータが要求）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Firestore ルールのテスト
+        run: |
+          npm install --no-audit --no-fund --no-save @firebase/rules-unit-testing firebase-tools >/dev/null
+          npx --no-install firebase-tools emulators:exec --only firestore --project demo-frontalk \
+            "node tests/rules/run-rules-tests.js"
+
       # 料金表を変えたのに版を上げ忘れると、店舗に改定が届かない（レビュー4-10）
       - name: 料金表を変えたら版と基準日も上げているか
         if: github.event_name == 'pull_request'
