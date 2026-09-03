@@ -6,7 +6,12 @@ rules_version = '2';
 // あわせて、書き込みの形（フィールド名）と大きさを検査し、
 // 不具合や不正なクライアントによる想定外の書き込みを弾きます。
 //
-// 反映方法: Firebaseコンソール → Firestore Database → ルール にこの内容を貼り付けて公開
+// 反映方法（2026-09-03 変更）: 貼り付けではなく Firebase CLI で公開する。
+//   1. sh tools/test-rules.sh   … エミュレータでルールのテスト（23件）を通す
+//   2. npx firebase-tools login （初回だけ）
+//   3. npx firebase-tools deploy --only firestore:rules --project <プロジェクトID>
+// 貼り付けは1文字の消し忘れで全店舗が止まるため、使わない。
+// 手順の詳細は非公開リポジトリの OPERATIONS.md にあります。
 service cloud.firestore {
   match /databases/{database}/documents {
     // 共通: 書き込みサイズの上限（1ドキュメントの実効上限1MiBの少し手前で止める）
@@ -17,8 +22,17 @@ service cloud.firestore {
     function isDev() {
       return request.auth != null && request.auth.uid == 'M4MFfPd80oTBN3RdqH0Z3WsLHyY2';
     }
+    /* 1件が大きくなりすぎる書き込みを止める。
+     * Firestore 自体の上限は1件 1MiB（バイト）。ルールから見られるのは
+     * 「文字数」なので、中身の大きい文字列の長さで見張る。
+     * （2026-09-03 修正: 以前は request.resource.size() を見ていたが、
+     *  これはフィールドの個数なので事実上いつも通っていた。
+     *  tests/rules/run-rules-tests.js で発覚） */
+    function lenOk(field, max) {
+      return request.resource.data.get(field, '').size() <= max;
+    }
     function sizeOk() {
-      return request.resource.size() < 900000;
+      return request.resource.data.keys().size() <= 20;
     }
     function stamped() {
       // アプリが必ず付ける印。付いていない書き込みはアプリ外からの可能性が高い
@@ -103,7 +117,8 @@ service cloud.firestore {
         && sizeOk()
         && request.resource.data.keys().hasOnly(
              ['storeName', 'storeTel', 'staff', 'adminLock', 'master',
-              'clientId', 'updatedAtMs', 'updatedAt']);
+              'clientId', 'updatedAtMs', 'updatedAt'])
+        && lenOk('master', 900000);
 
       // quotes/{担当者ID}: 作業中の見積もり
       match /quotes/{staffId} {
@@ -111,7 +126,8 @@ service cloud.firestore {
         allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
-          && request.resource.data.keys().hasOnly(['data', 'clientId', 'updatedAtMs', 'updatedAt']);
+          && request.resource.data.keys().hasOnly(['data', 'clientId', 'updatedAtMs', 'updatedAt'])
+          && lenOk('data', 900000);
       }
       // saved/{担当者ID}: 保存した見積もり（del は削除の記録）
       match /saved/{staffId} {
@@ -119,7 +135,8 @@ service cloud.firestore {
         allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
-          && request.resource.data.keys().hasOnly(['list', 'del', 'clientId', 'updatedAtMs', 'updatedAt']);
+          && request.resource.data.keys().hasOnly(['list', 'del', 'clientId', 'updatedAtMs', 'updatedAt'])
+          && lenOk('list', 880000) && lenOk('del', 40000);
       }
       // templates/{担当者ID}: テンプレート（_store は店舗共通テンプレート）
       match /templates/{staffId} {
@@ -127,7 +144,8 @@ service cloud.firestore {
         allow write: if ((request.auth != null && request.auth.uid == storeId) || isDev() || roleCanWrite(storeId))
           && contractOk()
           && sizeOk() && stamped()
-          && request.resource.data.keys().hasOnly(['list', 'clientId', 'updatedAtMs', 'updatedAt']);
+          && request.resource.data.keys().hasOnly(['list', 'clientId', 'updatedAtMs', 'updatedAt'])
+          && lenOk('list', 900000);
       }
       // history/{履歴ID}: 料金マスタの履歴
       match /history/{histId} {
