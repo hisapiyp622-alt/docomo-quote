@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.159.0";
+  var APP_VERSION = "1.160.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4475,7 +4475,16 @@
    * 古い控えで消されないようにするために使う。 */
   var quoteSigLoaded = {};
   function loadState() {
-    try { quoteAtLoaded[activeStaff().id] = quoteAt(activeStaff().id); } catch (eQ) {}
+    /* 「開く前の時刻」は、この担当について**このページで最初に読んだときだけ**控える。
+     * loadState() は起動時と担当を選んだときの2回走る。2回目に控え直すと、
+     * その間に走った自動保存（recalc → saveState → markQuoteAt）で
+     * 時刻が「今」になっているため、何も入力していないのに
+     * 「この端末がいちばん新しい」と判定され、他の端末で作った見積もりを
+     * この端末の古い内容で上書きしてしまう（2026-09-04 阪南で発生）。 */
+    try {
+      var sid0 = activeStaff().id;
+      if (!(sid0 in quoteAtLoaded)) quoteAtLoaded[sid0] = quoteAt(sid0);
+    } catch (eQ) {}
     try {
       var s = JSON.parse(localStorage.getItem(quoteKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
@@ -5280,8 +5289,48 @@
       else enterStaff(activeStaff());
     }
   }
+  /* 端末どうしの時計のずれを、どこまで許すか。
+   * これより小さい差では「こちらが新しい」と判断しない（2026-09-04）。 */
+  var CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+  /* クラウドにある他の端末の内容を、この端末の「保存」タブへ控える。
+   * どちらを採るか迷ったときに、消えるほうを必ず残すためのもの（4-40）。 */
+  function stashRemoteQuote(d) {
+    if (!d || !d.data) return;
+    var keep = null;
+    try { keep = JSON.parse(JSON.stringify(store)); } catch (e) { return; }
+    try {
+      var incoming = JSON.parse(d.data);
+      if (!incoming || !incoming.patterns) return;
+      for (var i = 0; i < 3; i++) {
+        store.patterns[i] = Object.assign(defaultState(), incoming.patterns[i] || {});
+        migratePattern(store.patterns[i]);
+      }
+      store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
+      store.gen = incoming.gen | 0;
+      state = store.patterns[store.active];
+      stashQuoteAuto("ほかの端末の内容");
+    } catch (e2) {
+    } finally {
+      if (keep) {
+        store.patterns = keep.patterns;
+        store.active = keep.active;
+        store.gen = keep.gen;
+        store.ienaka = keep.ienaka;
+        state = store.patterns[store.active];
+      }
+    }
+  }
+
   function applyRemoteQuote(d) {
     if (!d || !d.data) return;
+    /* クラウドの内容を当てる＝この端末の作りかけが置き換わる。
+     * 中身があって、届いた内容と違うときは、消える前に控えを残す（4-40）。 */
+    try {
+      if (localQuoteHasContent() && quotePayload() !== String(d.data)) {
+        stashQuoteAuto("この端末の内容");
+      }
+    } catch (eS) {}
     CLOUD.suppress = true;
     try {
       var incoming = JSON.parse(d.data);
@@ -5397,7 +5446,14 @@
          * 控えで消さずに、こちらを新しいものとして送る。 */
         var edited = false;
         try { edited = !!quoteSigLoaded[sid] && quotePayload() !== quoteSigLoaded[sid]; } catch (eE) {}
-        if ((edited || (lAt && rAt && lAt > rAt)) && localQuoteHasContent()) {
+        /* 時刻は端末それぞれの時計で付いている（updatedAtMs も quoteAt も Date.now()）。
+         * 数分ずれているだけで勝ち負けがひっくり返るので、はっきり新しいときだけ
+         * この端末を勝ちにする。差が小さいときはクラウドを採る（下で控えを残す）。 */
+        var newer = lAt && rAt && (lAt - rAt) > CLOCK_SKEW_MS;
+        if ((edited || newer) && localQuoteHasContent()) {
+          /* この端末を勝ちにする ＝ クラウドにある他の端末の内容を消すということ。
+           * 消す前に、その内容を「保存」タブの自動控えとして必ず残す（4-40）。 */
+          stashRemoteQuote(d);
           markLocalEdit(); cloudOk(); return;
         }
       }
@@ -5545,7 +5601,9 @@
    * 手で保存した内容と同じなら残さない。自動控えは古いものから減らし、
    * AUTO_STASH_MAX 件までにする（成約・見送り・引き渡し済みのものは減らさない）。 */
   var AUTO_STASH_MAX = 3;
-  function stashQuoteAuto() {
+  /* why … 何の控えかを名前に添える（「ほかの端末の内容」など）。
+   * 省くと今までどおり「自動控え 日付 時刻」になる。 */
+  function stashQuoteAuto(why) {
     if (!quoteHasInput()) return null;
     var cur = JSON.stringify(store);
     if (savedList.some(function (it) { return !it.slim && it.data && JSON.stringify(it.data) === cur; })) return null;
@@ -5555,7 +5613,7 @@
     var hhmm = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
     var item = {
       id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      name: ("自動控え " + savedDefaultName() + " " + hhmm).slice(0, 40),
+      name: ("自動控え" + (why ? "（" + why + "）" : "") + " " + savedDefaultName() + " " + hhmm).slice(0, 40),
       auto: true,
       custName: state.custName || "",
       planName: (state.planId && r) ? r.plan.name : "",
@@ -13689,6 +13747,26 @@
         histReload: function () { histLoadLocal(); },
         histRestore: function (id) { histRestore(id); },
         histMsg: function () { var e = $("histMsg"); return e ? e.textContent : ""; }
+      },
+      /* 端末どうしの同期の検査（4-40・見積もりが古い内容で上書きされた件）。
+       * 「開く前の時刻」が、担当ごとにこのページで1回しか控えられないことを見る。 */
+      sync: {
+        quoteKey: function () { return quoteKey(); },
+        atKey: function () { return quoteAtKey(); },
+        // いま控えている「開く前の時刻」
+        loadedAt: function () { return num(quoteAtLoaded[activeStaff().id]); },
+        // localStorage に入っている「最後に直した時刻」
+        storedAt: function () { return quoteAt(activeStaff().id); },
+        // 起動と同じ流れをもう一度なぞる（担当を選び直したときと同じ）
+        reload: function () { loadState(); return num(quoteAtLoaded[activeStaff().id]); },
+        // 画面を描き直す（中で saveState → markQuoteAt が走る）
+        touch: function () { recalc(); },
+        skewMs: function () { return CLOCK_SKEW_MS; },
+        autoNames: function () {
+          return savedList.filter(function (x) { return x.auto; }).map(function (x) { return x.name; });
+        },
+        stashRemote: function (raw) { stashRemoteQuote({ data: raw }); },
+        payload: function () { return quotePayload(); }
       },
       /* 案内文の確認用（製品化レビュー 5-4・5-8）。
        * お店の人が読む文章（タブの名前・チュートリアル・ヘルプ・画面のヒント）を
