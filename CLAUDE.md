@@ -83,6 +83,7 @@
    `node tests/run-master-update-tests.js`（料金表の配信・受付終了・改定予告）・
    `node tests/run-migrate-tests.js`（古い保存データの読み直し）・
    `node tests/run-wording-tests.js`（案内文が実在しない場所を指していないか）・
+   `node tests/run-sync-tests.js`（端末どうしの同期で見積もりが消えないか）・
    `node tests/run-diag-tests.js`（調子が悪いときの情報・配信元）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、
