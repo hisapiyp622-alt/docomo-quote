@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.11.0";
+  var APP_VERSION = "2.12.0";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -199,6 +199,10 @@
       dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
       visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
+      /* その内訳（2026-09-04 店舗の要望）。テレビ・お電話の額を分けて出せるようにする。
+       * どれかを入れたら、合計は内訳から計算する（上の1行は使わない）。
+       * 内訳を入れていない古い見積もりは、今までどおり上の1行で出る。 */
+      typecKeepTv: 0, typecKeepPhone: 0, typecKeepOther: 0, typecKeepOff: 0,
       /* 転用（タイプC）のいまの回線設備。hikari=光回線（工事なし）／coax=同軸ケーブル
        * （光への切り替え工事あり。工事はケーブルテレビ会社が行う・2026-08-29共有）。
        * typecKoji はその工事料（同社の案内額。わかるときだけ入れる・初期費用に載る） */
@@ -335,6 +339,34 @@
     var ymd = today.getFullYear() + "-" + z(today.getMonth() + 1) + "-" + z(today.getDate());
     return REVISE.filter(function (r2) { return ymd < r2.from && r2.when(); })
       .map(function (r2) { return r2.text; });
+  }
+
+  /* タイプC転用のとき、ケーブルテレビ会社に残るお支払い（2026-09-04）。
+   * ドコモとは別の請求なので、月額には足さず、見積書に別枠で出す。
+   * テレビ・お電話などの内訳を入れたら、その合計を使う。
+   * 何も入れていなければ、今までどおり「残る月額」の1行を使う。 */
+  function typecKeepRows() {
+    var rows = [], any = false;
+    function put(name, v) {
+      var n = Math.max(0, num(v));
+      if (n > 0) { rows.push({ name: name, amount: n }); any = true; }
+    }
+    put("テレビ", state.typecKeepTv);
+    put("お電話", state.typecKeepPhone);
+    put("そのほか・契約基本料", state.typecKeepOther);
+    var off = Math.max(0, num(state.typecKeepOff));
+    if (off > 0) { rows.push({ name: "ドコモ光タイプC向け割引", amount: -off }); any = true; }
+    if (!any) {
+      var lump = Math.max(0, num(state.typecKeepAmt));
+      if (lump > 0) rows.push({ name: "お電話・テレビなど（ケーブルテレビからの請求）", amount: lump });
+      return rows;
+    }
+    return rows;
+  }
+  function typecKeepTotal() {
+    var t = 0;
+    typecKeepRows().forEach(function (x) { t += x.amount; });
+    return Math.max(0, t);
   }
 
   /* ---------- 計算 ---------- */
@@ -1113,6 +1145,22 @@
     /* 「転用（タイプC）」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
     $("applyType").value = state.applyType || "shinki";
     $("typecKeepField").hidden = !isC;
+    /* 内訳の欄（2026-09-04）。タイプCのときだけ出す。 */
+    ["Tv", "Phone", "Other", "Off"].forEach(function (k) {
+      $("typecKeep" + k + "Field").hidden = !isC;
+      var el = $("typecKeep" + k);
+      if (el && document.activeElement !== el) {
+        el.value = num(state["typecKeep" + k]) || "";
+      }
+    });
+    /* ケーブルテレビ会社ごとの割引額のご案内（分かっている会社だけ） */
+    var offHint = $("typecKeepOffHint");
+    if (offHint) {
+      var cdk = (typeof curLineById === "function") ? curLineById(state.curLine) : null;
+      var note = cdk && cdk.typecOffNote;
+      offHint.hidden = !isC || !note;
+      offHint.textContent = note || "";
+    }
     $("typecHint").hidden = !isC;
     if (document.activeElement !== $("typecKeep")) $("typecKeep").value = state.typecKeepAmt || "";
     // 転用（タイプC）: いまの回線設備で工事の有無が変わる
@@ -1647,11 +1695,24 @@
     h += '<p class="memo">※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（本見積もりの月額には含まれません）。</p>';
     if (PRODUCTS[state.product].typec) {
       h += '<p class="memo" style="color:#C62828;font-weight:700">※ お電話・テレビはケーブルテレビ（ZTV等）のご契約のまま残ります。ドコモからの請求とは別に、ケーブルテレビからの請求が続きます。</p>';
-      if (num(state.typecKeepAmt) > 0) {
-        h += "<h3>ケーブルテレビに残るお支払い（参考）</h3><table><tbody>"
-          + '<tr><td>お電話・テレビなど（ケーブルテレビからの請求）</td><td class="amt">' + yen(num(state.typecKeepAmt)) + "</td></tr>"
-          + "</tbody></table>"
-          + '<p class="memo">※ 上の月額には含まれていません。ケーブルテレビ側のセット割引の有無・金額は、切替のお手続き時にご確認ください。</p>';
+      var keepRows = typecKeepRows();
+      if (keepRows.length) {
+        /* 内訳を入れていればテレビ・お電話ごとに、入れていなければ1行で出す。
+         * ドコモの月額とは別の請求なので、合計もここで別に出す（2026-09-04）。 */
+        h += "<h3>ケーブルテレビに残るお支払い（参考）</h3><table><tbody>";
+        keepRows.forEach(function (x) {
+          h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+        });
+        if (keepRows.length > 1) {
+          h += '<tr><td><b>ケーブルテレビ会社への小計</b></td><td class="amt"><b>'
+            + yen(typecKeepTotal()) + "</b></td></tr>";
+        }
+        h += "</tbody></table>";
+        h += '<p class="memo">※ 上のドコモの月額には含まれていません。'
+          + "毎月のお支払いは <b>ドコモ " + yen(segLast.monthly) + " ＋ ケーブルテレビ "
+          + yen(typecKeepTotal()) + " ＝ <b>" + yen(segLast.monthly + typecKeepTotal())
+          + "</b></b> になります。"
+          + "ケーブルテレビ側の割引の有無・金額は、切替のお手続き時にご確認ください。</p>";
       }
     }
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
@@ -1947,6 +2008,12 @@
   });
   $("storeCash").addEventListener("input", function () { state.storeCash = num(this.value); recalc(); });
   $("typecKeep").addEventListener("input", function () { state.typecKeepAmt = num(this.value); recalc(); });
+    ["Tv", "Phone", "Other", "Off"].forEach(function (k) {
+      var el = $("typecKeep" + k);
+      if (el) el.addEventListener("input", function () {
+        state["typecKeep" + k] = num(this.value); recalc();
+      });
+    });
   $("typecLine").addEventListener("change", function () { state.typecLine = this.value; syncForm(); recalc(); });
   $("typecKoji").addEventListener("input", function () { state.typecKoji = num(this.value); recalc(); });
   $("storePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
@@ -2098,6 +2165,8 @@
         monthly: r.monthly, initial: r.initial, koji: r.koji, kojiPt: r.kojiPt,
         dcardAutoPt: r.dcardAutoPt, dcardPt: r.dcardPt, dcardEligible: r.dcardEligible,
         dcardApply: !!r.dcardApply,
+        catvKeep: typecKeepTotal(),
+        catvKeepRows: typecKeepRows().map(function (x) { return { name: x.name, amount: x.amount }; }),
         segs: r.segs.map(function (sg) { return { from: sg.from, to: sg.to == null ? "inf" : sg.to, monthly: sg.monthly }; }),
         rows: r.rows.map(function (x) { return { name: x.name, amount: x.amount }; })
       };

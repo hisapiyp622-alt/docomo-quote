@@ -53,6 +53,13 @@ const CASES = {
     housing: 'ms', curLine: 'baycom' },
   'typec_kcn_kodate': { product: 'hikaric', applyType: 'kirikae',
     housing: 'ht', curLine: 'kcn' },
+  /* タイプC転用のとき、ケーブルテレビ会社に残るお支払いを内訳で出せる（2026-09-04）。
+   * ドコモの月額には足さず、別枠で出す。
+   * ・内訳あり … テレビ3,465 ＋電話1,639 ＋基本料396 −割引2,838 ＝2,662円
+   * ・内訳なし … 今までどおり「残る月額」の1行（2,200円） */
+  'typec_keep_breakdown': { product: 'hikaric', applyType: 'kirikae',
+    typecKeepTv: 3465, typecKeepPhone: 1639, typecKeepOther: 396, typecKeepOff: 2838 },
+  'typec_keep_lump': { product: 'hikaric', applyType: 'kirikae', typecKeepAmt: 2200 },
   'typec_coax_koji': { product: 'hikari1g', applyType: 'kirikae', typecLine: 'coax', typecKoji: 11000 },
   'hikari1g_denwa': { opts: { denwa: true } },
   'hikari1g_norouter': { routerRental: 'nashi' },
@@ -210,11 +217,16 @@ async function runOn(page, url, port) {
    * 光・5Gタブ（統合版）にしかない機能なので、それを使うケースは比べない。
    * 単体版は出荷していない（阪南の社内版の生成元として残しているだけ）。 */
   const INTEGRATED_ONLY = ['typec_kcn_mansion', 'typec_baycom_mansion', 'typec_kcn_kodate'];
+  /* 比べるのは中身だけ。項目を書いた順が違うだけで落ちないように、名前順にそろえる。 */
+  const stable = (v) => JSON.stringify(v, (k, val) =>
+    (val && typeof val === 'object' && !Array.isArray(val))
+      ? Object.keys(val).sort().reduce((o, k2) => { o[k2] = val[k2]; return o; }, {})
+      : val);
   const diffs = [];
   for (const name of Object.keys(CASES)) {
     if (INTEGRATED_ONLY.indexOf(name) >= 0) continue;
-    const a = JSON.stringify(integrated[name]);
-    const b = JSON.stringify(standalone[name]);
+    const a = stable(integrated[name]);
+    const b = stable(standalone[name]);
     if (a !== b) diffs.push({ name, a, b });
   }
 
