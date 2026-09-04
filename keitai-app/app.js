@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.155.0";
+  var APP_VERSION = "1.155.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -13592,6 +13592,41 @@
         histReload: function () { histLoadLocal(); },
         histRestore: function (id) { histRestore(id); },
         histMsg: function () { var e = $("histMsg"); return e ? e.textContent : ""; }
+      },
+      /* 古い形の保存データの読み直し（製品化レビュー 4-35）。
+       * loadMaster と migratePattern には、一回きりの補正が20か所以上ある。
+       * 1か所でも漏れると「古い見積もりを開いたときだけ値引きが消える」が起きる
+       * （実際に起きた）ので、旧形式を読ませて結果を見張る。 */
+      migrate: {
+        // 保存の場所（テストが直に書き込むために使う）
+        masterKey: function () { return MASTER_KEY; },
+        quoteKey: function () { return quoteKey(); },
+        // 古い形のマスタを置いて読み直す
+        loadMaster: function (raw) {
+          if (typeof raw === "string") lsSet(MASTER_KEY, raw);
+          loadMaster();
+          return JSON.parse(JSON.stringify(MASTER));
+        },
+        // 古い形の見積もりを置いて読み直し、1本目の中身と金額を返す
+        loadQuote: function (raw) {
+          if (typeof raw === "string") lsSet(quoteKey(), raw);
+          loadState();
+          syncFormFromState();
+          recalc();
+          return {
+            state: JSON.parse(JSON.stringify(state)),
+            calc: (function () {
+              var r = calc();
+              return {
+                initial: r.initialTotal, bill: r.billTotal,
+                optTotal: r.optTotal || 0, voicePrice: r.voicePrice || 0,
+                segs: r.segs.map(function (sg) {
+                  return { from: sg.from, to: sg.to === Infinity ? "inf" : sg.to, monthly: sg.monthly };
+                })
+              };
+            })()
+          };
+        }
       },
       /* 料金表の配信と「受付終了」の検査用（製品化レビュー 4-11） */
       std: {
