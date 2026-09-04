@@ -1,6 +1,6 @@
 /* このファイルは tools/build-internal.js が ienaka-app/sw.js から生成します。直接編集しないでください。 */
 /* イエナカ見積もり（単体版）— ネット優先・失敗時キャッシュ */
-var CACHE = "ienaka-internal-v45";
+var CACHE = "ienaka-internal-v47";
 var ASSETS = ["./", "index.html", "../ienaka-app/style.css", "../ienaka-app/app.js", "../keitai-app/qr.js", "../firebase-config.js", "manifest.webmanifest", "../ienaka-app/icon.svg"];
 
 self.addEventListener("install", function (e) {

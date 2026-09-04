@@ -92,11 +92,43 @@ if (badDate.length) {
     + '\n\n"2026-12-01" の形（4桁の年-2桁の月-2桁の日）で書いてください。');
   process.exit(1);
 }
+/* 金額（コース）ごとの還元率の書き間違いを止める。
+ * 「890」と書くべきところを「980」と書いても静かに無視され、
+ * その金額を選んだお客様にだけ間違ったポイント数を案内してしまう。 */
+const rateBad = [];
+(hd.options || []).forEach((o) => {
+  ['bakuageByPrice', 'bakuage2ByPrice'].forEach((k) => {
+    if (!o[k]) return;
+    const choices = (o.priceChoices || []).map(String).concat([String(o.price)]);
+    Object.keys(o[k]).forEach((price) => {
+      if (choices.indexOf(String(price)) < 0) {
+        rateBad.push(`${o.id} の ${k} にある「${price}」は、この商材の金額にありません`
+          + `（あるのは ${choices.join('／')}）`);
+      }
+      const v = Number(o[k][price]);
+      if (!(v >= 0 && v <= 100)) rateBad.push(`${o.id} の ${k}「${price}」の率が変です（${o[k][price]}）`);
+    });
+  });
+});
+if (rateBad.length) {
+  console.error('金額ごとの還元率の書き方が違います:\n  - ' + rateBad.join('\n  - '));
+  process.exit(1);
+}
+
 const bv = Number(bd.masterVersion), hv = Number(hd.masterVersion);
 const bu = String(bd.updated), hu = String(hd.updated);
 const ng = [];
 if (!(hv > bv)) ng.push(`masterVersion が上がっていません（${bv} → ${hv}）。+1 してください`);
-if (bu === hu) ng.push(`updated（料金データ基準日）が ${hu} のままです。今日の日付に直してください`);
+/* 基準日は「直し忘れ」を防ぐためのもの。
+ * 同じ日に2回配ることもある（朝に料金、昼に還元率など）ので、
+ * 日付が今日なら、前回と同じでも通す。古いままのときだけ止める。 */
+const jst = new Date(Date.now() + 9 * 3600 * 1000);
+const today = jst.getUTCFullYear() + '-'
+  + String(jst.getUTCMonth() + 1).padStart(2, '0') + '-'
+  + String(jst.getUTCDate()).padStart(2, '0');
+if (bu === hu && hu !== today) {
+  ng.push(`updated（料金データ基準日）が ${hu} のままです。今日（${today}）の日付に直してください`);
+}
 if (ng.length) {
   console.error('料金表を変えたときの決まりに合っていません:\n  - ' + ng.join('\n  - ')
     + '\n\n料金の変更は data.js ＋ masterVersion ＋ updated の3点セットで配ります'

@@ -7,6 +7,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -50,6 +52,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 4400,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -93,6 +97,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5940,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -136,6 +142,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 6380,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -184,6 +192,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 4950,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -227,6 +237,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 4950,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -270,6 +282,8 @@
     "dcardAutoPt": 500,
     "dcardPt": 500,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -313,6 +327,8 @@
     "dcardAutoPt": 500,
     "dcardPt": 500,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": true,
     "segs": [
       {
@@ -360,6 +376,8 @@
     "dcardAutoPt": 1000,
     "dcardPt": 1000,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -403,6 +421,8 @@
     "dcardAutoPt": 600,
     "dcardPt": 600,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -446,6 +466,8 @@
     "dcardAutoPt": 500,
     "dcardPt": 500,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": true,
     "segs": [
       {
@@ -493,6 +515,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5280,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -516,6 +540,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -531,6 +557,153 @@
       }
     ]
   },
+  "typec_kcn_mansion": {
+    "monthly": 4400,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 4400,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 4400
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（マンション・転用（タイプC））",
+        "amount": 4400
+      }
+    ]
+  },
+  "typec_baycom_mansion": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（戸建・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
+  "typec_kcn_kodate": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（戸建・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
+  "typec_keep_breakdown": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "catvKeep": 2662,
+    "catvKeepRows": [
+      {
+        "name": "テレビ",
+        "amount": 3465
+      },
+      {
+        "name": "お電話",
+        "amount": 1639
+      },
+      {
+        "name": "そのほか・契約基本料",
+        "amount": 396
+      },
+      {
+        "name": "ドコモ光タイプC向け割引",
+        "amount": -2838
+      }
+    ],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（戸建・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
+  "typec_keep_lump": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "catvKeep": 2200,
+    "catvKeepRows": [
+      {
+        "name": "お電話・テレビなど（ケーブルテレビからの請求）",
+        "amount": 2200
+      }
+    ],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（戸建・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
   "typec_coax_koji": {
     "monthly": 5720,
     "initial": 15950,
@@ -539,6 +712,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -562,6 +737,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 6270,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -609,6 +786,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {
@@ -652,6 +831,8 @@
     "dcardAutoPt": 0,
     "dcardPt": 0,
     "dcardEligible": 5720,
+    "catvKeep": 0,
+    "catvKeepRows": [],
     "dcardApply": false,
     "segs": [
       {

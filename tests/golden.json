@@ -1545,7 +1545,7 @@
     "bill": 0,
     "dcardPt": 0,
     "dcardPtAfter": 0,
-    "bakuagePt": 162,
+    "bakuagePt": 122,
     "pointTotal": 0,
     "pointApply": false,
     "optTotal": 890,
@@ -1567,6 +1567,68 @@
         "from": 1,
         "to": "inf",
         "monthly": 6588
+      }
+    ]
+  },
+  "bakuage_netflix_std": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 290,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 1590,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 7288
+      }
+    ]
+  },
+  "bakuage_netflix_prem": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 417,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 2290,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 7988
       }
     ]
   },
@@ -1598,6 +1660,161 @@
         "from": 1,
         "to": "inf",
         "monthly": 8788
+      }
+    ]
+  },
+  "bakuage_std_prem": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 209,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 2290,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 10188
+      }
+    ]
+  },
+  "bakuage_disney": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 228,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 1250,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6948
+      }
+    ]
+  },
+  "bakuage_googleone": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 264,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 1450,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 7148
+      }
+    ]
+  },
+  "bakuage_appleone": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 180,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 1980,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 7678
+      }
+    ]
+  },
+  "bakuage_appleone_std": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 0,
+    "dcardPtAfter": 0,
+    "bakuagePt": 90,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 1980,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 9878
       }
     ]
   },
