@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.155.1";
+  var APP_VERSION = "1.156.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -596,11 +596,21 @@
   }
   function savedItemTs(it) { return it.upAt || it.resultAt || it.savedAt || 0; }
   // 保存名は他の端末にも同期されるため、お客様名は既定に入れない
+  /* 保存するときの名前の初期値（製品化レビュー 5-3）。
+   * 日付とプラン名だけだと、同じ日に同じプランで作った見積もりが全部同じ名前になり、
+   * 一覧から見分けられなかった。時刻・機種名・回線数を足して、
+   * 名前を付けずに保存しても後から探せるようにする。 */
   function savedDefaultName() {
     var d = new Date();
-    var mm = ("0" + (d.getMonth() + 1)).slice(-2), dd = ("0" + d.getDate()).slice(-2);
-    var plan = state.planId ? currentPlan().name : "";
-    return (d.getFullYear() + "/" + mm + "/" + dd) + (plan ? " " + plan : "");
+    function z(n) { return ("0" + n).slice(-2); }
+    var out = d.getFullYear() + "/" + z(d.getMonth() + 1) + "/" + z(d.getDate())
+      + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+    if (state.planId) out += " " + currentPlan().name;
+    var dev = String(state.deviceName || "").trim();
+    if (dev) out += " " + dev;
+    var lines = store.patterns.filter(isPatternUsed).length;
+    if (lines > 1) out += " " + lines + "回線";
+    return out.slice(0, 40);
   }
   var quickSaveTimer = null;
   /* 直前の保存が「上書き」だったか（案内の文言を変えるため）。 */
@@ -911,6 +921,10 @@
         + '<div class="saved-main">'
         + '<div class="saved-name">' + esc(it.name) + "</div>"
         + '<div class="saved-sub">' + savedWhen(it.savedAt)
+        /* お客様名は、この端末で作った保存にだけ入っている（クラウドへは送らない）。
+         * 名前を付けずに保存したものを見分ける手がかりになるので、小さく添える。
+         * 他の端末・他の担当から届いた保存には入っていないので、何も出ない。 */
+        + (it.custName ? ' <span class="saved-cust">' + esc(it.custName) + " 様</span>" : "")
         + (it.planName ? "　" + esc(it.planName) : "")
         + "　月額 " + yen(it.monthly || 0)
         + (it.initial ? "　初期費用 " + yen(it.initial) : "")
@@ -6798,7 +6812,7 @@
     }
 
     // 端末
-    var device = { monthly: 0, months: 0, after: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
+    var device = { monthly: 0, months: 0, after: 0, afterFirstExtra: 0, firstExtra: 0, kaedoki: false, zanka: 0, total23: 0, kaedokiFee: 0, jisshitsu: 0, total: 0, atama: 0 };
     var initialDevice = 0;
     /* 端末代金総額（頭金を含む）から値引きを引く。
      * クーポン値引きと店舗独自キャンペーンは、店頭でのお支払いが軽くなるよう
@@ -6906,7 +6920,12 @@
         device.monthly = Math.floor(split23 / 23);
         device.months = 23;
         device.firstExtra = split23 - device.monthly * 23;
+        /* 残価を24回に割り直したときの端数。
+         * 見積書には「残価 71,800円」と「2,991円/月 × 24回」を並べて出すので、
+         * 端数を捨てると 2,991×24 ＝71,784円 となり、足しても総額に合わない。
+         * 分割と同じように、初回（24か月目）に寄せる。 */
         device.after = z > 0 ? Math.floor(z / 24) : 0;
+        device.afterFirstExtra = z > 0 ? z - device.after * 24 : 0;
         device.zanka = z;
         device.total23 = t23;
         device.kaedokiFee = num(st.kaedokiFee);
@@ -7404,6 +7423,15 @@
     tplPendingStore = !!isStore;
     $("tplNameInput").value = cur ? cur.name
       : ((state.planId ? plan.name + " " : "") + procLabel).trim().slice(0, 20);
+    /* すでに入っている枠に保存するときは、置き換わることをはっきり出す
+     * （製品化レビュー 5-3）。押し間違えると、作り込んだテンプレが黙って消える。 */
+    var note = $("tplOverwriteNote");
+    if (note) {
+      note.hidden = !cur;
+      note.textContent = cur
+        ? "この枠の「" + cur.name + "」を置き換えます（元には戻せません）" : "";
+    }
+    $("tplNameOk").textContent = cur ? "置き換える" : "保存する";
     $("tplNameBox").hidden = false;
     $("saveTplBtn").hidden = true;
     var ssb = $("saveStoreTplBtn"); if (ssb) ssb.hidden = true;
@@ -7425,6 +7453,9 @@
         tplMsg("「" + entry.name + "」を保存しました");
       }
     }
+    var note2 = $("tplOverwriteNote");
+    if (note2) { note2.hidden = true; note2.textContent = ""; }
+    $("tplNameOk").textContent = "保存する";
     tplPendingSlot = null;
     tplPendingStore = false;
     tplSaveMode = false;
@@ -8602,7 +8633,9 @@
       kh.textContent = "カエドキ: 23か月目までに返却で残価" + yen(r.device.zanka || 0)
         + "の支払い不要。実質負担 " + yen(r.device.jisshitsu || 0)
         + (r.device.kaedokiFee > 0 ? "（プログラム利用料" + yen(r.device.kaedokiFee) + "込・ドコモで買替えなら免除）" : "")
-        + "。返却しない場合は24か月目以降 " + yen(r.device.after) + "/月を加算。";
+        + "。返却しない場合は24か月目以降 " + yen(r.device.after) + "/月を加算"
+        + (r.device.afterFirstExtra > 0
+            ? "（24か月目だけ " + yen(r.device.after + r.device.afterFirstExtra) + "）" : "") + "。";
     } else { kh.hidden = true; }
 
     var pw = $("payWarn");
@@ -9432,7 +9465,10 @@
       if (r.device.atama > 0) p2 += row("店頭頭金（総額のうち店頭でお支払い）", yen(r.device.atama), true);
       p2 += row("23回分の総額（頭金込み）", yen(r.device.total23 || 0), true);
       p2 += row("残価（24回目支払分）", yen(r.device.zanka || 0), true);
-      p2 += row("返却しない場合（24か月目以降）", yen(r.device.after) + "/月 × 24回", true);
+      p2 += row("返却しない場合（24か月目以降）",
+        yen(r.device.after) + "/月 × 24回"
+        + (r.device.afterFirstExtra > 0
+            ? "（24か月目のみ " + yen(r.device.after + r.device.afterFirstExtra) + "）" : ""), true);
       if (r.device.kaedokiFee > 0) p2 += row("プログラム利用料（返却時・ドコモで買替えの場合は免除）", yen(r.device.kaedokiFee), true);
       p2 += row("23か月目までに返却した場合の実質負担", yen(r.device.jisshitsu || 0), true);
       p2 += "</tbody></table>";
@@ -9491,7 +9527,7 @@
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。"
       + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
-      + "料金データ基準日: " + esc(MASTER.updated) + "｜アプリ版 " + APP_VERSION + "</div>";
+      + "料金データ基準日: " + esc(masterUpdatedForSheet()) + "｜アプリ版 " + APP_VERSION + "</div>";
 
     /* 光の明細は、スマホの見積書に続く3枚目としてお渡しする。
      * 1ページ目には世帯の合計だけを出し、内訳はこちらで見ていただく。 */
@@ -9513,7 +9549,8 @@
   function statsCfgHtml() {
     var sc = statsCfg();
     var h = '<div class="master-plan" data-mroom="stats"><h3>実績で追う項目</h3>';
-    h += '<p class="hint">実績タブの「項目別」で<strong>どの項目を数えるか</strong>を選べます。'
+    h += '<p class="hint">実績の「項目別」で<strong>どの項目を数えるか</strong>を選べます'
+      + '（実績は<strong>保存タブの「実績を見る」</strong>から開きます）。'
       + '店舗として力を入れている商材だけに絞ると、表が見やすくなります。<br>'
       + '設定は保存済みの見積もりには手を加えず、<strong>集計するときに数え直す</strong>ため、'
       + 'あとから変えても過去の分に新しい設定が効きます。店舗内の全端末で共通です。</p>';
@@ -9521,7 +9558,7 @@
     h += '<div class="plan-sec"><span class="plan-lbl">実績の公開範囲</span><div class="sub-checks">'
       + '<label class="check"><input type="checkbox" data-sc-flag="openAll"' + (sc.openAll ? " checked" : "")
       + "> 全担当の実績を全員に公開する</label></div>"
-      + '<p class="hint">チェックすると、担当者コードだけの人も実績タブで<strong>全担当・担当別の表・目標と進捗</strong>を見られます（店舗の方針に合わせてお選びください）。'
+      + '<p class="hint">チェックすると、担当者コードだけの人も実績（保存タブの「実績を見る」）で<strong>全担当・担当別の表・目標と進捗</strong>を見られます（店舗の方針に合わせてお選びください）。'
       + 'チェックしないときは、マスタ設定のパスワードを通った管理者だけが全担当を見られます。'
       + '件数の「修正」は、これまでどおり自分の当月ぶんと管理者だけです。</p></div>';
 
@@ -10868,8 +10905,8 @@
   var TOUR_STEPS = [
     { t: "使い方をかんたんにご案内します。見積もり画面は、①から⑨を上から入れていくだけです。月々のお支払いがその場で出ます。ご家族の複数台は、回線1・回線2・回線3に分けて入れてください。" },
     { t: "できあがったら「見積書」タブへ。印刷やPDF保存ができ、文字サイズも大・中・小から選べます。見積書を開いた時点の内容が「ご提案」として自動で控えられます（操作は不要です）。" },
-    { t: "応対が終わったら、画面下の「成約」か「見送り」を1回押すだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく。" },
-    { t: "「実績」タブでは、担当別・項目別に提案と成約が見られ、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べます。" },
+    { t: "応対が終わったら、画面下の帯の右にある「⋯」から「成約」か「見送り」を1回押すだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく。" },
+    { t: "「保存」タブの<b>「実績を見る」</b>から、担当別・項目別に提案と成約が見られ、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べます（マスタ設定は担当者コードの画面から開きます）。" },
     { t: "わからなくなったら、ヘッダーの「情報」からこの案内をもう一度見られます。それでは、よい接客を。" }
   ];
   var tourStep = 0;
@@ -12051,6 +12088,13 @@
     fi: { key: "feeItems", newItem: function () { return { id: "fi_" + Date.now(), name: "", price: 0 }; }, stateKey: "feeItems", render: renderFeeItemList },
     ac: { key: "accessories", newItem: function () { return { id: "acc_" + Date.now(), name: "", price: 0 }; }, stateKey: "accSel", render: renderAccessoryTiles },
   };
+  /* お客様の見積書に出す料金データ基準日。
+   * お店がマスタを1か所でも直すと「（編集済み）」が付くが、これは店内の印で、
+   * お渡しする紙に出ると誤植のように見える。お客様には日付だけをお見せする
+   * （店内向けの「情報」画面には、印を付けたまま出す）。 */
+  function masterUpdatedForSheet() {
+    return String(MASTER.updated || "").replace(/（編集済み.*$/, "").trim();
+  }
   function markEdited() {
     histAutoSnapshot(); // 編集前の内容を控えてから書き換える
     MASTER.updated = MASTER.updated.replace(/（編集済み.*$/, "") + "（編集済み）";
@@ -13548,6 +13592,7 @@
           firstExtra: r.firstExtra || 0,           // 初回だけ増える端数
           device: {
             monthly: dv.monthly || 0, months: dv.months || 0, after: dv.after || 0,
+            afterFirstExtra: dv.afterFirstExtra || 0,
             firstExtra: dv.firstExtra || 0, zanka: dv.zanka || 0,
             jisshitsu: dv.jisshitsu || 0, total: dv.total || 0, atama: dv.atama || 0
           },
@@ -13576,6 +13621,25 @@
         renderMailOpt(); recalc();
       },
       tplSave: function (i) { templates[i] = { name: "検査用", state: tplSnapshot() }; persistTemplates(); },
+      /* 保存まわりの検査（製品化レビュー 5-3） */
+      saved: {
+        // 名前を付けずに保存したときの初期値
+        defaultName: function () { return savedDefaultName(); },
+        save: function (name) { return saveQuote(name); },
+        // 一覧に出ている文字（お客様名が出ているかを見る）
+        listText: function () { renderSaved(); var e = $("savedList"); return e ? e.innerText : ""; },
+        clear: function () { savedList = []; persistSaved(); renderSaved(); },
+        // テンプレの枠を押したときの案内（置き換えの警告）
+        tplPrompt: function (i) {
+          tplSave(i, false);
+          var n = $("tplOverwriteNote");
+          return {
+            note: n && !n.hidden ? n.textContent : "",
+            button: $("tplNameOk").textContent
+          };
+        },
+        tplCancel: function () { tplSaveDone(false); }
+      },
       tplApply: function (i) { tplApply(i, false); },
       // 端末の保存領域があふれたときの動きの検査用（製品化レビュー 4-20／4-39）
       storage: {
@@ -13592,6 +13656,25 @@
         histReload: function () { histLoadLocal(); },
         histRestore: function (id) { histRestore(id); },
         histMsg: function () { var e = $("histMsg"); return e ? e.textContent : ""; }
+      },
+      /* 案内文の確認用（製品化レビュー 5-4・5-8）。
+       * お店の人が読む文章（タブの名前・チュートリアル・ヘルプ・画面のヒント）を
+       * まとめて返す。コードのコメントは含めない。 */
+      wording: function () {
+        var tabs = Array.prototype.map.call(
+          document.querySelectorAll('#tabsNav .tab'),
+          function (b) { return (b.textContent || "").trim(); });
+        var texts = [];
+        TOUR_STEPS.forEach(function (x) { texts.push(x.t); });
+        Object.keys(QUOTE_HELP).forEach(function (k) {
+          texts.push(QUOTE_HELP[k].t + " " + QUOTE_HELP[k].b);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll(".hint, .pat-note, .login-lead"),
+          function (el) {
+            var t = (el.textContent || "").trim();
+            if (t) texts.push(t);
+          });
+        return { tabs: tabs, texts: texts };
       },
       /* 古い形の保存データの読み直し（製品化レビュー 4-35）。
        * loadMaster と migratePattern には、一回きりの補正が20か所以上ある。
@@ -13647,6 +13730,14 @@
         ended: function () { return masterUpdateEnded(); },
         // 改定予告（5-2）
         revise: function () { return masterUpdateRevise(); },
+        // 店内の印を付ける（マスタを直したときと同じ状態にする）
+        markEdited: function () { markEdited(); },
+        // お客様の見積書の中身（社内の印が混ざっていないかを見る）
+        sheetHtml: function () {
+          renderSheet();
+          var el = $("tab-sheet");
+          return el ? el.innerText : "";
+        },
         notices: function () { return reviseNotices(state); },
         apply: function () { applyMasterUpdate(); },
         isEnded: function (x) { return stdEnded(x); },
@@ -13743,7 +13834,7 @@
     c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
     c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: mini・ahamo・irumo など<b>メールが有料オプションのプランを選んだときだけ</b>タイルが出ます。タップで選び、タイルの中で新規／継続／廃止を選びます。新規・継続は月額に入り、廃止は入りません。標準で込みのプラン（MAX等）ではタイルごと出ません" },
     c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: 券種は頭文字で選びます（R=dカード／G=GOLD／U=GOLD U／P=PLATINUM）。券種で⑧のdカード還元の自動計算も変わります\n・PLATINUM を選ぶと「還元率」の欄が出ます。初年度は20%、2年目以降は前年のショッピングご利用額で10〜20%に変わるので、お客様のカードの率に直してください\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・子育てサポート割引: みんなドコモ割とは重ねられません（重なったときは計算に入れません）。子育てサポート割引とも同時適用できず、片方を選ぶともう片方は外れます\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
-    c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定タブで変えられます（タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
+    c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定で変えられます（担当者コードの画面から開きます。タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
     c5: { t: "⑤ 端末代金", b: "・支払い方法を選ぶと、必要な入力欄が開きます\n・端末代金総額は<b>頭金を含んだ総額</b>を入れます。分割は「総額 − 店頭頭金」で計算します\n・いつでもカエドキは、残価ではなく<b>「23回分の総額（頭金込み）」</b>を入れます。店頭でご案内する実質額がそのまま入力値になり、残価は自動で逆算されます\n・クーポン値引きなどの値引きは<b>頭金から先に</b>引きます（店頭のお支払いが先に軽くなります）\n・「現在の分割支払金」は、いま支払い中の機種代金を続けて払う場合に入れます。残り回数を入れると、払い終わったあとの金額も月額の推移に出ます\n・端末マスタを取り込んでいる店舗は、機種を選ぶと金額が自動で入ります" },
     c6: { t: "⑥ アクセサリ", b: "・定番商品はタイルをタップして選び、タイルの中で一括／分割を選びます\n・リストにない商品は「＋ アクセサリを追加」から名前と金額を入れます\n・一括のぶんは⑦の店頭お支払いに、分割（12・24・36回）は月額に入ります\n・定番商品の内容はマスタ設定で編集できます" },
     c7: { t: "⑦ 初期費用", b: "・契約事務手数料と店頭頭金は、①の手続き種別から自動で入ります（手で書き換えられます）\n・データ移行サポートなどの項目はチェックで足します\n・「＋ 初期費用の追加項目」は±の金額で自由に足せます（下取りなどの値引きはマイナスで）\n・店頭お支払いの方法（現金・カード・d払い）のチェックは引き継ぎシートに載ります\n・dポイント利用は<b>頭金 → 分割金 → 残価</b>の順に充当します（1pt = 1円）\n・見積書では「店頭でお支払い」と「翌月の携帯料金と合算」に分かれて出ます" },

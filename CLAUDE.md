@@ -82,6 +82,7 @@
    `node tests/run-ienaka-tests.js`（光・5G。統合版と単体版の一致も見る）・
    `node tests/run-master-update-tests.js`（料金表の配信・受付終了・改定予告）・
    `node tests/run-migrate-tests.js`（古い保存データの読み直し）・
+   `node tests/run-wording-tests.js`（案内文が実在しない場所を指していないか）・
    `node tests/run-diag-tests.js`（調子が悪いときの情報・配信元）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、

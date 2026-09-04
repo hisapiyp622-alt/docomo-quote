@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.10.0";
+  var APP_VERSION = "2.10.1";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -443,7 +443,15 @@
     var kojiTotal = koji + optKoji;
     var kojiPt = Math.floor(koji / 24); // 実質0円特典のポイントは回線の新規工事料相当分のみ
     if (kojiTotal > 0 && state.kojiPay === "b24") {
-      timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: Math.floor(kojiTotal / 24), from: 1, to: 24 });
+      /* 24回に割り切れないぶんは初回に寄せる。
+       * 捨ててしまうと、見積書に「総額28,600円」と書いてあるのに
+       * 1,191円 ×24回 ＝28,584円 となって、足しても合わない。 */
+      var kojiM = Math.floor(kojiTotal / 24);
+      var kojiRem = kojiTotal - kojiM * 24;
+      timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: kojiM, from: 1, to: 24 });
+      if (kojiRem > 0) {
+        timed.push({ name: "工事料 分割の端数（初回のみ）", amount: kojiRem, from: 1, to: 1 });
+      }
     }
     if (koji > 0 && state.kojiFree) {
       /* 進呈は「ご利用開始月の7か月後の月から24か月間分割」（＝8か月目〜31か月目）。

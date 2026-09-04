@@ -403,7 +403,15 @@
      *       https://www.docomo.ne.jp/info/notice/page/260423_00.html （2026-07-30 確認） */
     var kojiPt = Math.floor(koji / 24);
     if (kojiTotal > 0 && state.kojiPay === "b24") {
-      timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: Math.floor(kojiTotal / 24), from: 1, to: 24 });
+      /* 24回に割り切れないぶんは初回に寄せる。
+       * 捨ててしまうと、見積書に「総額28,600円」と書いてあるのに
+       * 1,191円 ×24回 ＝28,584円 となって、足しても合わない。 */
+      var kojiM = Math.floor(kojiTotal / 24);
+      var kojiRem = kojiTotal - kojiM * 24;
+      timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: kojiM, from: 1, to: 24 });
+      if (kojiRem > 0) {
+        timed.push({ name: "工事料 分割の端数（初回のみ）", amount: kojiRem, from: 1, to: 1 });
+      }
     }
     if (koji > 0 && state.kojiFree) {
       timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });

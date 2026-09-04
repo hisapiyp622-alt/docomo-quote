@@ -47,6 +47,8 @@ jobs:
         run: node tests/run-master-update-tests.js
       - name: 古い保存データの読み直しのテスト
         run: node tests/run-migrate-tests.js
+      - name: 案内文の確認（実在しない場所へ案内していないか）
+        run: node tests/run-wording-tests.js
       - name: 調子が悪いときの情報（診断）のテスト
         run: node tests/run-diag-tests.js
       - name: 出荷用（独自ドメイン版）の並びの確認

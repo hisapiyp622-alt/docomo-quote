@@ -70,6 +70,7 @@
         <input type="text" id="tplNameInput" maxlength="20" placeholder="テンプレート名">
         <button class="btn-sub" id="tplNameOk" type="button">保存する</button>
         <button class="btn-sub" id="tplNameCancel" type="button">キャンセル</button>
+        <span class="hint warn-hint" id="tplOverwriteNote" hidden></span>
       </span>
       <span class="hint" id="tplMsg"></span>
     </div>
@@ -245,7 +246,7 @@
     <div class="card full c4">
       <h2>④ オプション・サービス <button class="card-help" type="button" data-help="c4" aria-label="この項目の入力のしかた">?</button></h2>
       <div id="optionList"></div>
-      <p class="hint">内容・単価・並び順はマスタ設定タブで自由に変更できます。</p>
+      <p class="hint">内容・単価・並び順はマスタ設定で自由に変更できます（担当者コードの画面から開きます）。</p>
       <div class="adhoc-list" id="adhocMonthlyList"></div>
       <button class="btn-sub" id="addAdhocMonthly" type="button">＋ 月額の追加項目（キャンペーン割引・店舗施策など）</button>
     </div>
@@ -758,7 +759,7 @@
     </div>
   </section>
 
-  <!-- ============ マスタ設定タブ ============ -->
+  <!-- ============ マスタ設定（担当者コードの画面から開く） ============ -->
   <section id="tab-saved" class="tab-page no-print">
     <div class="card">
       <h2>見積もりの保存</h2>

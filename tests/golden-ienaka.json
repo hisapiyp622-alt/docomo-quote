@@ -1,6 +1,6 @@
 {
   "hikari1g_ht_A_shinki": {
-    "monthly": 6911,
+    "monthly": 6927,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -11,6 +11,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6927
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6911
       },
@@ -38,7 +43,7 @@
     ]
   },
   "hikari1g_mansion": {
-    "monthly": 5591,
+    "monthly": 5607,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -49,6 +54,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 5607
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 5591
       },
@@ -76,7 +86,7 @@
     ]
   },
   "hikari1g_typeB": {
-    "monthly": 7131,
+    "monthly": 7147,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -87,6 +97,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 7147
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 7131
       },
@@ -114,7 +129,7 @@
     ]
   },
   "hikari10g": {
-    "monthly": 1691,
+    "monthly": 1707,
     "initial": 11730,
     "koji": 28600,
     "kojiPt": 1191,
@@ -125,6 +140,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 1707
+      },
+      {
+        "from": 2,
         "to": 6,
         "monthly": 1691
       },
@@ -157,7 +177,7 @@
     ]
   },
   "ahamo1g": {
-    "monthly": 6141,
+    "monthly": 6157,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -168,6 +188,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6157
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6141
       },
@@ -195,7 +220,7 @@
     ]
   },
   "ahamo1g_gold": {
-    "monthly": 6141,
+    "monthly": 6157,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -206,6 +231,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6157
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6141
       },
@@ -233,7 +263,7 @@
     ]
   },
   "hikari1g_gold": {
-    "monthly": 6911,
+    "monthly": 6927,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -244,6 +274,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6927
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6911
       },
@@ -271,7 +306,7 @@
     ]
   },
   "hikari1g_gold_apply": {
-    "monthly": 6411,
+    "monthly": 6427,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -282,6 +317,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6427
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6411
       },
@@ -313,7 +353,7 @@
     ]
   },
   "hikari1g_platinum": {
-    "monthly": 6911,
+    "monthly": 6927,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -324,6 +364,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6927
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6911
       },
@@ -351,7 +396,7 @@
     ]
   },
   "hikari1g_platinum_12": {
-    "monthly": 6911,
+    "monthly": 6927,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -362,6 +407,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6927
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6911
       },
@@ -389,7 +439,7 @@
     ]
   },
   "hikari1g_platinum_10_apply": {
-    "monthly": 6411,
+    "monthly": 6427,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -400,6 +450,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6427
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6411
       },
@@ -500,7 +555,7 @@
     ]
   },
   "hikari1g_denwa": {
-    "monthly": 7599,
+    "monthly": 7603,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -511,6 +566,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 7603
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 7599
       },
@@ -542,7 +602,7 @@
     ]
   },
   "hikari1g_norouter": {
-    "monthly": 6911,
+    "monthly": 6927,
     "initial": 4950,
     "koji": 28600,
     "kojiPt": 1191,
@@ -553,6 +613,11 @@
     "segs": [
       {
         "from": 1,
+        "to": 1,
+        "monthly": 6927
+      },
+      {
+        "from": 2,
         "to": 7,
         "monthly": 6911
       },

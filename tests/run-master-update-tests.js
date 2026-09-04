@@ -364,6 +364,82 @@ function chk(name, cond, extra) {
   chk('⑫ 配信から消すと、店舗の料金表からも消える', !revGone.hasRevise, String(revGone.hasRevise));
   chk('⑫ 消したあとは、見積書にも入らない', revGone.notices === 0, String(revGone.notices));
 
+  /* ---- 店内の印が、お客様の見積書に出ていないか ----
+   * お店が料金表を1か所でも直すと基準日に「（編集済み）」が付く。
+   * 店内の印なので、お渡しする紙に出ると誤植のように見える。 */
+  const sheet = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    S.markEdited();
+    S.redraw();
+    return {
+      inside: (document.getElementById('masterUpdated') || {}).textContent || '',
+      sheet: S.sheetHtml()
+    };
+  });
+  chk('⑬ 店内の画面には「（編集済み）」が出る', /（編集済み）/.test(sheet.inside), sheet.inside);
+  chk('⑬ お客様の見積書には「（編集済み）」を出さない',
+    !/（編集済み）/.test(sheet.sheet),
+    (sheet.sheet.match(/料金データ基準日[^｜]*/) || [''])[0]);
+  chk('⑬ 見積書に基準日そのものは出ている',
+    /料金データ基準日/.test(sheet.sheet), sheet.sheet.slice(-120));
+
+  /* ---- 保存まわりの使い勝手（5-3） ---- */
+  const sv = await page.evaluate(([plan]) => {
+    const S = window.__KQ_TEST__.std;
+    const V = window.__KQ_TEST__.saved;
+    V.clear();
+    S.pick('plan', plan);
+    S.redraw();
+    // 名前を付けずに2件保存して、名前が違うものになるか
+    const n1 = V.defaultName();
+    const a = V.save('');
+    const b = V.save('');            // 同じ応対なので上書きされる
+    return { name1: n1, first: a && a.name, same: !!(a && b && a.id === b.id) };
+  }, [PLAN]);
+  chk('⑭ 名前を付けずに保存したときの名前に、日付だけでなく時刻が入る',
+    /\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/.test(sv.name1), sv.name1);
+  chk('⑭ プラン名も入る（何の見積もりか分かる）',
+    sv.name1.length > 16, sv.name1);
+
+  const svCust = await page.evaluate(() => {
+    const V = window.__KQ_TEST__.saved;
+    V.clear();
+    // お客様名を入れて保存 → 一覧に小さく出るか
+    const el = document.getElementById('custName');
+    el.value = 'テスト太郎';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    V.save('なまえ無しの控え');
+    const withName = V.listText();
+    // 他の端末から届いた保存（お客様名は入っていない）は何も出さない
+    V.clear();
+    el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    V.save('よそから来た控え');
+    return { withName: withName, without: V.listText() };
+  });
+  chk('⑭ この端末で作った保存には、お客様名が小さく出る',
+    /テスト太郎 様/.test(svCust.withName), svCust.withName.slice(0, 160));
+  chk('⑭ お客様名の無い保存では、何も出さない',
+    !/様/.test(svCust.without), svCust.without.slice(0, 160));
+
+  const tpl2 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const V = T.saved;
+    const empty = V.tplPrompt(1);       // 空の枠
+    V.tplCancel();
+    T.tplSave(1);                        // 枠を埋める
+    const filled = V.tplPrompt(1);       // 入っている枠
+    V.tplCancel();
+    return { empty: empty, filled: filled };
+  });
+  chk('⑭ 空のテンプレ枠では、置き換えの注意は出ない',
+    !tpl2.empty.note && tpl2.empty.button === '保存する', JSON.stringify(tpl2.empty));
+  chk('⑭ 入っているテンプレ枠では、置き換わることを名前つきで知らせる',
+    /検査用/.test(tpl2.filled.note) && /元には戻せません/.test(tpl2.filled.note),
+    JSON.stringify(tpl2.filled));
+  chk('⑭ ボタンの文字も「置き換える」になる',
+    tpl2.filled.button === '置き換える', tpl2.filled.button);
+
   await browser.close();
   srv.close();
 

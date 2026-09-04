@@ -170,7 +170,10 @@ const HAND = {
    * 58,000 ÷ 23 ＝ 2,521.7 → 毎月 2,521 円、端数 58,000 −2,521×23 ＝17 円は初回。
    * 1〜23か月目 5,698 ＋2,521 ＝8,219。24か月目に返却しない場合の残価
    * 129,800 −58,000 ＝71,800 を24回 → 2,991 円（5,698 ＋2,991 ＝8,689） */
-  device_kaedoki: { seg1: 8219, deviceMonthly: 2521, firstExtra: 17, keep2: 8689 },
+  device_kaedoki: { seg1: 8219, deviceMonthly: 2521, firstExtra: 17, keep2: 8689,
+    // 残価 71,800 を24回に割ると 2,991.67 → 毎月 2,991 円。
+    // 端数 71,800 −2,991×24 ＝16 円は、24か月目（残価の初回）に寄せる
+    deviceAfter: 2991, deviceAfterExtra: 16 },
   /* GOLD の還元は「各種割引のあと」の金額が対象。
    * 5,698 −550 ＝5,148 から U22割 −2,728 → 2,420 が対象 → 2×100pt ＝200pt。
    * 8か月目からは 5,148 → 4×100pt ＝400pt */
@@ -230,6 +233,8 @@ function handDiff(name, got) {
     bakuagePt: got.bakuagePt, pointTotal: got.pointTotal,
     optTotal: got.optTotal, voicePrice: got.voicePrice, firstExtra: got.firstExtra,
     deviceMonthly: (got.device || {}).monthly,
+    deviceAfter: (got.device || {}).after,
+    deviceAfterExtra: (got.device || {}).afterFirstExtra,
     seg1: segs[0] ? segs[0].monthly : undefined,
     seg2: segs[1] ? segs[1].monthly : undefined,
     keep2: segs[1] ? segs[1].keep : undefined
@@ -360,6 +365,23 @@ function serve() {
     process.exit(1);
   }
   console.log('PLATINUM の還元率の欄: 問題なし');
+
+  /* 分割の端数が消えていないか（どのケースでも成り立つはずのこと）。
+   * 見積書には「残価 ◯◯円」と「△△円/月 × 24回」を並べて出すので、
+   * 掛けて足したら残価に戻らないといけない。 */
+  const roundBad = [];
+  for (const [name, r] of Object.entries(results)) {
+    const dv = r.device || {};
+    if (!dv.zanka) continue;
+    const sum = dv.after * 24 + (dv.afterFirstExtra || 0);
+    if (sum !== dv.zanka) {
+      roundBad.push(`  ✗ ${name}: 残価 ${dv.zanka} ≠ ${dv.after}×24 ＋${dv.afterFirstExtra || 0} ＝${sum}`);
+    }
+  }
+  if (roundBad.length) {
+    console.error('残価の割り直しで端数が消えています:\n' + roundBad.join('\n'));
+    process.exit(1);
+  }
 
   /* 手計算の期待値との突き合わせ（4-8・4-36）。
    * golden.json を作り直しても、ここは人が書いた数字のまま残る。 */
