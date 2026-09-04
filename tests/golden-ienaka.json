@@ -531,6 +531,75 @@
       }
     ]
   },
+  "typec_kcn_mansion": {
+    "monthly": 4400,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 4400,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 4400
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（マンション・転用（タイプC））",
+        "amount": 4400
+      }
+    ]
+  },
+  "typec_baycom_mansion": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（戸建・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
+  "typec_kcn_kodate": {
+    "monthly": 5720,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 5720,
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5720
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ タイプC（戸建・転用（タイプC））",
+        "amount": 5720
+      }
+    ]
+  },
   "typec_coax_koji": {
     "monthly": 5720,
     "initial": 15950,

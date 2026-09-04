@@ -215,6 +215,10 @@
        * typecKoji はその工事料（同社の案内額。わかるときだけ入れる・初期費用に載る） */
       typecLine: "hikari", typecKoji: null,
       curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング・奪還比較の入口）
+      /* その他コラボ光・その他を選んだときの、お店の手書き（2026-09-04）。
+       * 会社名は curLineOther、解約のご連絡先は curLineTel。
+       * どちらも「開通までの流れ」にそのまま載る。 */
+      curLineTel: "",
       /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
        * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
       curPhone: "", curTv: "", curTvDigi: false, curTvBs: false, curTvCs: false, curTvKeep: false,
@@ -227,9 +231,17 @@
   function applyDefaults() {
     if (!state) return;
     var p = PRODUCTS[state.product];
-    /* タイプCはマンションタイプの提供がない（提携ケーブルテレビの提供条件）。
-     * 料金を引く前に戸建へ寄せる（マンションのまま引くと金額がずれる） */
-    if (p.typec && state.housing !== "ht") state.housing = "ht";
+    /* タイプCでマンションが使えるかは、ケーブルテレビ会社によって違う
+     * （関西では KCN・KCN京都・テレビ岸和田 のみ使える）。
+     * 使えない会社のときは、料金を引く前に戸建へ寄せる
+     * （マンションのまま引くと、1,320円/月 安い金額が出てしまう）。
+     * ただし黙って直すだけだと、お店は「マンションでも申し込める」と思ったままになる。
+     * 直したことを覚えておいて、画面で知らせる（下の typecMsBlocked）。 */
+    typecMsBlocked = false;
+    if (p.typec && !typecMansionOk() && state.housing !== "ht") {
+      state.housing = "ht";
+      typecMsBlocked = true;
+    }
     if (state.product === "home5g") {
       state.baseMonthly = p.monthly;
       state.kojiFee = 0; state.kojiFree = false;
@@ -647,9 +659,10 @@
   function syncForm() {
     if (!state) return;
     $("ieProduct").value = state.product;
-    /* タイプC: 関西の提携ケーブルテレビはマンションタイプを提供していない
-     * （店舗の共有・2026-08-29）。住居タイプは戸建だけにする。 */
-    var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec);
+    /* タイプCでマンションが使えるかは、ケーブルテレビ会社ごとに違う。
+     * 使える会社（KCN・KCN京都・テレビ岸和田）を選んでいるときだけ、
+     * マンションも選べるようにする。それ以外は戸建だけにする。 */
+    var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec) && !typecMansionOk();
     if (isCms && state.housing !== "ht") state.housing = "ht";
     Array.prototype.forEach.call($("ieHousing").options, function (o) {
       if (o.value !== "ht") { o.disabled = isCms; o.hidden = isCms; }
@@ -695,8 +708,15 @@
         o.hidden = curLineHidden(c.id) && c.id !== state.curLine;
       });
       clSel.value = state.curLine || "";
-      $("ieCurLineOtherField").hidden = state.curLine !== "other";
+      /* 会社名の手書きは「その他」と「その他コラボ光」で出す。
+       * コラボ光は会社が何百社もあり、一覧に並べきれないため（2026-09-04 店舗の指定）。 */
+      var freeLine = state.curLine === "other" || state.curLine === "collabo";
+      $("ieCurLineOtherField").hidden = !freeLine;
+      $("ieCurLineOtherLabel").textContent =
+        state.curLine === "collabo" ? "コラボ光の会社名" : "回線名（その他）";
       $("ieCurLineOther").value = state.curLineOther || "";
+      $("ieCurLineTelField").hidden = !freeLine;
+      $("ieCurLineTel").value = state.curLineTel || "";
       var clh = $("ieCurLineHint");
       var cd = curLineDef();
       if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
@@ -710,6 +730,29 @@
             + "ドコモ光は<u>新規のお申し込み（工事あり）</u>になります</strong>");
           if (state.applyType === "kirikae") {
             hp.push('<strong style="color:var(--red)">いまの申込種別は「転用（タイプC）」です。「新規」に直してください</strong>');
+          }
+        }
+        /* タイプCがマンションで使えない会社を、マンションのお客様に案内していないか。
+         * ここを見落とすと、そもそも申し込めないものを提示してしまう。 */
+        var typecOn = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec);
+        if (cd.catv && !cd.catvNg && typecOn
+            && (typecMsBlocked || state.housing !== "ht")) {
+          if (cd.mansion === true) {
+            hp.push("マンション（集合住宅）でもタイプCをお使いいただけます"
+              + "（建物の設備によっては使えない場合があります）");
+          } else if (cd.mansion === false) {
+            hp.push('<strong style="color:var(--red)">⚠ '
+              + esc(cd.name) + 'のタイプCは<u>戸建てのみ</u>です。'
+              + "マンションでは転用（タイプC）はできず、"
+              + "ドコモ光は<u>新規のお申し込み（工事あり）</u>になります</strong>");
+            if (state.applyType === "kirikae") {
+              hp.push('<strong style="color:var(--red)">いまの申込種別は「転用（タイプC）」です。'
+                + "「新規」に直してください</strong>");
+            }
+          } else {
+            hp.push('<strong style="color:var(--red)">⚠ '
+              + esc(cd.name) + "のタイプCがマンションで使えるかは未確認です。"
+              + "お申し込み前に各社へご確認ください</strong>");
           }
         }
         if ((cd.catv || cd.optIn) && (cd.area || (cd.prefs || []).length)) {
@@ -1003,6 +1046,7 @@
     }
     $("ieCurLine").addEventListener("change", function () { state.curLine = this.value; syncForm(); recalc(); });
     $("ieCurLineOther").addEventListener("input", function () { state.curLineOther = this.value; recalc(); });
+    $("ieCurLineTel").addEventListener("input", function () { state.curLineTel = this.value; recalc(); });
     $("ieCurPhone").addEventListener("change", function () { state.curPhone = this.value; recalc(); });
     $("ieCurTv").addEventListener("change", function () { state.curTv = this.value; syncForm(); recalc(); });
     [["ieCurTvDigi", "curTvDigi"], ["ieCurTvBs", "curTvBs"], ["ieCurTvCs", "curTvCs"]].forEach(function (pr) {
@@ -1143,19 +1187,29 @@
    *   catvShow:  ["baycom", "katch"]  … 出す会社のID（下の id）
    *   catvPrefs: ["大阪", "兵庫"]      … その県で提供している会社をまとめて出す
    * ZTVは従来どおり既定で出す（出したくない店舗は curLinesHide に "ztv"）。
-   * 会社を増やすときは、必ず公式の提携CATV一覧で確認してからここに足す。 */
+   * 会社を増やすときは、必ず公式の提携CATV一覧で確認してからここに足す。
+   *
+   * mansion … その会社のタイプCがマンション（集合住宅）でも使えるか。
+   *   true=使える／false=戸建てのみ／書いていない=未確認（安全側に倒して戸建て扱い）。
+   *   関西で使えるのは KCN・KCN京都・テレビ岸和田 の3社（2026-09-04 店舗の確認）。
+   *   ここを間違えると、マンションのお客様に戸建ての金額（＋1,320円/月）を
+   *   出してしまうので、必ず各社の公式で確かめてから直すこと。 */
   var CATV_LINES = [
-    { id: "ztv", name: "ZTV", prefs: ["三重", "滋賀", "京都", "和歌山"],
+    { id: "ztv", name: "ZTV", prefs: ["三重", "滋賀", "京都", "和歌山"], mansion: false,
       area: "三重県津市、松阪市（旧嬉野町）、亀山市、伊勢市、鳥羽市、志摩市（旧磯部町）、尾鷲市、熊野市、度会町、玉城町、南伊勢町、紀北町、御浜町、紀宝町／滋賀県彦根市、長浜市、米原市（一部エリア不可）、大津市、草津市、守山市、栗東市、野洲市、湖南市、近江八幡市、竜王町／和歌山県新宮市、田辺市（旧本宮町）、那智勝浦町、太地町、古座川町、串本町、北山村、日高町、由良町、日高川町／京都府京都市西京区（大枝・御陵・大原野）、亀岡市、京丹波町",
       cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
-    { id: "kcnkyoto", name: "KCN京都", prefs: ["京都"],
+    { id: "kcn", name: "KCN（近鉄ケーブルネットワーク）", prefs: ["奈良", "大阪"], mansion: true,
+      area: "奈良県奈良市、生駒市、天理市、生駒郡、香芝市、大和郡山市、大和高田市、葛城市、桜井市、北葛城郡、橿原市、磯城郡、高市郡、御所市、五條市／大阪府四條畷市（一部のみ）",
+      cancel: "タイプCへ切り替える場合、先にKCNで「CATV受付番号」を発行してもらってからお申し込みください。ネットの解約手続きは不要です。テレビ・お電話はKCNのご契約のまま続きます" },
+    { id: "kcnkyoto", name: "KCN京都", prefs: ["京都"], mansion: true,
       area: "京都府相楽郡精華町、笠置町、南山城村、木津川市、京田辺市、城陽市、宇治市、久世郡久御山町の一部" },
-    { id: "komadori", name: "こまどりケーブル", prefs: ["奈良"],
+    { id: "komadori", name: "こまどりケーブル", prefs: ["奈良"], mansion: false,
       area: "奈良県宇陀市、大淀町、上北山村、川上村、黒滝村、五條市（西吉野・大塔・生子町）、下市町、下北山村、曽爾村、天川村、十津川村、奈良市（旧月ケ瀬村・旧都祁村）、野迫川村、東吉野村、御杖村、山添村、吉野町" },
-    { id: "kisiwada", name: "テレビ岸和田", prefs: ["大阪"],
+    { id: "kisiwada", name: "テレビ岸和田", prefs: ["大阪"], mansion: true,
       area: "大阪府岸和田市、泉北郡忠岡町" },
-    { id: "baycom", name: "ベイ・コミュニケーションズ", prefs: ["大阪", "兵庫"],
-      area: "大阪府大阪市福島区、西淀川区、港区、大正区、此花区、西区、浪速区、西成区、住之江区、北区・中央区の一部／兵庫県尼崎市、西宮市、伊丹市" },
+    { id: "baycom", name: "ベイ・コミュニケーションズ", prefs: ["大阪", "兵庫"], mansion: false,
+      area: "大阪府大阪市福島区、西淀川区、港区、大正区、此花区、西区、浪速区、西成区、住之江区、北区・中央区の一部／兵庫県尼崎市、西宮市、伊丹市",
+      cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割り）。テレビ・お電話はベイコムのご契約のまま続き、ベイコム側に「ドコモ光タイプC向け割引」が付きます。※転用と同時にテレビ等も解約すると、そのぶんの違約金（1か月分）がかかります" },
     { id: "ccnet", name: "CCNet", prefs: ["岐阜", "愛知", "三重"],
       area: "三重県川越町、朝日町、桑名市多度町／愛知県春日井市、小牧市、犬山市、扶桑町、大口町、名古屋市緑区、豊明市、日進市、東郷町、豊川市／岐阜県各務原市、美濃加茂市、川辺町、八百津町、白川町、養老町、本巣市" },
     { id: "goolight", name: "Goolight", prefs: ["長野"],
@@ -1340,19 +1394,24 @@
   var CUR_LINES = [
     { id: "", name: "（未ヒアリング）" },
     { id: "none", name: "利用なし（固定回線なし）" },
-    { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
     { id: "eo", name: "eo光", tel: "0120-919-151", telNote: "eoサポートダイヤル" },
-    { id: "nuro", name: "NURO光" },
+    { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
+  ].concat(CATV_LINES, CATV_NG_LINES, [
     /* jgTel は事業者変更承諾番号の専用窓口。解約の窓口（tel）とは別 */
     { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料",
       jgTel: "0800-111-6710", jgTelNote: "事業者変更承諾番号 専用窓口" },
     { id: "biglobe", name: "BIGLOBE光", tel: "0120-86-0962", telNote: "ビッグローブ カスタマーサポート・ガイダンスは ②→⑤ と入力" },
     { id: "ocn", name: "OCN光", tel: "0120-506-506", telNote: "OCNカスタマーズフロント・日祝は休み" },
     { id: "collabo", name: "その他コラボ光（So-net光・@nifty光 など）" },
+    { id: "nuro", name: "NURO光" },
     { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
-    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
-    { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
-    { id: "rakuten", name: "楽天ひかり" },
+    /* auひかり・楽天ひかりは、ふだんのご来店ではほとんど出てこないため
+     * 既定では選択肢に出さない（2026-09-04 店舗の指定）。
+     * 扱う店舗には、契約の器の features で curLinesShow: ["auhikari", "rakuten"]
+     * を入れて出す。すでに選んである見積もりでは、設定に関係なく残る。 */
+    { id: "auhikari", name: "auひかり", optIn: true,
+      cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
+    { id: "rakuten", name: "楽天ひかり", optIn: true },
     /* コミュファ光（中部テレコミュニケーション・中部電力系）。フレッツ光の
      * コラボではない独自回線なので、ドコモ光へは転用・事業者変更ができず
      * 「新規」扱い（工事が必要）。解約金・工事費の残債にも注意。
@@ -1363,18 +1422,18 @@
       prefs: ["愛知", "岐阜", "三重", "静岡", "長野"],
       tel: "0120-218-919",
       telNote: "コミュファ コンタクトセンター・10:00〜18:00 年中無休。回線解約は固定電話から 1-3／携帯から 2-1-3",
-      cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" }
-  ].concat(CATV_LINES, CATV_NG_LINES, [
+      cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" },
+    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
+    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     /* 「ケーブルテレビのネット」は 1.140.2 で選択肢から外した（タイプCの提携会社を
      * 会社名で選ぶようにしたため）。過去の見積もりで選んである場合だけ表示に残す。 */
     { id: "cable", name: "ケーブルテレビのネット", retired: true },
-    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     { id: "other", name: "その他" }
   ]);
   var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
   /* 店舗ごとの表示調整（契約の器の features に販売側が書く）:
    *   curLinesHide: ["jcom", "cable", ...]  … その店舗では出さない現在回線
-   *   curLinesShow: ["commufa"]              … 既定では出さない回線を出す（optIn の回線）
+   *   curLinesShow: ["commufa", "auhikari", "rakuten"]              … 既定では出さない回線を出す（optIn の回線）
    *   curLinePrefs: ["愛知", "岐阜"]         … その県で提供している回線をまとめて出す
    *   curLineNames: { ztv: "ZTV" }           … 表示名の置き換え
    *   catvShow / catvPrefs                   … タイプCの提携ケーブルテレビ会社を出す
@@ -1415,6 +1474,16 @@
     if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
     var prefs = featVal("curLinePrefs");
     return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
+  /* いま選んでいるケーブルテレビ会社のタイプCが、マンションでも使えるか。
+   * 会社が選ばれていない・未確認のときは false（戸建て扱い）にして、
+   * 安いほうの金額をうっかり出さないようにする。 */
+  /* マンションのご希望を、戸建てへ直したかどうか（直前の applyDefaults の結果）。
+   * 画面の注意書きを出すために使う。保存には残さない。 */
+  var typecMsBlocked = false;
+  function typecMansionOk() {
+    var cd = curLineById(state && state.curLine);
+    return !!(cd && cd.mansion === true);
   }
   function curLineHidden(id) {
     var h = featVal("curLinesHide");
@@ -1462,7 +1531,13 @@
   function curLineLabel() {
     var d = curLineDef();
     if (!d) return "";
-    return d.id === "other" ? (state.curLineOther || "その他") : curLineName(d);
+    if (d.id === "other") return state.curLineOther || "その他";
+    /* その他コラボ光は、書いてもらった会社名を括弧で添える
+     * （「その他コラボ光（○○光）」の形。書いていなければそのまま） */
+    if (d.id === "collabo" && String(state.curLineOther || "").trim()) {
+      return curLineName(d) + "（" + String(state.curLineOther).trim() + "）";
+    }
+    return curLineName(d);
   }
 
   /* ---------- 開通までの流れ（見積書のお客様説明用） ----------
@@ -1601,9 +1676,14 @@
         var jcKeep = cl.id === "jcom" && state.curTvKeep;
         step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "**（ネットのみ）**" : ""),
           "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
-        noteTo("の解約", cl.tel
-          ? "解約のご連絡先: " + curLineName(cl) + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
-          : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
+        /* お店が手書きした解約のご連絡先があれば、それを最優先で出す
+         * （その他コラボ光は会社が多く、一覧に持てないため・2026-09-04） */
+        var handTel = String(state.curLineTel || "").trim();
+        noteTo("の解約", handTel
+          ? "解約のご連絡先: " + curLineLabel() + " " + handTel
+          : cl.tel
+            ? "解約のご連絡先: " + curLineName(cl) + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
+            : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
         /* J:COMはテレビ・お電話を残したままネットだけ乗り換えるご案内がある。
          * まとめて解約されると事故になるため、連絡時の言い方を必ず載せる。 */
         if (cl.id === "jcom") {
@@ -1915,6 +1995,29 @@
    * 画面には触らないので、開いている見積もりは変わらない。 */
   window.__IE_TEST__ = {
     version: "integrated",
+    /* 画面に出る「現在のご利用回線」の注意書きを読む（2026-09-04）。
+     * run() は金額を出すだけで画面を描き直さないので、こちらを使う。
+     * 見終わったら元の内容に戻す。 */
+    hintFor: function (patch) {
+      var keep = JSON.parse(JSON.stringify(state));
+      function put(src) {
+        Object.keys(state).forEach(function (k) { delete state[k]; });
+        Object.keys(src).forEach(function (k) { state[k] = src[k]; });
+        applyDefaults(); syncForm(); render();
+      }
+      var d = defaultState();
+      Object.keys(patch || {}).forEach(function (k) { d[k] = patch[k]; });
+      put(d);
+      var el = document.getElementById("ieCurLineHint");
+      var sel = document.getElementById("ieCurLine");
+      var opts = {};
+      if (sel) {
+        Array.prototype.forEach.call(sel.options, function (o) { opts[o.value] = !o.hidden; });
+      }
+      var out = { hidden: !el || el.hidden, text: el ? el.innerText : "", options: opts };
+      put(keep);
+      return out;
+    },
     run: function (patch) {
       var keep = JSON.parse(JSON.stringify(state));
       var d = defaultState();

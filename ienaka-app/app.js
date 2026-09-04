@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.10.1";
+  var APP_VERSION = "2.11.0";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -539,19 +539,24 @@
   var CUR_LINES = [
     { id: "", name: "（未ヒアリング）" },
     { id: "none", name: "利用なし（固定回線なし）" },
-    { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
     { id: "eo", name: "eo光", tel: "0120-919-151", telNote: "eoサポートダイヤル" },
-    { id: "nuro", name: "NURO光" },
+    { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
+    { id: "ztv", name: "ZTV", cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
     /* jgTel は事業者変更承諾番号の専用窓口。解約の窓口（tel）とは別 */
     { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料",
       jgTel: "0800-111-6710", jgTelNote: "事業者変更承諾番号 専用窓口" },
     { id: "biglobe", name: "BIGLOBE光", tel: "0120-86-0962", telNote: "ビッグローブ カスタマーサポート・ガイダンスは ②→⑤ と入力" },
     { id: "ocn", name: "OCN光", tel: "0120-506-506", telNote: "OCNカスタマーズフロント・日祝は休み" },
     { id: "collabo", name: "その他コラボ光（So-net光・@nifty光 など）" },
+    { id: "nuro", name: "NURO光" },
     { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
-    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
-    { id: "auhikari", name: "auひかり", cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
-    { id: "rakuten", name: "楽天ひかり" },
+    /* auひかり・楽天ひかりは、ふだんのご来店ではほとんど出てこないため
+     * 既定では選択肢に出さない（2026-09-04 店舗の指定）。
+     * 扱う店舗には、契約の器の features で curLinesShow: ["auhikari", "rakuten"]
+     * を入れて出す。すでに選んである見積もりでは、設定に関係なく残る。 */
+    { id: "auhikari", name: "auひかり", optIn: true,
+      cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
+    { id: "rakuten", name: "楽天ひかり", optIn: true },
     /* コミュファ光（中部テレコミュニケーション・中部電力系）。フレッツ光の
      * コラボではない独自回線なので、ドコモ光へは転用・事業者変更ができず
      * 「新規」扱い（工事が必要）。解約金・工事費の残債にも注意。
@@ -563,11 +568,11 @@
       tel: "0120-218-919",
       telNote: "コミュファ コンタクトセンター・10:00〜18:00 年中無休。回線解約は固定電話から 1-3／携帯から 2-1-3",
       cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" },
-    { id: "ztv", name: "ZTV", cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます" },
+    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
+    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     /* 「ケーブルテレビのネット」は選択肢から外した（タイプCは会社名で選ぶため）。
      * 過去の見積もりで選んである場合だけ表示に残す。 */
     { id: "cable", name: "ケーブルテレビのネット", retired: true },
-    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
     { id: "other", name: "その他" }
   ];
   var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };

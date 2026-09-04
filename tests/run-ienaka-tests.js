@@ -43,6 +43,16 @@ const CASES = {
   'hikari1g_platinum_10_apply': { dcard: 'platinum', dcardPlatRate: 10, dcardApply: true },
   'home5g': { product: 'home5g' },
   'typec_hikari': { product: 'hikari1g', applyType: 'kirikae' },
+  /* タイプCでマンションが使えるかは、ケーブルテレビ会社ごとに違う（2026-09-04）。
+   * 関西で使えるのは KCN・KCN京都・テレビ岸和田 の3社だけ。
+   * ・KCN でマンション … マンションの金額 4,400円が出る
+   * ・ベイコムでマンション … 戸建てへ寄せて 5,720円になる（間違って安く出さない） */
+  'typec_kcn_mansion': { product: 'hikaric', applyType: 'kirikae',
+    housing: 'ms', curLine: 'kcn' },
+  'typec_baycom_mansion': { product: 'hikaric', applyType: 'kirikae',
+    housing: 'ms', curLine: 'baycom' },
+  'typec_kcn_kodate': { product: 'hikaric', applyType: 'kirikae',
+    housing: 'ht', curLine: 'kcn' },
   'typec_coax_koji': { product: 'hikari1g', applyType: 'kirikae', typecLine: 'coax', typecKoji: 11000 },
   'hikari1g_denwa': { opts: { denwa: true } },
   'hikari1g_norouter': { routerRental: 'nashi' },
@@ -130,6 +140,63 @@ async function runOn(page, url, port) {
   }
   await rateCheck('#dcard', '#platRate', '#platRateHint');
 
+  /* タイプCがマンションで使えない会社を選んだとき、画面で止まるか（2026-09-04）。
+   * 金額が戸建てに寄るだけだと、お店は気づかずに申し込んでしまう。
+   * ここは統合版（ケータイの光・5Gタブ）にしかない機能なので、そちらで見る。 */
+  const msBad = [];
+  {
+    const p2 = await ctx.newPage();
+    await runOn(p2, '/keitai-app/?kqtest=1', port);
+    const pick = (patch) => p2.evaluate((x) => window.__IE_TEST__.hintFor(x), patch);
+    const baycomMs = await pick({ product: 'hikaric', applyType: 'kirikae',
+      housing: 'ms', curLine: 'baycom' });
+    if (!/戸建てのみ/.test(baycomMs.text)) {
+      msBad.push('ベイコム×マンションで「戸建てのみ」の注意が出ない: ' + baycomMs.text.slice(0, 120));
+    }
+    if (!/新規/.test(baycomMs.text)) {
+      msBad.push('「新規になる」の案内が出ない: ' + baycomMs.text.slice(0, 120));
+    }
+    const kcnMs = await pick({ product: 'hikaric', applyType: 'kirikae',
+      housing: 'ms', curLine: 'kcn' });
+    if (/戸建てのみ/.test(kcnMs.text)) {
+      msBad.push('KCN×マンションで、出てはいけない注意が出ている: ' + kcnMs.text.slice(0, 120));
+    }
+    const baycomHt = await pick({ product: 'hikaric', applyType: 'kirikae',
+      housing: 'ht', curLine: 'baycom' });
+    if (/戸建てのみ/.test(baycomHt.text)) {
+      msBad.push('ベイコム×戸建てで、出てはいけない注意が出ている: ' + baycomHt.text.slice(0, 120));
+    }
+    await p2.close();
+  }
+
+  /* 既定では出さない回線（2026-09-04 店舗の指定）。
+   * auひかり・楽天ひかりは、ふだんのご来店ではほとんど出てこないので選択肢から外す。
+   * 扱う店舗だけ、契約の器の features（curLinesShow）で出す。
+   * すでに選んである見積もりでは、設定に関係なく残ること（記録が黙って消えない）。 */
+  const optBad = [];
+  {
+    const p3 = await ctx.newPage();
+    await runOn(p3, '/keitai-app/?kqtest=1', port);
+    const now = (await p3.evaluate(() => window.__IE_TEST__.hintFor({}))).options;
+    ['auhikari', 'rakuten'].forEach((id) => {
+      if (now[id]) optBad.push(`${id} が既定で選択肢に出ています`);
+    });
+    // ふだん使う回線は今までどおり出ていること
+    ['jcom', 'eo', 'sbhikari', 'flets', 'none'].forEach((id) => {
+      if (!now[id]) optBad.push(`${id} が選択肢から消えています（出したままにするもの）`);
+    });
+    // すでに選んである見積もりでは残る
+    const picked = (await p3.evaluate(
+      () => window.__IE_TEST__.hintFor({ curLine: 'auhikari' }))).options.auhikari;
+    if (!picked) optBad.push('auひかりを選んである見積もりで、選択肢から消えてしまいます');
+    await p3.close();
+  }
+  if (optBad.length) {
+    console.error('既定で出さない回線の設定に問題があります:\n  ✗ ' + optBad.join('\n  ✗ '));
+    process.exit(1);
+  }
+  console.log('既定で出さない回線（auひかり・楽天ひかり）: 問題なし');
+
   await browser.close();
   srv.close();
 
@@ -138,9 +205,14 @@ async function runOn(page, url, port) {
     process.exit(1);
   }
 
-  // 統合版と単体版のズレ（同じ計算のはず）
+  /* 統合版と単体版のズレ（同じ計算のはず）。
+   * ただし「現在のご利用回線」のケーブルテレビ会社の一覧は、ケータイ見積もりの
+   * 光・5Gタブ（統合版）にしかない機能なので、それを使うケースは比べない。
+   * 単体版は出荷していない（阪南の社内版の生成元として残しているだけ）。 */
+  const INTEGRATED_ONLY = ['typec_kcn_mansion', 'typec_baycom_mansion', 'typec_kcn_kodate'];
   const diffs = [];
   for (const name of Object.keys(CASES)) {
+    if (INTEGRATED_ONLY.indexOf(name) >= 0) continue;
     const a = JSON.stringify(integrated[name]);
     const b = JSON.stringify(standalone[name]);
     if (a !== b) diffs.push({ name, a, b });
@@ -161,13 +233,20 @@ async function runOn(page, url, port) {
     if (JSON.stringify(golden[name]) === JSON.stringify(integrated[name])) ok++;
     else bad.push({ name, want: golden[name], got: integrated[name] });
   }
+
+  if (msBad.length) {
+    console.error('タイプCのマンション可否の案内に問題があります:\n  ✗ ' + msBad.join('\n  ✗ '));
+    process.exit(1);
+  }
+  console.log('タイプCのマンション可否の案内: 問題なし');
   if (uiBad.length) {
     console.error('PLATINUM の還元率の欄に問題があります:\n  ✗ ' + uiBad.join('\n  ✗ '));
     process.exit(1);
   }
   console.log('PLATINUM の還元率の欄: 問題なし');
   console.log(`光・5Gの金額テスト: ${ok}/${Object.keys(CASES).length} OK`
-    + `（統合版と単体版の一致: ${Object.keys(CASES).length - diffs.length}/${Object.keys(CASES).length}）`);
+    + `（統合版と単体版の一致: ${Object.keys(CASES).length - INTEGRATED_ONLY.length - diffs.length}`
+    + `/${Object.keys(CASES).length - INTEGRATED_ONLY.length}）`);
   bad.forEach((b) => {
     console.error('✗ ' + b.name + '\n    期待: ' + JSON.stringify(b.want && b.want.segs)
       + '\n    実際: ' + JSON.stringify(b.got && b.got.segs));
