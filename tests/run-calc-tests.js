@@ -114,8 +114,24 @@ const CASES = {
     pointApply: true, dcardGoldAuto: true },
   'device_kaedoki_atamakin': { planId: 'max', payMethod: 'kaedoki', devicePrice: 129800,
     kaedoki23: 58000, atamakin: 11000, deviceName: 'テスト機' },
+  /* 爆アゲ セレクション。公式のポイント数（2026-09-04 確認）をそのまま手計算に置く。
+   * https://ssw.web.docomo.ne.jp/bakuage/
+   * Netflix は同じサービスでも、広告つきスタンダード（890円）だけ率が違う。 */
   'bakuage_netflix': { planId: 'max', options: { netflix: true }, optionKubun: { netflix: 'new' } },
+  'bakuage_netflix_std': { planId: 'max', options: { netflix: true },
+    optionKubun: { netflix: 'new' }, optionPrices: { netflix: 1590 } },
+  'bakuage_netflix_prem': { planId: 'max', options: { netflix: true },
+    optionKubun: { netflix: 'new' }, optionPrices: { netflix: 2290 } },
   'bakuage_std_plan': { planId: 'poikatsu_20', options: { netflix: true }, optionKubun: { netflix: 'new' } },
+  'bakuage_std_prem': { planId: 'poikatsu_20', options: { netflix: true },
+    optionKubun: { netflix: 'new' }, optionPrices: { netflix: 2290 } },
+  'bakuage_disney': { planId: 'max', options: { bk_disney: true }, optionKubun: { bk_disney: 'new' } },
+  'bakuage_googleone': { planId: 'max', options: { bk_googleone: true },
+    optionKubun: { bk_googleone: 'new' }, optionPrices: { bk_googleone: 1450 } },
+  'bakuage_appleone': { planId: 'max', options: { bk_appleone: true },
+    optionKubun: { bk_appleone: 'new' }, optionPrices: { bk_appleone: 1980 } },
+  'bakuage_appleone_std': { planId: 'poikatsu_20', options: { bk_appleone: true },
+    optionKubun: { bk_appleone: 'new' }, optionPrices: { bk_appleone: 1980 } },
   'maxbonus_two': { planId: 'max', options: { bk_lemino: true, bk_danime: true },
     optionKubun: { bk_lemino: 'new', bk_danime: 'new' } },
   'maxbonus_three': { planId: 'max', options: { bk_lemino: true, bk_danime: true, dazn: true },
@@ -203,16 +219,32 @@ const HAND = {
    * 24か月目に返却しない場合の残価 129,800 −58,000 ＝71,800 ÷24 ＝2,991 → 8,689 */
   device_kaedoki_atamakin: { initial: 11000, bill: 0, seg1: 7741,
     deviceMonthly: 2043, firstExtra: 11, keep2: 8689 },
-  /* Netflix 890 を ポイ活20 で。ポイ活20 は「MAX 系ではない」区分なので還元は 10%。
-   * 890 ÷1.1 ＝809.09（税抜）→ 809.09 ×10% ＝80.9 → 切り上げ 81pt。
-   * 月額は ポイ活20 7,898 ＋890 ＝8,788 */
+  /* ---- 爆アゲ セレクション（2026-09-04 に公式で確認した進呈ポイント）----
+   * https://ssw.web.docomo.ne.jp/bakuage/
+   * 計算は「税抜（税込÷1.1）× 還元率、小数切り上げ」。公式の掲載ポイントと一致する。
+   *
+   * ドコモMAX・ポイ活MAX:
+   *   Netflix プレミアム 2,290 → 20% … 2,290÷1.1＝2,081.81 ×20%＝416.36 → 417pt
+   *   Netflix スタンダード 1,590 → 20% … 1,445.45 ×20%＝289.09 → 290pt
+   *   Netflix 広告つき 890 → ★15%★ … 809.09 ×15%＝121.36 → 122pt
+   *   ディズニープラス スタンダード 1,250 → 20% … 1,136.36 ×20%＝227.27 → 228pt
+   *   Google One 2TB 1,450 → 20% … 1,318.18 ×20%＝263.63 → 264pt
+   *   Apple One ファミリー 1,980 → 10% … 1,800 ×10%＝180 → 180pt
+   * ポイ活20・ahamo・eximo・ギガホ:
+   *   Netflix 広告つき 890 → 10% … 809.09 ×10%＝80.9 → 81pt
+   *   Netflix プレミアム 2,290 → 10% … 2,081.81 ×10%＝208.18 → 209pt
+   *   Apple One ファミリー 1,980 → 5% … 1,800 ×5%＝90 → 90pt
+   *
+   * 月額は プラン ＋ そのサービスの料金（MAX 5,698／ポイ活20 7,898）。 */
+  bakuage_netflix: { seg1: 6588, optTotal: 890, bakuagePt: 122 },
+  bakuage_netflix_std: { seg1: 7288, optTotal: 1590, bakuagePt: 290 },
+  bakuage_netflix_prem: { seg1: 7988, optTotal: 2290, bakuagePt: 417 },
   bakuage_std_plan: { seg1: 8788, optTotal: 890, bakuagePt: 81 },
-  /* Netflix 890 を MAX で。月額は 5,698 ＋890 ＝6,588。
-   * ※還元ポイントは HAND に入れていない。data.js の注記が
-   *   「MAX系20%（広告つきは15%）」となっているのに、アプリは料金の選び方に
-   *   かかわらず 20% で計算している（890 → 162pt。15% なら 122pt）。
-   *   どちらが正しいかは公式での確認待ち。金額そのものは golden.json が見張る */
-  bakuage_netflix: { seg1: 6588, optTotal: 890 },
+  bakuage_std_prem: { seg1: 10188, optTotal: 2290, bakuagePt: 209 },
+  bakuage_disney: { seg1: 6948, optTotal: 1250, bakuagePt: 228 },
+  bakuage_googleone: { seg1: 7148, optTotal: 1450, bakuagePt: 264 },
+  bakuage_appleone: { seg1: 7678, optTotal: 1980, bakuagePt: 180 },
+  bakuage_appleone_std: { seg1: 9878, optTotal: 1980, bakuagePt: 90 },
   /* MAX の「選べる特典」は毎月2つまで0円。
    * Leminoプレミアム 1,540 ＋dアニメストア 660 の2つなら、どちらも0円 →
    * オプション合計 0・月額は 5,698 のまま。0円のものは還元の対象外なので 0pt */

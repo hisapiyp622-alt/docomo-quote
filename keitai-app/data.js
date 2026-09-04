@@ -21,6 +21,16 @@
  *   ・受付が再開したら retiredFrom を消す。次の更新で店舗からも消えます。
  *   ・書ける場所: plans / voiceOptions / options / feeItems / campaigns
  *   ・終了を配るときも masterVersion を +1 する（上げないと誰にも届きません）。
+ * ★ 金額（コース）ごとに還元率が違うサービス（1.157.0〜）
+ *   同じサービスでも、選んだ料金コースで爆アゲ セレクションの還元率が違うことがある。
+ *   そのときは bakuageByPrice（MAX系）・bakuage2ByPrice（その他）に
+ *   「金額: 率」を書く。書いていないコースは bakuage / bakuage2 の率になる。
+ *
+ *     "bakuage": 20, "bakuage2": 10,
+ *     "bakuageByPrice": { "890": 15 }
+ *
+ *   出典: https://ssw.web.docomo.ne.jp/bakuage/
+ *
  * ★ 料金改定の予告の伝えかた（1.155.0〜・製品化レビュー 5-2）
  *   先の改定が決まっているものには revise を付けてください。
  *   その項目を選んでいる見積書に、「今後の料金改定のお知らせ」として
@@ -37,7 +47,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 10,
+  "masterVersion": 11,
   "updated": "2026-09-04",
   "fees": {
     "jimu_shinki": 4950,
@@ -723,7 +733,10 @@ const DEFAULT_DATA = {
       "note": "広告つきスタンダード890円／スタンダード1,590円／プレミアム2,290円・爆アゲはMAX系20%（広告つきは15%）／ポイ活20・ahamo・eximo・ギガホは10%",
       "own": false,
       "bakuage": 20,
-      "bakuage2": 10
+      "bakuage2": 10,
+      "bakuageByPrice": {
+        "890": 15
+      }
     },
     {
       "id": "bk_disney",

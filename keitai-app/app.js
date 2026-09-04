@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.156.0";
+  var APP_VERSION = "1.157.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -2739,6 +2739,8 @@
     pay: "の支払い先", defaultPay: "の支払い方法（初期値）",
     dataMove: "の「データ移行」の印",
     bakuage: "の爆アゲ率（MAX系）", bakuage2: "の爆アゲ率（その他）",
+    bakuageByPrice: "の爆アゲ率（MAX系・金額ごと）",
+    bakuage2ByPrice: "の爆アゲ率（その他・金額ごと）",
     bakuageFixed: "の爆アゲ固定pt",
     priceChoices: "の金額の選択肢", priceLabels: "の選択肢の名前",
     months: "の期間", plans: "の対象プラン", amountChoices: "の割引額の選択肢",
@@ -3870,7 +3872,10 @@
   var PLAN_TAKE = ["tiers", "discounts", "includes5min", "dcard10",
     "bakuageTier", "poikatsuPt", "maxBonus", "voiceOverrides", "group", "url"];
   var OPT_TAKE = ["price", "priceChoices", "priceLabels", "carrier",
-    "bakuage", "bakuage2", "bakuageFixed", "note", "kubunExist", "url"];
+    "bakuage", "bakuage2", "bakuageFixed",
+    // 金額（コース）ごとに還元率が違うサービスの分（Netflix の広告つきなど）
+    "bakuageByPrice", "bakuage2ByPrice",
+    "note", "kubunExist", "url"];
   var FEE_ITEM_TAKE = ["price", "pay", "note", "dataMove", "url"];
   var CAMP_TAKE = ["months", "plans", "amountChoices", "note", "group", "suppress"];
 
@@ -4184,6 +4189,14 @@
       if (typeof o.bakuage === "undefined" && typeof d2.bakuage === "number") o.bakuage = d2.bakuage;
       if (typeof o.bakuage2 === "undefined" && typeof d2.bakuage2 === "number") o.bakuage2 = d2.bakuage2;
       if (typeof o.bakuageFixed === "undefined" && typeof d2.bakuageFixed === "number") o.bakuageFixed = d2.bakuageFixed;
+      /* 金額（コース）ごとの還元率。あとから足した欄なので、
+       * すでにお使いの店舗の料金表にも補う（無いと 890 円が 20% のままになる）。 */
+      if (typeof o.bakuageByPrice === "undefined" && d2.bakuageByPrice) {
+        o.bakuageByPrice = JSON.parse(JSON.stringify(d2.bakuageByPrice));
+      }
+      if (typeof o.bakuage2ByPrice === "undefined" && d2.bakuage2ByPrice) {
+        o.bakuage2ByPrice = JSON.parse(JSON.stringify(d2.bakuage2ByPrice));
+      }
     });
     var defTier = {};
     (DEFAULT_DATA.plans || []).forEach(function (pl) { defTier[pl.id] = pl.bakuageTier; });
@@ -6403,8 +6416,12 @@
   /* 爆アゲ セレクションの還元は税抜価格が基準。
    * マスタには税込で登録するため、消費税分を割り戻して使う。 */
   var TAX_RATE = 0.1;
+  /* 税込から税抜へ。爆アゲの還元は税抜価格が基準なので、
+   * ここで丸めてしまうと1ptずれることがある（Netflix スタンダード 1,590円で
+   * 公式 290pt に対して 289pt になっていた・2026-09-04 に公式で確認）。
+   * 計算は丸めずに行い、画面に出すときだけ丸める。 */
   function bakuageExTax(taxIncluded) {
-    return Math.round(num(taxIncluded) / (1 + TAX_RATE));
+    return num(taxIncluded) / (1 + TAX_RATE);
   }
   // ドコモ MAX／ドコモ ポイ活 MAX の「選べる特典」
   // 対象4サービスから毎月2つまで追加料金なし。3つ目以降は通常料金
@@ -6624,6 +6641,21 @@
   function dcardRatePt(c, st) {
     return c === "platinum" ? platRate(st) * 10
       : c === "gold" ? 100 : c === "goldu" ? 50 : 0;
+  }
+  /* 爆アゲ セレクションの還元率（％）。
+   * 同じサービスでも、選んだ料金コースによって率が違うものがある。
+   * 例: Netflix はドコモMAX系だと スタンダード・プレミアムが20%だが、
+   *     広告つきスタンダード（890円）だけ15%（2026-09-04 公式で確認）。
+   * bakuageByPrice / bakuage2ByPrice に「金額: 率」を書くと、その金額のときだけ
+   * 差し替わる。書いていないサービスは今までどおり bakuage / bakuage2 を使う。
+   * 出典: https://ssw.web.docomo.ne.jp/bakuage/ */
+  function bakuageRate(o, st, tier) {
+    var byPrice = tier === "max" ? o.bakuageByPrice : o.bakuage2ByPrice;
+    if (byPrice) {
+      var v = byPrice[String(optPrice(o, st))];
+      if (typeof v !== "undefined" && v !== null && v !== "") return num(v);
+    }
+    return num(tier === "max" ? o.bakuage : o.bakuage2);
   }
   function optPrice(o, st) {
     if (o.priceChoices && st.optionPrices[o.id] != null
@@ -7013,7 +7045,7 @@
         pt = fixed;
         label = "固定";
       } else if (bakuTier) {
-        var rate = num(bakuTier === "max" ? o.bakuage : o.bakuage2);
+        var rate = bakuageRate(o, st, bakuTier);
         if (!rate) return;
         /* 還元は税抜価格が基準で、端数は切り上げ。
          * 出典: https://ssw.web.docomo.ne.jp/bakuage/
@@ -7024,7 +7056,8 @@
         label = rate + "%";
       }
       if (pt <= 0) return;
-      bakuageRows.push({ name: o.name, rate: label, price: pr, exTax: exTax, pt: pt });
+      // 画面に出す税抜は、ここで初めて丸める（計算には丸めた値を使わない）
+      bakuageRows.push({ name: o.name, rate: label, price: pr, exTax: Math.round(exTax), pt: pt });
       bakuageAutoPt += pt;
     });
 
