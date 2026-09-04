@@ -31,6 +31,9 @@ node tests/run-calc-tests.js
 node tests/run-bill-tests.js
 node tests/run-ienaka-tests.js
 node tests/run-master-update-tests.js
+node tests/run-migrate-tests.js
+node tests/run-wording-tests.js
+node tests/run-diag-tests.js
 node tests/run-product-layout-test.js
 
 echo "-- 2. リリースの決まり"

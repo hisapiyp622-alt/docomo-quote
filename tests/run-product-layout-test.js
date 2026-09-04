@@ -108,6 +108,25 @@ const PAGES = [
     }
   }
 
+  /* 出荷物に入ってはいけないファイルが混ざっていないか。
+   * firestore.rules は Firebase 側の取り決めで、お店のアプリでは使わない。
+   * 配ると、どこに何を保存しているか・誰が読めるかの作りが公開されてしまう。
+   * ほかも同じ理由（設定・鍵のたぐい）。build-product.js の SKIP／NEVER_SHIP と揃える。 */
+  const NEVER = ['firestore.rules', 'firebase.json', '.firebaserc',
+    'firestore.indexes.json', 'serviceAccountKey.json', 'key.json', '.env'];
+  (function scan(d) {
+    for (const n of fs.readdirSync(d)) {
+      const p2 = path.join(d, n);
+      if (fs.statSync(p2).isDirectory()) { scan(p2); continue; }
+      if (NEVER.includes(n)) problems.push(`出荷物に ${path.relative(OUT, p2)} が入っています（配ってはいけません）`);
+    }
+  })(OUT);
+  // 実際に配信したときに読めてしまわないか（アドレスを直に叩いて確かめる）
+  for (const n of ['firestore.rules']) {
+    const st = await get(base + '/' + n);
+    if (st === 200) problems.push(`/${n} が公開されています（配ってはいけません）`);
+  }
+
   await browser.close();
   srv.close();
 

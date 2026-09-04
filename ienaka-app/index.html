@@ -233,6 +233,11 @@
           <option value="platinum">PLATINUM（利用料金の20%還元）</option>
         </select>
       </div>
+      <div class="field" id="platRateField" hidden>
+        <label for="platRate">PLATINUM の還元率</label>
+        <input type="number" id="platRate" inputmode="numeric" min="10" max="20" step="1"> ％
+      </div>
+      <p class="hint" id="platRateHint" hidden>初年度は<strong>20%</strong>です。<strong>2年目以降</strong>は前年のショッピングご利用額により<strong>10〜20%</strong>に変わるため、お客様のカードの率に合わせてここを直してください。</p>
       <div class="field" id="dcardPtField" hidden>
         <label for="dcardPt">毎月の還元ポイント</label>
         <input type="number" id="dcardPt" inputmode="numeric" min="0"> pt/月

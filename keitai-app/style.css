@@ -196,6 +196,14 @@ main{max-width:1120px;margin:0 auto;padding:14px 12px 24px}
 .adhoc-row .del{border:none;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px 6px}
 .adhoc-row .del:hover{color:var(--red)}
 
+/* iPhone・iPad の Safari は、文字が16pxより小さい入力欄を触ると画面を拡大し、
+ * 指を離しても元に戻らない（お客様の前で見積書が画面からはみ出す）。
+ * 触って使う機器では、入力欄の文字を16px以上にして拡大そのものを起こさせない。
+ * max() を使うので、もともと16pxより大きい欄はそのまま。 */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea { font-size: max(16px, 1em); }
+}
+
 /* ---------- buttons ---------- */
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
 .btn-main{
@@ -252,6 +260,11 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sheet .bm-box .bm-value{font-size:22px;font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
 .sheet .bm-box .bm-sub{font-size:11.5px;color:var(--muted)}
 .sheet .disclaimer{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7}
+/* 今後の料金改定のお知らせ（製品化レビュー 5-2）。お客様の目に留まるよう、免責より上に置く */
+.sheet .revise-note{font-size:11px;margin-top:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fffaf0;line-height:1.7}
+.sheet .revise-note b{display:block;margin-bottom:3px}
+.sheet .revise-note ul{margin:0;padding-left:1.2em}
+
 .sheet .memo{font-size:12.5px;margin-top:8px}
 .pay-warn{
   font-size:12.5px;font-weight:700;color:#B3261E;
@@ -303,7 +316,9 @@ body.arranging #optionList .opt-cat{background:#FBF1F3;border:1px dashed var(--r
 .gold-flag{font-size:11px;color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:2px}
 
 /* ---------- print ---------- */
-@page{margin:11mm 10mm}
+/* 用紙はA4。指定しないと、機器や設定によって Letter で刷られて
+ * 見積書の右端が切れることがある（お客様にお渡しする紙なので必ず指定する） */
+@page{size:A4;margin:11mm 10mm}
 @media print{
   body{background:#fff;padding:0;font-size:11px}
   .no-print{display:none !important}
@@ -329,6 +344,7 @@ body.arranging #optionList .opt-cat{background:#FBF1F3;border:1px dashed var(--r
   .sheet .bm-box .bm-sub{font-size:10px}
   .sheet .memo{font-size:10.5px;margin-top:4px}
   .sheet .disclaimer{font-size:9px;margin-top:8px;padding-top:5px;line-height:1.5}
+  .sheet .revise-note{font-size:9px;margin-top:6px;padding:5px 7px;line-height:1.5}
   .sheet .warnbox{font-size:11px;padding:6px 8px}
   /* 2ページ目（本体分割金・初期費用）はここで必ず改ページ */
   .sheet .sheet-page2,.sheet .sheet-page3{break-before:page;page-break-before:always}
@@ -478,6 +494,8 @@ body.booting>header,body.booting>main{visibility:hidden}
 .saved-main{flex:1 1 auto;min-width:0}
 .saved-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .saved-sub{font-size:12px;color:var(--muted);margin-top:2px}
+/* 保存一覧のお客様名（この端末にあるものだけ・製品化レビュー 5-3） */
+.saved-cust{color:var(--muted);font-size:11.5px}
 .saved-row .btn-sub{flex:0 0 auto;padding:5px 12px}
 .saved-row .saved-del{color:var(--muted)}
 .saved-row .saved-del:hover{color:var(--red);border-color:var(--red)}
@@ -1073,6 +1091,11 @@ body.present .app-header,body.present .summary-bar,body.present .sheet-scope,
 body.present #tab-sheet .actions,body.present .storage-warn{display:none !important}
 body.present{background:#fff}
 body.present .sheet{box-shadow:none}
+/* お客様に画面をお見せしている間は、サービス名を「紙の文字」に見せる。
+ * 点線とタップの色が残っていると、押せるものが並んだ操作画面に見えてしまう。
+ * （お店の方が説明のために押すことはできるまま。印刷と同じ見た目にそろえる） */
+body.present .svc-link{border-bottom:0 !important;cursor:default}
+body.present .svc-link:hover,body.present .svc-link:focus{color:inherit;border-bottom-color:transparent}
 .present-exit{position:fixed;right:14px;bottom:14px;z-index:90;padding:11px 18px;border-radius:999px;
   border:none;background:rgba(35,45,65,.88);color:#fff;font:inherit;font-size:13.5px;font-weight:700;
   box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer}
@@ -1243,6 +1266,13 @@ body.present .sheet{box-shadow:none}
 .ended-toggle-wrap{margin:8px 0 0}
 .ended-toggle-wrap .btn-sub{font-size:12px}
 .mu-ended{border:1px solid var(--red);border-radius:8px;background:#fff;padding:8px 10px;margin:8px 0}
+/* 今後の料金改定の予告（製品化レビュー 5-2） */
+.mu-revise{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fffaf0;font-size:13px;line-height:1.7}
+.revise-hint{margin:8px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fffaf0;font-size:13px;line-height:1.7}
+.revise-hint ul{margin:4px 0 0;padding-left:1.2em}
+.revise-hint .hint{margin:4px 0 0}
+.mu-revise ul{margin:4px 0 0;padding-left:1.2em}
+.mu-revise li{margin-bottom:4px}
 .mu-ended ul{margin:6px 0 0;padding-left:1.2em}
 .mu-ended li{font-size:13px;margin:2px 0}
 

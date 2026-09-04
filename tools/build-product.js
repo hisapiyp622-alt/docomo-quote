@@ -89,9 +89,19 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const OCR = ocrEnabled();
 /* 出荷に入れないもの
+ *   firestore.rules … サーバー側（Firebase）の取り決め。お店のアプリでは使わない。
+ *     配ると、どこに何を保存しているか・誰が読めるかの作りがそのまま見えてしまう。
+ *     公開の場所に置く理由が無いので外す（原本はこのリポジトリに残る）
  *   ocr/ … カメラ読み取りが「切」のときは使われないので入れない（14MB）
  *   mitsumorin-*.png … 旧マスコット。今はどこからも使っていない */
-const SKIP = ["mitsumorin-hello.png", "mitsumorin-sheet.png"].concat(OCR ? [] : ["ocr"]);
+const SKIP = ["firestore.rules", "mitsumorin-hello.png", "mitsumorin-sheet.png"]
+  .concat(OCR ? [] : ["ocr"]);
+
+/* 出荷物に絶対に混ざってはいけないファイル名。
+ * SKIP はコピーの入口で外すためのもの。こちらは出来上がりを見て止める側で、
+ * 別の経路（新しく足したフォルダなど）から紛れ込んでも気づけるようにする。 */
+const NEVER_SHIP = ["firestore.rules", "firebase.json", ".firebaserc",
+  "firestore.indexes.json", "serviceAccountKey.json", "key.json", ".env"];
 
 // 1) ケータイ（製品版）をルートへ
 copyDir(path.join(ROOT, "keitai-app"), OUT, SKIP);
@@ -154,6 +164,11 @@ ${DOMAIN} で配信するための入れ物です。
   for (const n of fs.readdirSync(d)) {
     const p = path.join(d, n);
     if (fs.statSync(p).isDirectory()) { check(p); continue; }
+    if (NEVER_SHIP.includes(n)) {
+      console.error(`出荷物に入ってはいけないファイルがあります: ${path.relative(OUT, p)}`);
+      console.error("SKIP に足してから、もう一度実行してください。");
+      process.exit(1);
+    }
     if (!/\.(html|js|css|webmanifest|json)$/.test(n)) continue;
     const t = fs.readFileSync(p, "utf8");
     for (const bad of FORBIDDEN) {

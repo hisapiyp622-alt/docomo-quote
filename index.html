@@ -71,6 +71,7 @@
         <input type="text" id="tplNameInput" maxlength="20" placeholder="テンプレート名">
         <button class="btn-sub" id="tplNameOk" type="button">保存する</button>
         <button class="btn-sub" id="tplNameCancel" type="button">キャンセル</button>
+        <span class="hint warn-hint" id="tplOverwriteNote" hidden></span>
       </span>
       <span class="hint" id="tplMsg"></span>
     </div>
@@ -215,6 +216,13 @@
           <label class="check" title="dカード GOLD U"><input type="checkbox" data-dcard="goldu"> U</label>
           <label class="check" title="dカード PLATINUM"><input type="checkbox" data-dcard="platinum"> P</label>
         </div>
+        <div class="wari-sub" id="platRateWrap" hidden>
+          <div class="field">
+            <label for="platRate">PLATINUM の還元率</label>
+            <input type="number" id="platRate" inputmode="numeric" min="10" max="20" step="1"> ％
+          </div>
+          <p class="hint">初年度は<strong>20%</strong>です。<strong>2年目以降</strong>は前年のショッピングご利用額により<strong>10〜20%</strong>に変わるため、お客様のカードの率に合わせてここを直してください（⑧のdカード還元特典の自動計算に使います）。</p>
+        </div>
       </div>
       <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
       <div id="chokiWrap">
@@ -239,7 +247,7 @@
     <div class="card full c4">
       <h2>④ オプション・サービス <button class="card-help" type="button" data-help="c4" aria-label="この項目の入力のしかた">?</button></h2>
       <div id="optionList"></div>
-      <p class="hint">内容・単価・並び順はマスタ設定タブで自由に変更できます。</p>
+      <p class="hint">内容・単価・並び順はマスタ設定で自由に変更できます（担当者コードの画面から開きます）。</p>
       <div class="adhoc-list" id="adhocMonthlyList"></div>
       <button class="btn-sub" id="addAdhocMonthly" type="button">＋ 月額の追加項目（キャンペーン割引・店舗施策など）</button>
     </div>
@@ -405,7 +413,8 @@
       <label class="check" id="dcardAutoWrap" hidden>
         <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
       </label>
-      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM 200pt）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。<br><strong>改定予告（2026-09-01発表）:</strong> 2026年12月ご利用分から、ポイ活プラン（ポイ活 MAX・ポイ活20・eximo ポイ活・ahamo ポイ活）は、ポイ活特典で進呈されたポイントぶんを差し引いた金額に対する還元へ変わります（12月以降のご案内では自動計算より少なくなります）。</p>
+      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM は③で選んだ還元率）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
+      <div class="revise-hint" id="reviseHint" hidden></div>
     </div>
 
     <div class="card c9">
@@ -673,6 +682,11 @@
           <option value="platinum">PLATINUM（利用料金の20%還元）</option>
         </select>
       </div>
+      <div class="field" id="iePlatRateField" hidden>
+        <label for="iePlatRate">PLATINUM の還元率</label>
+        <input type="number" id="iePlatRate" inputmode="numeric" min="10" max="20" step="1"> ％
+      </div>
+      <p class="hint" id="iePlatRateHint" hidden>初年度は<strong>20%</strong>です。<strong>2年目以降</strong>は前年のショッピングご利用額により<strong>10〜20%</strong>に変わるため、お客様のカードの率に合わせてここを直してください。</p>
       <div class="field" id="ieDcardPtField" hidden>
         <label for="ieDcardPt">毎月の還元ポイント</label>
         <input type="number" id="ieDcardPt" inputmode="numeric" min="0"> pt/月
@@ -746,7 +760,7 @@
     </div>
   </section>
 
-  <!-- ============ マスタ設定タブ ============ -->
+  <!-- ============ マスタ設定（担当者コードの画面から開く） ============ -->
   <section id="tab-saved" class="tab-page no-print">
     <div class="card">
       <h2>見積もりの保存</h2>

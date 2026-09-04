@@ -54,6 +54,10 @@ const CASES = {
   'max_choki10': { planId: 'max', choki: 'y10' },
   'max_choki20_full': { planId: 'max', minna: '3', dSet: true, dCard: 'gold', dDenki: true, choki: 'y20' },
   'u15_dcard_gold': { planId: 'u15_debut', tierIdx: 0, dCard: 'gold' },
+  /* 2026-09-04 追加（製品化レビュー 5-1）。PLATINUM の還元率は
+   * 初年度20%／2年目以降は前年のご利用額により10〜20%。率を選べるようにした。 */
+  'max_platinum': { planId: 'max', dCard: 'platinum' },
+  'max_platinum_12': { planId: 'max', dCard: 'platinum', dcardPlatRate: 12 },
   /* 2026-09-03 追加（製品化レビュー 4-4・4-5）。手計算の根拠:
    * ・dマガジン 580（コンテンツ使用料）は還元の対象外。月額は 5,148＋580＝5,728 でも
    *   対象額は 5,148 → 4×100pt = 400pt（直す前は 5×100pt = 500pt だった）
@@ -166,11 +170,20 @@ const HAND = {
    * 58,000 ÷ 23 ＝ 2,521.7 → 毎月 2,521 円、端数 58,000 −2,521×23 ＝17 円は初回。
    * 1〜23か月目 5,698 ＋2,521 ＝8,219。24か月目に返却しない場合の残価
    * 129,800 −58,000 ＝71,800 を24回 → 2,991 円（5,698 ＋2,991 ＝8,689） */
-  device_kaedoki: { seg1: 8219, deviceMonthly: 2521, firstExtra: 17, keep2: 8689 },
+  device_kaedoki: { seg1: 8219, deviceMonthly: 2521, firstExtra: 17, keep2: 8689,
+    // 残価 71,800 を24回に割ると 2,991.67 → 毎月 2,991 円。
+    // 端数 71,800 −2,991×24 ＝16 円は、24か月目（残価の初回）に寄せる
+    deviceAfter: 2991, deviceAfterExtra: 16 },
   /* GOLD の還元は「各種割引のあと」の金額が対象。
    * 5,698 −550 ＝5,148 から U22割 −2,728 → 2,420 が対象 → 2×100pt ＝200pt。
    * 8か月目からは 5,148 → 4×100pt ＝400pt */
   gold_u22_campaign: { seg1: 2420, seg2: 5148, dcardPt: 200, dcardPtAfter: 400 },
+  /* dカード PLATINUM（5-1）。お支払割は GOLD 系と同じ 550 円。
+   * 5,698 −550 ＝5,148 が還元の対象額。
+   * ・20%（初年度） … 5,148 ÷1,100 ＝4.68 → 4×200pt ＝800pt
+   * ・12%（2年目以降の例）… 同じ 4 に対し 4×120pt ＝480pt */
+  max_platinum: { seg1: 5148, dcardPt: 800 },
+  max_platinum_12: { seg1: 5148, dcardPt: 480 },
 
   /* ---- 2026-09-04 追加（製品化レビュー 4-8）。今まで1件も通っていなかった道 ---- */
   // 5,698 −ハーティ 1,980 ＝3,718（通話オプションを付けない場合）
@@ -220,6 +233,8 @@ function handDiff(name, got) {
     bakuagePt: got.bakuagePt, pointTotal: got.pointTotal,
     optTotal: got.optTotal, voicePrice: got.voicePrice, firstExtra: got.firstExtra,
     deviceMonthly: (got.device || {}).monthly,
+    deviceAfter: (got.device || {}).after,
+    deviceAfterExtra: (got.device || {}).afterFirstExtra,
     seg1: segs[0] ? segs[0].monthly : undefined,
     seg2: segs[1] ? segs[1].monthly : undefined,
     keep2: segs[1] ? segs[1].keep : undefined
@@ -307,11 +322,64 @@ function serve() {
   for (const [name, patch] of Object.entries(CASES)) {
     results[name] = await page.evaluate((p) => window.__KQ_TEST__.run(p), patch);
   }
+
+  /* PLATINUM の還元率の欄が、画面でも出入りするか（製品化レビュー 5-1）。
+   * 計算だけ直っていても、欄が出なければお店からは率を変えられない。 */
+  const uiBad = [];
+  await page.selectOption('#planId', 'max').catch(() => {});
+  await page.waitForTimeout(300);
+  const shown = (id) => page.$eval(id, (e) => {
+    for (var n = e; n; n = n.parentElement) if (n.hidden) return false;
+    return getComputedStyle(e).display !== 'none';
+  }).catch(() => null);
+  const dcPt = () => page.$eval('#dcardAutoLabel', (e) => Number((e.textContent.match(/(\d+)pt\/月/) || [])[1] || 0));
+  if (await shown('#platRateWrap') !== false) uiBad.push('dカードを選ぶ前から、還元率の欄が出ています');
+  await page.check('#dCardOn'); await page.waitForTimeout(200);
+  await page.check('[data-dcard="gold"]'); await page.waitForTimeout(300);
+  if (await shown('#platRateWrap') !== false) uiBad.push('GOLD のとき、還元率の欄が出ています');
+  const goldPt = await dcPt();
+  await page.check('[data-dcard="platinum"]'); await page.waitForTimeout(300);
+  if (await shown('#platRateWrap') !== true) uiBad.push('PLATINUM を選んでも還元率の欄が出ません');
+  if (await page.inputValue('#platRate') !== '20') uiBad.push('還元率の初期値が 20 ではありません');
+  const at20 = await dcPt();
+  if (!(at20 > 0 && at20 === goldPt * 2)) {
+    uiBad.push(`PLATINUM 20% が GOLD 10% の2倍になりません（GOLD ${goldPt}pt / PLATINUM ${at20}pt）`);
+  }
+  await page.fill('#platRate', '10'); await page.dispatchEvent('#platRate', 'input');
+  await page.waitForTimeout(300);
+  const at10 = await dcPt();
+  if (at10 !== goldPt) uiBad.push(`10% にしても GOLD と同じになりません（${at10}pt / GOLD ${goldPt}pt）`);
+  await page.fill('#platRate', '99'); await page.dispatchEvent('#platRate', 'change');
+  await page.waitForTimeout(300);
+  if (await page.inputValue('#platRate') !== '20') uiBad.push('10〜20 の外の値が直りません');
+
   await browser.close();
   srv.close();
 
   if (errors.length) {
     console.error('JSエラーが発生しました:\n' + errors.join('\n'));
+    process.exit(1);
+  }
+  if (uiBad.length) {
+    console.error('PLATINUM の還元率の欄に問題があります:\n  ✗ ' + uiBad.join('\n  ✗ '));
+    process.exit(1);
+  }
+  console.log('PLATINUM の還元率の欄: 問題なし');
+
+  /* 分割の端数が消えていないか（どのケースでも成り立つはずのこと）。
+   * 見積書には「残価 ◯◯円」と「△△円/月 × 24回」を並べて出すので、
+   * 掛けて足したら残価に戻らないといけない。 */
+  const roundBad = [];
+  for (const [name, r] of Object.entries(results)) {
+    const dv = r.device || {};
+    if (!dv.zanka) continue;
+    const sum = dv.after * 24 + (dv.afterFirstExtra || 0);
+    if (sum !== dv.zanka) {
+      roundBad.push(`  ✗ ${name}: 残価 ${dv.zanka} ≠ ${dv.after}×24 ＋${dv.afterFirstExtra || 0} ＝${sum}`);
+    }
+  }
+  if (roundBad.length) {
+    console.error('残価の割り直しで端数が消えています:\n' + roundBad.join('\n'));
     process.exit(1);
   }
 
