@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.9.9";
+  var APP_VERSION = "2.10.0";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -321,6 +321,21 @@
   }
   // 画面・見積書に出す「10%」「20%」などの文字
   function dcardRateText() { return state.dcard === "gold" ? "10" : String(platRate()); }
+  /* 今後の料金改定のお知らせ（製品化レビュー 5-2）。
+   * 画面のヒントだけでなく、お客様のお手元に残る見積書にも同じ文を入れる。
+   * 改定の日（2026-12-01）が来たら自動で出さない。そのときは計算のほうを直す。 */
+  var REVISE = [{
+    from: "2026-12-01",
+    when: function () { return state.dcard === "platinum" && PRODUCTS[state.product].dcard !== false; },
+    text: "2026年12月のご利用分から、dカード PLATINUM のドコモ光ご利用料金への還元は、最大20%から最大12%（毎月のショッピングご利用金額により10〜12%）に変わります。12月以降は、この見積もりのポイント数より少なくなります。"
+  }];
+  function reviseNotices() {
+    var today = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    var ymd = today.getFullYear() + "-" + z(today.getMonth() + 1) + "-" + z(today.getDate());
+    return REVISE.filter(function (r2) { return ymd < r2.from && r2.when(); })
+      .map(function (r2) { return r2.text; });
+  }
 
   /* ---------- 計算 ---------- */
   function calc() {
@@ -1439,9 +1454,7 @@
       } else
       $("dcardHint").textContent = "自動計算: 対象月額" + yen(r.dcardEligible) + " → " + (r.dcardAutoPt || 0)
         + "pt/月（1,100円ごとに" + (state.dcard === "gold" ? "100pt・10%" : (platRate() * 10) + "pt・" + platRate() + "%") + "）。還元対象・上限はカード規約をご確認ください。数値は直接編集できます。"
-        + (state.dcard === "platinum"
-          ? "　改定予告（2026-09-01発表）: 2026年12月ご利用分から、PLATINUMのドコモ光利用料金への還元は最大20%→最大12%（毎月のショッピングご利用金額により10〜12%・エリアの区別なし）に引き下げられます。"
-          : "");
+        + (reviseNotices().length ? "　【今後の料金改定のお知らせ】" + reviseNotices().join("　") : "");
     }
     save();
     if ($("tab-sheet").classList.contains("active")) renderSheet();
@@ -1611,6 +1624,12 @@
               : '毎月進呈されるポイントです（上の月額からは差し引いていません）。')
           + '還元対象・上限はカード規約によります。</p>';
     }
+
+    /* 今後の料金改定のお知らせ（5-2）。お客様のお手元に残る紙にも書く。
+     * 画面のヒントだけだと、12月に金額が変わったときに「聞いていない」になる。 */
+    reviseNotices().forEach(function (t) {
+      h += '<p class="memo">※【今後の料金改定のお知らせ】' + esc(t) + "</p>";
+    });
 
     h += '<p class="memo">※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（本見積もりの月額には含まれません）。</p>';
     if (PRODUCTS[state.product].typec) {

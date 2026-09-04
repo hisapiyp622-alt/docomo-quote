@@ -252,6 +252,11 @@ button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .sheet .bm-box .bm-value{font-size:22px;font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
 .sheet .bm-box .bm-sub{font-size:11.5px;color:var(--muted)}
 .sheet .disclaimer{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7}
+/* 今後の料金改定のお知らせ（製品化レビュー 5-2）。お客様の目に留まるよう、免責より上に置く */
+.sheet .revise-note{font-size:11px;margin-top:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fffaf0;line-height:1.7}
+.sheet .revise-note b{display:block;margin-bottom:3px}
+.sheet .revise-note ul{margin:0;padding-left:1.2em}
+
 .sheet .memo{font-size:12.5px;margin-top:8px}
 .pay-warn{
   font-size:12.5px;font-weight:700;color:#B3261E;
@@ -329,6 +334,7 @@ body.arranging #optionList .opt-cat{background:#FBF1F3;border:1px dashed var(--r
   .sheet .bm-box .bm-sub{font-size:10px}
   .sheet .memo{font-size:10.5px;margin-top:4px}
   .sheet .disclaimer{font-size:9px;margin-top:8px;padding-top:5px;line-height:1.5}
+  .sheet .revise-note{font-size:9px;margin-top:6px;padding:5px 7px;line-height:1.5}
   .sheet .warnbox{font-size:11px;padding:6px 8px}
   /* 2ページ目（本体分割金・初期費用）はここで必ず改ページ */
   .sheet .sheet-page2,.sheet .sheet-page3{break-before:page;page-break-before:always}
@@ -1243,6 +1249,13 @@ body.present .sheet{box-shadow:none}
 .ended-toggle-wrap{margin:8px 0 0}
 .ended-toggle-wrap .btn-sub{font-size:12px}
 .mu-ended{border:1px solid var(--red);border-radius:8px;background:#fff;padding:8px 10px;margin:8px 0}
+/* 今後の料金改定の予告（製品化レビュー 5-2） */
+.mu-revise{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fffaf0;font-size:13px;line-height:1.7}
+.revise-hint{margin:8px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fffaf0;font-size:13px;line-height:1.7}
+.revise-hint ul{margin:4px 0 0;padding-left:1.2em}
+.revise-hint .hint{margin:4px 0 0}
+.mu-revise ul{margin:4px 0 0;padding-left:1.2em}
+.mu-revise li{margin-bottom:4px}
 .mu-ended ul{margin:6px 0 0;padding-left:1.2em}
 .mu-ended li{font-size:13px;margin:2px 0}
 

@@ -11,6 +11,12 @@
  *    見た目も金額も変わらないこと（過去の見積もり・実績を壊さない）
  *  ・店舗の逃げ道（うちはまだ使う）が効くこと
  *  ・店舗が読む文章に、英語のままの項目名が混ざっていないこと
+ *
+ * 改定予告（製品化レビュー 5-2）も同じ仕組みで配るので、ここで一緒に見る:
+ *  ・配信（data.js）に revise を書くと、店舗の料金表に予告が届くこと
+ *  ・その項目を選んでいる見積書にだけ、お客様が読む一文が入ること
+ *  ・改定の日が来たら、自動で出なくなること（そのときは計算のほうを直す）
+ *  ・配信から revise を消すと、店舗からも消えること
  */
 const http = require('http');
 const fs = require('fs');
@@ -123,6 +129,10 @@ function chk(name, cond, extra) {
     set('options', 'anshin_pack', '2026-10-01');
     set('options', 'dmagazine', '2026-10-01');  // 店舗独自の印が付いているもの
     set('plans', plan, '2026-12-01');           // これから終わる（予告）
+    /* 改定予告（5-2）。受付終了とは別物で、いまの金額は変わらない。
+     * 「まだ来ていない改定」なので、今日（2026-10-15）より先の日を入れる。 */
+    const op = (d.options || []).filter((y) => y.id === 'smart_hosho')[0];
+    if (op) op.revise = { from: '2026-12-01', text: 'テスト用の改定予告です。' };
     S.setDist(d);
   }, [CAMP, VOICE, PLAN]);
 
@@ -144,6 +154,14 @@ function chk(name, cond, extra) {
   const rawField = (l) => /retiredFrom|keepAnyway|の[a-zA-Z]+[をがはに]/.test(l);
   chk('③ 店舗が読む行に、日本語にし忘れた項目名が混ざっていない',
     !lines.some(rawField), JSON.stringify(lines.filter(rawField)));
+
+  /* 改定予告（5-2）は、更新を当てる前に数えられる（当てたあとは「もう知っている」） */
+  const rev = await std('revise');
+  chk('⑫ 更新の前に「今後の料金改定のお知らせ」を数えられる',
+    rev.length === 1 && /テスト用の改定予告/.test(rev[0].text), JSON.stringify(rev));
+  chk('⑫ 「変わる内容」にも日本語で一行出る',
+    lines.some((l) => /今後の料金改定のお知らせ/.test(l)),
+    JSON.stringify(lines.filter((l) => /改定/.test(l))));
 
   // 更新を当てる
   await std('apply');
@@ -307,6 +325,44 @@ function chk(name, cond, extra) {
   }, [PLAN]);
   chk('⑩ 受付終了のプランを選んである見積もりは、別のプランに変わらない',
     planKeep.picked === planKeep.want, planKeep.picked + ' / ' + planKeep.want);
+
+  /* ---- 改定予告（5-2） ---- */
+  const revView = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    S.setToday('2026-10-15');
+    // 予告の付いたオプションを選ぶ／外す で、見積書に入る文が変わるか
+    S.pick('option', 'smart_hosho', false); S.redraw();
+    const off = S.notices();
+    S.pick('option', 'smart_hosho', true); S.redraw();
+    const on = S.notices();
+    const hint = document.getElementById('reviseHint');
+    const hintShown = !!hint && !hint.hidden && /テスト用の改定予告/.test(hint.innerText);
+    // 改定の日が来たら、もう予告ではないので出さない
+    S.setToday('2026-12-01');
+    const after = S.notices();
+    S.setToday('2026-10-15');
+    return { off: off.length, on: on, hintShown: hintShown, after: after.length };
+  });
+  chk('⑫ 選んでいないときは、見積書に予告が入らない', revView.off === 0, String(revView.off));
+  chk('⑫ 選ぶと、その一文が見積書に入る',
+    revView.on.length === 1 && /テスト用の改定予告/.test(revView.on[0]), JSON.stringify(revView.on));
+  chk('⑫ 入力画面にも同じ一文が出る', revView.hintShown, String(revView.hintShown));
+  chk('⑫ 改定の日が来たら、予告としては出さない', revView.after === 0, String(revView.after));
+
+  const revGone = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    const d = S.dist();
+    d.masterVersion = d.masterVersion + 1;
+    (d.options || []).forEach((y) => { if (y.id === 'smart_hosho') delete y.revise; });
+    S.setDist(d);
+    S.apply();
+    const m = S.get();
+    const o = (m.options || []).filter((y) => y.id === 'smart_hosho')[0];
+    S.redraw();
+    return { hasRevise: !!(o && o.revise), notices: S.notices().length };
+  });
+  chk('⑫ 配信から消すと、店舗の料金表からも消える', !revGone.hasRevise, String(revGone.hasRevise));
+  chk('⑫ 消したあとは、見積書にも入らない', revGone.notices === 0, String(revGone.notices));
 
   await browser.close();
   srv.close();

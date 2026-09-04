@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.154.0";
+  var APP_VERSION = "1.155.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -2802,6 +2802,14 @@
         else out.push(head + "の受付終了が" + ymdText(va) + " → " + ymdText(vb) + "に変更");
         return;
       }
+      /* 改定予告（5-2）。専用の枠で全文を出すので、ここは一行の要約にとどめる。 */
+      if (k2 === "revise") {
+        if (!vb || !vb.text) out.push(head + "の「今後の料金改定のお知らせ」を取り消し");
+        else if (!va || !va.text) out.push(head + "に「今後の料金改定のお知らせ」を追加"
+          + (vb.from ? "（" + ymdText(vb.from) + "から）" : ""));
+        else out.push(head + "の「今後の料金改定のお知らせ」を変更");
+        return;
+      }
       if (k2 === "keepAnyway") {
         out.push(head + (vb ? "を「うちはまだ使う」にしました" : "の「うちはまだ使う」を外しました"));
         return;
@@ -3078,6 +3086,15 @@
     if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
     if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
     if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
+    /* 改定予告（5-2）。お客様のお手元に残る紙にも書く。
+     * 画面のヒントだけだと、12月に金額が変わったときに「聞いていない」になる。 */
+    var revs = reviseNotices(state);
+    if (revs.length) {
+      h += '<div class="revise-note"><b>今後の料金改定のお知らせ</b><ul>'
+        + revs.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+        + "</ul></div>";
+    }
+
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "提供エリア・設備状況によりご契約いただけない場合があります。詳細は店頭スタッフへご確認ください。"
       + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
@@ -3764,6 +3781,35 @@
     var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? (m[1] + "年" + num(m[2]) + "月" + num(m[3]) + "日") : String(v || "");
   }
+  /* ★ 改定予告（製品化レビュー 5-2）
+   * 料金表の項目に revise（{ from, text }）が付いていたら、
+   * その項目を選んでいる見積もりの「お知らせ」欄に、その一文を出す。
+   * ・from … 改定が始まる日（YYYY-MM-DD）。その日より前だけ「予告」として出す
+   * ・text … お客様が読む一文。用語は避けて短く
+   * 画面のヒントだけだと、お客様のお手元に残る紙には何も書かれず、
+   * 12月に金額が変わったときに「聞いていない」になってしまう。 */
+  function reviseNotice(x) {
+    if (!x || !x.revise || !x.revise.text) return null;
+    // 改定日が来ていたら、もう予告ではないので出さない（そのときは計算のほうを直す）
+    if (x.revise.from && todayYmd() >= String(x.revise.from)) return null;
+    return String(x.revise.text);
+  }
+  /* この見積もりに出す予告の一覧（同じ文は1回だけ）。
+   * 見ているのは、実際に選んでいるもの（プラン・通話オプション・オプション・
+   * 初期費用の項目・キャンペーン）だけ。 */
+  function reviseNotices(st) {
+    var out = [], seen = {};
+    function add(x) {
+      var t = reviseNotice(x);
+      if (t && !seen[t]) { seen[t] = 1; out.push(t); }
+    }
+    add(planById(st.planId));
+    (MASTER.voiceOptions || []).forEach(function (v) { if (v.id === st.voice) add(v); });
+    (MASTER.options || []).forEach(function (o) { if (st.options[o.id]) add(o); });
+    (MASTER.feeItems || []).forEach(function (f) { if (st.feeItems[f.id]) add(f); });
+    (MASTER.campaigns || []).forEach(function (c) { if (st.campaigns[c.id]) add(c); });
+    return out;
+  }
   /* 見積もり画面の一覧に出すか。
    * いま選んであるものは、受付終了でも必ず残す（開き直したら消えていた、を防ぐ）。
    * 「受付が終わったものも出す」を押している間は、終了したものも出す
@@ -3819,7 +3865,15 @@
    * 配信から印を外しても店舗に残り続け、受付再開を伝えられない。
    * ここでは「配信に印があれば付ける／無ければ外す」を必ず行う。
    * 店舗が自分で付けた「うちはまだ使う」（keepAnyway）には触らない。 */
+  /* ドコモが決めた事実（受付終了・料金改定の予告）を、店舗のマスタへそのまま移す。
+   * 金額や名前は店舗が決めるものなので独自の印で守るが、ここは守らない。 */
   function syncRetired(cur, def) {
+    // 先の改定の予告（5-2）。配信から消えたら、店舗からも消す
+    if (def && def.revise && def.revise.text) {
+      cur.revise = JSON.parse(JSON.stringify(def.revise));
+    } else {
+      delete cur.revise;
+    }
     if (def && def.retiredFrom) { cur.retiredFrom = String(def.retiredFrom); return; }
     delete cur.retiredFrom;
     /* 受付が再開したら、店舗の「うちはまだ使う」も外す。
@@ -3936,6 +3990,22 @@
     });
     return out;
   }
+  /* 更新で新しく届く「先の改定の予告」（5-2）。すでに知っているものは出さない。 */
+  function masterUpdateRevise() {
+    var next = buildUpdatedMaster(), out = [];
+    [["plans", MASTER.plans], ["voiceOptions", MASTER.voiceOptions], ["options", MASTER.options],
+     ["feeItems", MASTER.feeItems], ["campaigns", MASTER.campaigns]].forEach(function (pair) {
+      var key = pair[0], cur = pair[1] || [];
+      (next[key] || []).forEach(function (x) {
+        if (!x.revise || !x.revise.text) return;
+        var was = cur.filter(function (y) { return y.id === x.id; })[0];
+        var had = was && was.revise ? was.revise.text : "";
+        if (had === x.revise.text) return;   // もう知っている
+        out.push({ name: x.name || x.id, from: x.revise.from || "", text: x.revise.text });
+      });
+    });
+    return out;
+  }
   function applyMasterUpdate() {
     var next = buildUpdatedMaster();
     histSettle();
@@ -3979,6 +4049,20 @@
         + "すでに作った見積もり・保存した見積もり・実績はそのまま残ります。"
         + remapCircled("継続でお使いのお客様のぶんを作るときは、④オプションなどの下にある")
         + "「受付が終わったものも出す」から選べます。</p></div>";
+    }
+    /* 先の改定の予告（5-2）。いまの金額は変わらないが、
+     * お客様に一言そえていただくために出す。見積書にも同じ文が入る。 */
+    var revs = masterUpdateRevise();
+    if (revs.length) {
+      h += '<div class="mu-revise"><b>今後の料金改定のお知らせ（' + revs.length + "件）</b><ul>"
+        + revs.map(function (rv) {
+            return "<li>" + esc(rv.name) + (rv.from ? "…" + esc(ymdText(rv.from)) + "から" : "")
+              + "<br>" + esc(rv.text) + "</li>";
+          }).join("")
+        + "</ul>"
+        + '<p class="hint"><strong>いまの金額は変わりません。</strong>'
+        + "更新すると、この一文が<strong>お客様にお渡しする見積書にも入ります</strong>"
+        + "（その項目を選んでいる見積もりだけ）。改定の日が来たら、自動で出なくなります。</p></div>";
     }
     if (total) {
       h += '<details class="hist-diff" open><summary>変わる内容（' + total + '件）</summary><ul>'
@@ -8593,6 +8677,19 @@
                 + ((r.dcardAutoPtAfter || 0) !== (r.dcardAutoPt || 0)
                     ? "　期間限定の割引が終わると対象額 " + yen(r.dcardBaseAfter || 0) + "・" + (r.dcardAutoPtAfter || 0) + "pt/月になります。"
                     : ""));
+    }
+    /* 先の改定の予告（5-2）。料金表の配信で届いた一文を、いま選んでいる
+     * 内容に合わせて出す。同じ文が、お客様にお渡しする見積書にも入る。 */
+    var rv = reviseNotices(state);
+    var rvEl = $("reviseHint");
+    if (rvEl) {
+      rvEl.hidden = !rv.length;
+      rvEl.innerHTML = rv.length
+        ? "<b>今後の料金改定のお知らせ</b><ul>"
+          + rv.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+          + "</ul><p class=\"hint\">この見積もりの金額は今までどおりです。"
+          + "同じ内容が、お客様にお渡しする見積書にも入ります。</p>"
+        : "";
     }
   }
 
@@ -13513,6 +13610,9 @@
         buildNext: function () { return buildUpdatedMaster(); },
         changes: function () { return masterUpdateChanges(); },
         ended: function () { return masterUpdateEnded(); },
+        // 改定予告（5-2）
+        revise: function () { return masterUpdateRevise(); },
+        notices: function () { return reviseNotices(state); },
         apply: function () { applyMasterUpdate(); },
         isEnded: function (x) { return stdEnded(x); },
         showEnded: function (v) {
