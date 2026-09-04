@@ -5234,6 +5234,19 @@
   function applyRemoteStore(d) {
     CLOUD.suppress = true;
     var lostStaff = false;
+    /* 店舗情報や料金表が届くと、この関数の中で画面を描き直す。そのとき
+     * 選べなくなったプランを選び直すなど、**アプリの都合で**見積もりの中身が
+     * 少し変わることがある。これを「この端末で入力があった」と数えてしまうと、
+     * お店の人は何も触っていないのにこの端末が勝ち、他の端末で作った
+     * 見積もりを消してしまう（4-40 の2つ目の経路）。
+     * そこで、入る前にお店の人の入力が入っていなければ、出るときに控えを
+     * 取り直して、アプリの都合で変わったぶんを差し引く。 */
+    var sigSid = "";
+    var sigWasClean = false;
+    try {
+      sigSid = activeStaff().id;
+      sigWasClean = !!quoteSigLoaded[sigSid] && quotePayload() === quoteSigLoaded[sigSid];
+    } catch (eS0) {}
     try {
       if (typeof d.storeName === "string") config.storeName = d.storeName;
       if (typeof d.storeTel === "string") config.storeTel = d.storeTel;
@@ -5279,6 +5292,10 @@
       recalc();
       renderDevBar(); // 店舗名が届いたら、保守・上位アカウントのバーもID表示から店名に描き直す
     } finally { CLOUD.suppress = false; }
+    // アプリの都合で変わったぶんを、入力があったことにしない（上のとおり）
+    if (sigWasClean) {
+      try { quoteSigLoaded[sigSid] = quotePayload(); } catch (eS1) {}
+    }
     /* 担当が本当に消えたときだけ選び直してもらう。
      * マスタ設定を開いている最中や、ログイン画面を出している最中は割り込まない。 */
     if (lostStaff) {
@@ -13766,7 +13783,18 @@
           return savedList.filter(function (x) { return x.auto; }).map(function (x) { return x.name; });
         },
         stashRemote: function (raw) { stashRemoteQuote({ data: raw }); },
-        payload: function () { return quotePayload(); }
+        payload: function () { return quotePayload(); },
+        masterKey: function () { return MASTER_KEY; },
+        // 同期を見張り始めたときと同じ控えを取る
+        markSig: function () { quoteSigLoaded[activeStaff().id] = quotePayload(); },
+        // 「この端末で入力があった」と判断されるかどうか
+        edited: function () {
+          var sid = activeStaff().id;
+          return !!quoteSigLoaded[sid] && quotePayload() !== quoteSigLoaded[sid];
+        },
+        // 店舗情報・料金表が他の端末から届いたことにする
+        applyStore: function (d) { applyRemoteStore(d || {}); },
+        planId: function () { return state.planId || ""; }
       },
       /* 案内文の確認用（製品化レビュー 5-4・5-8）。
        * お店の人が読む文章（タブの名前・チュートリアル・ヘルプ・画面のヒント）を

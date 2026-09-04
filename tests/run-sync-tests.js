@@ -137,7 +137,7 @@ function chk(name, cond, extra) {
     const T = window.__KQ_TEST__;
     const S = T.sync;
     // この端末に中身を入れる
-    T.std.pick('plan');
+    T.std.pick('plan', T.std.get().plans[0].id);
     const before = S.autoNames().length;
     // 「ほかの端末の内容」が届いたことにして、控えを取らせる
     const other = JSON.stringify({
@@ -154,6 +154,42 @@ function chk(name, cond, extra) {
     JSON.stringify(stash.names));
   chk('⑤ 控えを取っても、この端末の内容は変わらない',
     !/よその端末の機種/.test(stash.payload), stash.payload.slice(0, 120));
+
+  /* ---- ⑥ 料金表が届いて画面を描き直しても、
+   *      「この端末で入力があった」と数えない（4-40 の2つ目の経路）----
+   * 選べなくなった段階をアプリが選び直すなど、お店の人が何も触っていないのに
+   * 見積もりの中身が変わることがある。これを入力と数えると、この端末が勝ち、
+   * ほかの端末で作った見積もりを消してしまう。 */
+  const store = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.sync;
+    // 段階（データ量）が複数あるプランを選び、2つ目の段階にしておく
+    const m0 = T.std.get();
+    const plan = m0.plans.filter((p) => p.tiers && p.tiers.length > 1)[0];
+    T.std.pick('plan', plan.id);
+    const sel = document.getElementById('tierIdx');
+    sel.value = '1';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const before = S.payload();
+    S.markSig();                       // 同期を見張り始めたときの控え
+    const editedAtStart = S.edited();
+
+    // ほかの端末から、その段階が無くなった料金表が届いたことにする
+    const m = T.std.get();
+    m.plans.filter((p) => p.id === plan.id)[0].tiers = [plan.tiers[0]];
+    S.applyStore({ master: JSON.stringify(m) });
+
+    return { editedAtStart: editedAtStart, changed: S.payload() !== before,
+      edited: S.edited(), plan: plan.id };
+  });
+  chk('⑥ 見張り始めた直後は「入力あり」にならない',
+    store.editedAtStart === false, String(store.editedAtStart));
+  // 中身が実際に変わったことを確かめる（変わらなければテストの意味がない）
+  chk('⑥ 料金表が届いて、アプリが見積もりの中身を直している',
+    store.changed === true, store.plan);
+  chk('⑥ それでも「この端末で入力があった」ことにはならない',
+    store.edited === false, 'アプリの都合の変更を入力と数えている');
 
   await browser.close();
   srv.close();
