@@ -56,9 +56,11 @@
       <button class="pat" data-pat="0" type="button">回線1</button>
       <button class="pat" data-pat="1" type="button">回線2</button>
       <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="pat" data-pat="3" type="button">回線4</button>
+      <button class="pat" data-pat="4" type="button">回線5</button>
       <button class="btn-sub" id="copyPattern" type="button">現在の内容を次の回線へコピー</button>
       <button class="btn-sub" id="clearQuoteTop" type="button">入力をクリア</button>
-      <p class="pat-note">回線1・2・3は<strong>1商談の中の別の番号</strong>です。ご家族の複数台は分けて入れてください。実績は使った回線のぶんだけ数えます（2台の機種変更なら機種変更2件）。</p>
+      <p class="pat-note">回線1〜5は<strong>1商談の中の別の番号</strong>です。ご家族の複数台は分けて入れてください。見比べていただくために作った案も、ここに入れて構いません（<strong>成約のときに、どの回線を実績に数えるか選べます</strong>）。</p>
     </div>
 
     <div class="pattern-bar">
@@ -473,7 +475,7 @@
     <div class="card full ie-head">
       <label class="check"><input type="checkbox" id="ieEnabled"> <b>この見積もりに ドコモ光／home 5G を含める</b></label>
       <p class="hint">チェックを入れると、見積書に<strong>スマホと光を合わせた世帯の合計</strong>が出せるようになります。
-        光は<strong>世帯に1本</strong>のため、回線1・2・3で共通です。</p>
+        光は<strong>世帯に1本</strong>のため、回線1〜5で共通です。</p>
       <p class="hint ie-summary" id="ieSummary"></p>
       <p class="hint ie-warn" id="ieSetWarn" hidden></p>
     </div>
@@ -749,6 +751,8 @@
       <button class="pat" data-pat="0" type="button">回線1</button>
       <button class="pat" data-pat="1" type="button">回線2</button>
       <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="pat" data-pat="3" type="button">回線4</button>
+      <button class="pat" data-pat="4" type="button">回線5</button>
     </div>
     <div class="sheet-scope no-print" id="sheetScopeWrap" hidden>
       <span class="lbl">見積書に出す内容：</span>
@@ -785,7 +789,7 @@
   <section id="tab-saved" class="tab-page no-print">
     <div class="card">
       <h2>見積もりの保存</h2>
-      <p class="hint">いま入力している3回線ぶんを、1商談としてまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
+      <p class="hint">いま入力している回線ぶん（最大5回線）を、1商談としてまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
       <div class="field">
         <label for="saveQuoteName">名前</label>
         <input type="text" id="saveQuoteName" maxlength="40" placeholder="2026/07/28 ドコモ MAX">
@@ -1161,6 +1165,12 @@
   <div class="login-box">
     <h2 id="resultDlgTitle">実績に記録</h2>
     <p class="login-lead" id="resultDlgLead"></p>
+    <!-- 成約のとき: どの回線を成約として数えるか（中身のある回線が2本以上のときだけ出る） -->
+    <div id="resultDlgLines" hidden>
+      <p class="hint" style="margin:0 0 4px"><b>どの回線を成約として数えますか？</b><br>
+        見比べていただくために作った回線は、チェックを外すと実績に数えません（見積もりは消えません）。</p>
+      <div id="resultDlgLineList"></div>
+    </div>
     <!-- 成約のとき: 実績に数える項目の一覧。−・＋で件数をその場で直せる -->
     <div id="resultDlgItems" hidden>
       <div id="resultDlgItemList"></div>

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.161.0";
+  var APP_VERSION = "1.162.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -108,8 +108,21 @@
   function quoteKey(staffId) {
     return STATE_KEY + ":" + (staffId || activeStaff().id);
   }
-  /* 1商談の中の別の番号（回線）。表示名は「回線1・回線2・回線3」 */
-  var PAT_NAMES = ["回線1", "回線2", "回線3"];
+  /* 1商談の中で扱える番号（回線）の本数。
+   * 2026-09-05 に3本→5本へ増やした（店舗の希望）。
+   * 増やすときはここだけを変えれば、画面のボタン・保存・同期が追従する。
+   * 古い保存（3本ぶん）は、足りないぶんが空の回線として読まれるので
+   * そのまま開ける（tests/run-migrate-tests.js で見張っている）。 */
+  var PAT_MAX = 5;
+  /* 表示名は「回線1」〜「回線5」 */
+  var PAT_NAMES = [];
+  for (var pn = 0; pn < PAT_MAX; pn++) PAT_NAMES.push("回線" + (pn + 1));
+  // 空の回線をPAT_MAX本ぶん作る
+  function newPatterns() {
+    var a = [];
+    for (var i = 0; i < PAT_MAX; i++) a.push(defaultState());
+    return a;
+  }
   var OPT_CATEGORIES = ["補償", "バックアップ", "セキュリティ", "エンタメ", "その他"];
   /* ④のカテゴリの表示順。店舗が並び替えたら MASTER.optCatOrder に入る。
    * 中身の判定（どのカテゴリに属すか）は従来どおり OPT_CATEGORIES を使い、
@@ -518,6 +531,17 @@
     out.innerHTML = h + '<span class="hint" style="display:block">郵便番号の上3桁での目安です。番地単位の除外があるため、最終のエリア判定はお申込み時の受付で確認されます。入力した郵便番号は保存されません。</span>';
   }
 
+  /* 中身が何も入っていない回線かどうか（保存を小さくするために使う）。
+   * 回線の番号（何番目か）は実績の記録で使うので、**後ろの空きだけ**を落とす。 */
+  function slimEmptyPattern(o) {
+    return !Object.keys(o).some(function (k) {
+      var v = o[k];
+      if (v === null || v === undefined || v === "" || v === false || v === 0) return false;
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === "object") return Object.keys(v).some(function (k2) { return v[k2]; });
+      return true;
+    });
+  }
   function slimData(d) {
     if (!d) return d;
     var out = { active: d.active | 0, patterns: (d.patterns || []).map(function (pt) {
@@ -525,6 +549,12 @@
       SLIM_PATTERN_KEYS.forEach(function (k) { if (pt && pt[k] !== undefined) o[k] = pt[k]; });
       return o;
     }) };
+    /* 回線を3本から5本に増やしたぶん（2026-09-05）、使っていない回線が
+     * 保存1件ごとに増える。300件ためると効いてくるので、後ろの空の回線は落とす
+     * （クラウドの1件あたりの上限に当たると、同期が止まってしまうため）。 */
+    while (out.patterns.length > 1 && slimEmptyPattern(out.patterns[out.patterns.length - 1])) {
+      out.patterns.pop();
+    }
     if (d.ienaka) out.ienaka = { enabled: !!d.ienaka.enabled, product: d.ienaka.product || "" };
     return out;
   }
@@ -665,8 +695,8 @@
   function loadSavedQuote(id) {
     var it = savedList.filter(function (x) { return x.id === id; })[0];
     if (!it || !it.data || !it.data.patterns) return false;
-    store.active = Math.min(Math.max(it.data.active | 0, 0), 2);
-    for (var i = 0; i < 3; i++) {
+    store.active = Math.min(Math.max(it.data.active | 0, 0), PAT_MAX - 1);
+    for (var i = 0; i < PAT_MAX; i++) {
       store.patterns[i] = Object.assign(defaultState(), it.data.patterns[i] || {});
       migratePattern(store.patterns[i]);
     }
@@ -948,7 +978,12 @@
             ? '<button class="btn-sub" data-savedsend="' + it.id + '" type="button">担当へ渡す</button>' : "")
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
         + (it.result === "won" && it.wonData
-            ? '<div class="saved-wonnote">成約した内容を記録済み（保存したときの提案内容と分けて実績に集計されます）</div>'
+            ? '<div class="saved-wonnote">成約した内容を記録済み（保存したときの提案内容と分けて実績に集計されます）'
+              + (it.wonLines && it.wonLines.length
+                  ? "<br>実績に数えた回線: "
+                    + it.wonLines.map(function (i) { return PAT_NAMES[i] || ("回線" + (i + 1)); }).join("・")
+                  : "")
+              + "</div>"
             : "")
         + (it.fromStaff
             ? '<div class="saved-wonnote">' + esc(staffName(it.fromStaff))
@@ -1030,33 +1065,60 @@
     }, function (v) { if (v) done(v); });
   }
 
+  /* 成約の確認画面に出す、回線1本ぶんの短い説明。
+   * 「回線2　MAX／iPhone 17」のように、どれを選ぶか分かるようにする。 */
+  function lineSummary(pt) {
+    var m = Object.assign(defaultState(), pt || {});
+    var bits = [];
+    if (m.planId) {
+      var pl = MASTER.plans.filter(function (x) { return x.id === m.planId; })[0];
+      if (pl) bits.push(stdName(pl));
+    }
+    if (m.deviceName) bits.push(m.deviceName);
+    else if (num(m.devicePrice) > 0) bits.push(yen(num(m.devicePrice)) + "の端末");
+    if (!bits.length && m.procType) bits.push(STATS_PROC_NAMES[m.procType] || m.procType);
+    return bits.join("／");
+  }
+
   /* 成約の確認画面。実績に数える項目の一覧を出し、−・＋で件数をその場で
    * 直せる（数え違い・「これは付けていない」をその場で正せるように）。
-   * done(担当id, 補正) — 補正は {項目キー: ±差分}（直していなければ null）。 */
-  function askWonItems(itemsMap, done) {
+   * 中身の入っている回線が2本以上あるときは、**どの回線を成約として数えるか**を
+   * その場で選べる（見比べていただくために作った案を消さずに済むように・2026-09-05）。
+   * done(担当id, 補正, 数える回線) — 補正は {項目キー: ±差分}（直していなければ null）。 */
+  function askWonItems(d, done, fixedItems) {
     var dlg = $("resultDlg");
+    /* 見積もりなしの成約（fixedItems）は回線という考え方が無いので選択欄を出さない */
+    var allLines = fixedItems ? [] : usedLinesOf(d, true);
+    var pickLines = allLines.slice();      // はじめは全部を数える（これまでと同じ）
+    function itemsNow() { return fixedItems || statsDataItems(d, true, pickLines); }
     if (!dlg) {
-      if (window.confirm("この応対を「成約」として実績に記録します。よろしいですか？")) done(activeStaff().id, null);
+      if (window.confirm("この応対を「成約」として実績に記録します。よろしいですか？")) {
+        done(activeStaff().id, null, pickLines);
+      }
       return;
     }
+    var itemsMap = itemsNow();
     var keys = Object.keys(itemsMap);
     /* 見積もりから拾えなかった項目もすべて出せるようにする（0件から＋で足す）。
      * 一覧が長くなるので、ふだんは畳んでおき「ほかの項目を足す」で開く。 */
     var catalog = statsCatalog();
-    var extraKeys = Object.keys(catalog).filter(function (k) { return !itemsMap[k]; });
-    var extraOpen = false;
-    var baseOf = {};   // 項目キー → 補正前の件数
-    keys.forEach(function (k) { baseOf[k] = itemsMap[k].n; });
-    extraKeys.forEach(function (k) { baseOf[k] = 0; });
-    var nameOf = {};
-    keys.forEach(function (k) { nameOf[k] = itemsMap[k].name; });
-    extraKeys.forEach(function (k) { nameOf[k] = catalog[k]; });
-    var adj = {};
+    var extraKeys = [], extraOpen = false;
+    var baseOf = {}, nameOf = {}, adj = {};
+    function recount() {
+      itemsMap = itemsNow();
+      keys = Object.keys(itemsMap);
+      extraKeys = Object.keys(catalog).filter(function (k) { return !itemsMap[k]; });
+      baseOf = {}; nameOf = {};
+      keys.forEach(function (k) { baseOf[k] = itemsMap[k].n; nameOf[k] = itemsMap[k].name; });
+      extraKeys.forEach(function (k) { baseOf[k] = 0; nameOf[k] = catalog[k]; });
+      $("resultDlgLead").textContent = keys.length
+        ? "実績に、次の項目を数えます。"
+        : "見積もりから拾える項目はありません（「ほかの項目を足す」から足せます）。";
+    }
+    recount();
     $("resultDlgTitle").textContent = "成約として記録";
-    $("resultDlgLead").textContent = keys.length
-      ? "実績に、次の項目を数えます。"
-      : "見積もりから拾える項目はありません（「ほかの項目を足す」から足せます）。";
     var wrapI = $("resultDlgItems"), list = $("resultDlgItemList");
+    var wrapL = $("resultDlgLines"), lineList = $("resultDlgLineList");
     function rowHtml(k) {
       var n = baseOf[k] + (adj[k] || 0);
       return '<div class="res-item' + (n === 0 ? " res-zero" : "") + '" data-resk="' + esc(k) + '">'
@@ -1065,6 +1127,20 @@
         + '<b class="res-n">' + n + "</b>"
         + '<button type="button" class="adjb" data-res-d="1" aria-label="1件増やす">＋</button>'
         + "</div>";
+    }
+    function renderLines() {
+      if (!wrapL || !lineList) return;
+      // 中身のある回線が1本だけなら選ぶ意味がないので出さない（これまでの画面のまま）
+      wrapL.hidden = allLines.length < 2;
+      if (wrapL.hidden) return;
+      lineList.innerHTML = allLines.map(function (i) {
+        var sum = lineSummary((d.patterns || [])[i]);
+        var on = pickLines.indexOf(i) >= 0;
+        return '<label class="check"><input type="checkbox" data-wonline="' + i + '"'
+          + (on ? " checked" : "") + "> <b>" + esc(PAT_NAMES[i] || ("回線" + (i + 1))) + "</b>"
+          + (sum ? '<span class="hint" style="margin-left:6px">' + esc(sum) + "</span>" : "")
+          + "</label>";
+      }).join("");
     }
     function renderList() {
       if (!list) return;
@@ -1078,6 +1154,7 @@
       }
       list.innerHTML = h;
     }
+    renderLines();
     if (wrapI) { wrapI.hidden = false; renderList(); }
     // 決めた担当の選択は、担当が2名以上の店舗だけ（従来どおり）
     var multi = activeStaffList().length >= 2;
@@ -1092,6 +1169,21 @@
     }
     $("resultDlgOk").textContent = "記録する";
     dlg.hidden = false;
+    function onLines(e) {
+      var cb = e.target;
+      if (!cb || !cb.getAttribute || cb.getAttribute("data-wonline") === null) return;
+      var i = parseInt(cb.getAttribute("data-wonline"), 10);
+      var at = pickLines.indexOf(i);
+      if (cb.checked && at < 0) pickLines.push(i);
+      if (!cb.checked && at >= 0) pickLines.splice(at, 1);
+      pickLines.sort(function (a, b) { return a - b; });
+      /* 全部外すと何も数えないことになるので、最後の1本は外させない */
+      if (!pickLines.length) { pickLines = [i]; renderLines(); }
+      /* 数える回線が変わると項目の件数も変わる。−・＋の直しは付け直す */
+      adj = {};
+      recount();
+      renderList();
+    }
     function onList(e) {
       var more = e.target.closest && e.target.closest("[data-res-more]");
       if (more) { extraOpen = true; renderList(); return; }
@@ -1108,6 +1200,8 @@
     function close() {
       dlg.hidden = true;
       if (wrapI) wrapI.hidden = true;
+      if (wrapL) { wrapL.hidden = true; }
+      if (lineList) { lineList.removeEventListener("change", onLines); lineList.innerHTML = ""; }
       if (sw) sw.hidden = false;   // 担当引き渡しなど、他の用途の表示を戻す
       if (list) { list.removeEventListener("click", onList); list.innerHTML = ""; }
       $("resultDlgOk").removeEventListener("click", ok);
@@ -1116,9 +1210,11 @@
     function ok() {
       var v = multi && sel ? sel.value : activeStaff().id;
       var a = Object.keys(adj).length ? adj : null;
+      var ln = pickLines.slice();
       close();
-      done(v, a);
+      done(v, a, ln);
     }
+    if (lineList) lineList.addEventListener("change", onLines);
     if (list) list.addEventListener("click", onList);
     $("resultDlgOk").addEventListener("click", ok);
     $("resultDlgCancel").addEventListener("click", close);
@@ -1126,14 +1222,14 @@
   function recordOutcome(result) {
     if (result === "won") {
       // いま画面の内容がそのまま「成約した内容」になる（recordOutcome2 と同じ元データ）
-      askWonItems(statsDataItems(JSON.parse(JSON.stringify(store)), true), function (byStaff, wonAdj) {
-        recordOutcome2(result, byStaff, wonAdj);
+      askWonItems(JSON.parse(JSON.stringify(store)), function (byStaff, wonAdj, lines) {
+        recordOutcome2(result, byStaff, wonAdj, lines);
       });
       return;
     }
     askResult(result, function (byStaff) { recordOutcome2(result, byStaff); });
   }
-  function recordOutcome2(result, byStaff, wonAdj) {
+  function recordOutcome2(result, byStaff, wonAdj, lines) {
     var label = result === "won" ? "成約" : "見送り";
     var src = propSrcId ? savedList.filter(function (x) { return x.id === propSrcId; })[0] : null;
     var it;
@@ -1162,9 +1258,11 @@
       it.wonData = JSON.parse(JSON.stringify(store));
       // 成約の確認画面で −・＋した補正。押し直したときは新しい補正で置き換える
       if (wonAdj) it.wonAdj = wonAdj; else delete it.wonAdj;
+      setWonLines(it, lines);
     } else {
       delete it.wonData;
       delete it.wonAdj;
+      delete it.wonLines;
     }
     delete it.wonPattern;
     persistSaved();
@@ -1194,13 +1292,13 @@
     if (viewOnlyStop()) return;
     var it = savedList.filter(function (x) { return x.id === id; })[0];
     if (!it) return;
-    if (!result) { setSavedResult2(it, result, "", null, false); return; }   // 「提案中」に戻すだけ
+    if (!result) { setSavedResult2(it, result, "", null, false, null); return; }   // 「提案中」に戻すだけ
     if (result === "won") {
       if (it.noQuote) {
         // 見積もりなしの成約は、チェックした項目がそのまま中身（wonData は使わない）
-        askWonItems(statsSavedItems(it, true, true), function (byStaff, wonAdj) {
-          setSavedResult2(it, "won", byStaff, wonAdj, false);
-        });
+        askWonItems(null, function (byStaff, wonAdj) {
+          setSavedResult2(it, "won", byStaff, wonAdj, false, null);
+        }, statsSavedItems(it, true, true));
         return;
       }
       /* いま開いている内容＝店頭で最後に調整した内容。これを成約内容として
@@ -1211,28 +1309,37 @@
         + "（保存したときの提案内容と分けて実績に集計されます）\n\n"
         + "キャンセル：保存したときの内容のまま成約にします");
       var base = useCurrent ? store : it.data;
-      askWonItems(statsDataItems(JSON.parse(JSON.stringify(base)), true), function (byStaff, wonAdj) {
-        setSavedResult2(it, "won", byStaff, wonAdj, useCurrent);
+      askWonItems(JSON.parse(JSON.stringify(base)), function (byStaff, wonAdj, lines) {
+        setSavedResult2(it, "won", byStaff, wonAdj, useCurrent, lines);
       });
       return;
     }
-    askResult(result, function (byStaff) { setSavedResult2(it, result, byStaff, null, false); });
+    askResult(result, function (byStaff) { setSavedResult2(it, result, byStaff, null, false, null); });
   }
-  function setSavedResult2(it, result, byStaff, wonAdj, useCurrent) {
+  /* 成約として数える回線を記録する。中身のある回線を全部数えるとき（＝これまでと
+   * 同じ）は何も持たせない。古い記録と同じ扱いになり、保存も大きくならない。 */
+  function setWonLines(it, lines) {
+    var all = usedLinesOf(it.wonData || it.data, true);
+    if (lines && lines.length && lines.length < all.length) it.wonLines = lines.slice();
+    else delete it.wonLines;
+  }
+  function setSavedResult2(it, result, byStaff, wonAdj, useCurrent, lines) {
     if (result === "won") {
-      /* 回線1・2・3 は1商談の中の別の番号なので、どれか1つを選ばせない。
-       * 使っているパターンぶんがそのまま成約として数えられる。 */
+      /* 回線1〜5 は1商談の中の別の番号。中身のある回線ぶんが成約として数えられるが、
+       * 見比べていただくために作った回線は、成約の確認画面で外せる（2026-09-05）。 */
       if (useCurrent) {
         it.wonData = JSON.parse(JSON.stringify(store));
       } else if (!it.noQuote) {
         delete it.wonData;
       }
       if (wonAdj) it.wonAdj = wonAdj; else delete it.wonAdj;
+      setWonLines(it, lines);
       delete it.wonPattern;
     } else {
       delete it.wonData;
       delete it.wonPattern;
       delete it.wonAdj;
+      delete it.wonLines;
     }
     it.result = result;
     it.resultAt = result ? Date.now() : 0;
@@ -1385,7 +1492,7 @@
     var cfg = statsCfg();
     var out = {};
     /* 手続きは回線ごとに持っているが、店頭では回線1で選んだら
-     * 回線2・3では選び直さないことが多い。中身が入っている回線で
+     * 回線2以降では選び直さないことが多い。中身が入っている回線で
      * 手続きが選ばれていないときは、回線1と同じ手続きとして数える
      * （2台の機種変更なら機種変更2件・店舗の指定・2026-08-14）。 */
     var todo = procTodoOf(pt) || baseTodo || {};
@@ -1511,17 +1618,11 @@
 
   // 3パターン一式＋光・5G（store のクローン）から項目を拾う
   /* 見積もり1件（＝1商談）から項目を数える。返す形は {キー: {name, n}}。
-   * 回線1・2・3 のパターンは「1商談の中の、別の番号の手続き」なので、
+   * 回線1〜5 のパターンは「1商談の中の、別の番号の手続き」なので、
    * 使っているパターンのぶんを足し上げる。2台の機種変更なら 機種変更 2件。
    * 光・5G は1商談に1つなので、パターン数にかかわらず1件。 */
-  function statsDataItems(d, won) {
-    var out = {};
-    function add(map) {
-      Object.keys(map).forEach(function (k) {
-        if (!out[k]) out[k] = { name: map[k], n: 0 };
-        out[k].n++;
-      });
-    }
+  /* 中身が入っている回線の番号（0から数える）。実績で数える対象になる。 */
+  function usedLinesOf(d, won) {
     var pats = (d && d.patterns) || [];
     var used = [];
     pats.forEach(function (pt, i) {
@@ -1531,6 +1632,24 @@
     /* 手続き内容だけを入れた（金額を触っていない）成約は、
      * 上の判定では拾えないので、開いていたパターンを1つ数える。 */
     if (won && !used.length && pats.length) used = [(d.active | 0)];
+    return used;
+  }
+  /* lines を渡すと、その回線だけを成約として数える（2026-09-05）。
+   * 見比べていただくために作った案を、成約として二重に数えないため。
+   * 渡さない（古い記録）ときは、これまでどおり中身のある回線を全部数える。 */
+  function statsDataItems(d, won, lines) {
+    var out = {};
+    function add(map) {
+      Object.keys(map).forEach(function (k) {
+        if (!out[k]) out[k] = { name: map[k], n: 0 };
+        out[k].n++;
+      });
+    }
+    var pats = (d && d.patterns) || [];
+    var used = usedLinesOf(d, won);
+    if (won && lines && lines.length) {
+      used = used.filter(function (i) { return lines.indexOf(i) >= 0; });
+    }
     var vpSt = visitStateOf(d, null);
     // 回線1（＝この商談の手続き）。手続きを選んでいない回線はこれで数える
     var baseTodo = procTodoOf(pats[0]);
@@ -1542,7 +1661,13 @@
        * 金額をお見せしただけ（提案）と、実際にお申込みいただいた（成約）を
        * 分けるため（店舗の指定・2026-08-10）。 */
       var applied = true;
-      if (won) applied = pats.some(function (pt) { return pt && pt.todoHikari; });
+      if (won) {
+        /* 数える回線が選ばれているときは、その回線の「光申し込み」だけを見る
+         * （選ばれていないときは、これまでどおり全部の回線を見る） */
+        var hp = (lines && lines.length)
+          ? lines.map(function (i) { return pats[i]; }) : pats;
+        applied = hp.some(function (pt) { return pt && pt.todoHikari; });
+      }
       if (applied) {
         out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] =
           { name: "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product), n: 1 };
@@ -1570,7 +1695,7 @@
     } else {
       if (!wonOnly) return statsDataItems(it.data);
       // 成約時に記録した内容があればそれを、無ければ保存した内容を使う
-      out = statsDataItems(it.wonData || it.data, true);
+      out = statsDataItems(it.wonData || it.data, true, it.wonLines);
     }
     /* 成約の確認画面で −・＋した補正を反映する。0件になった項目は数えない */
     if (!noAdj && it.wonAdj) {
@@ -4462,7 +4587,7 @@
    * 請求内訳の読み取り（curBill）は同期しないため、他端末から届いた内容に
    * この端末の読み取りを付け直すときに、同じお客様のものかをこの番号で見分ける。
    * （番号だけで個人情報は含まない） */
-  var store = { active: 0, gen: 0, patterns: [defaultState(), defaultState(), defaultState()], ienaka: newIenaka() };
+  var store = { active: 0, gen: 0, patterns: newPatterns(), ienaka: newIenaka() };
   var state = store.patterns[0];
 
   /* 見積もりを読み込んだ時点の「最後に直した時刻」。
@@ -4488,16 +4613,16 @@
     try {
       var s = JSON.parse(localStorage.getItem(quoteKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
-        store.active = Math.min(Math.max(s.active | 0, 0), 2);
+        store.active = Math.min(Math.max(s.active | 0, 0), PAT_MAX - 1);
         store.gen = s.gen | 0;
-        for (var i = 0; i < 3; i++) {
+        for (var i = 0; i < PAT_MAX; i++) {
           store.patterns[i] = Object.assign(defaultState(), s.patterns[i] || {});
         }
       } else {
         // 保存がない担当者に切り替えたときは、前の担当の内容を引き継がない
         store.active = 0;
         store.gen = 0;
-        for (var j = 0; j < 3; j++) store.patterns[j] = defaultState();
+        for (var j = 0; j < PAT_MAX; j++) store.patterns[j] = defaultState();
       }
     } catch (e) {}
     store.patterns.forEach(migratePattern);
@@ -5319,11 +5444,11 @@
     try {
       var incoming = JSON.parse(d.data);
       if (!incoming || !incoming.patterns) return;
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < PAT_MAX; i++) {
         store.patterns[i] = Object.assign(defaultState(), incoming.patterns[i] || {});
         migratePattern(store.patterns[i]);
       }
-      store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
+      store.active = Math.min(Math.max(incoming.active | 0, 0), PAT_MAX - 1);
       store.gen = incoming.gen | 0;
       state = store.patterns[store.active];
       stashQuoteAuto("ほかの端末の内容");
@@ -5356,7 +5481,7 @@
        * 請求内訳は「お客様の区切り（gen）」が同じときだけ付け直す。
        * 他端末で入力をクリアして次のお客様を始めたときに、
        * 前のお客様の請求内訳がこの端末で新しい見積もりに付くのを防ぐ */
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < PAT_MAX; i++) {
         var mine = (store.patterns[i] || {}).custName;
         var mineBill = (store.patterns[i] || {}).curBill;
         var pt = incoming.patterns[i] || {};
@@ -5365,7 +5490,7 @@
         store.patterns[i] = Object.assign(defaultState(), pt);
         migratePattern(store.patterns[i]);
       }
-      store.active = Math.min(Math.max(incoming.active | 0, 0), 2);
+      store.active = Math.min(Math.max(incoming.active | 0, 0), PAT_MAX - 1);
       store.gen = incoming.gen | 0;
       state = store.patterns[store.active];
       applyIenaka(incoming.ienaka);
@@ -5588,7 +5713,7 @@
     var tel = config.storeTel || src.shopTel || "";
     store.active = 0;
     store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < PAT_MAX; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
       store.patterns[i].staffName = staff;
@@ -5603,7 +5728,7 @@
     saveState();
   }
   /* ---- 作りかけの見積もりを黙って消さない ----
-   * 回線1〜3か光・5Gのどれかに入力があるか。
+   * 回線1〜5か光・5Gのどれかに入力があるか。
    * 店舗名・担当者名・電話番号は自動で入るので「入力」には数えない。 */
   function quoteHasInput() {
     var used = store.patterns.some(function (pt) {
@@ -5668,7 +5793,7 @@
     }
     var at = quoteAt(activeStaff().id);
     if (at) bits.push("最後の入力: " + savedWhen(at));
-    var lead = bits.length ? bits.join("　") : "回線1〜3のどれかに入力が残っています。";
+    var lead = bits.length ? bits.join("　") : "回線1〜5のどれかに入力が残っています。";
     if (!dlg) {
       done(window.confirm("作りかけの見積もりが残っています。続きから開きますか？\n" + lead
         + "\n\nキャンセル: 新しいお客様として始めます（いまの内容は「保存」タブに自動控えとして残ります）"));
@@ -7580,7 +7705,7 @@
     var f = $("kaimashiField"), n = $("kaimashiNote");
     if (!f || !n) return;
     /* ご来店の目的は1商談に1つなので、回線1（patterns[0]）に持つ。
-     * 回線2・3ではチェック欄を出さず、回線1の内容を文で出す。 */
+     * 回線2以降ではチェック欄を出さず、回線1の内容を文で出す。 */
     var vst = store.patterns[0] || state;
     var v = visitPurposesOf(vst);
     document.querySelectorAll("[data-visit]").forEach(function (cb) {
@@ -9620,7 +9745,7 @@
         + p2 + "</div>";
     }
 
-    /* パターン（回線1・2・3）は複数台のご提案に使うもので、案を見比べる
+    /* パターン（回線1〜5）は複数台のご提案に使うもので、案を見比べる
      * ためのものではないため、見積書に比較表は出さない（店舗の指定・2026-08-10）。 */
 
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
@@ -11011,7 +11136,7 @@
    * （画像は keitai-app/img/ に残してある。戻すときはそこから）。 */
   var TOUR_KEY = NS + "-tour-done-v1";
   var TOUR_STEPS = [
-    { t: "使い方をかんたんにご案内します。見積もり画面は、①から⑨を上から入れていくだけです。月々のお支払いがその場で出ます。ご家族の複数台は、回線1・回線2・回線3に分けて入れてください。" },
+    { t: "使い方をかんたんにご案内します。見積もり画面は、①から⑨を上から入れていくだけです。月々のお支払いがその場で出ます。ご家族の複数台は、回線1〜回線5に分けて入れてください。" },
     { t: "できあがったら「見積書」タブへ。印刷やPDF保存ができ、文字サイズも大・中・小から選べます。見積書を開いた時点の内容が「ご提案」として自動で控えられます（操作は不要です）。" },
     { t: "応対が終わったら、画面下の帯の右にある「⋯」から「成約」か「見送り」を1回押すだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく。" },
     { t: "「保存」タブの<b>「実績を見る」</b>から、担当別・項目別に提案と成約が見られ、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べます（マスタ設定は担当者コードの画面から開きます）。" },
@@ -12493,7 +12618,7 @@
       if (e.key === "Enter") tplSaveDone(true);
     });
     $("copyPattern").addEventListener("click", function () {
-      var next = (store.active + 1) % 3;
+      var next = (store.active + 1) % PAT_MAX;
       store.patterns[next] = JSON.parse(JSON.stringify(state));
       store.patterns[next].visitPurposes = {};   // 目的は回線1のものだけ
       delete store.patterns[next].visitPurpose;
@@ -13468,7 +13593,7 @@
       recalc();
     });
 
-    /* 次のお客様の応対として仕切り直すので、回線1〜3をまとめて消す。
+    /* 次のお客様の応対として仕切り直すので、回線1〜5をまとめて消す。
      * 1回線しか使っていないときは今までどおり黙って消し、
      * ほかの回線にも入力があるときだけ、消してよいか確かめる。 */
     /* 入力をクリアは、回線のバー（上）と操作の並び（下）の両方に置いてある。 */
@@ -13480,7 +13605,7 @@
         if (isPatternUsed(m) || m.planId || m.procType) others.push("回線" + (i + 1));
       });
       if (others.length && !window.confirm(
-            others.join("・") + " にも入力があります。\n回線1〜3をすべて消してよろしいですか？")) return;
+            others.join("・") + " にも入力があります。\n回線1〜5をすべて消してよろしいですか？")) return;
       resetPropTracking();
       /* 「受付が終わったものも出す」は、次のお客様には持ち越さない（4-11）。
        * 継続のお客様のために開いたまま次の接客に入ると、
@@ -13488,7 +13613,7 @@
       showEnded = false;
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
-      store.patterns = [defaultState(), defaultState(), defaultState()];
+      store.patterns = newPatterns();
       /* 光・5Gもリセットする。パターンの外（store.ienaka）にあるため、ここで消さないと
        * 前のお客様の光が次の見積もりに残り、「含める」が勝手に入っているように見える。 */
       applyIenaka(null);
@@ -13746,7 +13871,72 @@
             button: $("tplNameOk").textContent
           };
         },
-        tplCancel: function () { tplSaveDone(false); }
+        tplCancel: function () { tplSaveDone(false); },
+        // 一覧の中身（成約の記録を見る）
+        list: function () { return JSON.parse(JSON.stringify(savedList)); }
+      },
+      /* 回線（見積もりの本数）と、成約のときに数える回線の検査用（2026-09-05） */
+      lines: {
+        max: function () { return PAT_MAX; },
+        count: function () { return store.patterns.length; },
+        tabs: function () {
+          return Array.prototype.map.call(document.querySelectorAll("#tab-quote .pat"),
+            function (b) { return (b.textContent || "").trim(); });
+        },
+        // i番目の回線に中身を入れる
+        fill: function (i, patch) {
+          store.patterns[i] = Object.assign(defaultState(), patch || {});
+          migratePattern(store.patterns[i]);
+          saveState();
+        },
+        pick: function (i) { switchPattern(i); },
+        used: function () { return usedLinesOf(store, true); },
+        // 成約として数える回線を指定したときに、実績に出る項目
+        items: function (lines) {
+          return statsDataItems(JSON.parse(JSON.stringify(store)), true, lines);
+        },
+        /* 本物の「成約」を押したときと同じ流れで確認画面を開く。
+         * askOk() まで進めると、実際に実績として記録される。 */
+        won: function () {
+          recordOutcome("won");
+          var w = $("resultDlgLines");
+          return {
+            shown: !!w && !w.hidden,
+            checked: Array.prototype.map.call(
+              document.querySelectorAll("#resultDlgLineList input:checked"),
+              function (el) { return +el.getAttribute("data-wonline"); })
+          };
+        },
+        // 確認画面を開いて中身を見るだけ（記録はしない）
+        askOpen: function () {
+          askWonItems(JSON.parse(JSON.stringify(store)), function () {});
+          var w = $("resultDlgLines");
+          return {
+            shown: !!w && !w.hidden,
+            labels: Array.prototype.map.call(
+              document.querySelectorAll("#resultDlgLineList label"),
+              function (el) { return (el.textContent || "").trim(); }),
+            checked: Array.prototype.map.call(
+              document.querySelectorAll("#resultDlgLineList input:checked"),
+              function (el) { return +el.getAttribute("data-wonline"); })
+          };
+        },
+        // 選択欄のチェックを外す
+        askUncheck: function (i) {
+          var cb = document.querySelector('#resultDlgLineList input[data-wonline="' + i + '"]');
+          if (!cb) return false;
+          cb.checked = false;
+          cb.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        },
+        // 「記録する」を押す
+        askOk: function () { $("resultDlgOk").click(); },
+        askCancel: function () { $("resultDlgCancel").click(); },
+        // 成約の確認画面に出ている項目の文字
+        askItems: function () {
+          var e = $("resultDlgItemList");
+          return e ? e.innerText : "";
+        }
       },
       tplApply: function (i) { tplApply(i, false); },
       // 端末の保存領域があふれたときの動きの検査用（製品化レビュー 4-20／4-39）

@@ -86,6 +86,7 @@
    `node tests/run-sync-tests.js`（端末どうしの同期で見積もりが消えないか）・
    `node tests/run-diag-tests.js`（調子が悪いときの情報・配信元）・
    `node tests/run-touch-tests.js`（iPad・iPhone で入力欄を触ると画面が拡大しないか）・
+   `node tests/run-lines-tests.js`（回線5本・成約のときに数える回線）・
    `node tests/run-product-layout-test.js`・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、
    `tools/provision-store.js` を触ったときは `sh tools/test-provision.sh` も）
