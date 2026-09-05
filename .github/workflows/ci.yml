@@ -55,6 +55,8 @@ jobs:
         run: node tests/run-diag-tests.js
       - name: 触って使う機器（iPad・iPhone）の確認
         run: node tests/run-touch-tests.js
+      - name: 回線と成約の数え方のテスト
+        run: node tests/run-lines-tests.js
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js
 
