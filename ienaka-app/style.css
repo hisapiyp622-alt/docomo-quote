@@ -548,3 +548,18 @@ body.present .sheet{box-shadow:none}
 
 /* オプションのタイル群を出し入れするチェック */
 .ie-more{margin:6px 0 2px;font-size:13px;color:var(--muted)}
+
+/* iPhone・iPad の Safari は、文字が16pxより小さい入力欄を触ると画面を拡大し、
+ * 指を離しても元に戻らない（お客様の前で見積書が画面からはみ出す）。
+ * 触って使う機器では、入力欄の文字を16px以上にして拡大そのものを起こさせない。
+ *
+ * !important が要る理由（2026-09-05）:
+ *   最初は `input, select, textarea { ... }` と書いていたが、
+ *   `.field select`（font:inherit）や `.tile select`（10.5px）のように
+ *   **クラス付きの規則のほうが強い**ため、実際には当たっていなかった。
+ *   Safari でしか効かない書き方なので Chromium のテストでも気づけず、
+ *   直したつもりのまま22か所が残っていた。
+ *   値は max() なので、もともと16pxより大きい欄は小さくならない。 */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea { font-size: max(16px, 1em) !important; }
+}
