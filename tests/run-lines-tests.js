@@ -195,6 +195,38 @@ function chk(name, cond, extra) {
     !!all.item && all.item.result === 'won' && !all.item.wonLines,
     JSON.stringify(all.item && all.item.wonLines));
 
+  /* ---- ⑧ 使っていない回線は保存に残さない（保存の大きさ対策）----
+   * 回線を5本に増やすと、使っていない回線ぶんが保存1件ごとに増える。
+   * 保存は担当ごとに1つの塊としてクラウドへ送っており、上限を超えると
+   * 古い保存から押し出されてしまうため、後ろの空きは落とす。
+   * 落としても、開くときに空の回線として作り直されるので中身は変わらない。 */
+  const pack = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    T.saved.clear();
+    // 回線1・2だけ使い、3〜5は空のまま保存する
+    L.fill(0, { planId: plan, procType: 'kishu', deviceName: 'iPhone 17' });
+    L.fill(1, { planId: plan, procType: 'shinki', deviceName: 'Galaxy S26' });
+    L.fill(2, {}); L.fill(3, {}); L.fill(4, {});
+    L.pick(0);
+    const it = T.saved.save('容量の確認');
+    const savedPats = (it.data.patterns || []).length;
+    const bytes = JSON.stringify(it).length;
+    // 開き直したときに元どおりになるか
+    T.saved.load(it.id);
+    return { savedPats: savedPats, bytes: bytes, count: L.count(),
+      used: L.used(), name1: T.lines.items([0]) && true,
+      dev1: (T.sync.payload().indexOf('iPhone 17') >= 0),
+      dev2: (T.sync.payload().indexOf('Galaxy S26') >= 0) };
+  });
+  chk('⑧ 使っていない後ろの回線は、保存に残さない',
+    pack.savedPats === 2, '保存に入った回線の数: ' + pack.savedPats);
+  chk('⑧ 開き直すと回線は5本に戻る', pack.count === 5, String(pack.count));
+  chk('⑧ 開き直しても中身は変わらない',
+    pack.dev1 && pack.dev2 && JSON.stringify(pack.used) === '[0,1]',
+    JSON.stringify(pack.used));
+
   await browser.close();
   srv.close();
 

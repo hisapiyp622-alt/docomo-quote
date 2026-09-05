@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.162.0";
+  var APP_VERSION = "1.162.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -532,15 +532,19 @@
   }
 
   /* 中身が何も入っていない回線かどうか（保存を小さくするために使う）。
-   * 回線の番号（何番目か）は実績の記録で使うので、**後ろの空きだけ**を落とす。 */
+   * 回線の番号（何番目か）は実績の記録で使うので、**後ろの空きだけ**を落とす。
+   *
+   * 「空かどうか」は、はじめの値と丸ごと見比べて決める。
+   * 値ごとに判定すると、payMethod の "none"（＝はじめの値）のような
+   * 「文字は入っているが中身は空」を取りこぼす（2026-09-05 実測で判明）。 */
+  var slimEmptySig = "";
   function slimEmptyPattern(o) {
-    return !Object.keys(o).some(function (k) {
-      var v = o[k];
-      if (v === null || v === undefined || v === "" || v === false || v === 0) return false;
-      if (Array.isArray(v)) return v.length > 0;
-      if (typeof v === "object") return Object.keys(v).some(function (k2) { return v[k2]; });
-      return true;
-    });
+    if (!slimEmptySig) {
+      var d = defaultState(), e = {};
+      SLIM_PATTERN_KEYS.forEach(function (k) { if (d[k] !== undefined) e[k] = d[k]; });
+      slimEmptySig = JSON.stringify(e);
+    }
+    return JSON.stringify(o) === slimEmptySig;
   }
   function slimData(d) {
     if (!d) return d;
@@ -663,7 +667,7 @@
       prev.monthly = r.segs[0].monthly;
       prev.initial = r.initialTotal;
       prev.upAt = Date.now();
-      prev.data = JSON.parse(JSON.stringify(store));
+      prev.data = snapStore();
       savedList = trimSavedList(savedList);
       persistSaved();
       renderSaved();
@@ -680,7 +684,7 @@
       initial: r.initialTotal,
       savedAt: Date.now(),
       upAt: Date.now(),
-      data: JSON.parse(JSON.stringify(store))
+      data: snapStore()
     };
     savedList.unshift(item);
     savedList = trimSavedList(savedList);
@@ -1015,11 +1019,42 @@
    *   控えてある提案内容＋いまの内容（成約時）が実績として保存される
    * ・保存から開いた応対はその保存に紐づける（二重登録しない）。
    *   「現在の見積もりを保存」も同じ応対として紐づける */
+  /* 保存に残す控え（store の写し）。
+   * **使っていない後ろの回線は落とす。**開くときに空の回線として作り直されるので
+   * 中身は変わらず、保存1件あたりが小さくなる（2026-09-05）。
+   * 回線を3本から5本に増やしたとき、使っていない回線2本ぶん（1件あたり約3KB）が
+   * 保存ごとに増え、クラウドの上限（1件780KB）に早く当たって
+   * 古い保存が押し出されるようになっていた（300件→277件）。 */
+  function patSig(pt) {
+    var d = defaultState(), o = {};
+    Object.keys(d).forEach(function (k) {
+      // 店舗名・担当者名・電話番号は、使っていない回線にも自動で入るので見ない
+      if (k === "shopName" || k === "staffName" || k === "shopTel") return;
+      o[k] = (pt && pt[k] !== undefined) ? pt[k] : d[k];
+    });
+    // はじめの値に無いキーで中身があるものは、空と見なさない
+    if (pt) {
+      Object.keys(pt).forEach(function (k) { if (d[k] === undefined) o["x:" + k] = pt[k]; });
+    }
+    return JSON.stringify(o);
+  }
+  var patEmptySig = "";
+  function isEmptyPattern(pt) {
+    if (!patEmptySig) patEmptySig = patSig(null);
+    return patSig(pt) === patEmptySig;
+  }
+  function snapStore() {
+    var d = JSON.parse(JSON.stringify(store));
+    while ((d.patterns || []).length > 1 && isEmptyPattern(d.patterns[d.patterns.length - 1])) {
+      d.patterns.pop();
+    }
+    return d;
+  }
   var propSnap = null;   // 提案内容の控え（store のクローン）
   var propSrcId = null;  // この応対が紐づく保存のid
   function markPropOpened() {
     // 見積書を最初に開いたときだけ控える（開き直しでは上書きしない）
-    if (!propSnap) propSnap = JSON.parse(JSON.stringify(store));
+    if (!propSnap) propSnap = snapStore();
   }
   function resetPropTracking() { propSnap = null; propSrcId = null; }
   /* 成約・見送りを記録するときの確認。担当が2名以上いる店舗では
@@ -1245,7 +1280,7 @@
         monthly: r.segs[0].monthly,
         initial: r.initialTotal,
         savedAt: Date.now(),
-        data: propSnap || JSON.parse(JSON.stringify(store))
+        data: propSnap || snapStore()
       };
       savedList.unshift(it);
       savedList = trimSavedList(savedList);
@@ -1255,7 +1290,7 @@
     it.resultStaff = byStaff || activeStaff().id;
     it.upAt = Date.now();
     if (result === "won") {
-      it.wonData = JSON.parse(JSON.stringify(store));
+      it.wonData = snapStore();
       // 成約の確認画面で −・＋した補正。押し直したときは新しい補正で置き換える
       if (wonAdj) it.wonAdj = wonAdj; else delete it.wonAdj;
       setWonLines(it, lines);
@@ -1328,7 +1363,7 @@
       /* 回線1〜5 は1商談の中の別の番号。中身のある回線ぶんが成約として数えられるが、
        * 見比べていただくために作った回線は、成約の確認画面で外せる（2026-09-05）。 */
       if (useCurrent) {
-        it.wonData = JSON.parse(JSON.stringify(store));
+        it.wonData = snapStore();
       } else if (!it.noQuote) {
         delete it.wonData;
       }
@@ -13873,7 +13908,8 @@
         },
         tplCancel: function () { tplSaveDone(false); },
         // 一覧の中身（成約の記録を見る）
-        list: function () { return JSON.parse(JSON.stringify(savedList)); }
+        list: function () { return JSON.parse(JSON.stringify(savedList)); },
+        load: function (id) { return loadSavedQuote(id); }
       },
       /* 回線（見積もりの本数）と、成約のときに数える回線の検査用（2026-09-05） */
       lines: {
