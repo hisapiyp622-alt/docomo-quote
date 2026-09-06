@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.13.0-demo";
+  var APP_VERSION = "2.13.1-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -1068,21 +1068,19 @@
   function syncCurForm() {
     var clSel = $("ieCurLine");
     if (!clSel) return;
-    if (!clSel.options.length) {
-      CUR_LINES.forEach(function (c) {
-        var o = document.createElement("option");
-        o.value = c.id; o.textContent = c.name;
-        clSel.appendChild(o);
-      });
-    }
-    /* 選択肢から外した項目は隠す（すでに選んである見積もりでは残す） */
-    CUR_LINES.forEach(function (c, i) {
-      var o = clSel.options[i];
-      /* 選択肢から外した項目と、既定では出さない回線（optIn。店舗ごとの設定は
-       * ケータイ見積もり側の仕組みなので、単体版では常に出さない）は隠す。
-       * すでに選んである見積もりでは残す。 */
-      if (o) o.hidden = (!!c.retired || !!c.optIn) && c.id !== state.curLine;
+    /* 選択肢から外した項目と、既定では出さない回線（optIn。店舗ごとの設定は
+     * ケータイ見積もり側の仕組みなので、単体版では常に出さない）は**一覧から外す**。
+     * すでに選んである見積もりでは残す（ヒアリングの記録が黙って消えないように）。
+     *
+     * ★ 以前は option に hidden を付けていたが、**iPhone・iPad の Safari は
+     *   option の hidden を無視する**ため、実機では出さないはずの回線まで
+     *   ぜんぶ並んでしまっていた（2026-09-06 修正）。 */
+    var clHtml = "";
+    CUR_LINES.forEach(function (c) {
+      if ((!!c.retired || !!c.optIn) && c.id !== state.curLine) return;
+      clHtml += '<option value="' + esc(c.id) + '">' + esc(c.name) + "</option>";
     });
+    clSel.innerHTML = clHtml;
     clSel.value = state.curLine || "";
     $("ieCurLineOtherField").hidden = state.curLine !== "other";
     $("ieCurLineOther").value = state.curLineOther || "";
