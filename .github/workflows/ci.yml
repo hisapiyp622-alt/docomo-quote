@@ -57,6 +57,8 @@ jobs:
         run: node tests/run-touch-tests.js
       - name: 回線と成約の数え方のテスト
         run: node tests/run-lines-tests.js
+      - name: 作業ルール（CLAUDE.md と AGENTS.md）がズレていないか
+        run: node tools/build-agents.js --check
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js
 

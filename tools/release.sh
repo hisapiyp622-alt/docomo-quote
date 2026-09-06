@@ -37,6 +37,7 @@ node tests/run-sync-tests.js
 node tests/run-diag-tests.js
 node tests/run-touch-tests.js
 node tests/run-lines-tests.js
+node tools/build-agents.js --check
 node tests/run-product-layout-test.js
 
 echo "-- 2. リリースの決まり"
