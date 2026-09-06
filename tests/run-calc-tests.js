@@ -139,7 +139,61 @@ const CASES = {
   // --- その他の枠 ---
   'adhoc_monthly': { planId: 'max', adhocMonthly: [{ name: 'テスト割', amount: -550, months: 12 }] },
   'adhoc_initial': { planId: 'max', adhocInitial: [{ name: 'テスト商材', amount: 3300 }] },
-  'accessories': { planId: 'max', accessories: [{ name: 'ケース', price: 4400, pay: 'once' }, { name: 'ガラス', price: 3300, pay: 'b24' }] }
+  'accessories': { planId: 'max', accessories: [{ name: 'ケース', price: 4400, pay: 'once' }, { name: 'ガラス', price: 3300, pay: 'b24' }] },
+
+  /* ---- 2026年12月の改定（製品化レビュー 4-17）----
+   * 公式のお知らせ（2026-09-01）に載っている「ポイント進呈の例」を、そのまま
+   * ケースにしてある。
+   *
+   * ★ この改定は **2026-09-06 の店舗判断で「いま即座に切り替え」** ている。
+   *   11月ご利用分まではお客様が実際に受け取るポイントのほうが多くなるので、
+   *   見積書が「多めに見せる」side には倒れないため。
+   *   そこで nov（2026-11-30）と dec（2026-12-01）は **同じ数字になるのが正しい**。
+   *   うっかり日付で分かれてしまったら、この2つがずれて落ちる。
+   *   料金プラン: ドコモ ポイ活 MAX
+   *   各種割引  : みんなドコモ割・長期利用割・でんきセット割・
+   *               dカードお支払割・ドコモ光セット割
+   *   対象決済の特典: 3,500ポイント進呈
+   * この5つの割引の合計が 3,300円（税込＝3,000円税抜）で、
+   * 公式の②「割引額 3,000円（税抜）」と一致する。 */
+  'rev_poikatsu_plat_nov': { planId: 'poikatsu_max', minna: '3', dSet: true,
+    dCard: 'platinum', dDenki: true, choki: 'y20', pointPoikatsu: 3500 },
+  'rev_poikatsu_plat_dec': { planId: 'poikatsu_max', minna: '3', dSet: true,
+    dCard: 'platinum', dDenki: true, choki: 'y20', pointPoikatsu: 3500 },
+  'rev_poikatsu_gold_nov': { planId: 'poikatsu_max', minna: '3', dSet: true,
+    dCard: 'gold', dDenki: true, choki: 'y20', pointPoikatsu: 3500 },
+  'rev_poikatsu_gold_dec': { planId: 'poikatsu_max', minna: '3', dSet: true,
+    dCard: 'gold', dDenki: true, choki: 'y20', pointPoikatsu: 3500 },
+  'rev_poikatsu_goldu_dec': { planId: 'poikatsu_max', minna: '3', dSet: true,
+    dCard: 'goldu', dDenki: true, choki: 'y20', pointPoikatsu: 3500 },
+  // ケータイの進呈率は改定されない。12月でも同じ数字になることを見る
+  'rev_max_plat_dec': { planId: 'max', dCard: 'platinum' },
+  // ポイ活プラン以外は、12月になっても対象額を引かない
+  'rev_max_gold_dec': { planId: 'max', dCard: 'gold' },
+  /* 月額へ充当したポイントのほうが多いとき（公式の注記）。
+   * ポイ活3,500pt ＋ 爆アゲ（Netflix 広告つき 122pt）を充当 → 3,622pt を引く */
+  'rev_poikatsu_apply_dec': { planId: 'poikatsu_max', minna: '3', dSet: true,
+    dCard: 'platinum', dDenki: true, choki: 'y20', pointPoikatsu: 3500,
+    pointApply: true, options: { netflix: true }, optionKubun: { netflix: 'new' },
+    optionPrices: { netflix: 890 },
+    /* 充当するポイントは、画面では自動計算で入る欄。テストでは直接入れる
+       （run() は画面の自動計算を通さないため。gold_point_apply と同じ書き方） */
+    pointBakuage: 122, pointDcard: 800, dcardGoldAuto: true }
+};
+
+/* 改定日をまたいで見るケースは、きょうの日付を差し替えて計算する（4-17）。
+ * ここに書いていないケースは、実際のきょうの日付のまま。 */
+const CASE_TODAY = {
+  /* 即座に切り替えているので、nov と dec は同じ数字になるのが正しい。
+   * この2つがずれたら「うっかり日付で分かれてしまった」ということ。 */
+  rev_poikatsu_plat_nov: '2026-11-30',
+  rev_poikatsu_gold_nov: '2026-11-30',
+  rev_poikatsu_plat_dec: '2026-12-01',
+  rev_poikatsu_gold_dec: '2026-12-01',
+  rev_poikatsu_goldu_dec: '2026-12-01',
+  rev_max_plat_dec: '2026-12-01',
+  rev_max_gold_dec: '2026-12-01',
+  rev_poikatsu_apply_dec: '2026-12-01'
 };
 
 /* ---- 手計算の期待値（製品化レビュー 4-8・4-36） ----
@@ -252,7 +306,45 @@ const HAND = {
   /* 3つ選ぶと、高いほうの2つ（DAZN 4,200・Lemino 1,540）が0円になり、
    * 残った dアニメストア 660 は支払う。月額 5,698 ＋660 ＝6,358。
    * 還元は支払っている 660 のみ: 660 ÷1.1 ＝600 → 600 ×10% ＝60pt */
-  maxbonus_three: { seg1: 6358, optTotal: 660, bakuagePt: 60 }
+  maxbonus_three: { seg1: 6358, optTotal: 660, bakuagePt: 60 },
+
+  /* ---- 2026年12月の改定（4-17）。公式の例をそのまま手計算に置く ----
+   * 出典: https://www.docomo.ne.jp/info/notice/page/260901_00.html
+   *
+   * ポイ活MAX 11,748円（税込・＝10,680円税抜）
+   *   割引: みんな3 1,210 ＋ 光セット 1,210 ＋ dカードお支払割 550
+   *         ＋ でんき 110 ＋ 長期20年 220 ＝ 3,300円（税込・＝3,000円税抜）
+   *   月額 11,748 −3,300 ＝ 8,448円（税込・＝7,680円税抜）… 公式の④改定前と一致
+   *
+   * 【改定前（参考・いまは使っていない）】対象額 8,448（税込）→ ÷1,100 ＝7.68 → 7
+   *   PLATINUM 20% … 7 × 200pt ＝ 1,400pt ／ GOLD 10% … 7 × 100pt ＝ 700pt
+   * 【改定後（いまアプリが出す数字）】対象額から ポイ活特典 3,500pt を引く。税抜どうしで引くので
+   *   税込では 3,500×1.1 ＝3,850 を引く: 8,448 −3,850 ＝4,598 → 4,598÷1,100 ＝4.18 → 4
+   *   （税抜で見ると 7,680 −3,500 ＝4,180円。公式の④改定後と一致）
+   *   PLATINUM 20%  … 4 × 200pt ＝   800pt  ← 公式の例と一致
+   *   GOLD     10%  … 4 × 100pt ＝   400pt  ← 公式の例と一致
+   *   GOLD U    5%  … 4 ×  50pt ＝   200pt
+   *
+   * 月額（seg1）は改定の前後で変わらない（変わるのは還元ポイントだけ）。 */
+  rev_poikatsu_plat_nov: { seg1: 8448, dcardPt: 800 },
+  rev_poikatsu_plat_dec: { seg1: 8448, dcardPt: 800 },
+  rev_poikatsu_gold_nov: { seg1: 8448, dcardPt: 400 },
+  rev_poikatsu_gold_dec: { seg1: 8448, dcardPt: 400 },
+  rev_poikatsu_goldu_dec: { seg1: 8448, dcardPt: 200 },
+  /* ケータイ（ポイ活でないプラン）の進呈率は改定されない。
+   * MAX 5,698 −お支払割 550 ＝5,148 → 4×200pt ＝800pt（max_platinum と同じ） */
+  rev_max_plat_dec: { seg1: 5148, dcardPt: 800 },
+  rev_max_gold_dec: { seg1: 5148, dcardPt: 400 },
+  /* 月額へ充当したポイントのほうが多いとき（公式の注記）。
+   * 引く額 ＝ ポイ活 3,500pt ＋ 爆アゲ 122pt ＝ 3,622pt
+   *   （dカード還元そのものは、いま計算している当のものなので入れない）
+   * Netflix はコンテンツ使用料なので、還元の対象額には入らない（4-4）。
+   * 対象額 8,448 −3,622×1.1(＝3,984.2) ＝4,463.8 → ÷1,100 ＝4.05 → 4
+   *   → 4×200pt ＝800pt
+   * 月額は 8,448 ＋Netflix 890 ＝9,338 から、充当ぶん
+   *   （ポイ活3,500 ＋爆アゲ122 ＋dカード800 ＝4,422）を引いて 4,916円
+   * 爆アゲ: 890円 ÷1.1 ＝809.09 ×15% ＝121.36 → 122pt */
+  rev_poikatsu_apply_dec: { seg1: 4916, dcardPt: 800, bakuagePt: 122, pointTotal: 4422 }
 };
 // 手計算の値と、実際の計算結果を突き合わせる
 function handDiff(name, got) {
@@ -352,7 +444,19 @@ function serve() {
 
   const results = {};
   for (const [name, patch] of Object.entries(CASES)) {
+    const day = CASE_TODAY[name] || '';
+    // 改定日をまたぐケースは、きょうの日付を差し替えてから計算する（4-17）
+    if (day) await page.evaluate((d) => window.__KQ_TEST__.std.setToday(d), day);
     results[name] = await page.evaluate((p) => window.__KQ_TEST__.run(p), patch);
+    if (day) await page.evaluate(() => window.__KQ_TEST__.std.setToday(''));
+  }
+  /* 日付の差し替えを書き間違えていないか（実在しないケース名を書いても
+   * 黙って無視されるため、ここで弾く） */
+  const dayBad = Object.keys(CASE_TODAY).filter((k) => !(k in CASES));
+  if (dayBad.length) {
+    await browser.close(); srv.close();
+    console.error('CASE_TODAY に、ケース定義に無い名前があります: ' + dayBad.join('・'));
+    process.exit(1);
   }
 
   /* PLATINUM の還元率の欄が、画面でも出入りするか（製品化レビュー 5-1）。
