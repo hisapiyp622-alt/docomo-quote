@@ -53,6 +53,17 @@ const CASES = {
     housing: 'ms', curLine: 'baycom' },
   'typec_kcn_kodate': { product: 'hikaric', applyType: 'kirikae',
     housing: 'ht', curLine: 'kcn' },
+  /* ドコモ光 10ギガ タイプC（2026-09-06 追加）。
+   * 出典: https://www.docomo.ne.jp/internet/hikari/charge/10g_type_c/
+   * 月額 6,380円（2年定期契約・税込）で**戸建・マンション同額**。
+   * 1ギガ タイプCと違い、マンションでも戸建に寄せない（同額なので寄せる意味がない）。 */
+  'typec10g_kodate': { product: 'hikaric10g', housing: 'ht', applyType: 'shinki', onecoin: false },
+  'typec10g_mansion': { product: 'hikaric10g', housing: 'ms', applyType: 'shinki', onecoin: false },
+  // ベイコム（1ギガではマンション対象外の会社）でも、10ギガは同額のまま
+  'typec10g_baycom_mansion': { product: 'hikaric10g', applyType: 'kirikae',
+    housing: 'ms', curLine: 'baycom', onecoin: false },
+  // ワンコイン（6か月500円）の対象
+  'typec10g_onecoin': { product: 'hikaric10g', housing: 'ht', applyType: 'shinki', onecoin: true },
   /* タイプC転用のとき、ケーブルテレビ会社に残るお支払いを内訳で出せる（2026-09-04）。
    * ドコモの月額には足さず、別枠で出す。
    * ・内訳あり … テレビ3,465 ＋電話1,639 ＋基本料396 −割引2,838 ＝2,662円
