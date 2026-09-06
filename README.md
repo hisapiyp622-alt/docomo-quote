@@ -10,7 +10,10 @@
 
 ## はじめに読むもの
 
-- **`CLAUDE.md`** — 作業のきまり（どこを直すか・リリース手順）。**最初にここを読んでください**
+- **`CLAUDE.md`**（＝ **`AGENTS.md`**。中身は同じ）— 作業のきまり（どこを直すか・リリース手順）。
+  **最初にここを読んでください。**名前が2つあるのは、AIアシスタントによって自動で読むファイルが
+  違うためです（Claude Code は `CLAUDE.md`、Codex は `AGENTS.md`）。
+  `AGENTS.md` は `node tools/build-agents.js` が作ります（直接編集しません）
 - `HANDOVER.md` — 経緯と、やってはいけないこと
 - `HANDOVER-CURACON.md` — クラコン（Curacon）側の担当者向け
 
@@ -22,7 +25,7 @@
 | `ienaka-app/` | 光・home 5G（イエナカ）の単体版。出荷はせず、社内版の生成元として残しています |
 | `ienaka-demo/` | 営業用のデモ版（ログイン不要・オンライン専用） |
 | `/`・`/ienaka/`・`/ienaka-tokiwahigashi/` | 社内版。**`node tools/build-internal.js` が作る生成物です。直接編集しません** |
-| `tools/` | ビルド・配信・点検のスクリプト |
+| `tools/` | ビルド・配信・点検のスクリプト（`build-agents.js` が `AGENTS.md` を作ります） |
 | `tests/` | 自動テスト（金額の検算・同期・保存データの読み直しなど。CI で毎回動きます） |
 
 料金の標準値は `keitai-app/data.js` にあり、版（`masterVersion`）を上げると各店舗へ配信されます。
