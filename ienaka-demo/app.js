@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.13.1-demo";
+  var APP_VERSION = "2.14.0-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -30,6 +30,20 @@
       monthly: { ht: { A: 6380, B: 6600 }, ms: { A: 6380, B: 6600 } },
       jimu: 4950, koji: { ht: 28600, ms: 28600 },
       note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。新規工事料28,600円（実質0円特典あり・エントリー不要）。"
+    },
+    hikaric10g: {
+      name: "ドコモ光 10ギガ タイプC",
+      /* 月額は戸建・マンション同額 6,380円（2年定期契約・税込）。
+       * 定期契約なしは 8,030円。1ギガ タイプCと同じくタイプA・Bの区別は無い。
+       * 出典: https://www.docomo.ne.jp/internet/hikari/charge/10g_type_c/
+       *       （2026-09-06 確認。金額は公式ページの図の読み上げ文から取得） */
+      monthly: { ht: { A: 6380, B: 6380 }, ms: { A: 6380, B: 6380 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true, msAny: true,
+      /* 1ギガ タイプC から 10ギガ タイプC への「プラン変更」のときは、
+       * 新規（28,600円）ではなく 戸建 9,900円／マンション 8,250円（代表例）。
+       * 申込区分に「プラン変更」が無いので、工事料の欄で直していただく。 */
+      kojiChange: { ht: 9900, ms: 8250 },
+      note: "2年定期契約・税込・戸建/マンション同額。ケーブルテレビ（提携CATV）の設備で提供。お電話・テレビはケーブルテレビのご契約のまま（ドコモ光電話・テレビオプション申込不可）。10ギガ対応ルーターのドコモレンタルは対象外（お客様でご用意、または提携CATVのレンタル）。マンションタイプの有無はケーブルテレビ会社により異なります。"
     },
     hikaric: {
       name: "ドコモ光 1ギガ タイプC",
@@ -61,7 +75,10 @@
       note: "工事不要・コンセントに挿すだけ。プラン月額5,280円（税込）・事務手数料4,950円（店頭）。"
     }
   };
-  function is10g() { return state.product === "hikari10g" || state.product === "ahamo10g"; }
+  function is10g() {
+    return state.product === "hikari10g" || state.product === "ahamo10g"
+      || state.product === "hikaric10g";
+  }
   /* 10Gルーターを買っていただくのはドコモ光 10ギガだけ。
    * ahamo光はプロバイダ一体型で、対応ルーターは月額レンタルか持込になる。 */
   function canBuy10gRouter() { return state.product === "hikari10g"; }
@@ -1158,6 +1175,9 @@
       offHint.textContent = note || "";
     }
     $("typecHint").hidden = !isC;
+    // 10ギガ タイプCだけの注意（工事料・ルーター・マンション）
+    var h10c = $("typec10gHint");
+    if (h10c) h10c.hidden = state.product !== "hikaric10g";
     if (document.activeElement !== $("typecKeep")) $("typecKeep").value = state.typecKeepAmt || "";
     $("providerTypeField").hidden = !ptOn;
     // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す

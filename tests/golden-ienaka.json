@@ -632,6 +632,171 @@
       }
     ]
   },
+  "typec10g_kodate": {
+    "monthly": 7587,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6380,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 1,
+        "monthly": 7587
+      },
+      {
+        "from": 2,
+        "to": 7,
+        "monthly": 7571
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 6380
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 5189
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 6380
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 10ギガ タイプC（戸建・新規）",
+        "amount": 6380
+      }
+    ]
+  },
+  "typec10g_mansion": {
+    "monthly": 7587,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6380,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 1,
+        "monthly": 7587
+      },
+      {
+        "from": 2,
+        "to": 7,
+        "monthly": 7571
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 6380
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 5189
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 6380
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 10ギガ タイプC（マンション・新規）",
+        "amount": 6380
+      }
+    ]
+  },
+  "typec10g_baycom_mansion": {
+    "monthly": 6380,
+    "initial": 4950,
+    "koji": 0,
+    "kojiPt": 0,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6380,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 6380
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 10ギガ タイプC（マンション・転用（タイプC））",
+        "amount": 6380
+      }
+    ]
+  },
+  "typec10g_onecoin": {
+    "monthly": 1707,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6380,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 1,
+        "monthly": 1707
+      },
+      {
+        "from": 2,
+        "to": 6,
+        "monthly": 1691
+      },
+      {
+        "from": 7,
+        "to": 7,
+        "monthly": 7571
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 6380
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 5189
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 6380
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 10ギガ タイプC（戸建・新規）",
+        "amount": 6380
+      }
+    ]
+  },
   "typec_keep_breakdown": {
     "monthly": 5720,
     "initial": 4950,
