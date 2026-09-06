@@ -760,23 +760,23 @@
     $("ieApplyType").value = state.applyType || "shinki";
     var clSel = $("ieCurLine");
     if (clSel) {
-      if (!clSel.options.length) {
-        CUR_LINES.forEach(function (c) {
-          var o = document.createElement("option");
-          o.value = c.id;
-          clSel.appendChild(o);
-        });
-      }
       /* 店舗ごとの表示調整（契約の器の features）: 名前の置き換えと、出さない選択肢。
-       * 毎回描き直す（機能スイッチはログイン後に届くため） */
-      CUR_LINES.forEach(function (c, i) {
-        var o = clSel.options[i];
-        if (!o) return;
-        o.textContent = curLineName(c) + (c.catvNg ? "（タイプC対象外）" : "");
+       * 毎回作り直す（機能スイッチはログイン後に届くため）。
+       *
+       * ★ 出さない選択肢は **一覧そのものから外す**（2026-09-06 修正）。
+       *   以前は option に hidden を付けていたが、**iPhone・iPad の Safari は
+       *   option の hidden を無視する**ため、実機ではケーブルテレビ会社が
+       *   ぜんぶ（122件）並んでしまっていた。パソコンでは隠れていたので
+       *   気づけなかった。 */
+      var clHtml = "";
+      CUR_LINES.forEach(function (c) {
         /* いま選んでいる会社は、出さない設定でも選択肢に残す
          * （保存した見積もりを開き直したときに、ヒアリングの記録が黙って消えないように） */
-        o.hidden = curLineHidden(c.id) && c.id !== state.curLine;
+        if (curLineHidden(c.id) && c.id !== state.curLine) return;
+        clHtml += '<option value="' + esc(c.id) + '">'
+          + esc(curLineName(c) + (c.catvNg ? "（タイプC対象外）" : "")) + "</option>";
       });
+      clSel.innerHTML = clHtml;
       clSel.value = state.curLine || "";
       /* 会社名の手書きは「その他」と「その他コラボ光」で出す。
        * コラボ光は会社が何百社もあり、一覧に並べきれないため（2026-09-04 店舗の指定）。 */
@@ -2134,11 +2134,20 @@
       put(d);
       var el = document.getElementById("ieCurLineHint");
       var sel = document.getElementById("ieCurLine");
+      /* 選択肢は「一覧に入っているか」で見る。
+       * option の hidden で見てはいけない（iPhone・iPad の Safari は
+       * それを無視するため、隠したつもりのものが実機では出る。
+       * 2026-09-06 に、この見方のせいで122件出ていたのを見逃していた）。 */
       var opts = {};
+      var optNames = [];
       if (sel) {
-        Array.prototype.forEach.call(sel.options, function (o) { opts[o.value] = !o.hidden; });
+        Array.prototype.forEach.call(sel.options, function (o) {
+          opts[o.value] = true;
+          optNames.push(o.textContent);
+        });
       }
-      var out = { hidden: !el || el.hidden, text: el ? el.innerText : "", options: opts };
+      var out = { hidden: !el || el.hidden, text: el ? el.innerText : "",
+        options: opts, optionCount: optNames.length, optionNames: optNames };
       put(keep);
       return out;
     },

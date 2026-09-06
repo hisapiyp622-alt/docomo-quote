@@ -255,6 +255,23 @@ async function runOn(page, url, port) {
     const picked = (await p3.evaluate(
       () => window.__IE_TEST__.hintFor({ curLine: 'auhikari' }))).options.auhikari;
     if (!picked) optBad.push('auひかりを選んである見積もりで、選択肢から消えてしまいます');
+
+    /* ★ 一覧の「数」も見る（2026-09-06 の不具合）。
+     * 出さないはずのケーブルテレビ会社が、実機（iPad の Safari）では
+     * ぜんぶ出て 122件になっていた。原因は option の hidden で隠していたこと。
+     * Safari はそれを無視する。**一覧そのものから外さないと隠れない。**
+     * 数を見ておけば、同じことが起きたとき必ず落ちる。 */
+    const all = await p3.evaluate(() => window.__IE_TEST__.hintFor({}));
+    if (all.optionCount > 20) {
+      optBad.push('選択肢が多すぎます（' + all.optionCount + '件）。'
+        + '出さないはずの回線が一覧に残っています: '
+        + all.optionNames.slice(0, 8).join('・') + ' …');
+    }
+    // ケーブルテレビ会社は、設定していない店舗では1社も出さない
+    const catvOut = all.optionNames.filter((n) => /タイプC対象外|ケーブル|CATV/.test(n));
+    if (catvOut.length) {
+      optBad.push('ケーブルテレビ会社が既定で出ています: ' + catvOut.slice(0, 5).join('・'));
+    }
     await p3.close();
   }
   if (optBad.length) {
