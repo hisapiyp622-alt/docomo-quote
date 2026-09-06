@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.163.1";
+  var APP_VERSION = "1.163.2";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -5499,8 +5499,26 @@
     }
   }
 
+  /* 届いた内容の「お客様の区切り」（gen）。読めなければ 0。 */
+  function remoteGen(d) {
+    try { return (JSON.parse(d.data) || {}).gen | 0; } catch (e) { return 0; }
+  }
+  /* 届いた内容が「前のお客様のもの」かどうか（2026-09-06）。
+   *
+   * 「新しいお客様として始める」を押すと、この端末の見積もりは空になり、
+   * お客様の区切り（gen）が1つ進む。ところがクラウドにはまだ前のお客様の
+   * 内容が残っているため、そのまま取り込むと**消したはずの見積もりが戻ってくる**。
+   * （中身が空になったせいで「この端末を勝ちにする」判定も通らなかった）
+   *
+   * 区切りがこの端末のほうが新しければ、届いたものは前のお客様のものなので
+   * 取り込まない。ほかの端末が新しいお客様を始めたときは、あちらの gen が
+   * 大きくなって届くので、そちらは今までどおり取り込む。 */
+  function remoteIsOldCustomer(d) {
+    return (store.gen | 0) > remoteGen(d);
+  }
   function applyRemoteQuote(d) {
     if (!d || !d.data) return;
+    if (remoteIsOldCustomer(d)) return;
     /* クラウドの内容を当てる＝この端末の作りかけが置き換わる。
      * 中身があって、届いた内容と違うときは、消える前に控えを残す（4-40）。 */
     try {
@@ -5616,6 +5634,13 @@
        * クラウドが古いまま（送信できていない・久しぶりに同期を始めた等）だと、
        * 開き直すたびにこの端末の入力が古い内容へ戻ってしまうため。 */
       if (first) {
+        /* 「新しいお客様として始める」で区切ったあとに、クラウドへ残っている
+         * 前のお客様の内容が戻ってこないようにする（2026-09-06 阪南で発生）。
+         * 消える前に控えは残す（すでに同じ内容が控えてあれば増えない）。 */
+        if (remoteIsOldCustomer(d)) {
+          stashRemoteQuote(d);
+          markLocalEdit(); cloudOk(); return;
+        }
         var rAt = num(d.updatedAtMs);
         var lAt = num(quoteAtLoaded[sid]);   // 開く前の時刻（自動保存で更新される前）
         /* この端末で実際に入力があったか（読み込んだ直後の中身と見比べる）。
@@ -14067,6 +14092,17 @@
           return savedList.filter(function (x) { return x.auto; }).map(function (x) { return x.name; });
         },
         stashRemote: function (raw) { stashRemoteQuote({ data: raw }); },
+        // お客様の区切り（新しいお客様として始めるたびに1つ進む）
+        gen: function () { return store.gen | 0; },
+        // 「新しいお客様として始める」を押したときと同じ流れ
+        newCustomer: function () { stashQuoteAuto(); resetQuoteForNewCustomer(); syncFormFromState(); recalc(); },
+        // クラウドから届いた内容を当てる（同期の初回と同じ判定を通す）
+        applyRemote: function (raw, first) {
+          var d = { data: raw, updatedAtMs: Date.now() };
+          if (first && remoteIsOldCustomer(d)) { stashRemoteQuote(d); return "前のお客様のものとして取り込まなかった"; }
+          applyRemoteQuote(d);
+          return "取り込んだ";
+        },
         payload: function () { return quotePayload(); },
         masterKey: function () { return MASTER_KEY; },
         // 同期を見張り始めたときと同じ控えを取る

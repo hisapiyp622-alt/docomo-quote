@@ -191,6 +191,42 @@ function chk(name, cond, extra) {
   chk('⑥ それでも「この端末で入力があった」ことにはならない',
     store.edited === false, 'アプリの都合の変更を入力と数えている');
 
+  /* ---- ⑨「新しいお客様として始める」のあとに、前の見積もりが戻ってこないか ----
+   * 2026-09-06 阪南で発生。新しいお客様として始めると、この端末の見積もりは
+   * 空になる。ところがクラウドにはまだ前のお客様の内容が残っているため、
+   * 同期の初回でそれを取り込んでしまい、**消したはずの見積もりが戻っていた**。
+   * 中身が空になったせいで「この端末を勝ちにする」判定も通らなかった。 */
+  const fresh = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.sync;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    T.saved.clear();
+    // 前のお客様の見積もりを作る
+    L.fill(0, { planId: plan, procType: 'kishu', deviceName: '前のお客様の機種' });
+    L.pick(0);
+    const before = S.payload();
+    const genBefore = S.gen();
+
+    // 「新しいお客様として始める」
+    S.newCustomer();
+    const genAfter = S.gen();
+    const emptied = S.payload().indexOf('前のお客様の機種') < 0;
+
+    // クラウドには、まだ前のお客様の内容が残っている（同期の初回で届く）
+    const msg = S.applyRemote(before, true);
+    return { genBefore: genBefore, genAfter: genAfter, emptied: emptied, msg: msg,
+      back: S.payload().indexOf('前のお客様の機種') >= 0,
+      autoNames: S.autoNames() };
+  });
+  chk('⑨「新しいお客様」でお客様の区切りが1つ進む',
+    fresh.genAfter === fresh.genBefore + 1, fresh.genBefore + ' → ' + fresh.genAfter);
+  chk('⑨「新しいお客様」で見積もりが空になる', fresh.emptied === true);
+  chk('⑨ そのあとクラウドから前の内容が届いても、戻ってこない（今回の不具合）',
+    fresh.back === false, fresh.msg);
+  chk('⑨ 前のお客様の内容は「保存」タブの自動控えに残っている',
+    fresh.autoNames.length > 0, JSON.stringify(fresh.autoNames));
+
   await browser.close();
   srv.close();
 
