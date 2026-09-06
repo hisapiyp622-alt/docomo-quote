@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.162.1";
+  var APP_VERSION = "1.163.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -6866,10 +6866,45 @@
   /* PLATINUM の還元率（％）。10〜20 の外の値・空欄は 20 として扱う
    * （古い保存には この項目が無いため、既定の 20 に落とす）。 */
   var PLAT_RATE_MIN = 10, PLAT_RATE_MAX = 20, PLAT_RATE_DEF = 20;
+  /* ---------- 2026年12月ご利用分からの改定（2026-09-01 公式発表）----------
+   * 出典: https://www.docomo.ne.jp/info/notice/page/260901_00.html
+   * ポイ活プラン（ポイ活MAX・ポイ活20・eximoポイ活・ahamoポイ活）で、
+   * dカード還元の**対象額**が変わる。
+   *   改定前: 各種割引後のご利用料金
+   *   改定後: 各種割引後のご利用料金 −「ポイ活特典の対象決済に対する進呈分」
+   * 公式の例（ポイ活MAX）: 10,680円（税抜）−割引3,000円 −特典3,500pt ＝ 4,180円（税抜）が対象。
+   *   PLATINUM 20% なら（4,180の1,000円ごと）×20% ＝ 4×200pt ＝ 800pt
+   * なお **dポイントの種別・進呈率そのものに改定はない**（対象額だけが変わる）。
+   *
+   * この日が来るまでは、これまでどおりの計算のまま。見積書には別に
+   * 「改定予告」（data.js の revise）が出る。 */
+  var POIKATSU_REVISE_FROM = "2026-12-01";
+  /* いつから新しい計算にするか。
+   * **2026-09-06 の店舗判断で「いま即座に切り替える」**（日付を待たない）。
+   * 理由: 11月ご利用分まではお客様が実際に受け取るポイントのほうが多くなるので、
+   * 見積書が「多めに見せる」side には倒れない。逆（12月に減って驚かせる）は避けたい。
+   * 日付で切り替える形に戻したいときは、この関数を
+   *   return todayYmd() >= POIKATSU_REVISE_FROM;
+   * に直せばよい（テストの rev_* は両方の日付で同じ結果になることを見ている）。 */
+  function poikatsuReviseOn() { return true; }
   function platRate(st) {
     var v = Math.round(num((st || state).dcardPlatRate));
     if (!v) return PLAT_RATE_DEF;
     return Math.min(PLAT_RATE_MAX, Math.max(PLAT_RATE_MIN, v));
+  }
+  /* PLATINUM の還元率の案内文。
+   * **ケータイの進呈率（10/15/20%）は 2026年12月の改定でも変わらない。**
+   * 変わるのは「ショッピングご利用金額に関わらず最大進呈率となる期間」で、
+   * 入会初年度（12か月）→ 入会月から2か月後まで に短くなる。
+   * 率そのものが変わるのはドコモ光（最大20%→12%）のほう。
+   * 出典: https://www.docomo.ne.jp/info/notice/page/260901_00.html */
+  function platHintText() {
+    return "<strong>入会月から2か月後まで</strong>は一律<strong>20%</strong>です。"
+      + "<strong>3か月後以降</strong>は<strong>毎月の</strong>ショッピングご利用額により"
+      + "<strong>10%／15%／20%</strong>に変わるため、お客様のカードの率に合わせて"
+      + "ここを直してください（⑧のdカード還元特典の自動計算に使います）。"
+      + "<br>※<strong>2026年11月ご利用分まで</strong>は、一律20%の期間が"
+      + "「入会初年度（入会月から12か月後まで）」です。率そのものは変わりません。";
   }
   /* 還元特典の自動計算: 対象額 税込1,100円ごとのpt
    * （GOLD U 5%＝50pt／GOLD 10%＝100pt／PLATINUM は選んだ率×10pt。20%なら200pt） */
@@ -7257,6 +7292,27 @@
     adhocLimited.forEach(function (a) { if (a.amount < 0) dcardCut += -a.amount; });
     var dcardBack = (campSuppress.denki ? dDenki : 0) + (campSuppress.choki ? dChoki : 0);
     dcardGoldBase = Math.max(0, dcardGoldBase + dcardBack - dcardCut);
+    /* 2026年12月ご利用分からの改定（上の POIKATSU_REVISE_FROM 参照）。
+     * ポイ活プランのときだけ、対象額から「ポイ活特典の進呈分」を引く。
+     *
+     * 引く額は税抜どうしで比べるもの（公式の例は税抜で ①-②-③）。
+     * このアプリの対象額は税込なので、ポイント（1pt＝1円）を 1.1倍して引く。
+     * こうすると 税込1,100円ごと ＝ 税抜1,000円ごと の数え方と一致する。 */
+    var poiCut = 0;
+    if (poikatsuPlan(plan.id) && poikatsuReviseOn()) {
+      poiCut = Math.max(0, num(st.pointPoikatsu));
+      /* 公式の注記: 月額料金へ充当したポイントのほうが多いときは、そちらを引く。
+       * ただし dカード還元そのものは、いま計算している当のものなので数に入れない
+       * （入れると計算がぐるぐる回ってしまう）。 */
+      if (st.pointApply === true) {
+        var applied = Math.max(0, num(st.pointPoikatsu))
+          + Math.max(0, num(st.pointPoikatsuFamily))
+          + (st.bakuageInclude === false ? 0 : Math.max(0, num(st.pointBakuage)));
+        if (applied > poiCut) poiCut = applied;
+      }
+      dcardGoldBase = Math.max(0, dcardGoldBase - poiCut * (1 + TAX_RATE));
+      dcardBaseAfter = Math.max(0, dcardBaseAfter - poiCut * (1 + TAX_RATE));
+    }
     // 対象外プラン（ドコモmini・ahamo・irumoなど dcard10:false）は還元なし
     var dcardOff = plan.dcard10 === false;
     var dcardAutoPt = dcardOff ? 0 : Math.floor(dcardGoldBase / 1100) * dcardRatePt(st.dCard, st);
@@ -8964,6 +9020,8 @@
     var dcShow = goldOn || num(state.pointDcard) > 0;
     $("dcardAutoWrap").hidden = !dcShow || !applyOn;
     $("dcardAutoHint").hidden = !goldOn;
+    var phHint = $("platRateHint");
+    if (phHint) phHint.innerHTML = platHintText();
     $("dcardAutoReset").hidden = !goldOn || num(state.pointDcard) === (r.dcardAutoPt || 0);
     if (dcShow) {
       $("dcardAutoInclude").checked = state.dcardGoldAuto !== false;

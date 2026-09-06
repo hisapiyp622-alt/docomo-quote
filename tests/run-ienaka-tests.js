@@ -131,21 +131,80 @@ async function runOn(page, url, port) {
     await page.selectOption(sel, 'platinum'); await page.waitForTimeout(200);
     if (await shown(rateId + 'Field') !== true) uiBad.push('PLATINUM を選んでも還元率の欄が出ません');
     if (await shown(hintId) !== true) uiBad.push('PLATINUM を選んでも還元率の説明が出ません');
-    if (await page.inputValue(rateId) !== '20') uiBad.push('還元率の初期値が 20 ではありません');
+    /* 初期値は、そのときの上限（2026年12月の改定で 20% → 12%）。
+     * 上限そのものの確認は、下の「2026年12月の改定」でまとめて見る。 */
+    const mx = String(await page.evaluate(() => window.__IE_TEST__.platMax()));
+    if (await page.inputValue(rateId) !== mx) {
+      uiBad.push('還元率の初期値が上限（' + mx + '）になっていません');
+    }
     // 率を下げると、還元ポイントも下がる
     const pt = () => page.$eval('#dcardHint', (e) => (e.textContent.match(/→ (\d+)pt/) || [])[1]);
-    const at20 = await pt();
+    const atMax = await pt();
     await page.fill(rateId, '10'); await page.dispatchEvent(rateId, 'input'); await page.waitForTimeout(300);
     const at10 = await pt();
-    if (!(Number(at10) > 0 && Number(at10) * 2 === Number(at20))) {
-      uiBad.push(`率を 20%→10% にしてもポイントが半分になりません（${at20}pt → ${at10}pt）`);
+    if (!(Number(at10) > 0 && Number(at10) * Number(mx) === Number(atMax) * 10)) {
+      uiBad.push(`率を ${mx}%→10% にしても、ポイントが率どおりに減りません（${atMax}pt → ${at10}pt）`);
     }
-    // 10〜20 の外を入れたら 20 に直る
+    // 範囲の外を入れたら上限に直る
     await page.fill(rateId, '99'); await page.dispatchEvent(rateId, 'change'); await page.waitForTimeout(300);
-    if (await page.inputValue(rateId) !== '20') uiBad.push('10〜20 の外の値が直りません');
+    if (await page.inputValue(rateId) !== mx) uiBad.push('範囲の外の値が上限に直りません');
     await page.selectOption(sel, 'none'); await page.waitForTimeout(200);
   }
   await rateCheck('#dcard', '#platRate', '#platRateHint');
+
+  /* 2026年12月の改定（製品化レビュー 4-17）。
+   * ドコモ光への dカード PLATINUM の還元が、最大20% → 最大12% に変わる。
+   *   出典: https://www.docomo.ne.jp/info/notice/page/260901_00.html
+   * ※ケータイの進呈率（10/15/20%）は変わらない。変わるのはドコモ光のほう。
+   *
+   * ★ **2026-09-06 の店舗判断で「いま即座に切り替え」** ている。
+   *   11月ご利用分まではお客様が実際に受け取るポイントのほうが多くなるので、
+   *   見積書が「多めに見せる」side には倒れないため。
+   *   そのため、きょうの日付を11月にしても12月にしても **同じ 12% になるのが正しい**。 */
+  const revBad = [];
+  {
+    const setDay = (d) => page.evaluate((x) => window.__IE_TEST__.setToday(x), d);
+    const maxOf = () => page.evaluate(() => window.__IE_TEST__.platMax());
+    const rateOf = () => page.evaluate(() => window.__IE_TEST__.platRate());
+
+    for (const day of ['2026-11-30', '2026-12-01', '']) {
+      await setDay(day);
+      const mx = await maxOf();
+      if (mx !== 12) revBad.push('上限が 12% になりません（日付 ' + (day || 'きょう') + ' で ' + mx + '）');
+    }
+
+    /* 20% のまま保存してあった見積もりを開いたときは、12% に落ちること
+     * （公式の率より高いポイントを、お客様にお見せしないため） */
+    await page.evaluate(() => { window.__IE_TEST__.run({ dcard: 'platinum', dcardPlatRate: 20 }); });
+    if (await rateOf() !== 12) revBad.push('20%のまま保存した見積もりが 12% に落ちません');
+
+    // 画面の入力欄・案内文・選択肢の文字も 12% になること
+    await page.selectOption('#dcard', 'platinum'); await page.waitForTimeout(300);
+    const mx2 = await page.getAttribute('#platRate', 'max');
+    if (String(mx2) !== '12') revBad.push('入力欄の上限が 12 になりません（いま ' + mx2 + '）');
+    if (await page.inputValue('#platRate') !== '12') {
+      revBad.push('還元率の初期値が 12 になりません（いま ' + await page.inputValue('#platRate') + '）');
+    }
+    const hint = await page.textContent('#platRateHint');
+    if (!/最大12%/.test(hint || '')) revBad.push('案内文に「最大12%」が出ません');
+    if (!/11月のご利用分まで|11月ご利用分まで/.test(hint || '')) {
+      revBad.push('案内文に「11月ご利用分までは最大20%」の断りが出ません');
+    }
+    const optTxt = await page.textContent('#dcardPlatOpt');
+    if (!/12%/.test(optTxt || '')) revBad.push('選択肢の文字が 12% になりません（いま ' + optTxt + '）');
+
+    /* お客様の見積書に入る一文（改定の断り）。12月になるまでは出す。 */
+    await setDay('2026-11-30');
+    await page.selectOption('#dcard', 'gold'); await page.waitForTimeout(150);
+    await page.selectOption('#dcard', 'platinum'); await page.waitForTimeout(300);
+    const notes = await page.evaluate(() => window.__IE_TEST__.reviseNotices
+      ? window.__IE_TEST__.reviseNotices() : []);
+    if (!notes.length || !/多くたまります/.test(notes.join(''))) {
+      revBad.push('見積書に入る断りが「実際にはこれより多くたまります」になっていません: ' + JSON.stringify(notes));
+    }
+    await setDay('');
+    await page.selectOption('#dcard', 'none'); await page.waitForTimeout(200);
+  }
 
   /* タイプCがマンションで使えない会社を選んだとき、画面で止まるか（2026-09-04）。
    * 金額が戸建てに寄るだけだと、お店は気づかずに申し込んでしまう。
@@ -256,6 +315,11 @@ async function runOn(page, url, port) {
     process.exit(1);
   }
   console.log('PLATINUM の還元率の欄: 問題なし');
+  if (revBad.length) {
+    console.error('2026年12月の改定（ドコモ光の還元率）に問題があります:\n  ✗ ' + revBad.join('\n  ✗ '));
+    process.exit(1);
+  }
+  console.log('2026年12月の改定（ドコモ光 最大12%）: 問題なし');
   console.log(`光・5Gの金額テスト: ${ok}/${Object.keys(CASES).length} OK`
     + `（統合版と単体版の一致: ${Object.keys(CASES).length - INTEGRATED_ONLY.length - diffs.length}`
     + `/${Object.keys(CASES).length - INTEGRATED_ONLY.length}）`);

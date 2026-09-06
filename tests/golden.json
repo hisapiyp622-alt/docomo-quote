@@ -1982,5 +1982,253 @@
         "monthly": 5698
       }
     ]
+  },
+  "rev_poikatsu_plat_nov": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 800,
+    "dcardPtAfter": 800,
+    "bakuagePt": 0,
+    "pointTotal": 3500,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 8448
+      }
+    ]
+  },
+  "rev_poikatsu_plat_dec": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 800,
+    "dcardPtAfter": 800,
+    "bakuagePt": 0,
+    "pointTotal": 3500,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 8448
+      }
+    ]
+  },
+  "rev_poikatsu_gold_nov": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 400,
+    "dcardPtAfter": 400,
+    "bakuagePt": 0,
+    "pointTotal": 3500,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 8448
+      }
+    ]
+  },
+  "rev_poikatsu_gold_dec": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 400,
+    "dcardPtAfter": 400,
+    "bakuagePt": 0,
+    "pointTotal": 3500,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 8448
+      }
+    ]
+  },
+  "rev_poikatsu_goldu_dec": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 200,
+    "dcardPtAfter": 200,
+    "bakuagePt": 0,
+    "pointTotal": 3500,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 8448
+      }
+    ]
+  },
+  "rev_max_plat_dec": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 800,
+    "dcardPtAfter": 800,
+    "bakuagePt": 0,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
+  "rev_max_gold_dec": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 400,
+    "dcardPtAfter": 400,
+    "bakuagePt": 0,
+    "pointTotal": 0,
+    "pointApply": false,
+    "optTotal": 0,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 5148
+      }
+    ]
+  },
+  "rev_poikatsu_apply_dec": {
+    "initial": 0,
+    "store": 0,
+    "bill": 0,
+    "dcardPt": 800,
+    "dcardPtAfter": 800,
+    "bakuagePt": 122,
+    "pointTotal": 4422,
+    "pointApply": true,
+    "optTotal": 890,
+    "voicePrice": 0,
+    "firstExtra": 0,
+    "device": {
+      "monthly": 0,
+      "months": 0,
+      "after": 0,
+      "afterFirstExtra": 0,
+      "firstExtra": 0,
+      "zanka": 0,
+      "jisshitsu": 0,
+      "total": 0,
+      "atama": 0
+    },
+    "segs": [
+      {
+        "from": 1,
+        "to": "inf",
+        "monthly": 4916
+      }
+    ]
   }
 }

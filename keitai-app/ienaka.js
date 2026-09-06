@@ -279,12 +279,52 @@
     });
   }
 
-  /* PLATINUM の還元率（％）。10〜20 の外の値・空欄は 20 として扱う
-   * （この項目が無い古い保存も 20 に落ちる）。 */
+  /* きょうの日付（YYYY-MM-DD）。テストで差し替えられるようにしておく。
+   * 改定の切り替えと「改定予告」の出し分けで、同じ日付を使う。 */
+  var ieToday = "";
+  function todayYmd() {
+    if (ieToday) return ieToday;
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate());
+  }
+
+  /* PLATINUM の還元率（％）。空欄・範囲の外はその時点の上限として扱う
+   * （この項目が無い古い保存も上限に落ちる）。
+   *
+   * 2026年12月ご利用分からの改定（2026-09-01 公式発表）:
+   *   ドコモ光のご利用料金への進呈率が **最大20% → 最大12%** に変わる。
+   *   毎月のショッピングご利用金額により 10%／11%／12%
+   *   （入会月から2か月後までは一律12%）。
+   *   ※ケータイの進呈率（10/15/20%）は変わらない。変わるのはドコモ光。
+   *   ※エリアの差があるのは「ドコモでんきGreen」で、ドコモ光には無い。
+   *   出典: https://www.docomo.ne.jp/info/notice/page/260901_00.html */
+  var PLAT_MIN = 10, PLAT_MAX_OLD = 20, PLAT_MAX_NEW = 12;
+  var PLAT_REVISE_FROM = "2026-12-01";
+  /* いつから新しい上限にするか。
+   * **2026-09-06 の店舗判断で「いま即座に切り替える」**（日付を待たない）。
+   * 理由: 11月ご利用分まではお客様が実際に受け取るポイントのほうが多くなるので、
+   * 見積書が「多めに見せる」side には倒れない。
+   * 日付で切り替える形に戻すときは
+   *   return todayYmd() >= PLAT_REVISE_FROM ? PLAT_MAX_NEW : PLAT_MAX_OLD;
+   * に直す。 */
+  function platMax() { return PLAT_MAX_NEW; }
   function platRate() {
+    var mx = platMax();
     var v = Math.round(num(state.dcardPlatRate));
-    if (!v) return 20;
-    return Math.min(20, Math.max(10, v));
+    if (!v) return mx;
+    return Math.min(mx, Math.max(PLAT_MIN, v));
+  }
+
+  /* PLATINUM の還元率の案内文。改定の前と後で書き分ける（2026-09-01 公式発表）。 */
+  function platHintText() {
+    return "ドコモ光への還元は<strong>最大12%</strong>です。"
+      + "<strong>入会月から2か月後まで</strong>は一律12%、<strong>3か月後以降</strong>は"
+      + "<strong>毎月の</strong>ショッピングご利用額により<strong>10〜12%</strong>に変わるため、"
+      + "お客様のカードの率に合わせてここを直してください。"
+      + "<br>※<strong>2026年11月ご利用分まで</strong>は最大20%です。"
+      + "この見積もりは、<strong>12月からの新しい率</strong>でご案内しています"
+      + "（11月ご利用分までは、実際にはこれより多くたまります）。";
   }
   // 画面・見積書に出す「10%」「20%」などの文字
   function dcardRateText() { return state.dcard === "gold" ? "10" : String(platRate()); }
@@ -294,12 +334,10 @@
   var REVISE = [{
     from: "2026-12-01",
     when: function () { return state.dcard === "platinum" && PRODUCTS[state.product].dcard !== false; },
-    text: "2026年12月のご利用分から、dカード PLATINUM のドコモ光ご利用料金への還元は、最大20%から最大12%（毎月のショッピングご利用金額により10〜12%）に変わります。12月以降は、この見積もりのポイント数より少なくなります。"
+    text: "このお見積もりのdポイントは、2026年12月のご利用分から適用される還元率（dカード PLATINUM のドコモ光ご利用料金への還元 最大12%）で計算しています。2026年11月のご利用分までは最大20%のため、実際にはこのお見積もりより多くたまります。"
   }];
   function reviseNotices() {
-    var today = new Date();
-    function z(n) { return ("0" + n).slice(-2); }
-    var ymd = today.getFullYear() + "-" + z(today.getMonth() + 1) + "-" + z(today.getDate());
+    var ymd = todayYmd();
     return REVISE.filter(function (r2) { return ymd < r2.from && r2.when(); })
       .map(function (r2) { return r2.text; });
   }
@@ -901,6 +939,12 @@
     $("ieDpointHint").hidden = !isHikari();
     $("ieDcard").value = state.dcard || "none";
     $("iePlatRate").value = platRate();
+    // 上限は改定の前後で変わる（20% → 12%）ので、画面側もそろえる
+    $("iePlatRate").max = platMax();
+    var phHint = $("iePlatRateHint");
+    if (phHint) phHint.innerHTML = platHintText();
+    var phOpt = $("dcardPlatOpt");
+    if (phOpt) phOpt.textContent = "PLATINUM（利用料金の最大" + platMax() + "%還元）";
     $("ieRouter10gWrap").hidden = !canBuy10gRouter();
     $("ieRouter10g").checked = state.router10g !== false;
     var r10gOn = canBuy10gRouter() && state.router10g !== false;
@@ -2068,6 +2112,12 @@
    * 代表パターンの入力を当てて calc() の結果を返す。呼び出し前の内容は戻す。
    * 画面には触らないので、開いている見積もりは変わらない。 */
   window.__IE_TEST__ = {
+    /* 改定日をまたいだ動きを見るために、きょうの日付を差し替える（4-17） */
+    setToday: function (ymd) { ieToday = String(ymd || ""); },
+    today: function () { return todayYmd(); },
+    platMax: function () { return platMax(); },
+    platRate: function () { return platRate(); },
+    reviseNotices: function () { return reviseNotices(); },
     version: "integrated",
     /* 画面に出る「現在のご利用回線」の注意書きを読む（2026-09-04）。
      * run() は金額を出すだけで画面を描き直さないので、こちらを使う。
