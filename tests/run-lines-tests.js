@@ -335,6 +335,7 @@ function chk(name, cond, extra) {
   /* ---- ⑪ U39（ご利用者が39歳以下）----
    * ドコモの評価指標の「成長領域加算」に当たる。お客様の年齢はアプリでは
    * 分からないので、お店がチェックで入れる（2026-09-07）。
+   * 欄は**のりかえ（MNP）のときだけ**出す（店舗の指定・2026-09-07）。
    * 加算は**基本の行とは別の行**として数えられる（基本105点＋加算48点＝153点）。 */
   const u39 = await page.evaluate(() => {
     const T = window.__KQ_TEST__;
@@ -343,22 +344,32 @@ function chk(name, cond, extra) {
     const plan = m.plans[0].id;
     /* 回線1だけ U39、回線2は U39 なし。
      * プランを成約として数えるには「料金プランの変更あり」が要る仕様なので入れる。 */
-    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+    L.fill(0, { planId: plan, procType: 'mnp', procTodo: { mnp: true },
       planChange: true, u39: true });
-    L.fill(1, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+    L.fill(1, { planId: plan, procType: 'mnp', procTodo: { mnp: true },
       planChange: true, u39: false });
     L.pick(0);
     L.cxSet([
-      { id: 'base', name: '新規 × プランA', pt: 105, keys: ['proc:shinki', 'plan:' + plan] },
-      { id: 'add', name: '新規 × プランA × U39', pt: 48, keys: ['proc:shinki', 'plan:' + plan, 'u39'] }
+      { id: 'base', name: 'のりかえ × プランA', pt: 105, keys: ['proc:mnp', 'plan:' + plan] },
+      { id: 'add', name: 'のりかえ × プランA × U39', pt: 48, keys: ['proc:mnp', 'plan:' + plan, 'u39'] }
     ]);
     const rows = L.cxBreak();
+    const f = document.getElementById('u39Field');
     const cb = document.getElementById('u39');
+    // 欄が「手続き内容」のカードにあるか（U15 と同じ場所）
+    const card = f && f.closest('.card');
+    const inProcCard = !!(card && /手続き内容/.test((card.querySelector('h2') || {}).textContent || ''));
+    const nextToU15 = !!(card && card.contains(document.getElementById('u15Field')));
     return { inCatalog: !!L.cxCatalog()['u39'], rows: rows, total: L.cxTotal(),
-      hasBox: !!cb, boxChecked: cb ? cb.checked : null };
+      hasBox: !!cb, shownOnMnp: f ? !f.hidden : null,
+      inProcCard: inProcCard, nextToU15: nextToU15 };
   });
   function pick(list, id) { return (list || []).filter((x) => x.id === id)[0] || null; }
   chk('⑪ 画面に U39 のチェック欄がある', u39.hasBox === true);
+  chk('⑪ U39 の欄は「手続き内容」にあり、U15 と同じカードに並ぶ',
+    u39.inProcCard === true && u39.nextToU15 === true,
+    'カード:' + u39.inProcCard + ' / U15と同じ:' + u39.nextToU15);
+  chk('⑪ のりかえのときは U39 の欄が出る', u39.shownOnMnp === true);
   chk('⑪ 実績の項目に U39 が出る', u39.inCatalog === true);
   chk('⑪ 基本の行は2回線とも数える',
     !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 2, JSON.stringify(u39.rows));
@@ -366,6 +377,31 @@ function chk(name, cond, extra) {
     !!pick(u39.rows, 'add') && pick(u39.rows, 'add').n === 1, JSON.stringify(pick(u39.rows, 'add')));
   chk('⑪ 合計は 105×2 ＋ 48 ＝258（基本と加算が足される）',
     u39.total === 258, String(u39.total));
+
+  /* のりかえ以外では欄を出さない。出していない手続きでチェックが残っていても、
+   * 見えないまま実績に入らないこと（画面と数え方で同じものを見る）。 */
+  const u39Off = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    const out = {};
+    [['kishu', '機種変更'], ['shinki', '新規']].forEach(([k, name]) => {
+      L.fill(0, { planId: plan, procType: k, procTodo: { [k]: true },
+        planChange: true, u39: true });
+      L.fill(1, {});
+      L.pick(0);
+      const f = document.getElementById('u39Field');
+      out[k] = { name: name, shown: f ? !f.hidden : null };
+    });
+    // 機種変更のままで、U39 の加算だけの行が数えられないこと
+    L.cxSet([{ id: 'add', name: 'U39 だけ', pt: 48, keys: ['u39'] }]);
+    out.counted = L.cxTotal();
+    return out;
+  });
+  chk('⑪ 機種変更のときは U39 の欄を出さない', u39Off.kishu.shown === false);
+  chk('⑪ 新規のときも U39 の欄を出さない（のりかえのときだけ）', u39Off.shinki.shown === false);
+  chk('⑪ 欄を出していない手続きでは、チェックが残っていても数えない',
+    u39Off.counted === 0, String(u39Off.counted));
 
   /* U39 はお客様の紙には出さない（実績のためだけの印） */
   const u39Sheet = await page.evaluate(() => {
