@@ -324,6 +324,49 @@ function chk(name, cond, extra) {
   chk('⑩ 同じ行は差し替え、無い行は足す',
     imp.res.added === 1 && imp.res.updated === 1 && imp.res.skipped === 0, JSON.stringify(imp.res));
 
+  /* ---- ⑪ U39（ご利用者が39歳以下）----
+   * ドコモの評価指標の「成長領域加算」に当たる。お客様の年齢はアプリでは
+   * 分からないので、お店がチェックで入れる（2026-09-07）。
+   * 加算は**基本の行とは別の行**として数えられる（基本105点＋加算48点＝153点）。 */
+  const u39 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const plan = m.plans[0].id;
+    /* 回線1だけ U39、回線2は U39 なし。
+     * プランを成約として数えるには「料金プランの変更あり」が要る仕様なので入れる。 */
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, u39: true });
+    L.fill(1, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, u39: false });
+    L.pick(0);
+    L.cxSet([
+      { id: 'base', name: '新規 × プランA', pt: 105, keys: ['proc:shinki', 'plan:' + plan] },
+      { id: 'add', name: '新規 × プランA × U39', pt: 48, keys: ['proc:shinki', 'plan:' + plan, 'u39'] }
+    ]);
+    const rows = L.cxBreak();
+    const cb = document.getElementById('u39');
+    return { inCatalog: !!L.cxCatalog()['u39'], rows: rows, total: L.cxTotal(),
+      hasBox: !!cb, boxChecked: cb ? cb.checked : null };
+  });
+  function pick(list, id) { return (list || []).filter((x) => x.id === id)[0] || null; }
+  chk('⑪ 画面に U39 のチェック欄がある', u39.hasBox === true);
+  chk('⑪ 実績の項目に U39 が出る', u39.inCatalog === true);
+  chk('⑪ 基本の行は2回線とも数える',
+    !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 2, JSON.stringify(u39.rows));
+  chk('⑪ 加算はチェックした回線だけ数える',
+    !!pick(u39.rows, 'add') && pick(u39.rows, 'add').n === 1, JSON.stringify(pick(u39.rows, 'add')));
+  chk('⑪ 合計は 105×2 ＋ 48 ＝258（基本と加算が足される）',
+    u39.total === 258, String(u39.total));
+
+  /* U39 はお客様の紙には出さない（実績のためだけの印） */
+  const u39Sheet = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.lines.pick(0);
+    return T.std.sheetHtml();
+  });
+  chk('⑪ お客様の見積書に U39 は出ない', !/U39/.test(u39Sheet), u39Sheet.slice(0, 80));
+
   await browser.close();
   srv.close();
 

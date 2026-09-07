@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.166.0";
+  var APP_VERSION = "1.167.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -501,7 +501,7 @@
    * 月額の割引額はプランごとに違うため data.js の discounts.kosodate に持つ。 */
   var KOSODATE_VOICE_OFF = 880;
   var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty", "kosodate",
-    "kaimashi", "u15", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "kaimashi", "u15", "u39", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
 
   /* ---------- 大阪ガス（ドコモガス）エリアの目安判定 ----------
@@ -744,7 +744,7 @@
       return '<label class="check"><input type="checkbox" data-nqv="' + k + '"> ' + esc(VISIT_NAMES[k]) + "</label>";
     }).join("");
     var cat = statsCatalog();
-    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "highend", "device",
+    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "device",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function nqRank(k) {
       for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
@@ -1409,6 +1409,9 @@
     if (typeof c.highendYen !== "number") c.highendYen = 100000; // Androidでハイエンドとみなす金額
     if (typeof c.highendIpKw !== "string") c.highendIpKw = "Pro、Air";  // iPhoneでハイエンドとみなす機種名
     if (typeof c.u15 === "undefined") c.u15 = true;              // （再掲）U15
+    /* U39（ご利用者が39歳以下）。ドコモの評価指標の「成長領域加算」に当たる。
+     * お客様の年齢はアプリでは分からないので、お店がチェックで入れる（2026-09-07）。 */
+    if (typeof c.u39 === "undefined") c.u39 = true;
     if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
     if (!c.feeSkip) c.feeSkip = {};
     if (typeof c.accs === "undefined") c.accs = true;
@@ -1553,6 +1556,7 @@
       });
       if (azOn) out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     }
+    if (cfg.u39 && pt.u39) out["u39"] = "（再掲）U39";
     if (cfg.kaimashi) {
       var buyOn = vks.indexOf("buy") >= 0;
       var kaimashiOn = buyOn ? !!pt.kaimashi : !!(vks.length && todo.kishu);
@@ -1736,6 +1740,7 @@
         if (k.indexOf("opt:") === 0) delete sc.optSkip[k.slice(4).replace(/:exist$/, "")];
         if (k === "highend") sc.highend = true;
         if (k === "u15") sc.u15 = true;
+        if (k === "u39") sc.u39 = true;
         if (k === "kaimashi") sc.kaimashi = true;
       });
     });
@@ -1910,6 +1915,7 @@
     });
     if (cfg.kaimashi) out["kaimashi"] = "プラスワン（再掲）";
     if (cfg.u15) out["u15"] = "（再掲）U15";
+    if (cfg.u39) out["u39"] = "（再掲）U39";
     if (cfg.highend) out["highend"] = "（再掲）機種ハイエンド";
     (MASTER.plans || []).forEach(function (pl) {
       if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
@@ -2409,7 +2415,7 @@
     var catalog = statsCatalog();
 
     /* ---- 並び順 ---- */
-    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "highend", "device",
+    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "device",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
@@ -4747,7 +4753,7 @@
       // 手続き内容（引き継ぎシートに記載）
       /* ご来店の目的。①端末購入 以外で来店されて機種変更が入った場合は
        * 「買い増し」として実績に再掲する。①のときは買い増しの有無をチェックで持つ。 */
-      visitPurposes: {}, kaimashi: false, u15: false,
+      visitPurposes: {}, kaimashi: false, u15: false, u39: false,
       procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
       todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
@@ -8002,6 +8008,7 @@
     var buy = vks.indexOf("buy") >= 0;
     f.hidden = !buy;
     $("kaimashi").checked = !!state.kaimashi;
+    $("u39").checked = !!state.u39;
     var auto = !buy && vks.length > 0 && !!(state.procTodo || {}).kishu;
     n.hidden = !auto;
     if (auto) {
@@ -10148,7 +10155,9 @@
       + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
       + "> 「来店目的別」の表を出す（目的ごとの応対数・成約・成約になった内容）</label>"
       + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
-      + "> プラスワン（再掲）</label></div>"
+      + "> プラスワン（再掲）</label>"
+      + '<label class="check"><input type="checkbox" data-sc-u39="1"' + (sc.u39 ? " checked" : "")
+      + "> U39（再掲・ご利用者が39歳以下）</label></div>"
       + '<p class="hint">プラスワンは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
       + '<strong>端末購入で「買い増しあり」にチェックした場合</strong>に数えます。'
       + '機種変更の実績はそのまま数えたうえで、<strong>再掲</strong>として別に1件数えます。</p></div>';
@@ -10235,7 +10244,7 @@
     /* 月の目標。入れた項目だけが実績の「目標と進捗」に出る（管理者だけに見えます）。 */
     var goals = MASTER.statsGoalItems || {};
     var cat = statsCatalog();
-    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "highend", "device",
+    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "device",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function gRank(k) {
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
@@ -12801,6 +12810,7 @@
     }
     if (t.hasAttribute("data-sc-visit")) { statsCfg().visit = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-kaimashi")) { statsCfg().kaimashi = t.checked; markEdited(); return true; }
+    if (t.hasAttribute("data-sc-u39")) { statsCfg().u39 = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-plan")) {
       sc = statsCfg();
       var pid = t.getAttribute("data-sc-plan");
@@ -13549,7 +13559,7 @@
         var k = cb.getAttribute("data-visit");
         if (cb.checked) vst.visitPurposes[k] = true; else delete vst.visitPurposes[k];
         if (visitKeys(vst).indexOf("buy") < 0) {
-          store.patterns.forEach(function (pt) { pt.kaimashi = false; });
+          store.patterns.forEach(function (pt) { pt.kaimashi = false; pt.u39 = false; });
         }
         renderVisitPurpose();
         recalc();
@@ -13557,6 +13567,10 @@
     });
     $("kaimashi").addEventListener("change", function () {
       state.kaimashi = this.checked;
+      recalc();
+    });
+    $("u39").addEventListener("change", function () {
+      state.u39 = this.checked;
       recalc();
     });
     ["todoDcard", "todoDenki", "todoGas", "todoHikari"].forEach(function (id) {
