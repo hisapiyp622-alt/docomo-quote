@@ -1369,6 +1369,47 @@ function chk(name, cond, extra) {
   chk('㉙ 「サポート」というタブを作っていない',
     !cats.soloCats['サポート'], JSON.stringify(cats.soloCats));
 
+  /* ---- ㉚ 当日の古い保存の「成約」を押したとき（2026-09-08・店舗からの指摘）----
+   * 画面に別のお客様の見積もりが開いたまま、古い保存の「成約」を押すと、
+   * 画面のほう（直近に保存したお客様）の内容が成約として記録されていた。 */
+  const won = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    const m = T.std.get();
+    S.clear();
+    // お客様A: ドコモMAX を1本（先に保存する＝当日の古いほう）
+    L.fill(0, { planId: 'max', procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const a = S.save('お客様A');
+    // お客様B: ポイ活MAX を1本（あとから保存＝直近）
+    L.fill(0, { planId: 'poikatsu_max', procType: 'shinki', procTodo: { shinki: true },
+      planChange: true });
+    L.pick(0);
+    const b = S.save('お客様B');
+    const srcAfterB = S.srcId();
+    // ここで A の「成約」を押す（画面には B が開いたまま）
+    const wonA = S.won(a.id, true);      // OK を押した場合
+    // B の成約は、画面の続きなので画面の内容でよい
+    const wonB = S.won(b.id, true);
+    return { aId: a.id, bId: b.id, srcAfterB: srcAfterB,
+      wonAItems: Object.keys(wonA.items), wonAUsedCurrent: wonA.usedCurrent,
+      wonBItems: Object.keys(wonB.items), wonBUsedCurrent: wonB.usedCurrent };
+  });
+  chk('㉚ 保存した直後は、画面の見積もりがその保存の続きになっている',
+    won.srcAfterB === won.bId, won.srcAfterB + ' / ' + won.bId);
+  chk('㉚ 古い保存（お客様A）の成約に、画面のお客様Bの内容が入らない',
+    won.wonAItems.indexOf('plan:poikatsu_max') < 0, JSON.stringify(won.wonAItems));
+  chk('㉚ 古い保存（お客様A）は、保存したときの内容（ドコモMAX・のりかえ）で数える',
+    won.wonAItems.indexOf('plan:max') >= 0 && won.wonAItems.indexOf('proc:mnp') >= 0,
+    JSON.stringify(won.wonAItems));
+  chk('㉚ 古い保存では、画面の内容を成約内容として持たない',
+    won.wonAUsedCurrent === false, String(won.wonAUsedCurrent));
+  chk('㉚ 画面の続きである保存（お客様B）は、これまでどおり画面の内容で記録できる',
+    won.wonBUsedCurrent === true
+    && won.wonBItems.indexOf('plan:poikatsu_max') >= 0, JSON.stringify(won.wonBItems));
+
   await browser.close();
   srv.close();
 

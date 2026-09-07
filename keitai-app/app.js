@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.179.0";
+  var APP_VERSION = "1.179.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1351,12 +1351,29 @@
         return;
       }
       /* いま開いている内容＝店頭で最後に調整した内容。これを成約内容として
-       * 記録すれば、保存したときの「最初の提案」と比べられる。 */
-      var useCurrent = window.confirm(
-        "「" + it.name + "」を成約にします。\n\n"
-        + "OK：いま画面に開いている見積もりを『成約した内容』として記録します\n"
-        + "（保存したときの提案内容と分けて実績に集計されます）\n\n"
-        + "キャンセル：保存したときの内容のまま成約にします");
+       * 記録すれば、保存したときの「最初の提案」と比べられる。
+       *
+       * ただし、それが言えるのは**画面の見積もりがこの保存の続き**のときだけ
+       * （propSrcId で分かる）。別のお客様の見積もりを開いたまま、当日の古い
+       * 保存の「成約」を押すと、そちらの内容が成約として記録されてしまっていた
+       * （2026-09-08 店舗からの指摘）。続きでないときは選ばせず、
+       * 保存したときの内容で記録する。 */
+      var sameQuote = propSrcId === it.id;
+      var useCurrent = false;
+      if (sameQuote) {
+        useCurrent = window.confirm(
+          "「" + it.name + "」を成約にします。\n\n"
+          + "OK：いま画面に開いている見積もりを『成約した内容』として記録します\n"
+          + "（保存したときの提案内容と分けて実績に集計されます）\n\n"
+          + "キャンセル：保存したときの内容のまま成約にします");
+      } else if (!window.confirm(
+          "「" + it.name + "」を成約にします。\n\n"
+          + "いま画面に開いているのは別の見積もりなので、\n"
+          + "保存したときの内容で記録します。\n\n"
+          + "画面の内容で記録したいときは、キャンセルを押して\n"
+          + "先に「" + it.name + "」を読み込んでください。")) {
+        return;
+      }
       var base = useCurrent ? store : it.data;
       askWonItems(JSON.parse(JSON.stringify(base)), function (byStaff, wonAdj, lines) {
         setSavedResult2(it, "won", byStaff, wonAdj, useCurrent, lines);
@@ -14898,7 +14915,30 @@
         save: function (name) { return saveQuote(name); },
         // 一覧に出ている文字（お客様名が出ているかを見る）
         listText: function () { renderSaved(); var e = $("savedList"); return e ? e.innerText : ""; },
-        clear: function () { savedList = []; persistSaved(); renderSaved(); },
+        clear: function () {
+          savedList = []; persistSaved(); renderSaved(); resetPropTracking();
+        },
+        /* 保存済みの見積もりの「成約」を、実際の道を通して押す。
+         * confirm の答えは ok で決める（画面の内容を使うか）。
+         * 戻り値: この保存に、成約の内容として何が記録されたか。 */
+        won: function (id, ok) {
+          var oc = window.confirm;
+          window.confirm = function () { return !!ok; };
+          try { setSavedResult(id, "won"); } finally { window.confirm = oc; }
+          /* 成約の確認画面が開くので、最後まで進める（ここまでやらないと
+           * 記録されない。開いただけで確かめると、直っていなくても通る） */
+          var okBtn = $("resultDlgOk");
+          if (okBtn) okBtn.click();
+          var it = savedList.filter(function (x) { return x.id === id; })[0] || {};
+          return {
+            result: it.result || "",
+            usedCurrent: !!it.wonData,
+            // 成約として数えた内容（wonData が無ければ保存したときの内容）
+            items: statsSavedItems(it, true, false)
+          };
+        },
+        // いま画面の見積もりが、どの保存の続きか
+        srcId: function () { return propSrcId; },
         // テンプレの枠を押したときの案内（置き換えの警告）
         tplPrompt: function (i) {
           tplSave(i, false);
