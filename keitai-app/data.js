@@ -48,7 +48,7 @@
  * ========================================================= */
 const DEFAULT_DATA = {
   "masterVersion": 18,
-  "updated": "2026-09-07",
+  "updated": "2026-09-08",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
