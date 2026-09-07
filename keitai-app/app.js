@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.169.0";
+  var APP_VERSION = "1.171.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -500,7 +500,7 @@
    * 出典: docomo.ne.jp/charge/kosodate_wari/（2026-08-20 確認）
    * 月額の割引額はプランごとに違うため data.js の discounts.kosodate に持つ。 */
   var KOSODATE_VOICE_OFF = 880;
-  var SLIM_PATTERN_KEYS = ["planId", "planChange", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty", "kosodate",
+  var SLIM_PATTERN_KEYS = ["planId", "planChange", "tierIdx", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty", "kosodate",
     "kaimashi", "u15", "u39", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
 
@@ -1399,6 +1399,17 @@
     if (typeof c.visit === "undefined") c.visit = true;        // 来店目的
     if (typeof c.kaimashi === "undefined") c.kaimashi = true;  // プラスワン（再掲）
     if (!c.plans) c.plans = { max: true, poikatsu_max: true };
+    /* 段階（容量）ごとに分けて数えるプラン（店舗の指定・2026-09-07）。
+     * 例）ドコモ mini … 4GB と 10GB を別の行にする。 */
+    if (!c.planTier) c.planTier = { mini: true };
+    /* 法人プラン（ドコモ Biz）を実績でも数える（店舗の指定・2026-09-07）。
+     * すでに使っているお店は c.plans を持っているので、初期値を変えても効かない。
+     * そのため1回だけ入れる。あとから要らなくなったらチェックを外せる。 */
+    if (!c.bizPlansOn) {
+      c.plans.biz_unlimited = true;
+      c.plans.biz_kakehodai = true;
+      c.bizPlansOn = true;
+    }
     if (!c.device) c.device = "kw";           // off=追わない / all=全機種 / kw=キーワード
     if (typeof c.deviceKw !== "string") c.deviceKw = "Pixel";
     if (!c.dcard) c.dcard = "type";           // off / one=まとめて1行 / type=種別ごと
@@ -1434,12 +1445,32 @@
   }
   /* U15のプラン。新規・MNPでこれを選んでいたら「（再掲）U15」に数える */
   var U15_PLANS = { u15_debut: true, u15: true };
-  /* U39は、のりかえ（MNP）の回線だけ（店舗の指定・2026-09-07）。
+  /* 実績のキーからプランのidを取り出す（"plan:mini:t1" → "mini"） */
+  function planIdOfKey(k) { return String(k || "").slice(5).replace(/:t\d+$/, ""); }
+  /* プラン1件ぶんの実績のキーと表示名。
+   * 「容量ごとに分ける」を入れたプランは、段階ごとに別の行にする。
+   * ただし**以前の保存には容量が入っていない**ので、そのぶんは分けずに数える。
+   * 0番目（いちばん小さい容量）として数えてしまうと、過去の実績が狂うため。 */
+  function statsPlanKey(id, ptRaw) {
+    var pl = planById(id);
+    var base = "プラン: " + (pl ? pl.name : id);
+    if (!pl || !statsCfg().planTier[id] || !pl.tiers || pl.tiers.length < 2) {
+      return { key: "plan:" + id, name: base };
+    }
+    if (!ptRaw || !("tierIdx" in ptRaw)) {
+      return { key: "plan:" + id, name: base + "（容量なし・以前の保存）" };
+    }
+    var i = Math.min(Math.max(ptRaw.tierIdx | 0, 0), pl.tiers.length - 1);
+    return { key: "plan:" + id + ":t" + i, name: base + "（" + (pl.tiers[i].label || (i + 1)) + "）" };
+  }
+  /* U39は、新規契約・のりかえ（MNP）の回線だけ（店舗の指定・2026-09-07）。
+   * U15 と同じ条件。機種変更・プラン変更のときは出さない。
    * 画面の出し分け（renderU39）と、数え方（statsPatternItems）で同じものを見る。
    * todo は「回線1と同じ手続きとして数える」補いが入ったもの。 */
   function u39Line(pt, todo) {
     var t = todo || (pt && pt.procTodo) || {};
-    return !!t.mnp || (pt && pt.procType === "mnp");
+    return !!(t.shinki || t.mnp)
+      || (pt && (pt.procType === "shinki" || pt.procType === "mnp"));
   }
   function statsKwTest(kw, name) {
     var n = String(name || "").toLowerCase();
@@ -1571,8 +1602,8 @@
     }
     if (pt.planId && statsPlanCounted(pt.planId)
         && !(won && PLAN_WON_NEEDS_CHANGE[pt.planId] && !pt.planChange)) {
-      var pl = planById(pt.planId);
-      out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
+      var pk = statsPlanKey(pt.planId, ptRaw);
+      out[pk.key] = pk.name;
     }
     /* （再掲）U15: 新規・MNPのご契約で、U15のプランを選んだか
      * 「U15」にチェックしたとき。機種変更のときは数えない。 */
@@ -1716,7 +1747,7 @@
     var out = {};
     cxRows().forEach(function (r) {
       (r.keys || []).forEach(function (k) {
-        if (k.indexOf("plan:") === 0) out[k.slice(5)] = true;
+        if (k.indexOf("plan:") === 0) out[planIdOfKey(k)] = true;
       });
     });
     return out;
@@ -1857,7 +1888,7 @@
       Object.keys(map).forEach(function (k) {
         /* ポイントの条件にだけ使っているプランは、実績の「項目別」には出さない
          * （「実績で追う項目」でチェックしたプランだけが行になる・2026-09-07） */
-        if (k.indexOf("plan:") === 0 && !cfg.plans[k.slice(5)]) return;
+        if (k.indexOf("plan:") === 0 && !cfg.plans[planIdOfKey(k)]) return;
         if (!out[k]) out[k] = { name: map[k], n: 0 };
         out[k].n++;
       });
@@ -1954,8 +1985,18 @@
     if (cfg.u39) out["u39"] = "（再掲）U39";
     if (cfg.highend) out["highend"] = "（再掲）機種ハイエンド";
     (MASTER.plans || []).forEach(function (pl) {
-      if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
-      else if (withCxPlans) out["plan:" + pl.id] = "プラン: " + pl.name + "（実績には出しません）";
+      var on = !!cfg.plans[pl.id];
+      if (!on && !withCxPlans) return;
+      var name = "プラン: " + pl.name, tail = on ? "" : "（実績には出しません）";
+      if (cfg.planTier[pl.id] && pl.tiers && pl.tiers.length >= 2) {
+        pl.tiers.forEach(function (t, i) {
+          out["plan:" + pl.id + ":t" + i] = name + "（" + (t.label || (i + 1)) + "）" + tail;
+        });
+        // 容量が入っていない以前の保存のぶん
+        out["plan:" + pl.id] = name + "（容量なし・以前の保存）" + tail;
+      } else {
+        out["plan:" + pl.id] = name + tail;
+      }
     });
     out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     if (cfg.device === "all") out["device"] = "機種販売";
@@ -4230,6 +4271,9 @@
   function masterUpdateAvailable() {
     return num(DEFAULT_DATA.masterVersion) > num(MASTER.masterVersion);
   }
+  // プランの世代（見積もり画面の「プラン世代」・マスタ設定の並び）
+  var PLAN_GROUPS = ["current", "biz", "legacy"];
+  var PLAN_GROUP_NAMES = { current: "現行", biz: "法人", legacy: "旧プラン" };
   // 上書きしない項目（店舗が決めるもの）
   var FEE_KEEP = { atamakin_default: true };
   // 標準から引き継ぐ項目（金額と、計算に効く条件だけ。名前・置き場所は店舗のまま）
@@ -4663,7 +4707,9 @@
       }
       if (!pl.tiers || !pl.tiers.length) pl.tiers = [{ label: "", price: 0 }];
       if (!pl.discounts) pl.discounts = {};
-      if (pl.group !== "current" && pl.group !== "legacy") pl.group = "current";
+      /* 世代は「現行・法人・旧」の3つ。知らない値は現行に寄せる
+       * （法人プラン＝ドコモ Biz を足した・2026-09-07）。 */
+      if (PLAN_GROUPS.indexOf(pl.group) < 0) pl.group = "current";
     });
     // でんき・ガスの「現在の会社」と連絡先（初期データから補完）
     if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
@@ -8070,7 +8116,7 @@
     }
   }
 
-  /* U39の欄は、のりかえ（MNP）のときだけ出す（店舗の指定・2026-09-07）。
+  /* U39の欄は、新規・のりかえ（MNP）のときだけ出す（店舗の指定・2026-09-07）。
    * 出していないときにチェックが残っていると、見えないまま実績に入ってしまうので、
    * 数える側（statsPatternItems）でも同じ条件で見る。 */
   function renderU39() {
@@ -10232,6 +10278,27 @@
       + 'その場合は<strong>ポイントには数えますが、実績の表には出ません</strong>。'
       + 'いまポイントに使っているプランには<strong>（ポイントに使用中）</strong>と付きます。</p></div>';
 
+    /* 容量が2段階以上あるプランは、実績を容量ごとに分けられる（店舗の指定・2026-09-07）。 */
+    var tierPlans = (MASTER.plans || []).filter(function (pl) {
+      return pl.tiers && pl.tiers.length >= 2;
+    });
+    if (tierPlans.length) {
+      h += '<div class="plan-sec"><span class="plan-lbl">容量ごとに分けるプラン</span><div class="sub-checks">';
+      tierPlans.forEach(function (pl) {
+        h += '<label class="check"><input type="checkbox" data-sc-plantier="' + esc(pl.id) + '"'
+          + (sc.planTier[pl.id] ? " checked" : "") + "> " + esc(pl.name)
+          + "（" + esc(pl.tiers.map(function (t) { return t.label; }).join("・")) + "）</label>";
+      });
+      h += "</div>"
+        + '<p class="hint">チェックすると、実績とポイントで<strong>容量ごとに別の行</strong>になります'
+        + '（例: 「ドコモ mini（4GB）」「ドコモ mini（10GB）」）。<br>'
+        + '<strong>2026年9月7日より前に保存した分には容量が入っていません。</strong>'
+        + 'そのぶんは分けずに<strong>「（容量なし・以前の保存）」</strong>の行にまとめます'
+        + '（いちばん小さい容量として数えると、過去の実績が変わってしまうためです）。<br>'
+        + 'チェックを変えたときは、<strong>「実績のポイント」の条件も入れ直してください</strong>。'
+        + '容量ごとの行と、分けないときの行は別のものとして数えます。</p></div>';
+    }
+
     h += '<div class="plan-sec"><span class="plan-lbl">機種販売・dカード・でんき・ガス・光</span><div class="sub-checks">';
     h += '<label class="check">機種販売 <select id="scDevice">'
       + '<option value="off"' + (sc.device === "off" ? " selected" : "") + ">追わない</option>"
@@ -10270,7 +10337,7 @@
     h += '<label class="check"><input type="checkbox" data-sc-flag="u15"'
       + (sc.u15 ? " checked" : "") + "> （再掲）U15（新規・MNPのとき）</label>";
     h += '<label class="check"><input type="checkbox" data-sc-u39="1"'
-      + (sc.u39 ? " checked" : "") + "> （再掲）U39（のりかえのとき）</label>";
+      + (sc.u39 ? " checked" : "") + "> （再掲）U39（新規・のりかえのとき）</label>";
     h += "</div>"
       + '<p class="hint"><strong>機種ハイエンド</strong>は、機種販売とは別に1件数えます。'
       + '<strong>iPhone</strong>（機種名に iPhone を含むもの）は、上の言葉（Pro・Air）が機種名に入っていればハイエンドです（金額は見ません）。'
@@ -10278,9 +10345,9 @@
       + 'クーポンや店舗独自キャンペーンの値引きは引かずに判定します。'
       + '<strong>U15</strong>は、新規・MNPで<strong>U15のプランを選んだとき</strong>か、手続き内容の'
       + '<strong>「U15（15歳以下）」にチェックしたとき</strong>に数えます。'
-      + '<strong>U39</strong>は、<strong>のりかえ（MNP）</strong>の回線で、手続き内容の'
+      + '<strong>U39</strong>は、<strong>新規・のりかえ（MNP）</strong>の回線で、手続き内容の'
       + '<strong>「U39（ご利用者が39歳以下）」にチェックしたとき</strong>に数えます'
-      + '（チェック欄も、のりかえのときだけ出ます）。</p></div>';
+      + '（チェック欄も、新規・のりかえのときだけ出ます）。</p></div>';
 
     h += '<div class="plan-sec"><span class="plan-lbl">オプション（チェックを外すと数えません）</span><div class="sub-checks">';
     MASTER.options.forEach(function (o) {
@@ -10506,8 +10573,10 @@
         + mvBtns
         + '<input type="text" class="plan-name" value="' + esc(pl.name) + '" placeholder="プラン名" data-pl-name="' + pi + '">'
         + '<select data-pl-group="' + pi + '">'
-        + '<option value="current"' + (pl.group === "current" ? " selected" : "") + ">現行</option>"
-        + '<option value="legacy"' + (pl.group === "legacy" ? " selected" : "") + ">旧プラン</option>"
+        + PLAN_GROUPS.map(function (g) {
+            return '<option value="' + g + '"' + (pl.group === g ? " selected" : "") + ">"
+              + PLAN_GROUP_NAMES[g] + "</option>";
+          }).join("")
         + "</select>"
         + '<button class="btn-sub" data-pl-close="' + pi + '" type="button">たたむ ▴</button>'
         + '<button class="btn-sub" data-pl-copy="' + pi + '" type="button">複製</button>'
@@ -12879,6 +12948,10 @@
     if (t.hasAttribute("data-sc-visit")) { statsCfg().visit = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-kaimashi")) { statsCfg().kaimashi = t.checked; markEdited(); return true; }
     if (t.hasAttribute("data-sc-u39")) { statsCfg().u39 = t.checked; markEdited(); return true; }
+    if (t.hasAttribute("data-sc-plantier")) {
+      statsCfg().planTier[t.getAttribute("data-sc-plantier")] = t.checked;
+      markEdited(); renderMasterTab(); return true;
+    }
     if (t.hasAttribute("data-sc-plan")) {
       sc = statsCfg();
       var pid = t.getAttribute("data-sc-plan");
@@ -14402,6 +14475,13 @@
         tplCancel: function () { tplSaveDone(false); },
         // 一覧の中身（成約の記録を見る）
         list: function () { return JSON.parse(JSON.stringify(savedList)); },
+        /* 古い保存を軽くする処理（slimSavedItem）を通す。実績に要る項目を
+         * 落としていないかを、実際の保存の形で確かめるために使う。 */
+        slimAll: function () {
+          savedList.forEach(function (it) { slimSavedItem(it); });
+          persistSaved();
+          return JSON.parse(JSON.stringify(savedList));
+        },
         load: function (id) { return loadSavedQuote(id); }
       },
       /* 回線（見積もりの本数）と、成約のときに数える回線の検査用（2026-09-05） */
@@ -14423,6 +14503,11 @@
         // 成約として数える回線を指定したときに、実績に出る項目
         items: function (lines) {
           return statsDataItems(JSON.parse(JSON.stringify(store)), true, lines);
+        },
+        /* 保存された中身をそのまま渡して項目を拾う（以前の保存＝容量が
+         * 入っていない形をそのまま作れるようにするため） */
+        itemsRaw: function (pats) {
+          return statsDataItems({ active: 0, patterns: pats || [] }, true, null);
         },
         /* 本物の「成約」を押したときと同じ流れで確認画面を開く。
          * askOk() まで進めると、実際に実績として記録される。 */

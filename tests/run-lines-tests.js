@@ -360,8 +360,18 @@ function chk(name, cond, extra) {
     const card = f && f.closest('.card');
     const inProcCard = !!(card && /手続き内容/.test((card.querySelector('h2') || {}).textContent || ''));
     const nextToU15 = !!(card && card.contains(document.getElementById('u15Field')));
+    const shownOnMnp = f ? !f.hidden : null;
+    // 新規に切り替えても出ること（U15 と同じ条件）
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, u39: true });
+    L.pick(0);
+    const shownOnShinki = f ? !f.hidden : null;
+    // のりかえに戻してから件数を見る
+    L.fill(0, { planId: plan, procType: 'mnp', procTodo: { mnp: true },
+      planChange: true, u39: true });
+    L.pick(0);
     return { inCatalog: !!L.cxCatalog()['u39'], rows: rows, total: L.cxTotal(),
-      hasBox: !!cb, shownOnMnp: f ? !f.hidden : null,
+      hasBox: !!cb, shownOnMnp: shownOnMnp, shownOnShinki: shownOnShinki,
       inProcCard: inProcCard, nextToU15: nextToU15 };
   });
   function pick(list, id) { return (list || []).filter((x) => x.id === id)[0] || null; }
@@ -370,6 +380,7 @@ function chk(name, cond, extra) {
     u39.inProcCard === true && u39.nextToU15 === true,
     'カード:' + u39.inProcCard + ' / U15と同じ:' + u39.nextToU15);
   chk('⑪ のりかえのときは U39 の欄が出る', u39.shownOnMnp === true);
+  chk('⑪ 新規のときも U39 の欄が出る（U15 と同じ条件）', u39.shownOnShinki === true);
   chk('⑪ 実績の項目に U39 が出る', u39.inCatalog === true);
   chk('⑪ 基本の行は2回線とも数える',
     !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 2, JSON.stringify(u39.rows));
@@ -385,7 +396,7 @@ function chk(name, cond, extra) {
     const L = T.lines;
     const plan = T.std.get().plans[0].id;
     const out = {};
-    [['kishu', '機種変更'], ['shinki', '新規']].forEach(([k, name]) => {
+    [['kishu', '機種変更'], ['plan', 'プラン変更']].forEach(([k, name]) => {
       L.fill(0, { planId: plan, procType: k, procTodo: { [k]: true },
         planChange: true, u39: true });
       L.fill(1, {});
@@ -399,7 +410,7 @@ function chk(name, cond, extra) {
     return out;
   });
   chk('⑪ 機種変更のときは U39 の欄を出さない', u39Off.kishu.shown === false);
-  chk('⑪ 新規のときも U39 の欄を出さない（のりかえのときだけ）', u39Off.shinki.shown === false);
+  chk('⑪ プラン変更のときも U39 の欄を出さない', u39Off.plan.shown === false);
   chk('⑪ 欄を出していない手続きでは、チェックが残っていても数えない',
     u39Off.counted === 0, String(u39Off.counted));
 
@@ -446,6 +457,141 @@ function chk(name, cond, extra) {
   chk('⑫ 実績で追っているプランは、これまでどおり項目に出る',
     offPlan.itemKeys.indexOf('plan:' + offPlan.on) >= 0, JSON.stringify(offPlan.itemKeys));
   chk('⑫ 合計は 34 ＋ 105 ＝139', offPlan.total === 139, String(offPlan.total));
+
+  /* ---- ⑬ 容量ごとに分けるプラン（ドコモ mini の 4GB・10GB・2026-09-07）----
+   * ・容量ごとに別の行になる
+   * ・容量が入っていない以前の保存は、分けずに1つの行にまとめる
+   *   （いちばん小さい容量として数えると、過去の実績が変わってしまうため） */
+  const tier = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m0 = T.std.get();
+    // 「容量ごとに分ける」が入っているプラン（初期値はドコモ mini）
+    const split = (m0.statsCfg || {}).planTier || {};
+    const pl = m0.plans.filter((p) => p.tiers && p.tiers.length >= 2 && split[p.id])[0];
+    // 実績の表に出す設定にしてから見る（初期値では出していないプランのため）
+    m0.statsCfg.plans[pl.id] = true;
+    T.std.set(m0);
+    // 回線1は小さい容量、回線2は大きい容量
+    L.fill(0, { planId: pl.id, tierIdx: 0, procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, { planId: pl.id, tierIdx: 1, procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.pick(0);
+    const cat = L.cxCatalog();
+    return {
+      plan: pl.id, labels: pl.tiers.map((t) => t.label),
+      itemKeys: Object.keys(L.items()),
+      names: L.items(),
+      catT0: cat['plan:' + pl.id + ':t0'] || '',
+      catT1: cat['plan:' + pl.id + ':t1'] || '',
+      catOld: cat['plan:' + pl.id] || ''
+    };
+  });
+  chk('⑬ 容量ごとに別の行になる（小さい容量）',
+    tier.itemKeys.indexOf('plan:' + tier.plan + ':t0') >= 0, JSON.stringify(tier.itemKeys));
+  chk('⑬ 容量ごとに別の行になる（大きい容量）',
+    tier.itemKeys.indexOf('plan:' + tier.plan + ':t1') >= 0, JSON.stringify(tier.itemKeys));
+  chk('⑬ 分ける前の行は出ない',
+    tier.itemKeys.indexOf('plan:' + tier.plan) < 0, JSON.stringify(tier.itemKeys));
+  chk('⑬ 行の名前に容量が入る',
+    tier.catT0.indexOf(tier.labels[0]) >= 0 && tier.catT1.indexOf(tier.labels[1]) >= 0,
+    tier.catT0 + ' / ' + tier.catT1);
+  chk('⑬ 条件の一覧に、以前の保存ぶんの行もある',
+    /容量なし/.test(tier.catOld), tier.catOld);
+
+  /* 容量が入っていない以前の保存は、分けずにまとめる */
+  const tierOld = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const split = (m.statsCfg || {}).planTier || {};
+    const pl = m.plans.filter((p) => p.tiers && p.tiers.length >= 2 && split[p.id])[0];
+    m.statsCfg.plans[pl.id] = true;
+    T.std.set(m);
+    return { id: pl.id,
+      keys: Object.keys(L.itemsRaw([{ planId: pl.id, procType: 'mnp', procTodo: { mnp: true }, planChange: true }])) };
+  });
+  chk('⑬ 容量が入っていない以前の保存は、容量ごとに分けない',
+    tierOld.keys.indexOf('plan:' + tierOld.id) >= 0
+    && tierOld.keys.filter((k) => k.indexOf('plan:' + tierOld.id + ':t') === 0).length === 0,
+    JSON.stringify(tierOld.keys));
+
+  /* 保存を通しても容量が残ること。保存は中身を削って小さくしているので、
+   * 容量を残す指定が抜けると、実際の記録では全部「容量なし」に落ちてしまう。 */
+  const tierSaved = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const split = (m.statsCfg || {}).planTier || {};
+    const pl = m.plans.filter((p) => p.tiers && p.tiers.length >= 2 && split[p.id])[0];
+    m.statsCfg.plans[pl.id] = true;
+    T.std.set(m);
+    T.saved.clear();
+    L.fill(0, { planId: pl.id, tierIdx: 1, procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    T.saved.save('容量の検査');
+    // 古い保存は中身を削って小さくする。その形でも容量が残ることを見る
+    const it = T.saved.slimAll()[0];
+    const pat = ((it && it.data && it.data.patterns) || [])[0] || {};
+    return { id: pl.id, slim: !!(it && it.slim), tierIdx: pat.tierIdx,
+      keys: Object.keys(L.itemsRaw([pat])) };
+  });
+  chk('⑬ 保存しても容量が残る（保存は中身を削って小さくしているため）',
+    tierSaved.tierIdx === 1, '保存された容量: ' + JSON.stringify(tierSaved.tierIdx));
+  chk('⑬ 保存した記録から、容量ごとの行が出る',
+    tierSaved.keys.indexOf('plan:' + tierSaved.id + ':t1') >= 0, JSON.stringify(tierSaved.keys));
+
+  /* ---- ⑭ 法人プラン（ドコモ Biz・2026-09-07）----
+   * ・「プラン世代」で法人プランを選べる（一覧に実在すること）
+   * ・実績でも数える（マスタ設定の「実績で追う項目」に初めから入っている）
+   * ・ポイントの条件にも選べる */
+  const biz = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const ids = ['biz_unlimited', 'biz_kakehodai'];
+    const plans = ids.map((id) => m.plans.filter((p) => p.id === id)[0] || null);
+    // 「プラン世代」を法人にしたときの一覧（実際に出ている文字で見る）
+    const gsel = document.getElementById('planGroup');
+    gsel.value = 'biz';
+    gsel.dispatchEvent(new Event('change', { bubbles: true }));
+    const names = Array.prototype.map.call(
+      document.querySelectorAll('#planId option'), (o) => o.textContent.trim());
+    // データ無制限を1回線目に入れて、実績とポイントを見る
+    L.fill(0, { planGroup: 'biz', planId: 'biz_unlimited', tierIdx: 2, procType: 'shinki',
+      procTodo: { shinki: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    L.cxSet([{ id: 'bz', name: '新規 × Biz データ無制限', pt: 20,
+      keys: ['proc:shinki', 'plan:biz_unlimited'] }]);
+    return {
+      found: plans.map((p) => !!p),
+      groups: plans.map((p) => p && p.group),
+      prices: plans.map((p) => p && p.tiers.map((t) => t.price)),
+      cfgOn: ids.map((id) => !!((m.statsCfg || {}).plans || {})[id]),
+      names: names,
+      itemKeys: Object.keys(L.items()),
+      inCx: ids.map((id) => !!L.cxCatalog()['plan:' + id]),
+      total: L.cxTotal()
+    };
+  });
+  chk('⑭ 法人プランが2つとも料金表にある', biz.found[0] === true && biz.found[1] === true);
+  chk('⑭ プラン世代は「法人」', biz.groups[0] === 'biz' && biz.groups[1] === 'biz',
+    JSON.stringify(biz.groups));
+  chk('⑭ 「プラン世代」を法人にすると、一覧に2つとも出る',
+    biz.names.some((n) => /Biz データ無制限/.test(n))
+    && biz.names.some((n) => /Biz かけ放題/.test(n)), JSON.stringify(biz.names));
+  chk('⑭ データ無制限は3段階（5,313／6,413／8,063円）',
+    JSON.stringify(biz.prices[0]) === '[5313,6413,8063]', JSON.stringify(biz.prices[0]));
+  chk('⑭ かけ放題は3,553円', JSON.stringify(biz.prices[1]) === '[3553]',
+    JSON.stringify(biz.prices[1]));
+  chk('⑭ 実績で追う項目に初めから入っている',
+    biz.cfgOn[0] === true && biz.cfgOn[1] === true, JSON.stringify(biz.cfgOn));
+  chk('⑭ 実績の「項目別」に出る',
+    biz.itemKeys.indexOf('plan:biz_unlimited') >= 0, JSON.stringify(biz.itemKeys));
+  chk('⑭ ポイントの条件にも選べる',
+    biz.inCx[0] === true && biz.inCx[1] === true, JSON.stringify(biz.inCx));
+  chk('⑭ ポイントが数えられる（20点）', biz.total === 20, String(biz.total));
 
   await browser.close();
   srv.close();
