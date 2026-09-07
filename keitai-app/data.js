@@ -47,7 +47,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 13,
+  "masterVersion": 14,
   "updated": "2026-09-07",
   "fees": {
     "jimu_shinki": 4950,
@@ -219,6 +219,34 @@ const DEFAULT_DATA = {
       "note": "5分通話無料込み。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。dカードGOLD/PLATINUMの利用料金10%（20%）還元も対象外。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。",
       "bakuageTier": "std",
       "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "ahamo_poikatsu",
+      "url": "https://ahamo.com/special/poikatsu/",
+      "group": "current",
+      "name": "ahamo ポイ活",
+      "tiers": [
+        {
+          "label": "110GB（大盛りオプション＋ポイ活オプション込み）",
+          "price": 7150
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 0,
+        "dcardGold": 0
+      },
+      "includes5min": true,
+      "voiceOverrides": {
+        "kake": 1100
+      },
+      "dcard10": false,
+      "note": "ahamo 2,970円＋大盛りオプション 1,980円＋ポイ活オプション 2,200円＝7,150円。5分通話無料込み。d払い/dカード決済にポイント還元（上限4,000pt/月・うち積立対象1,000pt）。各種割引の適用外（みんなドコモ割の回線数カウントには含まれる）。店頭は「WEBお申込みサポート」3,300円/回（オンライン専用プランのため）。",
+      "bakuageTier": "std",
+      "poikatsuPt": 4000,
       "maxBonus": false
     },
     {

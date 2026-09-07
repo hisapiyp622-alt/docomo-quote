@@ -593,6 +593,162 @@ function chk(name, cond, extra) {
     biz.inCx[0] === true && biz.inCx[1] === true, JSON.stringify(biz.inCx));
   chk('⑭ ポイントが数えられる（20点）', biz.total === 20, String(biz.total));
 
+  /* ---- ⑮ 実績の項目を増やす（2026-09-07・店舗の指定）----
+   * ・機種ハイエンドを Android と iPhone に分ける
+   * ・（再掲）iPhone
+   * ・タブレット総販（機種の欄のチェック）
+   * ・下取り（指定機種／指定外機種）
+   * どれも実績だけの印で、お客様の紙には出さない。 */
+  const more = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    const base = { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, payMethod: 'ikkatsu' };
+    // 回線1: iPhone のハイエンド＋下取り（指定機種）
+    L.fill(0, Object.assign({}, base, { deviceName: 'iPhone 17 Pro', devicePrice: 200000,
+      shitadori: 'target' }));
+    // 回線2: Android のハイエンド＋タブレット＋下取り（指定外）
+    L.fill(1, Object.assign({}, base, { deviceName: 'Pixel 10 Pro', devicePrice: 180000,
+      tablet: true, shitadori: 'other' }));
+    L.pick(0);
+    const keys = Object.keys(L.items());
+    const cat = L.cxCatalog();
+    return { keys: keys,
+      catAndroid: cat['highend:android'] || '', catIphone: cat['highend:iphone'] || '',
+      hasTabletBox: !!document.getElementById('tablet'),
+      hasShitadoriSel: !!document.getElementById('shitadori'),
+      shitadoriOpts: Array.prototype.map.call(
+        document.querySelectorAll('#shitadori option'), (o) => o.value) };
+  });
+  chk('⑮ ハイエンドは iPhone と Android で別の行になる',
+    more.keys.indexOf('highend:iphone') >= 0 && more.keys.indexOf('highend:android') >= 0,
+    JSON.stringify(more.keys));
+  chk('⑮ 分ける前のハイエンドの行は出ない',
+    more.keys.indexOf('highend') < 0, JSON.stringify(more.keys));
+  chk('⑮ 行の名前に Android／iPhone が入る',
+    /Android/.test(more.catAndroid) && /iPhone/.test(more.catIphone),
+    more.catAndroid + ' / ' + more.catIphone);
+  chk('⑮ （再掲）iPhone が出る', more.keys.indexOf('iphone') >= 0, JSON.stringify(more.keys));
+  chk('⑮ 画面にタブレットのチェック欄と下取りの選び欄がある',
+    more.hasTabletBox === true && more.hasShitadoriSel === true);
+  chk('⑮ 下取りは「なし・指定機種・指定外機種」から選ぶ',
+    JSON.stringify(more.shitadoriOpts) === '["","target","other"]',
+    JSON.stringify(more.shitadoriOpts));
+  chk('⑮ タブレット総販が出る', more.keys.indexOf('tablet') >= 0, JSON.stringify(more.keys));
+  chk('⑮ 下取りは指定機種と指定外機種で別の行になる',
+    more.keys.indexOf('shitadori:target') >= 0 && more.keys.indexOf('shitadori:other') >= 0,
+    JSON.stringify(more.keys));
+
+  /* 端末購入なしのときは、機種の印を数えない（金額にも入っていないため） */
+  const moreOff = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true }, planChange: true,
+      deviceName: 'iPhone 17 Pro', devicePrice: 200000, tablet: true, payMethod: 'none' });
+    L.fill(1, {});
+    L.pick(0);
+    return Object.keys(L.items());
+  });
+  chk('⑮ 端末購入なしのときは iPhone・ハイエンド・タブレットを数えない',
+    moreOff.indexOf('iphone') < 0 && moreOff.indexOf('tablet') < 0
+    && moreOff.filter((k) => k.indexOf('highend') === 0).length === 0,
+    JSON.stringify(moreOff));
+
+  /* お客様の紙には出さない */
+  const moreSheet = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.lines.fill(0, { planId: T.std.get().plans[0].id, procType: 'shinki',
+      procTodo: { shinki: true }, planChange: true, payMethod: 'ikkatsu',
+      deviceName: 'iPhone 17 Pro', devicePrice: 200000, tablet: true, shitadori: 'target' });
+    T.lines.pick(0);
+    return T.std.sheetHtml() + '\n' + (T.std.staffHtml ? T.std.staffHtml() : '');
+  });
+  chk('⑮ タブレット・下取りの印はお客様の紙に出ない',
+    !/タブレット総販/.test(moreSheet) && !/指定外機種/.test(moreSheet),
+    moreSheet.slice(0, 60));
+
+  /* ---- ⑯ ahamo を大盛りとポイ活で分ける（2026-09-07）---- */
+  const ah = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const poi = m.plans.filter((p) => p.id === 'ahamo_poikatsu')[0] || null;
+    L.fill(0, { planId: 'ahamo', tierIdx: 1, procType: 'mnp', procTodo: { mnp: true } });
+    L.fill(1, { planId: 'ahamo_poikatsu', procType: 'mnp', procTodo: { mnp: true } });
+    L.pick(0);
+    const cat = L.cxCatalog();
+    return {
+      poiFound: !!poi, poiPrice: poi && poi.tiers[0].price, poiPt: poi && poi.poikatsuPt,
+      splitOn: !!((m.statsCfg || {}).planTier || {}).ahamo,
+      cfgOn: !!((m.statsCfg || {}).plans || {})['ahamo'],
+      cfgPoiOn: !!((m.statsCfg || {}).plans || {})['ahamo_poikatsu'],
+      keys: Object.keys(L.items()),
+      catT0: cat['plan:ahamo:t0'] || '', catT1: cat['plan:ahamo:t1'] || ''
+    };
+  });
+  chk('⑯ ahamo ポイ活が料金表にある（7,150円・上限4,000pt）',
+    ah.poiFound === true && ah.poiPrice === 7150 && ah.poiPt === 4000,
+    JSON.stringify([ah.poiFound, ah.poiPrice, ah.poiPt]));
+  chk('⑯ ahamo は容量ごとに分ける設定が入っている', ah.splitOn === true);
+  chk('⑯ ahamo と ahamo ポイ活を実績で数える',
+    ah.cfgOn === true && ah.cfgPoiOn === true, JSON.stringify([ah.cfgOn, ah.cfgPoiOn]));
+  chk('⑯ 大盛り（110GB）の行が出る',
+    ah.keys.indexOf('plan:ahamo:t1') >= 0, JSON.stringify(ah.keys));
+  chk('⑯ ahamo ポイ活は別の行になる',
+    ah.keys.indexOf('plan:ahamo_poikatsu') >= 0, JSON.stringify(ah.keys));
+  chk('⑯ 行の名前に容量が入る（30GB／110GB）',
+    /30GB/.test(ah.catT0) && /110GB/.test(ah.catT1), ah.catT0 + ' / ' + ah.catT1);
+
+  /* ---- ⑰ home 5G を新規と機種変更で分ける（2026-09-07）---- */
+  const h5 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const cat = L.cxCatalog();
+    // 区分が入っていない以前の保存は、分けずに1つの行にまとめる
+    const old = L.itemsRawIe({ enabled: true, product: 'home5g' });
+    const nw = L.itemsRawIe({ enabled: true, product: 'home5g', h5Kubun: 'kishu' });
+    return {
+      hasSel: !!document.getElementById('ieH5Kubun'),
+      opts: Array.prototype.map.call(
+        document.querySelectorAll('#ieH5Kubun option'), (o) => o.value),
+      catShinki: cat['ie:home5g:shinki'] || '', catKishu: cat['ie:home5g:kishu'] || '',
+      oldKeys: Object.keys(old), newKeys: Object.keys(nw)
+    };
+  });
+  chk('⑰ home 5G に「区分」の選び欄がある（新規／機種変更）',
+    h5.hasSel === true && JSON.stringify(h5.opts) === '["shinki","kishu"]',
+    JSON.stringify(h5.opts));
+  chk('⑰ 実績の項目が新規と機種変更に分かれる',
+    /新規/.test(h5.catShinki) && /機種変更/.test(h5.catKishu),
+    h5.catShinki + ' / ' + h5.catKishu);
+  chk('⑰ 機種変更を選ぶと、その行で数える',
+    h5.newKeys.indexOf('ie:home5g:kishu') >= 0, JSON.stringify(h5.newKeys));
+  chk('⑰ 区分が入っていない以前の保存は、分けずにまとめる',
+    h5.oldKeys.indexOf('ie:home5g') >= 0
+    && h5.oldKeys.filter((k) => k.indexOf('ie:home5g:') === 0).length === 0,
+    JSON.stringify(h5.oldKeys));
+
+  /* ---- ⑱ 実績のポイントの並べ替え（▲▼・2026-09-07）---- */
+  const ord = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.lines.cxSet([
+      { id: 'a', name: 'あ', pt: 1, keys: ['proc:shinki'] },
+      { id: 'b', name: 'い', pt: 2, keys: ['proc:mnp'] },
+      { id: 'c', name: 'う', pt: 3, keys: ['proc:kishu'] }
+    ]);
+    const before = T.lines.cxOrder();
+    T.lines.cxMove(2, 'up');       // 「う」を上へ
+    const afterUp = T.lines.cxOrder();
+    T.lines.cxMove(0, 'down');     // 「あ」を下へ
+    return { before: before, afterUp: afterUp, afterDown: T.lines.cxOrder() };
+  });
+  chk('⑱ ▲で1つ上へ動く',
+    JSON.stringify(ord.afterUp) === '["a","c","b"]', JSON.stringify(ord.afterUp));
+  chk('⑱ ▼で1つ下へ動く',
+    JSON.stringify(ord.afterDown) === '["c","a","b"]', JSON.stringify(ord.afterDown));
+
   await browser.close();
   srv.close();
 

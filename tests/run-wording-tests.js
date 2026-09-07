@@ -88,6 +88,8 @@ function chk(name, cond, extra) {
     let i = -1;
     while ((i = flat.indexOf('タブ', i + 1)) >= 0) {
       if (flat.slice(i, i + 5) === 'タブ区切り') continue;
+      // 「タブレット」は画面のタブのことではない（機種の種類）
+      if (flat.slice(i, i + 5) === 'タブレット') continue;
       // 「見積書」タブ のようにカギかっこで囲む書き方も正しいので、囲みは外して見る
       const before = flat.slice(Math.max(0, i - 12), i).replace(/[」』"']+$/, '');
       // 直前が本物のタブ名で終わっていればよい
