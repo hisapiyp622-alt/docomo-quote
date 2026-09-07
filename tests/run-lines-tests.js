@@ -629,9 +629,7 @@ function chk(name, cond, extra) {
     return { keys: keys,
       catAndroid: cat['highend:android'] || '', catIphone: cat['highend:iphone'] || '',
       hasTabletBox: !!document.getElementById('tablet'),
-      hasShitadoriSel: !!document.getElementById('shitadori'),
-      shitadoriOpts: Array.prototype.map.call(
-        document.querySelectorAll('#shitadori option'), (o) => o.value) };
+      marks: L.statMarks() };
   });
   chk('⑮ ハイエンドは iPhone と Android で別の行になる',
     more.keys.indexOf('highend:iphone') >= 0 && more.keys.indexOf('highend:android') >= 0,
@@ -642,11 +640,17 @@ function chk(name, cond, extra) {
     /Android/.test(more.catAndroid) && /iPhone/.test(more.catIphone),
     more.catAndroid + ' / ' + more.catIphone);
   chk('⑮ （再掲）iPhone が出る', more.keys.indexOf('iphone') >= 0, JSON.stringify(more.keys));
-  chk('⑮ 画面にタブレットのチェック欄と下取りの選び欄がある',
-    more.hasTabletBox === true && more.hasShitadoriSel === true);
-  chk('⑮ 下取りは「なし・指定機種・指定外機種」から選ぶ',
-    JSON.stringify(more.shitadoriOpts) === '["","target","other"]',
-    JSON.stringify(more.shitadoriOpts));
+  chk('⑮ 画面にタブレットのチェック欄がある', more.hasTabletBox === true);
+  chk('⑮ 実績の印4つが、④オプションの「その他」にタイルで出ている',
+    ['dcardFirst', 'dpayFirst', 'shitadoriTarget', 'shitadoriOther']
+      .every((id) => more.marks.some((m) => m.id === id && m.inOther)),
+    JSON.stringify(more.marks));
+  chk('⑮ タイルの文字が読める（下取りの2種類・初回利用の2つ）',
+    /下取り/.test((more.marks.filter((m) => m.id === 'shitadoriTarget')[0] || {}).name || '')
+    && /指定外/.test((more.marks.filter((m) => m.id === 'shitadoriOther')[0] || {}).name || '')
+    && /dカード初回/.test((more.marks.filter((m) => m.id === 'dcardFirst')[0] || {}).name || '')
+    && /d払い初回/.test((more.marks.filter((m) => m.id === 'dpayFirst')[0] || {}).name || ''),
+    JSON.stringify(more.marks.map((m) => m.name)));
   chk('⑮ タブレット総販が出る', more.keys.indexOf('tablet') >= 0, JSON.stringify(more.keys));
   chk('⑮ 下取りは指定機種と指定外機種で別の行になる',
     more.keys.indexOf('shitadori:target') >= 0 && more.keys.indexOf('shitadori:other') >= 0,
@@ -1146,7 +1150,7 @@ function chk(name, cond, extra) {
     L.fill(1, {});
     L.pick(0);
     const dcOn = Object.keys(L.items());
-    const box = !!document.getElementById('dcardFirst');
+    const box = L.statMarks().some((m) => m.id === 'dcardFirst');
     const sheet = T.std.sheetHtml() + '\n'
       + (T.std.staffHtml ? T.std.staffHtml() : '');
     L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
@@ -1175,7 +1179,7 @@ function chk(name, cond, extra) {
   chk('㉕ 実績の項目に homeでんわ が2つ並ぶ',
     /ライト/.test(more2.catHd1) && /ベーシック/.test(more2.catHd2),
     more2.catHd1 + ' / ' + more2.catHd2);
-  chk('㉕ 画面に「dカード初回利用」のチェック欄がある', more2.box === true);
+  chk('㉕ 「dカード初回利用」のタイルがある', more2.box === true);
   chk('㉕ dカード初回利用にチェックすると数える',
     more2.dcOn.indexOf('dcardfirst') >= 0, JSON.stringify(more2.dcOn));
   chk('㉕ チェックしなければ数えない',
@@ -1262,7 +1266,7 @@ function chk(name, cond, extra) {
     const off = keys({});
     // 店頭のお支払いで d払い を選んだだけでは数えない
     const storePayOnly = keys({ storePay: { dbarai: true } });
-    const box = !!document.getElementById('dpayFirst');
+    const box = L.statMarks().some((m) => m.id === 'dpayFirst');
     L.fill(0, Object.assign({}, base, { dpayFirst: true }));
     L.pick(0);
     const sheet = T.std.sheetHtml() + '\n' + (T.std.staffHtml ? T.std.staffHtml() : '');
@@ -1277,7 +1281,7 @@ function chk(name, cond, extra) {
       tv, tvSlim: (tvSlim.opts || {}).vsHikariTv === true,
       catDpay: cat['dpayfirst'] || '', catTv: cat['ie:opt:vsHikariTv'] || '' };
   });
-  chk('㉘ 画面に「d払い初回利用」のチェック欄がある', more3.box === true);
+  chk('㉘ 「d払い初回利用」のタイルがある', more3.box === true);
   chk('㉘ チェックすると数える',
     more3.on.indexOf('dpayfirst') >= 0, JSON.stringify(more3.on));
   chk('㉘ チェックしなければ数えない',
@@ -1292,6 +1296,78 @@ function chk(name, cond, extra) {
   chk('㉘ 保存を小さくしても ひかりTV の印は残る', more3.tvSlim === true);
   chk('㉘ 実績の項目に ひかりTV が出る',
     /ひかりTV/.test(more3.catTv), more3.catTv);
+
+  /* ---- ㉙ 実績の印をタイルで押す（2026-09-07・店舗の指定）----
+   * ④オプションの「その他」に移したので、実際に押して切り替わるか見る。
+   * 下取りは2種類あるが、同時には立たない。 */
+  const mk = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, payMethod: 'ikkatsu', devicePrice: 50000 });
+    L.fill(1, {});
+    L.pick(0);
+    function state() {
+      const m = {};
+      L.statMarks().forEach((x) => { m[x.id] = x.on; });
+      return m;
+    }
+    const before = state();
+    L.statMarkClick('dcardFirst');
+    const afterCard = state();
+    const keysCard = Object.keys(L.items());
+    L.statMarkClick('shitadoriTarget');
+    const afterTarget = state();
+    L.statMarkClick('shitadoriOther');       // もう片方を押すと入れ替わる
+    const afterOther = state();
+    const keysOther = Object.keys(L.items());
+    L.statMarkClick('shitadoriOther');       // もう一度押すと消える
+    const afterOff = state();
+    // お客様の紙に出ないこと
+    L.statMarkClick('dpayFirst');
+    L.statMarkClick('shitadoriTarget');
+    const sheet = T.std.sheetHtml() + '\n' + (T.std.staffHtml ? T.std.staffHtml() : '');
+    return { before, afterCard, afterTarget, afterOther, afterOff, keysCard, keysOther,
+      sheetClean: !/下取り|初回利用/.test(sheet) };
+  });
+  chk('㉙ はじめはどれも立っていない',
+    Object.keys(mk.before).every((k) => mk.before[k] === false), JSON.stringify(mk.before));
+  chk('㉙ タイルを押すと立ち、実績に数える',
+    mk.afterCard.dcardFirst === true && mk.keysCard.indexOf('dcardfirst') >= 0,
+    JSON.stringify(mk.afterCard) + ' / ' + JSON.stringify(mk.keysCard));
+  chk('㉙ 下取りは指定機種を押すと立つ',
+    mk.afterTarget.shitadoriTarget === true && mk.afterTarget.shitadoriOther === false,
+    JSON.stringify(mk.afterTarget));
+  chk('㉙ もう片方を押すと入れ替わる（同時には立たない）',
+    mk.afterOther.shitadoriOther === true && mk.afterOther.shitadoriTarget === false
+    && mk.keysOther.indexOf('shitadori:other') >= 0
+    && mk.keysOther.indexOf('shitadori:target') < 0,
+    JSON.stringify(mk.afterOther) + ' / ' + JSON.stringify(mk.keysOther));
+  chk('㉙ もう一度押すと消える',
+    mk.afterOff.shitadoriOther === false && mk.afterOff.shitadoriTarget === false,
+    JSON.stringify(mk.afterOff));
+  chk('㉙ 押してもお客様の紙には出ない', mk.sheetClean === true);
+
+  /* あんしん遠隔サポートは「その他」に置く（店舗の指定・2026-09-07）。
+   * 「サポート」という中身1つのタブを作ってしまっていたのを直した。 */
+  const cats = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const m = T.std.get();
+    const byName = {};
+    (m.options || []).forEach((o) => { byName[o.name] = o.category || 'その他'; });
+    return { enkaku: byName['あんしん遠隔サポート'],
+      soloCats: Object.keys(byName).reduce((acc, n) => {
+        acc[byName[n]] = (acc[byName[n]] || 0) + 1; return acc;
+      }, {}) };
+  });
+  chk('㉙ あんしん遠隔サポートは「その他」に入っている',
+    cats.enkaku === 'その他', String(cats.enkaku));
+  /* あんしん遠隔サポートのために「サポート」というタブを作ってしまっていた。
+   * 中身1つのタブが増えないよう、そのタブ自体が無いことを見る。
+   * （「バックアップ」は以前からある1つだけのタブなので、ここでは触らない） */
+  chk('㉙ 「サポート」というタブを作っていない',
+    !cats.soloCats['サポート'], JSON.stringify(cats.soloCats));
 
   await browser.close();
   srv.close();
