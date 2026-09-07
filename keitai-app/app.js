@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.167.0";
+  var APP_VERSION = "1.167.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -9335,6 +9335,9 @@
     function isDocomoHikari(ie) {
       return ie.product === "hikari1g" || ie.product === "hikari10g";
     }
+    function isTypec(ie) {
+      return ie.product === "hikaric" || ie.product === "hikaric10g";
+    }
     /* 無線ルーターの申し込み先。プロバイダごとに違う。 */
     var ROUTER_QR = {
       "OCN インターネット": "router1gOcn",
@@ -9351,8 +9354,8 @@
      * 店頭がオフラインでも印刷でも出る。画面上はそのまま押しても開ける。
      *
      * 出す条件
-     *   toss         … ドコモ光のとき（工事日を確定させるのに毎回入力が要る）
-     *                    ahamo光は取り扱いが違うため出さない
+     *   toss         … ドコモ光のタイプA・Bのとき（工事日を確定させるため）
+     *                    タイプCは不要。ahamo光も取り扱いが違うため出さない
      *   router1g:*   … 1ギガ・ルーターレンタルありのとき、プロバイダごとの申し込みページ
      *   niftyFollow  … ドコモ光×@niftyのとき（フォローコールを光と同時に申込できる）
      *   router10g:*  … ドコモ光10ギガでルーターを買っていただくとき（プロバイダごと）
@@ -9363,9 +9366,10 @@
       if (typeof KEITAI_QR === "undefined") return "";
       var ie = store.ienaka || {};
       var keys = [];
-      /* 「光・5G」の入力がまだ無いときは、どの商材か分からないので出しておく
-       * （手続き内容で光にチェックがあるとき）。 */
-      if (ieOn ? isDocomoHikari(ie) : state.todoHikari) keys.push("toss");
+      /* 手続き内容で光にチェックがあるときは、見積もりが無効でも出す。
+       * ただし、選択済みのタイプCは「この見積もりに含める」の入・切に
+       * 関係なくトスアップ不要（店舗の指定・2026-09-07）。 */
+      if (!isTypec(ie) && (ieOn ? isDocomoHikari(ie) : state.todoHikari)) keys.push("toss");
       if (ieOn) {
         if (ie.product === "hikari1g" && KQ_IENAKA.routerRental() === "ari"
           && ROUTER_QR[ie.provider]) {
@@ -9697,7 +9701,7 @@
       /* プロバイダは、選ばれていないときも行を出す。
        * 選ばないとルーター申込・フォローコールのQRが出ないため、
        * 出ていない理由がその場で分かるようにする（店頭の指摘・2026-08-11）。 */
-      if (KQ_IENAKA.isHikari()) {
+      if (KQ_IENAKA.isHikari() && !isTypec(store.ienaka)) {
         h += row("プロバイダ", store.ienaka.provider
           ? esc(store.ienaka.provider) + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）"
           : '<b style="color:var(--red)">未選択</b>　※ 申込ページのQRは、プロバイダを選ぶと出ます');
