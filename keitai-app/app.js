@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.168.0";
+  var APP_VERSION = "1.169.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1434,6 +1434,13 @@
   }
   /* U15のプラン。新規・MNPでこれを選んでいたら「（再掲）U15」に数える */
   var U15_PLANS = { u15_debut: true, u15: true };
+  /* U39は、のりかえ（MNP）の回線だけ（店舗の指定・2026-09-07）。
+   * 画面の出し分け（renderU39）と、数え方（statsPatternItems）で同じものを見る。
+   * todo は「回線1と同じ手続きとして数える」補いが入ったもの。 */
+  function u39Line(pt, todo) {
+    var t = todo || (pt && pt.procTodo) || {};
+    return !!t.mnp || (pt && pt.procType === "mnp");
+  }
   function statsKwTest(kw, name) {
     var n = String(name || "").toLowerCase();
     return String(kw || "").split(/[、,]/).some(function (w) {
@@ -1556,7 +1563,7 @@
       });
       if (azOn) out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     }
-    if (cfg.u39 && pt.u39) out["u39"] = "（再掲）U39";
+    if (cfg.u39 && pt.u39 && u39Line(pt, todo)) out["u39"] = "（再掲）U39";
     if (cfg.kaimashi) {
       var buyOn = vks.indexOf("buy") >= 0;
       var kaimashiOn = buyOn ? !!pt.kaimashi : !!(vks.length && todo.kishu);
@@ -8038,7 +8045,6 @@
     var buy = vks.indexOf("buy") >= 0;
     f.hidden = !buy;
     $("kaimashi").checked = !!state.kaimashi;
-    $("u39").checked = !!state.u39;
     var auto = !buy && vks.length > 0 && !!(state.procTodo || {}).kishu;
     n.hidden = !auto;
     if (auto) {
@@ -8062,6 +8068,18 @@
       n.hidden = !byPlan;
       if (byPlan) n.textContent = "U15のプランを選んでいるので、チェックが無くても実績の「（再掲）U15」に入ります。";
     }
+  }
+
+  /* U39の欄は、のりかえ（MNP）のときだけ出す（店舗の指定・2026-09-07）。
+   * 出していないときにチェックが残っていると、見えないまま実績に入ってしまうので、
+   * 数える側（statsPatternItems）でも同じ条件で見る。 */
+  function renderU39() {
+    var f = $("u39Field"), n = $("u39Note"), cb = $("u39");
+    if (!f || !cb) return;
+    var on = u39Line(state);
+    f.hidden = !on;
+    if (n) n.hidden = !on;
+    cb.checked = !!state.u39;
   }
 
   function renderPatternTabs() {
@@ -8638,6 +8656,7 @@
       cb.checked = !!(state.procTodo || {})[cb.getAttribute("data-proc")];
     });
     renderU15();
+    renderU39();
     $("ptPoikatsu").value = state.pointPoikatsu || "";
     $("ptPoikatsuFamily").value = state.pointPoikatsuFamily || "";
     $("ptBakuage").value = state.pointBakuage || "";
@@ -10193,9 +10212,7 @@
       + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
       + "> 「来店目的別」の表を出す（目的ごとの応対数・成約・成約になった内容）</label>"
       + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
-      + "> プラスワン（再掲）</label>"
-      + '<label class="check"><input type="checkbox" data-sc-u39="1"' + (sc.u39 ? " checked" : "")
-      + "> U39（再掲・ご利用者が39歳以下）</label></div>"
+      + "> プラスワン（再掲）</label></div>"
       + '<p class="hint">プラスワンは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
       + '<strong>端末購入で「買い増しあり」にチェックした場合</strong>に数えます。'
       + '機種変更の実績はそのまま数えたうえで、<strong>再掲</strong>として別に1件数えます。</p></div>';
@@ -10252,13 +10269,18 @@
       + esc(sc.highendIpKw) + '" placeholder="例）Pro、Air（読点区切り）"' + (sc.highend ? "" : " hidden") + "></label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="u15"'
       + (sc.u15 ? " checked" : "") + "> （再掲）U15（新規・MNPのとき）</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-u39="1"'
+      + (sc.u39 ? " checked" : "") + "> （再掲）U39（のりかえのとき）</label>";
     h += "</div>"
       + '<p class="hint"><strong>機種ハイエンド</strong>は、機種販売とは別に1件数えます。'
       + '<strong>iPhone</strong>（機種名に iPhone を含むもの）は、上の言葉（Pro・Air）が機種名に入っていればハイエンドです（金額は見ません）。'
       + '<strong>それ以外（Android）</strong>は、<strong>元値（端末代金総額 − 店頭頭金）</strong>がこの金額以上のときです。'
       + 'クーポンや店舗独自キャンペーンの値引きは引かずに判定します。'
       + '<strong>U15</strong>は、新規・MNPで<strong>U15のプランを選んだとき</strong>か、手続き内容の'
-      + '<strong>「U15（15歳以下）」にチェックしたとき</strong>に数えます。</p></div>';
+      + '<strong>「U15（15歳以下）」にチェックしたとき</strong>に数えます。'
+      + '<strong>U39</strong>は、<strong>のりかえ（MNP）</strong>の回線で、手続き内容の'
+      + '<strong>「U39（ご利用者が39歳以下）」にチェックしたとき</strong>に数えます'
+      + '（チェック欄も、のりかえのときだけ出ます）。</p></div>';
 
     h += '<div class="plan-sec"><span class="plan-lbl">オプション（チェックを外すと数えません）</span><div class="sub-checks">';
     MASTER.options.forEach(function (o) {
@@ -10864,6 +10886,7 @@
     renderSummary(r);
     renderVisitPurpose();
     renderU15();
+    renderU39();
     renderMnpBenefit();
     renderPatternTabs();
     renderIenakaWarn(r);
@@ -14086,6 +14109,7 @@
         state.procTodo[cb.getAttribute("data-proc")] = cb.checked;
         applyProcType(procTypeFromTodo());
         renderU15();
+        renderU39();
         recalc();
       });
     });
