@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.173.0";
+  var APP_VERSION = "1.174.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3200,6 +3200,7 @@
     minna2: "みんなドコモ割（2回線）", minna3: "みんなドコモ割（3回線〜）",
     set: "光／home 5G セット割", dcard: "dカードお支払割",
     dcardGold: "dカードお支払割（GOLD系）", denki: "でんきセット割",
+    bizMembers: "ビジネスメンバーズ割", shain: "社員割",
     choki10: "長期利用割（10年〜）", choki20: "長期利用割（20年〜）"
   };
   var HIST_LISTS = [
@@ -4898,6 +4899,7 @@
     return {
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false, kosodate: false,
+      bizMembers: false, shain: false,
       voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
@@ -7383,9 +7385,16 @@
               : st.dCard === "normal" ? (d.dcard || 0)
               : isGoldCard(st.dCard) ? (d.dcardGold || 0) : 0;
     var dDenki = st.dDenki ? (d.denki || 0) : 0;
+    /* 法人プランだけの割引（出典: ドコモの提供条件書）。
+     * ・ビジネスメンバーズ割 … データ無制限・かけ放題の両方（▲275円）
+     * ・社員割 … データ無制限のみ（▲275円）。かけ放題の提供条件書には記載が無い
+     * 料金表に金額が無いプランでは 0 になるので、間違えて選んでも金額は動かない。 */
+    var dBizMembers = st.bizMembers ? (d.bizMembers || 0) : 0;
+    var dShain = st.shain ? (d.shain || 0) : 0;
     var dChoki = st.choki === "y10" ? (d.choki10 || 0)
                : st.choki === "y20" ? (d.choki20 || 0) : 0;
-    var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki - dHearty - dKosodate);
+    var planMonthly = Math.max(0, tier.price - dMinna - dSet - dCard - dDenki - dChoki - dHearty - dKosodate
+      - dBizMembers - dShain);
 
     // 通話オプション（プランで選べないものは標準版へ読み替え）
     var vo = effectiveVoice(plan, st.voice);
@@ -7837,6 +7846,7 @@
     return {
       plan: plan, tier: tier, tierIdx: tierIdx,
       dMinna: dMinna, dSet: dSet, dCard: dCard, dDenki: dDenki, dChoki: dChoki,
+      dBizMembers: dBizMembers, dShain: dShain,
       dHearty: dHearty, dHeartyVoice: dHeartyVoice, dKosodate: dKosodate, dKosodateVoice: dKosodateVoice,
       planMonthly: planMonthly,
       voice: vo, voicePrice: voicePrice, voiceNote: voiceNote,
@@ -8677,6 +8687,10 @@
     { wrap: "dCardWrap", name: "dカードお支払割", on: function (d) { return !!(d.dcard || d.dcardGold); } },
     { wrap: "dDenkiWrap", name: "ドコモでんきセット割", on: function (d) { return !!d.denki; } },
     { wrap: "chokiWrap", name: "長期利用割", on: function (d) { return !!d.choki10; } },
+    /* 法人プランだけの割引。ふだんは出さない（対象外の案内にも出さない） */
+    { wrap: "bizMembersWrap", name: "ビジネスメンバーズ割", quiet: true,
+      on: function (d) { return !!d.bizMembers; } },
+    { wrap: "shainWrap", name: "社員割", quiet: true, on: function (d) { return !!d.shain; } },
     { wrap: "heartyWrap", name: "ハーティ割引", on: function (d) { return !!d.hearty; } },
     { wrap: "kosodateWrap", name: "子育てサポート割引", on: function (d) { return !!d.kosodate; } }
   ];
@@ -8692,7 +8706,9 @@
       if (!el) return;
       var ok = !shown || f.on(plan.discounts || {});
       el.hidden = !ok;
-      if (!ok) offs.push(f.name + (f.note ? "（" + f.note + "）" : ""));
+      /* quiet の割引（法人プランだけのもの）は、対象外でも一覧に並べない。
+       * 個人のお客様に「社員割の対象外です」と出ても意味がないため。 */
+      if (!ok && !f.quiet) offs.push(f.name + (f.note ? "（" + f.note + "）" : ""));
     });
     // ポイ活の還元ポイントは、ポイ活プランのときだけ出す
     var pk = !shown || poikatsuPlan(plan.id);
@@ -8728,6 +8744,8 @@
     $("platRateWrap").hidden = state.dCard !== "platinum";
     $("platRate").value = platRate(state);
     $("dDenki").checked = state.dDenki;
+    $("bizMembers").checked = !!state.bizMembers;
+    $("shain").checked = !!state.shain;
     $("chokiOn").checked = state.choki !== "none";
     $("chokiSub").hidden = state.choki === "none";
     var cr = document.querySelector('input[name="chokiY"][value="' + (state.choki === "y20" ? "y20" : "y10") + '"]');
@@ -10037,6 +10055,8 @@
         ? "（" + esc(r.campSuppressBy) + "の終了後・" + (r.campSuppress[k] + 1) + "か月目から）" : "";
     };
     if (r.dDenki) setWari.push({ key: "x:denki", name: "ドコモでんき" + supNote("denki"), amt: r.dDenki });
+    if (r.dBizMembers) setWari.push({ name: "ビジネスメンバーズ割", amt: r.dBizMembers });
+    if (r.dShain) setWari.push({ name: "社員割", amt: r.dShain });
     if (r.dChoki) setWari.push({ name: "長期利用割（" + (state.choki === "y20" ? "20年" : "10年") + "以上）" + supNote("choki"), amt: r.dChoki });
     if (r.dHearty) setWari.push({ key: "x:hearty", name: "ハーティ割引", amt: r.dHearty });
     if (r.dHeartyVoice) setWari.push({ key: "x:hearty", name: "ハーティ割引（通話オプション）", amt: r.dHeartyVoice });
@@ -10658,6 +10678,8 @@
       ["dcard", "dカードお支払割"],
       ["dcardGold", "dカードお支払割（GOLD系）"],
       ["denki", "でんきセット割"],
+      ["bizMembers", "ビジネスメンバーズ割（法人）"],
+      ["shain", "社員割（法人）"],
       ["choki10", "長期利用割（10年〜）"],
       ["choki20", "長期利用割（20年〜）"],
     ];
@@ -13460,6 +13482,8 @@
       recalc();
     });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
+    $("bizMembers").addEventListener("change", function () { state.bizMembers = this.checked; recalc(); });
+    $("shain").addEventListener("change", function () { state.shain = this.checked; recalc(); });
     $("chokiOn").addEventListener("change", function () {
       state.choki = this.checked ? chokiY() : "none";
       $("chokiSub").hidden = !this.checked;
