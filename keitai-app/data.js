@@ -47,8 +47,8 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 12,
-  "updated": "2026-09-06",
+  "masterVersion": 13,
+  "updated": "2026-09-07",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -371,6 +371,75 @@ const DEFAULT_DATA = {
       },
       "includes5min": false,
       "note": "タブレット・2台目端末用のデータ専用プラン。スマホのペア回線とデータ容量をシェア（単独契約不可・音声通話不可）。各種割引対象外。料金はマスタ設定で調整可。",
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "biz_unlimited",
+      "url": "https://www.docomo.ne.jp/binary/pdf/support/utilization_notice/document/docomobiz_unlimited.pdf",
+      "group": "biz",
+      "name": "ドコモ Biz データ無制限",
+      "tiers": [
+        {
+          "label": "〜1GB",
+          "price": 5313
+        },
+        {
+          "label": "1GB超〜3GB",
+          "price": 6413
+        },
+        {
+          "label": "3GB超〜無制限",
+          "price": 8063
+        }
+      ],
+      "discounts": {
+        "minna2": 550,
+        "minna3": 1210,
+        "set": 1210,
+        "dcard": 0,
+        "dcardGold": 0,
+        "denki": 0,
+        "choki10": 110,
+        "choki20": 220
+      },
+      "includes5min": false,
+      "dcard10": false,
+      "note": "法人名義のプラン（5G）。指定ISPサービス（spモード分330円）込み。3段階制・無制限。社員間通話は無料。海外ローミング30GB/15日込み。★このアプリで計算していない割引が2つあります: 「ビジネスメンバーズ割」▲275円/月・「社員割」▲275円/月（同一ビジネス通話割引グループで6回線以上）。該当する場合は「独自の割引」に手で入れてください。dカードお支払割・dカードGOLD/PLATINUMの利用料金還元は対象外。",
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "biz_kakehodai",
+      "url": "https://www.docomo.ne.jp/binary/pdf/support/utilization_notice/document/docomobiz_kakehodai.pdf",
+      "group": "biz",
+      "name": "ドコモ Biz かけ放題",
+      "tiers": [
+        {
+          "label": "2GB（国内通話無料込み）",
+          "price": 3553
+        }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 0,
+        "dcardGold": 0,
+        "denki": 0
+      },
+      "includes5min": false,
+      "dcard10": false,
+      "voiceOverrides": {
+        "v5": 0,
+        "v5l": 0,
+        "kake": 0,
+        "kakel": 0,
+        "kake1000": 0
+      },
+      "note": "法人名義のプラン（5G）。指定ISPサービス（spモード分330円）込み。国内通話無料がプランに含まれるため、通話オプションは不要です（選んでも0円）。データ量は2GBで、超えると最大128kbps。★このアプリで計算していない割引が1つあります: 「ビジネスメンバーズ割」▲275円/月。該当する場合は「独自の割引」に手で入れてください。みんなドコモ割・セット割・dカードお支払割は対象外。",
       "bakuageTier": "",
       "poikatsuPt": 0,
       "maxBonus": false
