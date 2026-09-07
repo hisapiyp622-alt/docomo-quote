@@ -225,6 +225,90 @@ await p.pdf({ path: 'out.pdf', format: 'A4', printBackground: true,
 - `APP_VERSION` だけ上げて `CACHE` を据え置く
 - 出荷ファイルに社内の店舗名（阪南など）を書く
 
+## 10. 別のAIアシスタント・別のパソコンで始めるとき
+
+「片方のAIが止まっていても修正依頼を受けられるようにする」ための手順です（2026-09-06）。
+**作業ルールはどちらでも同じ**なので、揃えるのは「読ませるもの」「権限」「道具」の3つだけです。
+
+### ① 読ませるもの（設定は不要）
+
+作業ルールは `CLAUDE.md` と `AGENTS.md` に**同じ内容**で置いてあります。
+Claude Code は `CLAUDE.md` を、Codex は `AGENTS.md` を**自動で読みます**。
+`AGENTS.md` は `node tools/build-agents.js` が作るので、手で書き写す必要はありません。
+
+### ② 権限（GitHub のアカウントに付ける）
+
+| リポジトリ | 何に使うか | 要る権限 |
+|---|---|---|
+| `hisapiyp622-alt/docomo-quote` | 本体（これ） | 読み書き |
+| `hisapiyp622-alt/frontalk` | 製品版の配信先 | 書き込み |
+| `hisapiyp622-alt/docomo-quote-internal` | 最新の作業状況・運用手順（非公開） | 読み書き |
+
+**3つ目を忘れやすいので注意。**いま何をやっているか（`HANDOFF.md`）と、
+料金改定・店舗開通の手順（`OPERATIONS.md`）はそちらにあります。
+
+### ③ 道具（そのパソコンに入れる）
+
+```
+node --version            # 22 以上
+npm install playwright    # テストで画面を動かすのに使う
+npx playwright install chromium
+python3 --version         # 3.9 以上（毎日のドコモ新着チェックだけで使う）
+```
+
+テストは、普通に入れた `playwright` を先に探します（見つからないときだけ環境固有の場所を見ます）。
+**追加のビルド道具・フレームワークは要りません。**
+
+### ④ 置き場所
+
+```
+git clone https://github.com/hisapiyp622-alt/docomo-quote.git
+git clone https://github.com/hisapiyp622-alt/frontalk.git        # 配信に要る
+git clone https://github.com/hisapiyp622-alt/docomo-quote-internal.git   # 非公開
+```
+
+`sh tools/release.sh --ship` は、配信用リポジトリを既定で `/workspace/frontalk` に探します。
+別の場所へ置いたときは、次のように場所を教えてください。
+
+```
+FRONTALK_DIR=~/work/frontalk sh tools/release.sh --ship
+```
+
+### ⑤ 最初に投げる文（そのまま使えます）
+
+```
+このリポジトリ（フロントーク）の修正をお願いします。
+まず HANDOVER.md と AGENTS.md を読んで、作業ルールとリリース手順に従ってください。
+
+・直すのは keitai-app/ と ienaka-app/ だけです。ルートや /ienaka/ は生成物なので触らないでください
+・main へ直接 push しないでください。作業ブランチ → PR → CI が緑 → squash マージ の順です
+・金額を変えたときは、必ず内訳を足し算して検算し、根拠（公式ページのURL）をPRに書いてください
+・確信が持てない金額は書かないでください
+
+依頼の中身: 〈ここに直したいことを書く〉
+```
+
+### ⑥ 終わったことの確かめ方
+
+配信まで済んだかどうかは、**2つのアドレスで版を見れば分かります**。
+
+```
+curl -s https://frontalk.curacon.co.jp/app.js | grep -m1 APP_VERSION
+curl -s https://hisapiyp622-alt.github.io/docomo-quote/keitai-app/app.js | grep -m1 APP_VERSION
+```
+
+両方が新しい版になっていれば完了です（反映まで数分かかります）。
+
+### ⑦ 引き継げないもの
+
+**予約（定期実行）だけは、作業場に紐づいているため引き継げません。**
+
+- 毎日のドコモ新着チェック
+- 11月20日の「12月改定が入っているかの確認」
+
+作業場が閉じるとこの2つは止まります。コードと資料はどちらのAIでも読めますが、
+**予約は作り直しになります**（作り直し自体はすぐできます）。
+
 ## 9. 困ったときの手がかり
 
 - **金額が合わない** → `calcFor()` を読む。`optRows` / `adhocPerm` / `adhocLimited` / `segs` の流れ
