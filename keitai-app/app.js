@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.172.0";
+  var APP_VERSION = "1.173.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -4341,8 +4341,40 @@
     return num(DEFAULT_DATA.masterVersion) > num(MASTER.masterVersion);
   }
   // プランの世代（見積もり画面の「プラン世代」・マスタ設定の並び）
-  var PLAN_GROUPS = ["current", "biz", "legacy"];
-  var PLAN_GROUP_NAMES = { current: "現行", biz: "法人", legacy: "旧プラン" };
+  var PLAN_GROUPS = ["current", "biz", "libmo", "legacy"];
+  var PLAN_GROUP_NAMES = { current: "現行", biz: "法人", libmo: "LIBMO", legacy: "旧プラン" };
+  // 見積もり画面の「プラン世代」に出す名前
+  var PLAN_GROUP_SEL_NAMES = {
+    current: "現行プラン", biz: "法人プラン",
+    libmo: "LIBMO（のりかえ）", legacy: "旧プラン（受付終了）"
+  };
+  /* LIBMO はドコモとは別会社のサービスで、のりかえ（MNP）のときだけ扱う
+   * （店舗の指定・2026-09-07）。ただし**すでに LIBMO を選んでいる見積もり**では、
+   * 手続きのチェックを外しても一覧から消さない。消すとプランが未選択に
+   * 戻り、保存した見積もりの金額が変わってしまうため（受付終了の扱いと同じ考え方）。 */
+  function planGroupsFor(st) {
+    return PLAN_GROUPS.filter(function (g) {
+      if (g !== "libmo") return true;
+      var todo = (st && st.procTodo) || {};
+      if (todo.mnp || (st && st.procType === "mnp")) return true;
+      if (st && st.planGroup === "libmo") return true;
+      return (MASTER.plans || []).some(function (pl) {
+        return pl.group === "libmo" && pl.id === (st && st.planId);
+      });
+    });
+  }
+  function renderPlanGroupSelect() {
+    var sel = $("planGroup");
+    if (!sel) return;
+    var gs = planGroupsFor(state);
+    /* 出さない世代は**一覧そのものから外す**。hidden は iPhone・iPad の
+     * Safari が無視するので使わない（2026-09-06 の事故）。 */
+    sel.innerHTML = gs.map(function (g) {
+      return '<option value="' + g + '">' + esc(PLAN_GROUP_SEL_NAMES[g] || g) + "</option>";
+    }).join("");
+    if (gs.indexOf(state.planGroup) < 0) state.planGroup = "current";
+    sel.value = state.planGroup;
+  }
   // 上書きしない項目（店舗が決めるもの）
   var FEE_KEEP = { atamakin_default: true };
   // 標準から引き継ぐ項目（金額と、計算に効く条件だけ。名前・置き場所は店舗のまま）
@@ -8680,7 +8712,7 @@
   function syncFormFromState() {
     renderPatternTabs();
     $("procType").value = state.procType;
-    $("planGroup").value = state.planGroup;
+    renderPlanGroupSelect();
     renderPlanSelect();
     $("minnaOn").checked = state.minna !== "0";
     $("minnaSub").hidden = state.minna === "0";
@@ -14294,6 +14326,8 @@
         applyProcType(procTypeFromTodo());
         renderU15();
         renderU39();
+        renderPlanGroupSelect();
+        renderPlanSelect();
         recalc();
       });
     });

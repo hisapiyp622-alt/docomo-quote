@@ -47,7 +47,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 14,
+  "masterVersion": 15,
   "updated": "2026-09-07",
   "fees": {
     "jimu_shinki": 4950,
@@ -468,6 +468,69 @@ const DEFAULT_DATA = {
         "kake1000": 0
       },
       "note": "法人名義のプラン（5G）。指定ISPサービス（spモード分330円）込み。国内通話無料がプランに含まれるため、通話オプションは不要です（選んでも0円）。データ量は2GBで、超えると最大128kbps。★このアプリで計算していない割引が1つあります: 「ビジネスメンバーズ割」▲275円/月。該当する場合は「独自の割引」に手で入れてください。みんなドコモ割・セット割・dカードお支払割は対象外。",
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "libmo_nattoku",
+      "url": "https://www.libmo.jp/plan/",
+      "group": "libmo",
+      "name": "LIBMO なっとくプラン",
+      "tiers": [
+        { "label": "3GB", "price": 980 },
+        { "label": "8GB", "price": 1518 }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 0,
+        "dcardGold": 0,
+        "denki": 0
+      },
+      "includes5min": false,
+      "dcard10": false,
+      "voiceOverrides": {
+        "v5": 0,
+        "v5l": 0,
+        "kake": 0,
+        "kakel": 0,
+        "kake1000": 0
+      },
+      "note": "LIBMO（株式会社TOKAIコミュニケーションズ）の音声通話機能付きSIM・通常価格。ドコモの割引（みんなドコモ割・セット割・dカードお支払割・でんき割など）は対象外です。ドコモの通話オプションも付きません（LIBMO側のかけ放題が要る場合は「月額の追加項目」に入れてください）。新規向けの1ランクUPキャンペーン（最大6か月）は含めていません。",
+      "bakuageTier": "",
+      "poikatsuPt": 0,
+      "maxBonus": false
+    },
+    {
+      "id": "libmo_gogo",
+      "url": "https://www.libmo.jp/plan/",
+      "group": "libmo",
+      "name": "LIBMO ゴーゴープラン",
+      "tiers": [
+        { "label": "500MB＋5分かけ放題", "price": 1100 },
+        { "label": "500MB＋10分かけ放題", "price": 1320 },
+        { "label": "500MB＋かけ放題マックス", "price": 1980 }
+      ],
+      "discounts": {
+        "minna2": 0,
+        "minna3": 0,
+        "set": 0,
+        "dcard": 0,
+        "dcardGold": 0,
+        "denki": 0
+      },
+      "includes5min": false,
+      "dcard10": false,
+      "voiceOverrides": {
+        "v5": 0,
+        "v5l": 0,
+        "kake": 0,
+        "kakel": 0,
+        "kake1000": 0
+      },
+      "note": "LIBMO（株式会社TOKAIコミュニケーションズ）の音声通話機能付きSIM・通常価格。月間500MBとかけ放題のセットなので、通話オプションは選ぶ容量に含まれています。ドコモの割引（みんなドコモ割・セット割・dカードお支払割・でんき割など）は対象外です。",
       "bakuageTier": "",
       "poikatsuPt": 0,
       "maxBonus": false

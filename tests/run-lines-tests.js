@@ -749,6 +749,72 @@ function chk(name, cond, extra) {
   chk('⑱ ▼で1つ下へ動く',
     JSON.stringify(ord.afterDown) === '["c","a","b"]', JSON.stringify(ord.afterDown));
 
+  /* ---- ⑲ LIBMO はのりかえ（MNP）のときだけ選べる（2026-09-07）----
+   * LIBMO はドコモとは別会社のサービス。店舗の指定で、のりかえのときだけ扱う。
+   * ・出さない世代は**一覧そのものから外す**（iPhone・iPad の Safari は
+   *   option の hidden を無視するため・2026-09-06 の事故）
+   * ・すでに LIBMO を選んでいる見積もりでは、チェックを外しても消さない
+   *   （消すとプランが未選択に戻り、保存した見積もりの金額が変わるため） */
+  const lib = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const plans = ['libmo_nattoku', 'libmo_gogo'].map(
+      (id) => m.plans.filter((p) => p.id === id)[0] || null);
+    function groups() {
+      return Array.prototype.map.call(
+        document.querySelectorAll('#planGroup option'), (o) => o.value);
+    }
+    // 機種変更のとき
+    L.fill(0, { planId: m.plans[0].id, procType: 'kishu', procTodo: { kishu: true } });
+    L.fill(1, {});
+    L.pick(0);
+    const onKishu = groups();
+    // のりかえのとき
+    L.fill(0, { planId: m.plans[0].id, procType: 'mnp', procTodo: { mnp: true } });
+    L.pick(0);
+    const onMnp = groups();
+    // LIBMO を選んだあとに機種変更へ変えても、世代が消えないこと
+    L.fill(0, { planGroup: 'libmo', planId: 'libmo_gogo', tierIdx: 2,
+      procType: 'kishu', procTodo: { kishu: true } });
+    L.pick(0);
+    const keepGroups = groups();
+    const keepPlan = document.getElementById('planId').value;
+    // のりかえに戻して一覧の中身を見る
+    L.fill(0, { planGroup: 'libmo', planId: 'libmo_nattoku', tierIdx: 1,
+      procType: 'mnp', procTodo: { mnp: true } });
+    L.pick(0);
+    const names = Array.prototype.map.call(
+      document.querySelectorAll('#planId option'), (o) => o.textContent.trim());
+    return {
+      found: plans.map((p) => !!p),
+      prices: plans.map((p) => p && p.tiers.map((t) => t.price)),
+      groups: plans.map((p) => p && p.group),
+      onKishu: onKishu, onMnp: onMnp,
+      keepGroups: keepGroups, keepPlan: keepPlan,
+      names: names,
+      monthly: T.run({ planGroup: 'libmo', planId: 'libmo_nattoku', tierIdx: 1 }).segs[0].monthly
+    };
+  });
+  chk('⑲ LIBMO のプランが2つとも料金表にある',
+    lib.found[0] === true && lib.found[1] === true);
+  chk('⑲ なっとくプランは 3GB 980円・8GB 1,518円',
+    JSON.stringify(lib.prices[0]) === '[980,1518]', JSON.stringify(lib.prices[0]));
+  chk('⑲ ゴーゴープランは 1,100／1,320／1,980円',
+    JSON.stringify(lib.prices[1]) === '[1100,1320,1980]', JSON.stringify(lib.prices[1]));
+  chk('⑲ 機種変更のときは「プラン世代」に LIBMO を出さない',
+    lib.onKishu.indexOf('libmo') < 0, JSON.stringify(lib.onKishu));
+  chk('⑲ のりかえのときは「プラン世代」に LIBMO が出る',
+    lib.onMnp.indexOf('libmo') >= 0, JSON.stringify(lib.onMnp));
+  chk('⑲ LIBMO を選んだあとは、のりかえを外しても消えない',
+    lib.keepGroups.indexOf('libmo') >= 0 && lib.keepPlan === 'libmo_gogo',
+    JSON.stringify(lib.keepGroups) + ' / ' + lib.keepPlan);
+  chk('⑲ 一覧に LIBMO のプランが実際に出ている',
+    lib.names.some((n) => /なっとくプラン/.test(n))
+    && lib.names.some((n) => /ゴーゴープラン/.test(n)), JSON.stringify(lib.names));
+  chk('⑲ なっとくプラン 8GB の月額は 1,518円（ドコモの割引は付かない）',
+    lib.monthly === 1518, String(lib.monthly));
+
   await browser.close();
   srv.close();
 
