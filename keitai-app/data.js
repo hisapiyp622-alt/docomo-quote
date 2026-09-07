@@ -47,7 +47,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 16,
+  "masterVersion": 17,
   "updated": "2026-09-07",
   "fees": {
     "jimu_shinki": 4950,
@@ -841,7 +841,7 @@ const DEFAULT_DATA = {
     {
       "id": "op_1784460515071",
       "url": "https://www.docomo.ne.jp/service/anshin_security/",
-      "name": "あんしんセキュリティ詐欺電話対策",
+      "name": "あんしんセキュリティ スタンダードプラン詐欺対策プラス",
       "price": 999,
       "priceChoices": [
         999,
@@ -857,9 +857,29 @@ const DEFAULT_DATA = {
       "own": false
     },
     {
+      "id": "anshin_sec_total_plus",
+      "url": "https://anshin-security.docomo.ne.jp/total_scamprotect/index.html",
+      "name": "あんしんセキュリティ トータルプラン詐欺対策プラス",
+      "price": 1815,
+      "category": "セキュリティ",
+      "note": "スマホとパソコンのセキュリティ対策が最大3名まで（ご契約者＋ドコモ回線をお持ちの2名）。迷惑電話対策（拒否）・詐欺チェック・フェイク画像診断込み。ドコモ回線の契約者のみ申込可。",
+      "carrier": true,
+      "own": false
+    },
+    {
+      "id": "anshin_enkaku",
+      "url": "https://www.docomo.ne.jp/service/remote_support/charge/",
+      "name": "あんしん遠隔サポート",
+      "price": 660,
+      "category": "サポート",
+      "note": "2026年2月1日に440円から改定。あんしんパック／あんしんパック モバイル／smartあんしんパックに入っている場合は352円になります（そのときは金額を書き換えてください）。spモード等の接続サービスの契約が必要。月途中の申込・解約でも日割りになりません。",
+      "carrier": true,
+      "own": false
+    },
+    {
       "id": "op_1784460542023",
       "url": "https://www.docomo.ne.jp/service/anshin_security/",
-      "name": "あんしんセキュリティ スタンダード",
+      "name": "あんしんセキュリティ スタンダードプラン",
       "price": 550,
       "category": "セキュリティ",
       "note": "",

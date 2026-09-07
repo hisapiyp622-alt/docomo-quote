@@ -195,8 +195,21 @@
     { id: "ahamoRouter10g", name: "ルーターレンタル（10ギガ・OCNバーチャルコネクト対応）", price: 550, for: ["ahamo10g"] },
     { id: "apHome", name: "あんしんパック ホーム（デジタル機器補償＋ネットトータルサポート＋ネットワークセキュリティ）", price: 968, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
     { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
-    { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] }
+    { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] },
+    /* homeでんわ。ドコモ光・home 5G のどちらでも申し込める。
+     * 月額はセット割の前の金額を入れ、セット割は別の行（マイナス）で引く。
+     * セット割は同一ファミリー割引グループに ドコモ MAX・eximo・ahamo・
+     * home 5G プラン等があるときに ▲528円。
+     * 出典: https://www.docomo.ne.jp/home_denwa/ （2026-09-07 確認）
+     * 端末（HP01）代金・契約事務手数料2,200円・番号継続登録料2,200円は別。 */
+    { id: "homeDenwaLight", name: "homeでんわ ライト", price: 1078, homeDenwa: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
+    { id: "homeDenwaBasic", name: "homeでんわ ベーシック", price: 2178, homeDenwa: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
+    { id: "homeDenwaSet", name: "homeでんわ セット割（ファミリー割引グループにドコモの回線がある場合）", price: -528, needsHomeDenwa: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] }
   ];
+  /* homeでんわ を選んでいるか（セット割の出し分けに使う） */
+  function homeDenwaOn() {
+    return !!(state.opts.homeDenwaLight || state.opts.homeDenwaBasic);
+  }
   /* テレビ工事の選択肢
    * koji=ドコモ請求の工事料（分割対象）/ reg=視聴サービス登録料（手数料・分割対象外・常に一括）
    * onsite=スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外） */
@@ -396,7 +409,8 @@
     var optTimed = []; // 期間限定のオプション割引（あとで月額の推移へ反映）
     IENAKA_OPTS.forEach(function (o) {
       if (o.for.indexOf(state.product) < 0) return;
-      if (o.needsPhone && !phoneOn) return; // 光電話の付加サービスは光電話利用時のみ
+      if (o.needsPhone && !phoneOn) return;
+      if (o.needsHomeDenwa && !homeDenwaOn()) return; // 光電話の付加サービスは光電話利用時のみ
       if (o.needsVideo && !state.opts.skyp) return; // 映像サービスの内訳は映像サービス利用時のみ
       if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
       if (!state.opts[o.id]) return;
@@ -655,6 +669,7 @@
     var h = "";
     IE_OPT_GROUPS.forEach(function (g) {
       if (g.needsPhone && !phoneOn) return;
+      if (g.needsHomeDenwa && !homeDenwaOn()) return;
       if (g.needsVideo && !state.opts.skyp) return;
       var items = g.ids.map(ieOptById).filter(function (o) {
         if (!o || o.for.indexOf(state.product) < 0) return false;
