@@ -193,6 +193,7 @@
       product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "", providerType: "shinki", routerRental: "ari",
       baseMonthly: 5720, tvPoint: true,
       h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
+      h5Kubun: "shinki",               // 新規／機種変更（実績を分けるため・2026-09-07）
       opts: {}, optPrices: {},
       extraMonthly: [], extraInitial: [],
       jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
@@ -1196,6 +1197,7 @@
     $("kojiFreeWrap").hidden = !shinkiKoji;
     $("h5DeviceName").value = state.h5DeviceName;
     $("h5DevicePrice").value = state.h5DevicePrice || "";
+    $("h5Kubun").value = state.h5Kubun || "shinki";
     $("h5Pay").value = state.h5Pay;
     $("h5Support").checked = !!state.h5Support;
     $("kojiPay").value = state.kojiPay || "b24";
@@ -1979,6 +1981,7 @@
   $("baseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
   $("h5DeviceName").addEventListener("input", function () { state.h5DeviceName = this.value; recalc(); });
   $("h5DevicePrice").addEventListener("input", function () { state.h5DevicePrice = num(this.value); recalc(); });
+  $("h5Kubun").addEventListener("change", function () { state.h5Kubun = this.value; recalc(); });
   $("h5Pay").addEventListener("change", function () { state.h5Pay = this.value; recalc(); });
   $("h5Support").addEventListener("change", function () { state.h5Support = this.checked; recalc(); });
   $("kojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });

@@ -288,6 +288,16 @@
         <label for="atamakin">店頭頭金</label>
         <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
       </div>
+      <label class="check"><input type="checkbox" id="tablet"> タブレット（実績の「タブレット総販」に数えます）</label>
+      <div class="field">
+        <label for="shitadori">下取り</label>
+        <select id="shitadori">
+          <option value="">なし</option>
+          <option value="target">指定機種</option>
+          <option value="other">指定外機種</option>
+        </select>
+      </div>
+      <p class="hint">「タブレット」と「下取り」は<strong>実績の集計だけに使います</strong>。<strong>お客様の見積書・引き継ぎシートには出ません。</strong>下取りの<strong>金額</strong>は、これまでどおり「初期費用の追加項目」にマイナスで入れてください。</p>
       <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
       <div class="field" id="kaedoki23Field" hidden>
         <label for="kaedoki23">23回分の総額（頭金込み）</label>
@@ -640,6 +650,13 @@
 
     <div class="step" id="ieHome5gStep" hidden>
       <h2 data-iet="home 5G 端末">③ home 5G 端末</h2>
+      <div class="field">
+        <label for="ieH5Kubun">区分</label>
+        <select id="ieH5Kubun">
+          <option value="shinki">新規</option>
+          <option value="kishu">機種変更</option>
+        </select>
+      </div>
       <div class="field">
         <label for="ieH5DeviceName">端末名</label>
         <input type="text" id="ieH5DeviceName" placeholder="例）home 5G HR02">
