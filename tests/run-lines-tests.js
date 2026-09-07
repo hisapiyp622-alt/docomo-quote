@@ -761,8 +761,9 @@ function chk(name, cond, extra) {
   chk('⑱ ▼で1つ下へ動く',
     JSON.stringify(ord.afterDown) === '["c","a","b"]', JSON.stringify(ord.afterDown));
 
-  /* ---- ⑲ LIBMO はのりかえ（MNP）のときだけ選べる（2026-09-07）----
-   * LIBMO はドコモとは別会社のサービス。店舗の指定で、のりかえのときだけ扱う。
+  /* ---- ⑲ LIBMO は新規・のりかえのときだけ選べる（2026-09-07）----
+   * LIBMO はドコモとは別会社のサービス。店舗の指定で、新規とのりかえで扱う
+   * （機種変更・プラン変更では出さない）。
    * ・出さない世代は**一覧そのものから外す**（iPhone・iPad の Safari は
    *   option の hidden を無視するため・2026-09-06 の事故）
    * ・すでに LIBMO を選んでいる見積もりでは、チェックを外しても消さない
@@ -786,6 +787,10 @@ function chk(name, cond, extra) {
     L.fill(0, { planId: m.plans[0].id, procType: 'mnp', procTodo: { mnp: true } });
     L.pick(0);
     const onMnp = groups();
+    // 新規のとき（2026-09-07 に足した）
+    L.fill(0, { planId: m.plans[0].id, procType: 'shinki', procTodo: { shinki: true } });
+    L.pick(0);
+    const onShinki = groups();
     // LIBMO を選んだあとに機種変更へ変えても、世代が消えないこと
     L.fill(0, { planGroup: 'libmo', planId: 'libmo_gogo', tierIdx: 2,
       procType: 'kishu', procTodo: { kishu: true } });
@@ -802,7 +807,7 @@ function chk(name, cond, extra) {
       found: plans.map((p) => !!p),
       prices: plans.map((p) => p && p.tiers.map((t) => t.price)),
       groups: plans.map((p) => p && p.group),
-      onKishu: onKishu, onMnp: onMnp,
+      onKishu: onKishu, onMnp: onMnp, onShinki: onShinki,
       keepGroups: keepGroups, keepPlan: keepPlan,
       names: names,
       monthly: T.run({ planGroup: 'libmo', planId: 'libmo_nattoku', tierIdx: 1 }).segs[0].monthly
@@ -818,6 +823,8 @@ function chk(name, cond, extra) {
     lib.onKishu.indexOf('libmo') < 0, JSON.stringify(lib.onKishu));
   chk('⑲ のりかえのときは「プラン世代」に LIBMO が出る',
     lib.onMnp.indexOf('libmo') >= 0, JSON.stringify(lib.onMnp));
+  chk('⑲ 新規のときも「プラン世代」に LIBMO が出る',
+    lib.onShinki.indexOf('libmo') >= 0, JSON.stringify(lib.onShinki));
   chk('⑲ LIBMO を選んだあとは、のりかえを外しても消えない',
     lib.keepGroups.indexOf('libmo') >= 0 && lib.keepPlan === 'libmo_gogo',
     JSON.stringify(lib.keepGroups) + ' / ' + lib.keepPlan);
@@ -1235,6 +1242,56 @@ function chk(name, cond, extra) {
     && row(dup.plain, 'a').covered === false, JSON.stringify(row(dup.plain, 'a')));
   chk('㉗ 1本ずつのときは 150（U39）＋100（U39でない）＝250',
     dup.both.total === 250, String(dup.both.total) + ' / ' + JSON.stringify(dup.both.rows));
+
+  /* ---- ㉘ d払い初回利用・ひかりTV（2026-09-07・店舗の指定）----
+   * d払い初回利用は、店頭のお支払い方法の「d払い」とは別の印。
+   * 店頭でd払いを選んだだけで「初回」に数えてしまわないことも見る。 */
+  const more3 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    const base = { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true };
+    function keys(patch) {
+      L.fill(0, Object.assign({}, base, patch));
+      L.fill(1, {});
+      L.pick(0);
+      return Object.keys(L.items());
+    }
+    const on = keys({ dpayFirst: true });
+    const off = keys({});
+    // 店頭のお支払いで d払い を選んだだけでは数えない
+    const storePayOnly = keys({ storePay: { dbarai: true } });
+    const box = !!document.getElementById('dpayFirst');
+    L.fill(0, Object.assign({}, base, { dpayFirst: true }));
+    L.pick(0);
+    const sheet = T.std.sheetHtml() + '\n' + (T.std.staffHtml ? T.std.staffHtml() : '');
+    // ひかりTV
+    const tv = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g',
+      applyType: 'shinki', opts: { vsHikariTv: true } }));
+    const tvSlim = L.slimIe({ enabled: true, product: 'hikari1g', applyType: 'shinki',
+      opts: { vsHikariTv: true } });
+    const cat = L.cxCatalog();
+    return { on, off, storePayOnly, box,
+      sheetHasDpay: /d払い初回/.test(sheet),
+      tv, tvSlim: (tvSlim.opts || {}).vsHikariTv === true,
+      catDpay: cat['dpayfirst'] || '', catTv: cat['ie:opt:vsHikariTv'] || '' };
+  });
+  chk('㉘ 画面に「d払い初回利用」のチェック欄がある', more3.box === true);
+  chk('㉘ チェックすると数える',
+    more3.on.indexOf('dpayfirst') >= 0, JSON.stringify(more3.on));
+  chk('㉘ チェックしなければ数えない',
+    more3.off.indexOf('dpayfirst') < 0, JSON.stringify(more3.off));
+  chk('㉘ 店頭のお支払いで d払い を選んだだけでは数えない',
+    more3.storePayOnly.indexOf('dpayfirst') < 0, JSON.stringify(more3.storePayOnly));
+  chk('㉘ 実績の項目に「（再掲）d払い初回利用」が出る',
+    /d払い初回利用/.test(more3.catDpay), more3.catDpay);
+  chk('㉘ d払い初回利用はお客様の紙に出ない', more3.sheetHasDpay === false);
+  chk('㉘ ひかりTV を選ぶと数える',
+    more3.tv.indexOf('ie:opt:vsHikariTv') >= 0, JSON.stringify(more3.tv));
+  chk('㉘ 保存を小さくしても ひかりTV の印は残る', more3.tvSlim === true);
+  chk('㉘ 実績の項目に ひかりTV が出る',
+    /ひかりTV/.test(more3.catTv), more3.catTv);
 
   await browser.close();
   srv.close();
