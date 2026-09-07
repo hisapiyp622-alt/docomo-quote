@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.178.0";
+  var APP_VERSION = "1.179.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -8617,6 +8617,13 @@
     $("mailTile").innerHTML = tileHtml("data-mail", mo.id, stdName(mo), on, priceHtml + kubunHtml, isOff ? "kubun-off" : "");
     $("mailHint").textContent = "このプランはドコモメールが有料オプションです（" + yen(mo.price) + "/月）。タイルを押して選び、中の新規／継続／廃止で区分を選べます（廃止は月額に入れません）。";
   }
+  /* 実績だけに使う印のタイル。金額は出さず、そのことを書いておく */
+  function statMarkTiles() {
+    return STAT_MARKS.map(function (m) {
+      return tileHtml("data-statmark", m.id, m.name, m.on(state),
+        '<span class="t-price t-statmark">実績のみ<br>お客様の紙には出ません</span>');
+    }).join("");
+  }
   function tileHtml(attr, id, name, on, priceHtml, extraClass) {
     return '<div class="tile' + (on ? " on" : "") + (extraClass ? " " + extraClass : "")
       + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
@@ -8624,6 +8631,30 @@
       + '<span class="t-name">' + esc(name) + "</span>"
       + priceHtml
       + "</div>";
+  }
+  /* 実績の集計だけに使う印。④オプションの「その他」に、タイルで並べる
+   * （店舗の指定・2026-09-07）。押し忘れを減らすため1か所にまとめた。
+   * お客様の見積書・引き継ぎシートには出さない。金額にも入らない。
+   *   pick … 同じ組の中では1つだけ選べる（下取りの2種類）
+   *   on/set … 状態の読み書き */
+  var STAT_MARKS = [
+    { id: "dcardFirst", name: "dカード初回利用",
+      on: function (st) { return !!st.dcardFirst; },
+      set: function (st, v) { st.dcardFirst = v; } },
+    { id: "dpayFirst", name: "d払い初回利用",
+      on: function (st) { return !!st.dpayFirst; },
+      set: function (st, v) { st.dpayFirst = v; } },
+    /* 下取りの2つは state.shitadori という1つの値を共有している。
+     * どちらかを立てればもう片方は自動で下りるので、別に排他の処理は要らない。 */
+    { id: "shitadoriTarget", name: "下取り（指定機種）",
+      on: function (st) { return st.shitadori === "target"; },
+      set: function (st, v) { st.shitadori = v ? "target" : ""; } },
+    { id: "shitadoriOther", name: "下取り（指定外機種）",
+      on: function (st) { return st.shitadori === "other"; },
+      set: function (st, v) { st.shitadori = v ? "other" : ""; } }
+  ];
+  function statMarkById(id) {
+    return STAT_MARKS.filter(function (m) { return m.id === id; })[0] || null;
   }
   /* 選んだときに公式ページへの参照リンクを出すオプション。
    * 金額が機種などで変わるものは、その場で正確な額を調べられるようにする。 */
@@ -8704,8 +8735,15 @@
           ? '<a class="t-link" href="' + OPT_INFO_LINKS[o.id] + '" target="_blank" rel="noopener">公式の料金表を開く ↗</a>'
           : "";
         return tileHtml("data-opt", o.id, stdName(o), on, priceHtml + kubunHtml + linkHtml, isOff ? "kubun-off" : "");
-      }).join("") + accItems.map(accTileHtml).join("") + "</div>";
+      }).join("") + accItems.map(accTileHtml).join("")
+        + (cat === "その他" ? statMarkTiles() : "") + "</div>";
     });
+    // 「その他」が1つも無い店舗でも、実績の印は出す
+    if (optCategories().indexOf("その他") < 0
+        || !MASTER.options.some(function (o) { return (o.category || "その他") === "その他"; })) {
+      h += '<div class="opt-cat">その他</div><div class="tile-grid">'
+        + statMarkTiles() + "</div>";
+    }
     /* 継続でお使いのお客様の見積もりを作れるように、受付終了のものも出せる口を残す。
      * 「消えた」ではなく「ここに移った」と画面で言えるようにするため（4-11）。 */
     h += endedToggleHtml(stdHiddenAll());
@@ -8948,8 +8986,6 @@
     $("platRateWrap").hidden = state.dCard !== "platinum";
     $("platRate").value = platRate(state);
     $("dDenki").checked = state.dDenki;
-    $("dcardFirst").checked = !!state.dcardFirst;
-    $("dpayFirst").checked = !!state.dpayFirst;
     $("bizMembers").checked = !!state.bizMembers;
     $("shain").checked = !!state.shain;
     $("chokiOn").checked = state.choki !== "none";
@@ -8976,7 +9012,6 @@
     $("kishuRank").value = state.kishuRank || "";
     renderKishuRankHint();
     $("tablet").checked = !!state.tablet;
-    $("shitadori").value = state.shitadori || "";
     $("devicePrice").value = state.devicePrice || "";
     renderDeviceSelect();
     $("couponOff").value = state.couponOff || "";
@@ -12800,6 +12835,7 @@
   /* タイルがどの入れ物へ移れるか。data-opt=④のカテゴリ内、
    * data-acsel=④のカテゴリ内と⑥、data-fee=⑦の中だけ */
   function arrTileAllowed(tile, grid) {
+    if (tile.hasAttribute("data-statmark")) return false;   // 実績の印は並べ替えない
     if (tile.hasAttribute("data-opt")) return !!grid.closest("#optionList");
     if (tile.hasAttribute("data-acsel")) return !!(grid.closest("#optionList") || grid.closest("#accTileList"));
     if (tile.hasAttribute("data-fee")) return !!grid.closest("#feeItemList");
@@ -13703,12 +13739,6 @@
       recalc();
     });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
-    $("dcardFirst").addEventListener("change", function () {
-      state.dcardFirst = this.checked; recalc();
-    });
-    $("dpayFirst").addEventListener("change", function () {
-      state.dpayFirst = this.checked; recalc();
-    });
     $("bizMembers").addEventListener("change", function () { state.bizMembers = this.checked; recalc(); });
     $("shain").addEventListener("change", function () { state.shain = this.checked; recalc(); });
     $("chokiOn").addEventListener("change", function () {
@@ -13882,6 +13912,16 @@
       var optId = tile.getAttribute("data-opt");
       var feeId = tile.getAttribute("data-fee");
       var accId = tile.getAttribute("data-acc");
+      var markId = tile.getAttribute("data-statmark");
+      if (markId) {
+        var mk = statMarkById(markId);
+        if (mk) {
+          mk.set(state, !mk.on(state));
+          renderOptionList();
+          recalc();
+        }
+        return;
+      }
       if (optId) {
         // 対象にしている（新規・継続・廃止のいずれか）状態と、対象外とを切り替える
         if (state.options[optId] || state.optionKubun[optId] === "off") {
@@ -14031,9 +14071,6 @@
     });
     $("tablet").addEventListener("change", function () {
       state.tablet = this.checked; recalc();
-    });
-    $("shitadori").addEventListener("change", function () {
-      state.shitadori = this.value; recalc();
     });
     $("deviceName").addEventListener("input", function () {
       state.deviceName = this.value;
@@ -14917,6 +14954,27 @@
         },
         /* マスタ設定の「実績で追う項目」のオプションのチェックを、実際に押す。
          * 内部の印を直に書き換えると、画面の道が壊れていても気づけないため。 */
+        /* ④オプションの「その他」に出ている実績の印のタイル。
+         * 画面に実際に出ている文字と、押せるかどうかを見る。 */
+        statMarks: function () {
+          renderOptionList();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#optionList [data-statmark]"), function (el) {
+              var grid = el.closest(".tile-grid");
+              var head = grid ? grid.previousElementSibling : null;
+              return { id: el.getAttribute("data-statmark"),
+                name: (el.querySelector(".t-name") || {}).textContent || "",
+                on: el.classList.contains("on"),
+                inOther: /その他/.test((head && head.textContent) || "") };
+            });
+        },
+        statMarkClick: function (id) {
+          renderOptionList();
+          var el = document.querySelector('#optionList [data-statmark="' + id + '"]');
+          if (!el) return false;
+          el.click();
+          return true;
+        },
         optSkipUi: function (id, on) {
           renderMasterTab();
           var b = document.querySelector('[data-sc-opt="' + id + '"]');

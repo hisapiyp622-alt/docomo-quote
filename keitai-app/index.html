@@ -224,8 +224,6 @@
           <p class="hint" id="platRateHint"></p>
         </div>
       </div>
-      <label class="check"><input type="checkbox" id="dcardFirst"> dカード初回利用（実績の集計だけに使います。お客様の紙には出ません）</label>
-      <label class="check"><input type="checkbox" id="dpayFirst"> d払い初回利用（同上。店頭のお支払い方法の「d払い」とは別のものです）</label>
       <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
       <label class="check" id="bizMembersWrap"><input type="checkbox" id="bizMembers"> ビジネスメンバーズ割（ドコモビジネスメンバーズに加入している法人）</label>
       <label class="check" id="shainWrap"><input type="checkbox" id="shain"> 社員割（同一「ビジネス通話割引」グループ内の音声回線が6回線以上）</label>
@@ -298,15 +296,7 @@
       </div>
       <p class="hint" id="kishuRankHint"></p>
       <label class="check"><input type="checkbox" id="tablet"> タブレット（実績の「タブレット総販」に数えます）</label>
-      <div class="field">
-        <label for="shitadori">下取り</label>
-        <select id="shitadori">
-          <option value="">なし</option>
-          <option value="target">指定機種</option>
-          <option value="other">指定外機種</option>
-        </select>
-      </div>
-      <p class="hint">「タブレット」と「下取り」は<strong>実績の集計だけに使います</strong>。<strong>お客様の見積書・引き継ぎシートには出ません。</strong>下取りの<strong>金額</strong>は、これまでどおり「初期費用の追加項目」にマイナスで入れてください。</p>
+      <p class="hint">「タブレット」は<strong>実績の集計だけに使います</strong>。<strong>お客様の見積書・引き継ぎシートには出ません。</strong><br><strong>下取り・dカード初回利用・d払い初回利用</strong>は、<strong>④オプションの「その他」</strong>にまとめました。下取りの<strong>金額</strong>は、これまでどおり「初期費用の追加項目」にマイナスで入れてください。</p>
       <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
       <div class="field" id="kaedoki23Field" hidden>
         <label for="kaedoki23">23回分の総額（頭金込み）</label>

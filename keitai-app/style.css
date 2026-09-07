@@ -420,6 +420,9 @@ body.arranging #optionList .opt-cat{background:#FBF1F3;border:1px dashed var(--r
 
 /* ドコモ MAX の選べる特典で無料になるオプション */
 .tile .t-price.t-bonus{color:var(--red);font-weight:700}
+/* 実績だけに使う印のタイル。説明が長いので折り返す
+   （nowrap のままだと iPhone の幅で横にはみ出す・2026-09-07） */
+.tile .t-price.t-statmark{white-space:normal;line-height:1.25}
 
 /* 引き継ぎシートの一覧（新規／継続／廃止・ネットワークサービス）は1件1行 */
 .sheet .kubun-list > i{display:block;font-style:normal;break-inside:avoid;page-break-inside:avoid}

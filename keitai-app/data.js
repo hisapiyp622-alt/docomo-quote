@@ -47,8 +47,8 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 17,
-  "updated": "2026-09-07",
+  "masterVersion": 18,
+  "updated": "2026-09-08",
   "fees": {
     "jimu_shinki": 4950,
     "jimu_mnp": 4950,
@@ -871,7 +871,7 @@ const DEFAULT_DATA = {
       "url": "https://www.docomo.ne.jp/service/remote_support/charge/",
       "name": "あんしん遠隔サポート",
       "price": 660,
-      "category": "サポート",
+      "category": "その他",
       "note": "2026年2月1日に440円から改定。あんしんパック／あんしんパック モバイル／smartあんしんパックに入っている場合は352円になります（そのときは金額を書き換えてください）。spモード等の接続サービスの契約が必要。月途中の申込・解約でも日割りになりません。",
       "carrier": true,
       "own": false
