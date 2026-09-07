@@ -227,6 +227,75 @@ function chk(name, cond, extra) {
     pack.dev1 && pack.dev2 && JSON.stringify(pack.used) === '[0,1]',
     JSON.stringify(pack.used));
 
+  /* ---- ⑨ 実績のポイント（お店が決める指標・2026-09-07）----
+   * ドコモの評価指標のように「新規 × eximo で◯点」と数えたい、という要望。
+   * 点数と項目名はアプリに持たず、お店がマスタ設定で入力する。
+   * ここでは**数え方**だけを見る（点数は検査用に入れる）。
+   *
+   * 見ているもの:
+   *   ・条件を1つだけ書いた行 … その項目が立った回線の数だけ数える
+   *   ・条件を2つ書いた行（組み合わせ）… 両方そろった回線だけ数える
+   *   ・光（世帯に1本）… 回線が何本あっても商談に1件
+   *   ・成約で外した回線は数えない
+   */
+  const cx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const plan = m.plans[0].id;      // ドコモ MAX
+    const plan2 = m.plans.filter((p) => p.id !== plan)[0].id;
+    // 回線1: 新規 × プランA ／ 回線2: 機種変更 × プランB
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      deviceName: 'A', planChange: true });
+    L.fill(1, { planId: plan2, procType: 'kishu', procTodo: { kishu: true },
+      deviceName: 'B', planChange: true });
+    L.pick(0);
+    const cat = L.cxCatalog();
+    const has = (k) => !!cat[k];
+    L.cxSet([
+      { id: 'r1', name: '新規（単独）', pt: 10, keys: ['proc:shinki'] },
+      { id: 'r2', name: '機種変更（単独）', pt: 3, keys: ['proc:kishu'] },
+      { id: 'r3', name: '新規 × プランA（組み合わせ）', pt: 100, keys: ['proc:shinki', 'plan:' + plan] },
+      { id: 'r4', name: '新規 × プランB（そろわない）', pt: 999, keys: ['proc:shinki', 'plan:' + plan2] },
+      { id: 'r5', name: '条件なし（数えない）', pt: 500, keys: [] }
+    ]);
+    const all = L.cxBreak();
+    const only1 = L.cxBreak([0]);
+    return { cat: { shinki: has('proc:shinki'), planA: has('plan:' + plan) },
+      all: all, total: L.cxTotal(), only1: only1, total1: L.cxTotal([0]) };
+  });
+  function find(list, id) { return (list || []).filter((x) => x.id === id)[0] || null; }
+  chk('⑨ 実績の項目キーが取れている', cx.cat.shinki && cx.cat.planA, JSON.stringify(cx.cat));
+  chk('⑨ 条件1つの行は、その項目が立った回線ぶん数える',
+    !!find(cx.all, 'r1') && find(cx.all, 'r1').n === 1
+    && !!find(cx.all, 'r2') && find(cx.all, 'r2').n === 1,
+    JSON.stringify(cx.all));
+  chk('⑨ 組み合わせは、両方そろった回線だけ数える',
+    !!find(cx.all, 'r3') && find(cx.all, 'r3').n === 1 && find(cx.all, 'r3').total === 100,
+    JSON.stringify(find(cx.all, 'r3')));
+  chk('⑨ そろわない組み合わせは数えない', !find(cx.all, 'r4'), JSON.stringify(find(cx.all, 'r4')));
+  chk('⑨ 条件が空の行は数えない', !find(cx.all, 'r5'));
+  chk('⑨ 合計は 10＋3＋100 ＝113', cx.total === 113, String(cx.total));
+  chk('⑨ 成約で外した回線は数えない（回線1だけなら 10＋100 ＝110）',
+    cx.total1 === 110, String(cx.total1) + ' / ' + JSON.stringify(cx.only1));
+
+  /* 光は世帯に1本。回線が2本あっても商談に1件 */
+  const cxIe = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    L.cxSet([{ id: 'ie', name: '光 1ギガ', pt: 42, keys: ['ie:1g'] }]);
+    const before = L.cxTotal();
+    // 光を入れて、申し込みにチェックする
+    const ie = document.getElementById('ieEnabled');
+    if (ie && !ie.checked) { ie.checked = true; ie.dispatchEvent(new Event('change', { bubbles: true })); }
+    const td = document.getElementById('todoHikari');
+    if (td && !td.checked) { td.checked = true; td.dispatchEvent(new Event('change', { bubbles: true })); }
+    return { before: before, after: L.cxTotal(), rows: L.cxBreak() };
+  });
+  chk('⑨ 光を入れる前は、光の行は数えない', cxIe.before === 0, String(cxIe.before));
+  chk('⑨ 光は回線が2本でも商談に1件（42点）',
+    cxIe.after === 42, String(cxIe.after) + ' / ' + JSON.stringify(cxIe.rows));
+
   await browser.close();
   srv.close();
 

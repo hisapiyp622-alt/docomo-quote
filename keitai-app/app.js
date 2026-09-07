@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.164.0";
+  var APP_VERSION = "1.165.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1672,14 +1672,71 @@
   /* lines を渡すと、その回線だけを成約として数える（2026-09-05）。
    * 見比べていただくために作った案を、成約として二重に数えないため。
    * 渡さない（古い記録）ときは、これまでどおり中身のある回線を全部数える。 */
-  function statsDataItems(d, won, lines) {
-    var out = {};
-    function add(map) {
-      Object.keys(map).forEach(function (k) {
-        if (!out[k]) out[k] = { name: map[k], n: 0 };
-        out[k].n++;
-      });
+  /* 1件の応対から、項目キーの集まりを取り出す。
+   *   lines … 回線ごとの { キー: 名前 }（中身のある回線ぶん）
+   *   whole … 商談にひとつのもの（光・5G。世帯に1本のため回線には属さない）
+   * 実績の件数（statsDataItems）と、CX指標のポイント（cxCountRow）が
+   * **同じものを見る**ように、ここ1か所にまとめてある。 */
+  /* ---------- 実績のポイント（お店が決める指標） ----------
+   * ドコモの評価指標のように「新規 × eximo で◯点」という数え方をしたい、
+   * という店舗の希望（2026-09-07）。
+   *
+   * ★ 点数と項目名は、このアプリの中には持ちません。
+   *   お店がマスタ設定で入力し、そのお店のクラウドにだけ入ります。
+   *   （もとにした資料が「社外持出禁止」のため。このリポジトリは公開されています）
+   *
+   * 1行 ＝ { id, name（お店が付ける名前）, pt（点数）, keys（条件） }
+   * 条件は**実績の項目キーの組み合わせ**で書きます。すべて満たした回線を1件と数えます。
+   *   例）「新規 × eximo」… keys: ["proc:shinki", "plan:eximo"]
+   *       「ドコモ光 10ギガ」… keys: ["ie:10g"]（光は世帯に1本なので商談に1件）
+   * 新しい数え方を足すのではなく、**いま実績に出ている項目を組み合わせる**だけなので、
+   * 数え方が実績とズレません。 */
+  function cxRows() {
+    if (!Array.isArray(MASTER.cxPoints)) MASTER.cxPoints = [];
+    return MASTER.cxPoints;
+  }
+  function cxOn() { return cxRows().some(function (r) { return num(r.pt) !== 0; }); }
+  // 商談にひとつの項目（光・5G）かどうか
+  function cxWholeKey(k) { return String(k || "").indexOf("ie:") === 0; }
+  /* 1行ぶんが、この応対で何件になるか。
+   * ・回線の条件 … すべて満たした回線の数だけ数える（2台なら2件）
+   * ・商談の条件（光）… 満たしていれば1件。回線の条件と混ぜたときは、
+   *   光が付いている商談の中で、回線の条件を満たした回線を数える */
+  function cxCountRow(row, sets) {
+    var keys = (row && row.keys) || [];
+    if (!keys.length) return 0;
+    var wholeKeys = keys.filter(cxWholeKey);
+    var lineKeys = keys.filter(function (k) { return !cxWholeKey(k); });
+    for (var w = 0; w < wholeKeys.length; w++) {
+      if (!sets.whole[wholeKeys[w]]) return 0;
     }
+    if (!lineKeys.length) return wholeKeys.length ? 1 : 0;
+    var n = 0;
+    sets.lines.forEach(function (set) {
+      var ok = lineKeys.every(function (k) { return !!set[k]; });
+      if (ok) n++;
+    });
+    return n;
+  }
+  /* 1件の応対のポイント内訳。[{ id, name, pt, n, total }] */
+  function cxBreakdown(d, won, lines) {
+    var rows = cxRows();
+    if (!rows.length) return [];
+    var sets = statsKeySets(d, won, lines);
+    var out = [];
+    rows.forEach(function (r) {
+      var n = cxCountRow(r, sets);
+      if (!n) return;
+      out.push({ id: r.id, name: r.name || "（名前なし）", pt: num(r.pt), n: n, total: num(r.pt) * n });
+    });
+    return out;
+  }
+  function cxTotal(d, won, lines) {
+    var t = 0;
+    cxBreakdown(d, won, lines).forEach(function (x) { t += x.total; });
+    return t;
+  }
+  function statsKeySets(d, won, lines) {
     var pats = (d && d.patterns) || [];
     var used = usedLinesOf(d, won);
     if (won && lines && lines.length) {
@@ -1688,8 +1745,10 @@
     var vpSt = visitStateOf(d, null);
     // 回線1（＝この商談の手続き）。手続きを選んでいない回線はこれで数える
     var baseTodo = procTodoOf(pats[0]);
-    used.forEach(function (i) { add(statsPatternItems(pats[i], won, vpSt || pats[i], baseTodo)); });
-
+    var perLine = used.map(function (i) {
+      return statsPatternItems(pats[i], won, vpSt || pats[i], baseTodo);
+    });
+    var whole = {};
     var ie = d && d.ienaka;
     if (ie && ie.enabled && ie.product && statsCfg().hikari) {
       /* 成約として数えるのは「光申し込み」にチェックがあるときだけ。
@@ -1704,10 +1763,26 @@
         applied = hp.some(function (pt) { return pt && pt.todoHikari; });
       }
       if (applied) {
-        out["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] =
-          { name: "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product), n: 1 };
+        whole["ie:" + (STATS_IE_KEYS[ie.product] || ie.product)] =
+          "光・5G: " + (STATS_IE_NAMES[ie.product] || ie.product);
       }
     }
+    return { lines: perLine, whole: whole };
+  }
+  function statsDataItems(d, won, lines) {
+    var out = {};
+    function add(map) {
+      Object.keys(map).forEach(function (k) {
+        if (!out[k]) out[k] = { name: map[k], n: 0 };
+        out[k].n++;
+      });
+    }
+    var sets = statsKeySets(d, won, lines);
+    sets.lines.forEach(add);
+    Object.keys(sets.whole).forEach(function (k) {
+      if (!out[k]) out[k] = { name: sets.whole[k], n: 0 };
+      out[k].n++;
+    });
     return out;
   }
 
@@ -1943,6 +2018,9 @@
     var byDay = {};      // 日 -> {prop, won, dow, items:{項目キー -> 成約件数}}
     var staffAgg = {};   // 担当id -> {prop, won, undone}
     var cross = {};      // 担当id -> {項目キー -> 成約件数}
+    /* 実績のポイント（お店が決めた指標）。成約になった応対だけ数える。
+     * 行キー -> {name, pt, n, total} */
+    var cxAgg = {};
 
     config.staff.forEach(function (s) {
       staffAgg[s.id] = { prop: 0, won: 0, undone: 0 };
@@ -2000,6 +2078,12 @@
             vpAgg[vk].won++;
             if (vk !== "_none") visitUsed[vk] = true;
           });
+          /* ポイント（マスタ設定の「実績のポイント」）。成約した内容で数える。 */
+          cxBreakdown(it.wonData || it.data, true, it.wonLines).forEach(function (x) {
+            if (!cxAgg[x.id]) cxAgg[x.id] = { name: x.name, pt: x.pt, n: 0, total: 0 };
+            cxAgg[x.id].n += x.n;
+            cxAgg[x.id].total += x.total;
+          });
           Object.keys(wonI).forEach(function (k) {
             var n = wonI[k].n;
             var b = bagItem(k, wonI[k].name);
@@ -2022,7 +2106,7 @@
       b.won = Math.max(0, b.won + itemAdj[k].won);
     });
     return { items: items, visitUsed: visitUsed, vpAgg: vpAgg,
-      byDay: byDay, staffAgg: staffAgg, cross: cross };
+      byDay: byDay, staffAgg: staffAgg, cross: cross, cx: cxAgg };
   }
 
   /* ---------- 月次の確定（スナップショット） ----------
@@ -2413,6 +2497,37 @@
         h += '<p class="hint">数え違いがあれば「修正」の <b>＋ −</b> で直せます'
           + (adjScope === "day" ? "（今日の記録として足し引きされます）" : "（" + esc(mFil) + " の調整として足し引きされます）")
           + "。</p>";
+      }
+    }
+
+    /* ---- 実績のポイント（お店が決めた指標） ----
+     * マスタ設定の「実績のポイント」に点数が入っているときだけ出す。
+     * 何も入れていないお店では、これまでどおりの画面のまま。 */
+    var cxAgg = agg.cx || {};
+    var cxKeys = Object.keys(cxAgg).filter(function (k) { return cxAgg[k].total !== 0; });
+    if (cxOn()) {
+      cxKeys.sort(function (a2, b2) { return cxAgg[b2].total - cxAgg[a2].total; });
+      var cxSum = 0;
+      cxKeys.forEach(function (k) { cxSum += cxAgg[k].total; });
+      h += '<h3>' + esc(statsPeriodLabel(mFil)) + "のポイント"
+        + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）") + "</h3>";
+      if (settled) {
+        h += '<p class="hint">確定済みの月は、ポイントを出せません'
+          + "（確定した時点の数字にはポイントが入っていないため）。</p>";
+      } else if (!cxKeys.length) {
+        h += '<p class="hint">この期間は、ポイントの付く成約がまだありません。</p>';
+      } else {
+        h += '<div class="stats-scroll"><table class="stats-table">'
+          + "<tr><th>項目</th><th>件数</th><th>点数</th><th>小計</th></tr>";
+        cxKeys.forEach(function (k) {
+          h += "<tr><td>" + esc(cxAgg[k].name) + "</td><td>" + cxAgg[k].n + "</td><td>"
+            + cxAgg[k].pt + "</td><td><b>" + cxAgg[k].total + "</b></td></tr>";
+        });
+        h += '<tr class="total"><td><b>合計</b></td><td></td><td></td><td><b>'
+          + cxSum + "</b></td></tr></table></div>";
+        h += '<p class="hint">成約になった応対だけを数えています。'
+          + '点数と数え方は<strong>マスタ設定の「実績のポイント」</strong>で変えられます'
+          + '（マスタ設定は担当者コードの画面から開きます）。</p>';
       }
     }
 
@@ -9896,6 +10011,62 @@
   }
 
   /* ---------- マスタ設定タブ ---------- */
+  /* マスタ設定の「実績のポイント」カード。設定は MASTER.cxPoints（cxRows() 参照）。
+   * 点数と項目名は、このアプリには持たず**お店が入力**します（cxRows() のコメント参照）。 */
+  function cxPointsHtml() {
+    var rows = cxRows();
+    var cat = statsCatalog();
+    var catKeys = Object.keys(cat);
+    var h = '<div class="master-plan" data-mroom="stats"><h3>実績のポイント</h3>';
+    h += '<p class="hint">実績に<strong>ポイントの合計</strong>を出せます。'
+      + 'ドコモの評価指標のように「<strong>新規 × eximo で◯点</strong>」という数え方をしたいとき'
+      + 'にお使いください。<br>'
+      + '1行が1つの数え方です。<strong>条件をすべて満たした回線</strong>を1件と数え、'
+      + '件数 × 点数 を足し上げます（ご家族2台なら2件）。'
+      + '光・5Gは世帯に1本なので、商談に1件として数えます。<br>'
+      + '<strong>点数はこの端末からお店のクラウドに入ります。</strong>'
+      + '数え方は実績の項目と同じものを使うので、実績の件数とズレません。</p>';
+    if (!catKeys.length) {
+      h += '<p class="hint">先に「実績で追う項目」で数える項目を選んでください。</p></div>';
+      return h;
+    }
+    h += '<div class="cx-rows">';
+    rows.forEach(function (r, i) {
+      h += '<div class="adhoc-row cx-row" data-cx="' + i + '">'
+        + '<input type="text" data-cx-name="' + i + '" value="' + esc(r.name || "")
+        + '" placeholder="名前（例: 新規 × eximo）">'
+        + '<input type="number" data-cx-pt="' + i + '" value="' + (num(r.pt) || "")
+        + '" placeholder="0" min="0" step="1">pt'
+        + '<button type="button" class="del" data-cx-del="' + i + '" aria-label="この行を消す">×</button>'
+        + '</div>';
+      h += '<div class="cx-cond">条件: ';
+      (r.keys || []).forEach(function (k) {
+        h += '<span class="cx-chip">' + esc(cat[k] || k)
+          + '<button type="button" data-cx-key-del="' + i + '" data-cx-key="' + esc(k)
+          + '" aria-label="この条件を外す">×</button></span>';
+      });
+      h += '<select data-cx-key-add="' + i + '"><option value="">＋ 条件を足す</option>'
+        + catKeys.map(function (k) {
+            return '<option value="' + esc(k) + '">' + esc(cat[k]) + "</option>";
+          }).join("") + "</select>";
+      if (!(r.keys || []).length) {
+        h += '<span class="hint">条件が空の行は数えません。</span>';
+      }
+      h += "</div>";
+    });
+    h += "</div>";
+    h += '<div class="actions">'
+      + '<button type="button" class="btn-sub" data-cx-add="1">＋ 行を足す</button>'
+      + '<button type="button" class="btn-sub" data-cx-fill="1">実績の項目から一気に作る</button>'
+      + "</div>";
+    h += '<p class="hint">「実績の項目から一気に作る」を押すと、'
+      + '<strong>いま実績に出ている項目ぶんの行（点数は0）</strong>をまとめて作ります。'
+      + 'そのあと点数を入れ、要らない行を消し、組み合わせたい行に条件を足してください。'
+      + '<br>※ すでにある行は消しません。</p>';
+    h += "</div>";
+    return h;
+  }
+
   /* マスタ設定の「実績で追う項目」カード。設定は MASTER.statsCfg（statsCfg() 参照）。 */
   function statsCfgHtml() {
     var sc = statsCfg();
@@ -10425,6 +10596,7 @@
 
     // 実績で追う項目
     h += statsCfgHtml();
+    h += cxPointsHtml();
 
     // 料金マスタの履歴
     h += '<div class="master-plan" data-mroom="store"><h3>料金マスタの履歴</h3>';
@@ -12451,6 +12623,78 @@
     MASTER.updated = MASTER.updated.replace(/（編集済み.*$/, "") + "（編集済み）";
     saveMaster();
   }
+  /* 「実績のポイント」の操作。MASTER.cxPoints に入れて markEdited() で
+   * 料金マスタと同じ経路（保存・同期・履歴）に乗せる。 */
+  function handleCxEvent(t, kind) {
+    if (!t.getAttribute) return false;
+    var rows = cxRows();
+    function idx(a) { return parseInt(t.getAttribute(a), 10); }
+    if (kind === "input") {
+      if (t.hasAttribute("data-cx-name")) {
+        var ri = idx("data-cx-name");
+        if (rows[ri]) { rows[ri].name = t.value.slice(0, 40); markEdited(); }
+        return true;
+      }
+      if (t.hasAttribute("data-cx-pt")) {
+        var pi = idx("data-cx-pt");
+        if (rows[pi]) { rows[pi].pt = Math.max(0, Math.round(num(t.value))); markEdited(); }
+        return true;
+      }
+      return false;
+    }
+    if (kind === "change" && t.hasAttribute("data-cx-key-add")) {
+      var ai = idx("data-cx-key-add");
+      var k = t.value;
+      if (rows[ai] && k) {
+        if (!rows[ai].keys) rows[ai].keys = [];
+        if (rows[ai].keys.indexOf(k) < 0) rows[ai].keys.push(k);
+        markEdited(); renderMasterTab();
+      }
+      return true;
+    }
+    if (t.hasAttribute("data-cx-key-del")) {
+      var di = idx("data-cx-key-del");
+      var dk = t.getAttribute("data-cx-key");
+      if (rows[di] && rows[di].keys) {
+        rows[di].keys = rows[di].keys.filter(function (x) { return x !== dk; });
+        markEdited(); renderMasterTab();
+      }
+      return true;
+    }
+    if (t.hasAttribute("data-cx-del")) {
+      var xi = idx("data-cx-del");
+      if (rows[xi] && window.confirm("「" + (rows[xi].name || "この行") + "」を消します。よろしいですか？")) {
+        rows.splice(xi, 1);
+        markEdited(); renderMasterTab();
+      }
+      return true;
+    }
+    if (t.hasAttribute("data-cx-add")) {
+      rows.push({ id: "cx" + Date.now().toString(36), name: "", pt: 0, keys: [] });
+      markEdited(); renderMasterTab();
+      return true;
+    }
+    if (t.hasAttribute("data-cx-fill")) {
+      /* いま実績に出ている項目ぶんの行を、点数0でまとめて作る。
+       * すでに同じ条件の行があるものは作らない（押し直しても増えない）。 */
+      var cat = statsCatalog();
+      var have = {};
+      rows.forEach(function (r) {
+        if ((r.keys || []).length === 1) have[r.keys[0]] = true;
+      });
+      var made = 0;
+      Object.keys(cat).forEach(function (k) {
+        if (have[k]) return;
+        rows.push({ id: "cx" + Date.now().toString(36) + made, name: cat[k], pt: 0, keys: [k] });
+        made++;
+      });
+      markEdited(); renderMasterTab();
+      window.alert(made ? (made + "件の行を作りました。点数を入れてください。")
+        : "新しく作る行はありませんでした（すでに全部あります）。");
+      return true;
+    }
+    return false;
+  }
   /* 「実績で追う項目」の操作。設定は MASTER.statsCfg に入れて markEdited() で
    * 料金マスタと同じ経路（保存・同期・履歴）に乗せる。 */
   function handleStatsCfgEvent(t, kind) {
@@ -13754,6 +13998,7 @@
       var t = e.target;
       if (handlePlanEvent(t, "input")) return;
       if (handleEnergyEvent(t, "input")) return;
+      if (handleCxEvent(t, "input")) return;
       if (handleStatsCfgEvent(t, "input")) return;
       var path = t.getAttribute("data-mpath");
       if (path) {
@@ -13781,6 +14026,7 @@
     });
     $("masterBody").addEventListener("change", function (e) {
       if (handlePlanEvent(e.target, "change")) return;
+      if (handleCxEvent(e.target, "change")) return;
       if (handleStatsCfgEvent(e.target, "change")) return;
       // 通話オプションの「うちはまだ使う」（4-11）
       if (e.target.hasAttribute && e.target.hasAttribute("data-vo-keep")) {
@@ -13799,6 +14045,7 @@
       handleListEvent(e.target, "change");
     });
     $("masterBody").addEventListener("click", function (e) {
+      if (handleCxEvent(e.target, "click")) return;
       if (e.target.getAttribute && e.target.getAttribute("data-arrange-start")) {
         enterArrange();
         return;
@@ -14051,6 +14298,15 @@
         // 「記録する」を押す
         askOk: function () { $("resultDlgOk").click(); },
         askCancel: function () { $("resultDlgCancel").click(); },
+        /* 実績のポイント（お店が決める指標）の検査用 */
+        cxSet: function (rows) { MASTER.cxPoints = rows || []; saveMaster(); },
+        cxCatalog: function () { return statsCatalog(); },
+        cxBreak: function (lines) {
+          return cxBreakdown(JSON.parse(JSON.stringify(store)), true, lines);
+        },
+        cxTotal: function (lines) {
+          return cxTotal(JSON.parse(JSON.stringify(store)), true, lines);
+        },
         // 成約の確認画面に出ている項目の文字
         askItems: function () {
           var e = $("resultDlgItemList");
