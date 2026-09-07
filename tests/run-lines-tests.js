@@ -309,9 +309,12 @@ function chk(name, cond, extra) {
     const T = window.__KQ_TEST__;
     const L = T.lines;
     const m = T.std.get();
-    // 既定では実績に出していないプランと、既定では数えていないオプションを選ぶ
+    // 既定では実績に出していないプランを選ぶ
     const off = m.plans.filter((p) => !L.statsCatalog()['plan:' + p.id])[0];
-    const offOpt = m.options.filter((o) => !L.statsCatalog()['opt:' + o.id])[0];
+    /* オプションは 2026-09-07 から全部数えるようにしたので、
+     * マスタ設定の画面で1つ外してから試す（実際に押す道を通す）。 */
+    const offOpt = m.options[0];
+    L.optSkipUi(offOpt.id, false);
     L.cxSet([{ id: 'keep', name: '手で足した行', pt: 7, keys: ['proc:shinki'] }]);
     const before = L.statsCatalog()['plan:' + off.id] ? 'ある' : 'ない';
     const optBefore = L.statsCatalog()['opt:' + offOpt.id] ? 'ある' : 'ない';
@@ -1109,6 +1112,81 @@ function chk(name, cond, extra) {
   chk('㉔ 光の画面に、同じ id のチェック欄が実際に出ている',
     ieo.ids.indexOf('tv') >= 0 && ieo.ids.indexOf('denwa') >= 0
     && ieo.ids.indexOf('denwaBV') >= 0, JSON.stringify(ieo.ids));
+
+  /* ---- ㉕ homeでんわ・dカード初回利用・オプションの実績（2026-09-07）---- */
+  const more2 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const plan = m.plans[0].id;
+    // homeでんわ（光・home 5G の両方で選べる）
+    const hd1 = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g',
+      applyType: 'shinki', opts: { homeDenwaLight: true } }));
+    const hd5 = Object.keys(L.itemsRawIe({ enabled: true, product: 'home5g',
+      h5Kubun: 'shinki', opts: { homeDenwaBasic: true } }));
+    const hdSlim = L.slimIe({ enabled: true, product: 'home5g', h5Kubun: 'shinki',
+      opts: { homeDenwaLight: true }, h5DevicePrice: 73260 });
+    // dカード初回利用
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, dcardFirst: true });
+    L.fill(1, {});
+    L.pick(0);
+    const dcOn = Object.keys(L.items());
+    const box = !!document.getElementById('dcardFirst');
+    const sheet = T.std.sheetHtml() + '\n'
+      + (T.std.staffHtml ? T.std.staffHtml() : '');
+    L.fill(0, { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true });
+    L.pick(0);
+    const dcOff = Object.keys(L.items());
+    // 料金表のオプション（名前と金額）
+    const byName = {};
+    (m.options || []).forEach((o) => { byName[o.name] = o.price; });
+    // 実績の項目に、オプションが名前で並んでいるか
+    const cat = L.cxCatalog();
+    const catNames = Object.keys(cat).map((k) => cat[k]);
+    return { hd1, hd5, hdSlim, dcOn, dcOff, box,
+      sheetHasDc: /dカード初回利用/.test(sheet),
+      byName: byName, catNames: catNames,
+      catHd1: cat['ie:opt:homeDenwaLight'] || '',
+      catHd2: cat['ie:opt:homeDenwaBasic'] || '',
+      catDc: cat['dcardfirst'] || '' };
+  });
+  chk('㉕ homeでんわ ライトを光で選ぶと数える',
+    more2.hd1.indexOf('ie:opt:homeDenwaLight') >= 0, JSON.stringify(more2.hd1));
+  chk('㉕ homeでんわ ベーシックを home 5G で選ぶと数える',
+    more2.hd5.indexOf('ie:opt:homeDenwaBasic') >= 0, JSON.stringify(more2.hd5));
+  chk('㉕ 保存を小さくしても homeでんわ の印は残る',
+    !!(more2.hdSlim.opts || {}).homeDenwaLight, JSON.stringify(more2.hdSlim.opts));
+  chk('㉕ 実績の項目に homeでんわ が2つ並ぶ',
+    /ライト/.test(more2.catHd1) && /ベーシック/.test(more2.catHd2),
+    more2.catHd1 + ' / ' + more2.catHd2);
+  chk('㉕ 画面に「dカード初回利用」のチェック欄がある', more2.box === true);
+  chk('㉕ dカード初回利用にチェックすると数える',
+    more2.dcOn.indexOf('dcardfirst') >= 0, JSON.stringify(more2.dcOn));
+  chk('㉕ チェックしなければ数えない',
+    more2.dcOff.indexOf('dcardfirst') < 0, JSON.stringify(more2.dcOff));
+  chk('㉕ 実績の項目に「（再掲）dカード初回利用」が出る',
+    /dカード初回利用/.test(more2.catDc), more2.catDc);
+  chk('㉕ dカード初回利用はお客様の紙に出ない', more2.sheetHasDc === false);
+
+  /* ---- ㉖ あんしん系のオプション（名前・金額・実績の項目）---- */
+  const ANSHIN = [
+    ['あんしんセキュリティ スタンダードプラン', 550],
+    ['あんしんセキュリティ スタンダードプラン詐欺対策プラス', 999],
+    ['あんしんセキュリティ トータルプラン詐欺対策プラス', 1815],
+    ['あんしん遠隔サポート', 660],
+    ['smartあんしん補償', 990],
+    ['smartあんしんパック', 1452]
+  ];
+  ANSHIN.forEach(function (a) {
+    chk('㉖ 料金表に「' + a[0] + '」が ' + a[1] + '円である',
+      more2.byName[a[0]] === a[1], String(more2.byName[a[0]]));
+    chk('㉖ 実績の項目に「' + a[0] + '」が出る',
+      more2.catNames.indexOf('オプション: ' + a[0]) >= 0
+      || more2.catNames.some((n) => n.indexOf(a[0]) >= 0),
+      JSON.stringify(more2.catNames.filter((n) => /あんしん/.test(n))));
+  });
 
   await browser.close();
   srv.close();

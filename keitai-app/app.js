@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.175.0";
+  var APP_VERSION = "1.176.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -501,7 +501,7 @@
    * 月額の割引額はプランごとに違うため data.js の discounts.kosodate に持つ。 */
   var KOSODATE_VOICE_OFF = 880;
   var SLIM_PATTERN_KEYS = ["planId", "planChange", "tierIdx", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty", "kosodate",
-    "kaimashi", "u15", "u39", "tablet", "shitadori", "kishuRank", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "kaimashi", "u15", "u39", "tablet", "shitadori", "kishuRank", "dcardFirst", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
 
   /* ---------- 大阪ガス（ドコモガス）エリアの目安判定 ----------
@@ -758,7 +758,7 @@
       return '<label class="check"><input type="checkbox" data-nqv="' + k + '"> ' + esc(VISIT_NAMES[k]) + "</label>";
     }).join("");
     var cat = statsCatalog();
-    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
+    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device", "dcardfirst",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function nqRank(k) {
       for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
@@ -1450,6 +1450,8 @@
     if (typeof c.highendSplit === "undefined") c.highendSplit = true;
     if (typeof c.kishuStd === "undefined") c.kishuStd = true;  // （再掲）機種スタンダード
     if (typeof c.iphone === "undefined") c.iphone = true;      // （再掲）iPhone
+    // （再掲）dカード初回利用（店舗の指定・2026-09-07）
+    if (typeof c.dcardFirst === "undefined") c.dcardFirst = true;
     if (typeof c.tablet === "undefined") c.tablet = true;      // タブレット総販
     if (typeof c.shitadori === "undefined") c.shitadori = true; // 下取り
     // home 5G を新規／機種変更で分ける（店舗の指定・2026-09-07）
@@ -1460,7 +1462,16 @@
     if (typeof c.ocn === "undefined") c.ocn = true;
     // 光のオプション（テレビ・お電話）を数える（店舗の指定・2026-09-07）
     if (typeof c.ieOpts === "undefined") c.ieOpts = true;
-    if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
+    if (!c.optSkip) c.optSkip = {};
+    /* smartあんしん補償・smartあんしんパックは、以前は実績の対象外にしていた。
+     * 数えたいという店舗の指定（2026-09-07）で外す。すでにお使いの店舗は
+     * この設定を持っているので、初期値ではなく1回だけ外す。
+     * 対象外に戻したいときは、マスタ設定の「実績で追う項目」で外せる。 */
+    if (!c.anshinStatOn) {
+      delete c.optSkip.smart_hosho;
+      delete c.optSkip.anshin_pack;
+      c.anshinStatOn = true;
+    }
     if (!c.feeSkip) c.feeSkip = {};
     if (typeof c.accs === "undefined") c.accs = true;
     /* 全担当の実績を全員に公開するか（店舗の方針で選ぶ）。
@@ -1545,7 +1556,9 @@
   var IE_STAT_OPTS = [
     { id: "tv", name: "ドコモ光テレビオプション" },
     { id: "denwa", name: "ドコモ光電話" },
-    { id: "denwaBV", name: "ドコモ光電話バリュー" }
+    { id: "denwaBV", name: "ドコモ光電話バリュー" },
+    { id: "homeDenwaLight", name: "homeでんわ ライト" },
+    { id: "homeDenwaBasic", name: "homeでんわ ベーシック" }
   ];
   /* 光の申込区分。イエナカの APPLY_LABEL と同じ並び・同じ言い方にする */
   var STATS_APPLY_NAMES = {
@@ -1703,6 +1716,7 @@
       }
     }
     if (cfg.iphone && devBought && statsIsIPhone(pt)) out["iphone"] = "（再掲）iPhone";
+    if (cfg.dcardFirst && pt.dcardFirst) out["dcardfirst"] = "（再掲）dカード初回利用";
     if (cfg.tablet && devBought && pt.tablet) out["tablet"] = "タブレット総販";
     if (cfg.shitadori && SHITADORI_NAMES[pt.shitadori]) {
       out["shitadori:" + pt.shitadori] = SHITADORI_NAMES[pt.shitadori];
@@ -1889,6 +1903,7 @@
         if (k === "ie:prov:ocn") sc.ocn = true;
         if (k.indexOf("ie:opt:") === 0) sc.ieOpts = true;
         if (k === "iphone") sc.iphone = true;
+        if (k === "dcardfirst") sc.dcardFirst = true;
         if (k === "tablet") sc.tablet = true;
         if (k.indexOf("shitadori:") === 0) sc.shitadori = true;
         if (k === "u15") sc.u15 = true;
@@ -2125,6 +2140,7 @@
       }
     }
     if (cfg.iphone) out["iphone"] = "（再掲）iPhone";
+    if (cfg.dcardFirst) out["dcardfirst"] = "（再掲）dカード初回利用";
     if (cfg.tablet) out["tablet"] = "タブレット総販";
     if (cfg.shitadori) {
       Object.keys(SHITADORI_NAMES).forEach(function (k) {
@@ -2661,7 +2677,7 @@
     var catalog = statsCatalog();
 
     /* ---- 並び順 ---- */
-    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
+    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device", "dcardfirst",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
@@ -5039,7 +5055,7 @@
       /* ご来店の目的。①端末購入 以外で来店されて機種変更が入った場合は
        * 「買い増し」として実績に再掲する。①のときは買い増しの有無をチェックで持つ。 */
       visitPurposes: {}, kaimashi: false, u15: false, u39: false,
-      tablet: false, shitadori: "", kishuRank: "",
+      tablet: false, shitadori: "", kishuRank: "", dcardFirst: false,
       procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
       todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
@@ -8866,6 +8882,7 @@
     $("platRateWrap").hidden = state.dCard !== "platinum";
     $("platRate").value = platRate(state);
     $("dDenki").checked = state.dDenki;
+    $("dcardFirst").checked = !!state.dcardFirst;
     $("bizMembers").checked = !!state.bizMembers;
     $("shain").checked = !!state.shain;
     $("chokiOn").checked = state.choki !== "none";
@@ -10605,6 +10622,8 @@
       + (sc.highendSplit ? " checked" : "") + "> ハイエンドを Android と iPhone に分ける</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="iphone"'
       + (sc.iphone ? " checked" : "") + "> （再掲）iPhone</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="dcardFirst"'
+      + (sc.dcardFirst ? " checked" : "") + "> （再掲）dカード初回利用</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="tablet"'
       + (sc.tablet ? " checked" : "") + "> タブレット総販</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="shitadori"'
@@ -10655,7 +10674,7 @@
     /* 月の目標。入れた項目だけが実績の「目標と進捗」に出る（管理者だけに見えます）。 */
     var goals = MASTER.statsGoalItems || {};
     var cat = statsCatalog();
-    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
+    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device", "dcardfirst",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function gRank(k) {
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
@@ -13615,6 +13634,9 @@
       recalc();
     });
     $("dDenki").addEventListener("change", function () { state.dDenki = this.checked; recalc(); });
+    $("dcardFirst").addEventListener("change", function () {
+      state.dcardFirst = this.checked; recalc();
+    });
     $("bizMembers").addEventListener("change", function () { state.bizMembers = this.checked; recalc(); });
     $("shain").addEventListener("change", function () { state.shain = this.checked; recalc(); });
     $("chokiOn").addEventListener("change", function () {
@@ -14820,6 +14842,17 @@
         slimIe: function (ie) {
           var it = slimSavedItem({ data: { patterns: [{}], ienaka: ie } });
           return (it.data || {}).ienaka || {};
+        },
+        /* マスタ設定の「実績で追う項目」のオプションのチェックを、実際に押す。
+         * 内部の印を直に書き換えると、画面の道が壊れていても気づけないため。 */
+        optSkipUi: function (id, on) {
+          renderMasterTab();
+          var b = document.querySelector('[data-sc-opt="' + id + '"]');
+          if (!b) return false;
+          if (b.checked === !!on) return true;
+          b.checked = !!on;
+          b.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
         },
         // 光・5Gの中身をそのまま渡して項目を拾う（以前の保存の形も作れる）
         itemsRawIe: function (ie) {
