@@ -267,17 +267,21 @@ function chk(name, cond, extra) {
   function find(list, id) { return (list || []).filter((x) => x.id === id)[0] || null; }
   chk('⑨ 実績の項目キーが取れている', cx.cat.shinki && cx.cat.planA, JSON.stringify(cx.cat));
   chk('⑨ 条件1つの行は、その項目が立った回線ぶん数える',
-    !!find(cx.all, 'r1') && find(cx.all, 'r1').n === 1
-    && !!find(cx.all, 'r2') && find(cx.all, 'r2').n === 1,
-    JSON.stringify(cx.all));
+    !!find(cx.all, 'r2') && find(cx.all, 'r2').n === 1, JSON.stringify(cx.all));
+  chk('⑨ 細かい行に丸ごと含まれる行は、その回線では数えない（グレーで出す）',
+    !!find(cx.all, 'r1') && find(cx.all, 'r1').n === 0
+    && find(cx.all, 'r1').covered === true, JSON.stringify(find(cx.all, 'r1')));
   chk('⑨ 組み合わせは、両方そろった回線だけ数える',
     !!find(cx.all, 'r3') && find(cx.all, 'r3').n === 1 && find(cx.all, 'r3').total === 100,
     JSON.stringify(find(cx.all, 'r3')));
   chk('⑨ そろわない組み合わせは数えない', !find(cx.all, 'r4'), JSON.stringify(find(cx.all, 'r4')));
   chk('⑨ 条件が空の行は数えない', !find(cx.all, 'r5'));
-  chk('⑨ 合計は 10＋3＋100 ＝113', cx.total === 113, String(cx.total));
-  chk('⑨ 成約で外した回線は数えない（回線1だけなら 10＋100 ＝110）',
-    cx.total1 === 110, String(cx.total1) + ' / ' + JSON.stringify(cx.only1));
+  /* 「新規（単独）」は「新規 × プランA」に丸ごと含まれるので、
+   * その回線では細かいほうだけ数える（2026-09-07 の指定）。 */
+  chk('⑨ 合計は 3＋100 ＝103（新規の単独行は、細かい行で数えた回線では数えない）',
+    cx.total === 103, String(cx.total));
+  chk('⑨ 成約で外した回線は数えない（回線1だけなら 100）',
+    cx.total1 === 100, String(cx.total1) + ' / ' + JSON.stringify(cx.only1));
 
   /* 光は世帯に1本。回線が2本あっても商談に1件 */
   const cxIe = await page.evaluate(() => {
@@ -341,7 +345,9 @@ function chk(name, cond, extra) {
    * ドコモの評価指標の「成長領域加算」に当たる。お客様の年齢はアプリでは
    * 分からないので、お店がチェックで入れる（2026-09-07）。
    * 欄は**のりかえ（MNP）のときだけ**出す（店舗の指定・2026-09-07）。
-   * 加算は**基本の行とは別の行**として数えられる（基本105点＋加算48点＝153点）。 */
+   * 条件が重なる行は、細かいほうだけ数える（店舗の指定・2026-09-07）。
+   * U39の回線は「のりかえ×プランA×U39」だけ、U39でない回線は
+   * 「のりかえ×プランA」だけ。二重には数えない。 */
   const u39 = await page.evaluate(() => {
     const T = window.__KQ_TEST__;
     const L = T.lines;
@@ -387,12 +393,13 @@ function chk(name, cond, extra) {
   chk('⑪ のりかえのときは U39 の欄が出る', u39.shownOnMnp === true);
   chk('⑪ 新規のときも U39 の欄が出る（U15 と同じ条件）', u39.shownOnShinki === true);
   chk('⑪ 実績の項目に U39 が出る', u39.inCatalog === true);
-  chk('⑪ 基本の行は2回線とも数える',
-    !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 2, JSON.stringify(u39.rows));
+  chk('⑪ 基本の行は、U39でない回線だけ数える（U39の回線は細かい行で数える）',
+    !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 1
+    && pick(u39.rows, 'base').covered === true, JSON.stringify(u39.rows));
   chk('⑪ 加算はチェックした回線だけ数える',
     !!pick(u39.rows, 'add') && pick(u39.rows, 'add').n === 1, JSON.stringify(pick(u39.rows, 'add')));
-  chk('⑪ 合計は 105×2 ＋ 48 ＝258（基本と加算が足される）',
-    u39.total === 258, String(u39.total));
+  chk('⑪ 合計は 105 ＋ 48 ＝153（二重に数えない）',
+    u39.total === 153, String(u39.total));
 
   /* のりかえ以外では欄を出さない。出していない手続きでチェックが残っていても、
    * 見えないまま実績に入らないこと（画面と数え方で同じものを見る）。 */
@@ -1187,6 +1194,47 @@ function chk(name, cond, extra) {
       || more2.catNames.some((n) => n.indexOf(a[0]) >= 0),
       JSON.stringify(more2.catNames.filter((n) => /あんしん/.test(n))));
   });
+
+  /* ---- ㉗ 条件が重なる行の二重計上（2026-09-07・店舗の指定）----
+   * 「のりかえ×ポイ活MAX×U39」を作ると「のりかえ×ポイ活MAX」にも当たり、
+   * 両方で数えられて点が二重になっていた。細かいほうだけ数える。 */
+  const dup = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const rows = [
+      { id: 'a', name: 'のりかえ × ポイ活MAX', pt: 100,
+        keys: ['proc:mnp', 'plan:poikatsu_max'] },
+      { id: 'b', name: 'のりかえ × ポイ活MAX × U39', pt: 150,
+        keys: ['proc:mnp', 'plan:poikatsu_max', 'u39'] }
+    ];
+    function run(patch1, patch2) {
+      L.cxSet(rows.map((r) => Object.assign({}, r)));
+      L.fill(0, Object.assign({ planId: 'poikatsu_max', procType: 'mnp',
+        procTodo: { mnp: true }, planChange: true }, patch1 || {}));
+      L.fill(1, patch2 ? Object.assign({ planId: 'poikatsu_max', procType: 'mnp',
+        procTodo: { mnp: true }, planChange: true }, patch2) : {});
+      L.pick(0);
+      return { total: L.cxTotal(), rows: L.cxBreak() };
+    }
+    return {
+      u39: run({ u39: true }),                        // U39の回線1本
+      plain: run({}),                                 // U39でない回線1本
+      both: run({ u39: true }, { u39: false })        // 1本ずつ
+    };
+  });
+  function row(r, id) { return (r.rows || []).filter((x) => x.id === id)[0] || null; }
+  chk('㉗ U39の回線は、細かい行の150点だけ（100＋150にしない）',
+    dup.u39.total === 150, String(dup.u39.total) + ' / ' + JSON.stringify(dup.u39.rows));
+  chk('㉗ 数えなかった行はグレー用の印を付けて残す',
+    !!row(dup.u39, 'a') && row(dup.u39, 'a').n === 0
+    && row(dup.u39, 'a').covered === true, JSON.stringify(row(dup.u39, 'a')));
+  chk('㉗ U39でない回線は、これまでどおり100点',
+    dup.plain.total === 100, String(dup.plain.total));
+  chk('㉗ U39でない回線では、細かい行に食われない',
+    !!row(dup.plain, 'a') && row(dup.plain, 'a').n === 1
+    && row(dup.plain, 'a').covered === false, JSON.stringify(row(dup.plain, 'a')));
+  chk('㉗ 1本ずつのときは 150（U39）＋100（U39でない）＝250',
+    dup.both.total === 250, String(dup.both.total) + ' / ' + JSON.stringify(dup.both.rows));
 
   await browser.close();
   srv.close();

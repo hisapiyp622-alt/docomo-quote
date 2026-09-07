@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.176.0";
+  var APP_VERSION = "1.177.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1920,32 +1920,76 @@
    * ・回線の条件 … すべて満たした回線の数だけ数える（2台なら2件）
    * ・商談の条件（光）… 満たしていれば1件。回線の条件と混ぜたときは、
    *   光が付いている商談の中で、回線の条件を満たした回線を数える */
-  function cxCountRow(row, sets) {
+  /* この行が当たったか。当たっていれば
+   *   { keys, lines }  lines = 当たった回線の番号（商談だけの条件なら null）
+   * 当たっていなければ null。 */
+  function cxRowMatch(row, sets) {
     var keys = (row && row.keys) || [];
-    if (!keys.length) return 0;
+    if (!keys.length) return null;
     var wholeKeys = keys.filter(cxWholeKey);
     var lineKeys = keys.filter(function (k) { return !cxWholeKey(k); });
     for (var w = 0; w < wholeKeys.length; w++) {
-      if (!sets.whole[wholeKeys[w]]) return 0;
+      if (!sets.whole[wholeKeys[w]]) return null;
     }
-    if (!lineKeys.length) return wholeKeys.length ? 1 : 0;
-    var n = 0;
-    sets.lines.forEach(function (set) {
-      var ok = lineKeys.every(function (k) { return !!set[k]; });
-      if (ok) n++;
+    if (!lineKeys.length) return wholeKeys.length ? { keys: keys, lines: null } : null;
+    var idx = [];
+    sets.lines.forEach(function (set, i) {
+      if (lineKeys.every(function (k) { return !!set[k]; })) idx.push(i);
     });
-    return n;
+    return idx.length ? { keys: keys, lines: idx } : null;
   }
-  /* 1件の応対のポイント内訳。[{ id, name, pt, n, total }] */
+  function cxCountRow(row, sets) {
+    var m = cxRowMatch(row, sets);
+    if (!m) return 0;
+    return m.lines ? m.lines.length : 1;
+  }
+  /* 1件の応対のポイント内訳。[{ id, name, pt, n, total, covered }]
+   *
+   * 条件が重なる行は、細かいほうだけ数える（店舗の指定・2026-09-07）。
+   * 例: 「のりかえ×ポイ活MAX×U39」と「のりかえ×ポイ活MAX」を両方作ると、
+   *     U39のお客様は両方に当たってしまい、二重に計上されていた。
+   * 行Bの条件が行Aにすっかり含まれていて、同じ回線で両方当たったときは、
+   * その回線ではAだけ数える。数えなかった行は covered を立てて残し、
+   * 画面にグレーで出す（なぜ点が下がったのか分かるように）。 */
   function cxBreakdown(d, won, lines) {
     var rows = cxRows();
     if (!rows.length) return [];
     var sets = statsKeySets(d, won, lines);
+    var ms = rows.map(function (r) { return cxRowMatch(r, sets); });
+    var sigs = ms.map(function (m) {
+      if (!m) return null;
+      var o = {};
+      m.keys.forEach(function (k) { o[k] = true; });
+      return o;
+    });
     var out = [];
-    rows.forEach(function (r) {
-      var n = cxCountRow(r, sets);
-      if (!n) return;
-      out.push({ id: r.id, name: r.name || "（名前なし）", pt: num(r.pt), n: n, total: num(r.pt) * n });
+    rows.forEach(function (r, i) {
+      var m = ms[i];
+      if (!m) return;
+      /* この行の条件を丸ごと含む、もっと細かい行 */
+      var covers = [];
+      ms.forEach(function (m2, j) {
+        if (j === i || !m2) return;
+        if (m2.keys.length <= m.keys.length) return;
+        if (!m.keys.every(function (k) { return !!sigs[j][k]; })) return;
+        covers.push(j);
+      });
+      var n = 0, covered = false;
+      if (!m.lines) {
+        covered = covers.length > 0;
+        n = covered ? 0 : 1;
+      } else {
+        m.lines.forEach(function (li) {
+          var hidden = covers.some(function (j) {
+            var m2 = ms[j];
+            return !m2.lines || m2.lines.indexOf(li) >= 0;
+          });
+          if (hidden) covered = true; else n++;
+        });
+      }
+      if (!n && !covered) return;
+      out.push({ id: r.id, name: r.name || "（名前なし）", pt: num(r.pt),
+        n: n, total: num(r.pt) * n, covered: covered });
     });
     return out;
   }
@@ -2394,9 +2438,13 @@
           });
           /* ポイント（マスタ設定の「実績のポイント」）。成約した内容で数える。 */
           cxBreakdown(it.wonData || it.data, true, it.wonLines).forEach(function (x) {
-            if (!cxAgg[x.id]) cxAgg[x.id] = { name: x.name, pt: x.pt, n: 0, total: 0 };
+            if (!cxAgg[x.id]) {
+              cxAgg[x.id] = { name: x.name, pt: x.pt, n: 0, total: 0, covered: 0 };
+            }
             cxAgg[x.id].n += x.n;
             cxAgg[x.id].total += x.total;
+            // もっと細かい行で数えたぶん（画面にグレーで出す）
+            if (x.covered) cxAgg[x.id].covered++;
           });
           Object.keys(wonI).forEach(function (k) {
             var n = wonI[k].n;
@@ -2818,7 +2866,9 @@
      * マスタ設定の「実績のポイント」に点数が入っているときだけ出す。
      * 何も入れていないお店では、これまでどおりの画面のまま。 */
     var cxAgg = agg.cx || {};
-    var cxKeys = Object.keys(cxAgg).filter(function (k) { return cxAgg[k].total !== 0; });
+    var cxKeys = Object.keys(cxAgg).filter(function (k) {
+      return cxAgg[k].total !== 0 || cxAgg[k].covered;
+    });
     if (cxOn()) {
       cxKeys.sort(function (a2, b2) { return cxAgg[b2].total - cxAgg[a2].total; });
       var cxSum = 0;
@@ -2834,12 +2884,20 @@
         h += '<div class="stats-scroll"><table class="stats-table">'
           + "<tr><th>項目</th><th>件数</th><th>点数</th><th>小計</th></tr>";
         cxKeys.forEach(function (k) {
-          h += "<tr><td>" + esc(cxAgg[k].name) + "</td><td>" + cxAgg[k].n + "</td><td>"
-            + cxAgg[k].pt + "</td><td><b>" + cxAgg[k].total + "</b></td></tr>";
+          var c = cxAgg[k];
+          h += '<tr' + (c.n ? "" : ' class="cx-covered"') + "><td>" + esc(c.name)
+            + (c.covered
+              ? '<div class="subrow">' + c.covered
+                + "件は、もっと細かい行で数えました</div>"
+              : "")
+            + "</td><td>" + c.n + "</td><td>" + c.pt
+            + "</td><td><b>" + c.total + "</b></td></tr>";
         });
         h += '<tr class="total"><td><b>合計</b></td><td></td><td></td><td><b>'
           + cxSum + "</b></td></tr></table></div>";
-        h += '<p class="hint">成約になった応対だけを数えています。'
+        h += '<p class="hint">条件が重なる行は、<strong>細かいほうだけ数えます</strong>'
+          + '（「のりかえ×ポイ活MAX×U39」と「のりかえ×ポイ活MAX」の両方を作っても、'
+          + '二重に数えません）。<br>成約になった応対だけを数えています。'
           + '点数と数え方は<strong>マスタ設定の「実績のポイント」</strong>で変えられます'
           + '（マスタ設定は担当者コードの画面から開きます）。</p>';
       }
