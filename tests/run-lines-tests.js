@@ -815,6 +815,91 @@ function chk(name, cond, extra) {
   chk('⑲ なっとくプラン 8GB の月額は 1,518円（ドコモの割引は付かない）',
     lib.monthly === 1518, String(lib.monthly));
 
+  /* ---- ⑳ 法人プランだけの割引（2026-09-07・店舗の指定）----
+   * 出典: ドコモの提供条件書
+   * ・ビジネスメンバーズ割 ▲275円 … データ無制限・かけ放題の両方
+   * ・社員割 ▲275円 … データ無制限のみ（かけ放題の条件書には記載が無い）
+   * 対象外のプランで選んでも金額が動かないことまで見る。 */
+  const bw = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const m = T.std.get();
+    const dis = {};
+    ['biz_unlimited', 'biz_kakehodai'].forEach((id) => {
+      const p = m.plans.filter((x) => x.id === id)[0];
+      dis[id] = p ? p.discounts : null;
+    });
+    function shown(id) {
+      const el = document.getElementById(id);
+      return !!el && !el.hidden;
+    }
+    // データ無制限（〜1GB 5,313円）で2つとも入れる
+    const uBase = T.run({ planGroup: 'biz', planId: 'biz_unlimited', tierIdx: 0 });
+    const uBoth = T.run({ planGroup: 'biz', planId: 'biz_unlimited', tierIdx: 0,
+      bizMembers: true, shain: true });
+    // かけ放題（3,553円）… ビジネスメンバーズ割だけ効く
+    const kBase = T.run({ planGroup: 'biz', planId: 'biz_kakehodai' });
+    const kBoth = T.run({ planGroup: 'biz', planId: 'biz_kakehodai',
+      bizMembers: true, shain: true });
+    /* 法人プランのときだけ欄を出す。
+     * run() は見終わったら状態を戻すので、画面を見るときは fill+pick を使う。 */
+    const L = T.lines;
+    L.fill(0, { planGroup: 'biz', planId: 'biz_unlimited', tierIdx: 0 });
+    L.pick(0);
+    const onBizU = [shown('bizMembersWrap'), shown('shainWrap')];
+    L.fill(0, { planGroup: 'biz', planId: 'biz_kakehodai' });
+    L.pick(0);
+    const onBizK = [shown('bizMembersWrap'), shown('shainWrap')];
+    L.fill(0, { planGroup: 'current', planId: 'max' });
+    L.pick(0);
+    const onMax = [shown('bizMembersWrap'), shown('shainWrap')];
+    const offTxt = (document.getElementById('discountOff') || {}).textContent || '';
+    // 個人のプランで選んでも金額が動かないこと
+    const maxBase = T.run({ planGroup: 'current', planId: 'max' });
+    const maxBoth = T.run({ planGroup: 'current', planId: 'max',
+      bizMembers: true, shain: true });
+    // 3GB超〜無制限で全部の割引 → 提供条件書の 4,873円 と合うか
+    const allOn = T.run({ planGroup: 'biz', planId: 'biz_unlimited', tierIdx: 2,
+      minna: '3', dSet: true, choki: 'y20', bizMembers: true, shain: true });
+    // 見積書に名前が出るか
+    L.fill(0, { planGroup: 'biz', planId: 'biz_unlimited', tierIdx: 0,
+      bizMembers: true, shain: true });
+    L.fill(1, {});
+    L.pick(0);
+    const sheet = T.std.sheetHtml();
+    return {
+      dis: dis,
+      uBase: uBase.segs[0].monthly, uBoth: uBoth.segs[0].monthly,
+      kBase: kBase.segs[0].monthly, kBoth: kBoth.segs[0].monthly,
+      maxBase: maxBase.segs[0].monthly, maxBoth: maxBoth.segs[0].monthly,
+      allOn: allOn.segs[0].monthly,
+      onBizU: onBizU, onBizK: onBizK, onMax: onMax, offTxt: offTxt,
+      sheetHasBiz: /ビジネスメンバーズ割/.test(sheet),
+      sheetHasShain: /社員割/.test(sheet)
+    };
+  });
+  chk('⑳ 料金表に金額が入っている（無制限は2つ・かけ放題はメンバーズ割だけ）',
+    bw.dis.biz_unlimited.bizMembers === 275 && bw.dis.biz_unlimited.shain === 275
+    && bw.dis.biz_kakehodai.bizMembers === 275 && !bw.dis.biz_kakehodai.shain,
+    JSON.stringify(bw.dis));
+  chk('⑳ データ無制限は2つで▲550円',
+    bw.uBase - bw.uBoth === 550, bw.uBase + ' → ' + bw.uBoth);
+  chk('⑳ かけ放題はメンバーズ割の▲275円だけ（社員割は効かない）',
+    bw.kBase - bw.kBoth === 275, bw.kBase + ' → ' + bw.kBoth);
+  chk('⑳ 個人のプランで選んでも金額が動かない',
+    bw.maxBase === bw.maxBoth, bw.maxBase + ' → ' + bw.maxBoth);
+  chk('⑳ 法人プランのときだけ欄を出す',
+    JSON.stringify(bw.onBizU) === '[true,true]'
+    && JSON.stringify(bw.onBizK) === '[true,false]'
+    && JSON.stringify(bw.onMax) === '[false,false]',
+    JSON.stringify([bw.onBizU, bw.onBizK, bw.onMax]));
+  chk('⑳ 個人のプランで「社員割の対象外です」と出さない',
+    !/社員割|ビジネスメンバーズ/.test(bw.offTxt), bw.offTxt);
+  chk('⑳ 提供条件書の 4,873円（3GB超〜無制限・全部の割引）と合う',
+    bw.allOn === 4873, String(bw.allOn));
+  chk('⑳ 見積書の内訳に名前が出る',
+    bw.sheetHasBiz === true && bw.sheetHasShain === true,
+    JSON.stringify([bw.sheetHasBiz, bw.sheetHasShain]));
+
   await browser.close();
   srv.close();
 
