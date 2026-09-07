@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.167.1";
+  var APP_VERSION = "1.168.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1562,7 +1562,7 @@
       var kaimashiOn = buyOn ? !!pt.kaimashi : !!(vks.length && todo.kishu);
       if (kaimashiOn) out["kaimashi"] = "プラスワン（再掲）";
     }
-    if (pt.planId && cfg.plans[pt.planId]
+    if (pt.planId && statsPlanCounted(pt.planId)
         && !(won && PLAN_WON_NEEDS_CHANGE[pt.planId] && !pt.planChange)) {
       var pl = planById(pt.planId);
       out["plan:" + pt.planId] = "プラン: " + (pl ? pl.name : pt.planId);
@@ -1700,6 +1700,27 @@
     return MASTER.cxPoints;
   }
   function cxOn() { return cxRows().some(function (r) { return num(r.pt) !== 0; }); }
+  /* ポイントの条件に使われているプラン（2026-09-07）。
+   * 評価指標では配点がプランごとに違うので、実績の表には出したくないプランでも
+   * ポイントの条件には選べるようにしてある。ここに出てくるプランは
+   * 数える側（statsPatternItems）ではキーを出し、
+   * 実績の「項目別」（statsDataItems）では落とす。 */
+  function cxPlanUsed() {
+    var out = {};
+    cxRows().forEach(function (r) {
+      (r.keys || []).forEach(function (k) {
+        if (k.indexOf("plan:") === 0) out[k.slice(5)] = true;
+      });
+    });
+    return out;
+  }
+  // このプランをそもそも数えるか（実績で追っている、またはポイントの条件に使っている）
+  function statsPlanCounted(id) {
+    return !!statsCfg().plans[id] || !!cxPlanUsed()[id];
+  }
+  /* ポイントの条件に選べる項目の一覧。実績で追っている項目に加えて、
+   * 追っていないプランも選べる（選んでも実績の「項目別」には出ません）。 */
+  function cxCatalog() { return statsCatalog(true); }
   /* ファイルから読み込んで足し込む（2026-09-07）。
    * 同じ id か、同じ条件の組み合わせの行は**中身を差し替える**。
    * 無い行は足す。**手で足した行は消さない**ので、
@@ -1727,11 +1748,13 @@
       if (at >= 0) { rows[at] = row; res.updated++; } else { rows.push(row); res.added++; }
     });
     /* 条件に出てくる項目が「実績で追う項目」で切られていると、いつまでも0件になる。
-     * 読み込んだ行が使う項目は、数える側にも自動で入れる（お店が気づけないため）。 */
+     * 読み込んだ行が使う項目は、数える側にも自動で入れる（お店が気づけないため）。
+     * プランだけは例外で、実績の表には出さずにポイントだけ数える（cxPlanUsed）。 */
     var sc = statsCfg();
     rows.forEach(function (r) {
       (r.keys || []).forEach(function (k) {
-        if (k.indexOf("plan:") === 0) sc.plans[k.slice(5)] = true;
+        /* プランは「実績で追う項目」に入れない。配点がプランごとに違うので、
+         * 実績の表に出したくないプランも条件に使う（cxPlanUsed が数えます）。 */
         if (k.indexOf("proc:") === 0) sc.procs[k.slice(5)] = true;
         if (k.indexOf("ie:") === 0) sc.hikari = true;
         if (k.indexOf("dcard:") === 0 && sc.dcard !== "type") sc.dcard = "type";
@@ -1822,8 +1845,12 @@
   }
   function statsDataItems(d, won, lines) {
     var out = {};
+    var cfg = statsCfg();
     function add(map) {
       Object.keys(map).forEach(function (k) {
+        /* ポイントの条件にだけ使っているプランは、実績の「項目別」には出さない
+         * （「実績で追う項目」でチェックしたプランだけが行になる・2026-09-07） */
+        if (k.indexOf("plan:") === 0 && !cfg.plans[k.slice(5)]) return;
         if (!out[k]) out[k] = { name: map[k], n: 0 };
         out[k].n++;
       });
@@ -1907,7 +1934,9 @@
   /* 実績で数えうる項目の一覧（キー→表示名）。
    * この期間に1件も出ていない項目を、修正で足すときに使う。
    * キーの作り方は statsPatternItems / statsDataItems と揃える。 */
-  function statsCatalog() {
+  /* withCxPlans を true にすると、「実績で追う項目」で外しているプランも入れる。
+   * ポイントの条件に選ぶための一覧（cxCatalog）だけで使う。 */
+  function statsCatalog(withCxPlans) {
     var cfg = statsCfg();
     var out = {};
     Object.keys(STATS_PROC_NAMES).forEach(function (k) {
@@ -1919,6 +1948,7 @@
     if (cfg.highend) out["highend"] = "（再掲）機種ハイエンド";
     (MASTER.plans || []).forEach(function (pl) {
       if (cfg.plans[pl.id]) out["plan:" + pl.id] = "プラン: " + pl.name;
+      else if (withCxPlans) out["plan:" + pl.id] = "プラン: " + pl.name + "（実績には出しません）";
     });
     out["maxAmazon"] = "（再掲）新プラン × Amazon Prime";
     if (cfg.device === "all") out["device"] = "機種販売";
@@ -10072,7 +10102,7 @@
    * 点数と項目名は、このアプリには持たず**お店が入力**します（cxRows() のコメント参照）。 */
   function cxPointsHtml() {
     var rows = cxRows();
-    var cat = statsCatalog();
+    var cat = cxCatalog();
     var catKeys = Object.keys(cat);
     var h = '<div class="master-plan" data-mroom="stats"><h3>実績のポイント</h3>';
     h += '<p class="hint">実績に<strong>ポイントの合計</strong>を出せます。'
@@ -10082,7 +10112,11 @@
       + '件数 × 点数 を足し上げます（ご家族2台なら2件）。'
       + '光・5Gは世帯に1本なので、商談に1件として数えます。<br>'
       + '<strong>点数はこの端末からお店のクラウドに入ります。</strong>'
-      + '数え方は実績の項目と同じものを使うので、実績の件数とズレません。</p>';
+      + '数え方は実績の項目と同じものを使うので、実績の件数とズレません。<br>'
+      + 'プランは<strong>「実績で追う項目」で外しているものも条件に選べます</strong>'
+      + '（配点がプランごとに違うため）。'
+      + '<strong>（実績には出しません）</strong>と付いているものがそれで、'
+      + 'ポイントには数えますが実績の「項目別」には行が出ません。</p>';
     if (!catKeys.length) {
       h += '<p class="hint">先に「実績で追う項目」で数える項目を選んでください。</p></div>';
       return h;
@@ -10166,13 +10200,20 @@
       + '<strong>端末購入で「買い増しあり」にチェックした場合</strong>に数えます。'
       + '機種変更の実績はそのまま数えたうえで、<strong>再掲</strong>として別に1件数えます。</p></div>';
 
-    h += '<div class="plan-sec"><span class="plan-lbl">プラン（チェックしたものだけ数えます）</span><div class="sub-checks">';
+    h += '<div class="plan-sec"><span class="plan-lbl">プラン（チェックしたものだけ実績の表に出ます）</span><div class="sub-checks">';
+    var cxUsedPlans = cxPlanUsed();
     MASTER.plans.forEach(function (pl) {
       h += '<label class="check"><input type="checkbox" data-sc-plan="' + esc(pl.id) + '"'
         + (sc.plans[pl.id] ? " checked" : "") + "> " + esc(pl.name)
-        + (pl.group === "legacy" ? "（旧）" : "") + "</label>";
+        + (pl.group === "legacy" ? "（旧）" : "")
+        + (!sc.plans[pl.id] && cxUsedPlans[pl.id] ? "（ポイントに使用中）" : "") + "</label>";
     });
-    h += "</div></div>";
+    h += "</div>"
+      + '<p class="hint">ここでチェックしたプランが、実績の<strong>「項目別」に行として出ます</strong>。<br>'
+      + 'チェックを外したプランも、<strong>「実績のポイント」の条件には使えます</strong>'
+      + '（評価指標は配点がプランごとに違うためです）。'
+      + 'その場合は<strong>ポイントには数えますが、実績の表には出ません</strong>。'
+      + 'いまポイントに使っているプランには<strong>（ポイントに使用中）</strong>と付きます。</p></div>';
 
     h += '<div class="plan-sec"><span class="plan-lbl">機種販売・dカード・でんき・ガス・光</span><div class="sub-checks">';
     h += '<label class="check">機種販売 <select id="scDevice">'
@@ -14400,7 +14441,8 @@
         cxSet: function (rows) { MASTER.cxPoints = rows || []; saveMaster(); },
         // 本物の読み込み（実績で追う項目の自動有効化まで通る）
         cxImport: function (rows) { return cxImport(rows); },
-        cxCatalog: function () { return statsCatalog(); },
+        cxCatalog: function () { return cxCatalog(); },
+        statsCatalog: function () { return statsCatalog(); },
         cxBreak: function (lines) {
           return cxBreakdown(JSON.parse(JSON.stringify(store)), true, lines);
         },

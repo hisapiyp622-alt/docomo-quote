@@ -300,29 +300,37 @@ function chk(name, cond, extra) {
    * あとから項目を足せるようにするための入口。
    * ・同じ行は差し替え、無い行は足す（手で足した行は消さない）
    * ・条件に使う項目が「実績で追う項目」で切られていると、いつまでも0件になるので、
-   *   読み込んだ行が使う項目は自動で数える側に入れる */
+   *   読み込んだ行が使う項目は自動で数える側に入れる
+   * ・ただしプランだけは別で、実績の表には足さない（配点がプランごとに違うため、
+   *   実績に出したくないプランも条件に選べる・2026-09-07） */
   const imp = await page.evaluate(() => {
     const T = window.__KQ_TEST__;
     const L = T.lines;
     const m = T.std.get();
-    // 既定では数えていないプランを選ぶ（実績の項目に出ていないもの）
-    const off = m.plans.filter((p) => !L.cxCatalog()['plan:' + p.id])[0];
+    // 既定では実績に出していないプランと、既定では数えていないオプションを選ぶ
+    const off = m.plans.filter((p) => !L.statsCatalog()['plan:' + p.id])[0];
+    const offOpt = m.options.filter((o) => !L.statsCatalog()['opt:' + o.id])[0];
     L.cxSet([{ id: 'keep', name: '手で足した行', pt: 7, keys: ['proc:shinki'] }]);
-    const before = L.cxCatalog()['plan:' + off.id] ? 'ある' : 'ない';
+    const before = L.statsCatalog()['plan:' + off.id] ? 'ある' : 'ない';
+    const optBefore = L.statsCatalog()['opt:' + offOpt.id] ? 'ある' : 'ない';
+    const pickable = L.cxCatalog()['plan:' + off.id] || '';
     const res = L.cxImport([
       { id: 'keep', name: '差し替え後', pt: 9, keys: ['proc:shinki'] },
-      { id: 'newone', name: '新規 × ' + off.name, pt: 50, keys: ['proc:shinki', 'plan:' + off.id] }
+      { id: 'newone', name: '新規 × ' + off.name, pt: 50, keys: ['proc:shinki', 'plan:' + off.id] },
+      { id: 'newopt', name: 'オプション', pt: 3, keys: ['opt:' + offOpt.id] }
     ]);
-    const after = L.cxCatalog()['plan:' + off.id] ? 'ある' : 'ない';
-    const rows = T.std.get() && null;
-    return { off: off.id, before: before, after: after, res: res,
-      names: L.cxBreak().map((x) => x.name),
-      all: (window.__KQ_TEST__.lines.cxCatalog(), null) };
+    return { off: off.id, before: before, after: L.statsCatalog()['plan:' + off.id] ? 'ある' : 'ない',
+      pickable: pickable, optBefore: optBefore,
+      optAfter: L.statsCatalog()['opt:' + offOpt.id] ? 'ある' : 'ない', res: res };
   });
   chk('⑩ 読み込む前は、そのプランは実績の項目に出ていない', imp.before === 'ない', imp.before);
-  chk('⑩ 読み込むと、条件に使う項目が自動で数える側に入る', imp.after === 'ある', imp.after);
+  chk('⑩ 実績に出していないプランでも、ポイントの条件には選べる',
+    /実績には出しません/.test(imp.pickable), imp.pickable);
+  chk('⑩ 読み込んでも、プランは実績の項目に足さない', imp.after === 'ない', imp.after);
+  chk('⑩ プラン以外は、条件に使う項目が自動で数える側に入る',
+    imp.optBefore === 'ない' && imp.optAfter === 'ある', imp.optBefore + '→' + imp.optAfter);
   chk('⑩ 同じ行は差し替え、無い行は足す',
-    imp.res.added === 1 && imp.res.updated === 1 && imp.res.skipped === 0, JSON.stringify(imp.res));
+    imp.res.added === 2 && imp.res.updated === 1 && imp.res.skipped === 0, JSON.stringify(imp.res));
 
   /* ---- ⑪ U39（ご利用者が39歳以下）----
    * ドコモの評価指標の「成長領域加算」に当たる。お客様の年齢はアプリでは
@@ -366,6 +374,42 @@ function chk(name, cond, extra) {
     return T.std.sheetHtml();
   });
   chk('⑪ お客様の見積書に U39 は出ない', !/U39/.test(u39Sheet), u39Sheet.slice(0, 80));
+
+  /* ---- ⑫ 実績に出さないプランをポイントの条件に使う（2026-09-07）----
+   * 評価指標は配点がプランごとに違うので、実績の「項目別」には出したくない
+   * プランでも条件に選べる必要がある。
+   * ・ポイントは数える
+   * ・実績の「項目別」には行を出さない
+   * ・実績で追っているプランは、これまでどおり行が出る */
+  const offPlan = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    const on = m.plans.filter((p) => L.statsCatalog()['plan:' + p.id])[0];   // 実績に出すプラン
+    const off = m.plans.filter((p) => !L.statsCatalog()['plan:' + p.id])[0]; // 出さないプラン
+    L.fill(0, { planId: off.id, procType: 'shinki', procTodo: { shinki: true }, planChange: true });
+    L.fill(1, { planId: on.id, procType: 'shinki', procTodo: { shinki: true }, planChange: true });
+    L.pick(0);
+    L.cxSet([
+      { id: 'offrow', name: '新規 × ' + off.name, pt: 34, keys: ['proc:shinki', 'plan:' + off.id] },
+      { id: 'onrow', name: '新規 × ' + on.name, pt: 105, keys: ['proc:shinki', 'plan:' + on.id] }
+    ]);
+    const items = L.items();
+    return { on: on.id, off: off.id, rows: L.cxBreak(), total: L.cxTotal(),
+      itemKeys: Object.keys(items),
+      inCx: !!L.cxCatalog()['plan:' + off.id],
+      inStats: !!L.statsCatalog()['plan:' + off.id] };
+  });
+  function row12(id) { return (offPlan.rows || []).filter((x) => x.id === id)[0] || null; }
+  chk('⑫ 実績に出さないプランも、ポイントの条件の一覧には出る', offPlan.inCx === true);
+  chk('⑫ そのプランは実績で追う項目の一覧には出ない', offPlan.inStats === false);
+  chk('⑫ そのプランでもポイントは数える',
+    !!row12('offrow') && row12('offrow').n === 1, JSON.stringify(offPlan.rows));
+  chk('⑫ 実績の「項目別」にはそのプランの行を出さない',
+    offPlan.itemKeys.indexOf('plan:' + offPlan.off) < 0, JSON.stringify(offPlan.itemKeys));
+  chk('⑫ 実績で追っているプランは、これまでどおり項目に出る',
+    offPlan.itemKeys.indexOf('plan:' + offPlan.on) >= 0, JSON.stringify(offPlan.itemKeys));
+  chk('⑫ 合計は 34 ＋ 105 ＝139', offPlan.total === 139, String(offPlan.total));
 
   await browser.close();
   srv.close();
