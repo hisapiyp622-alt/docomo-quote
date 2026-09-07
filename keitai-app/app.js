@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.165.0";
+  var APP_VERSION = "1.166.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -1696,6 +1696,52 @@
     return MASTER.cxPoints;
   }
   function cxOn() { return cxRows().some(function (r) { return num(r.pt) !== 0; }); }
+  /* ファイルから読み込んで足し込む（2026-09-07）。
+   * 同じ id か、同じ条件の組み合わせの行は**中身を差し替える**。
+   * 無い行は足す。**手で足した行は消さない**ので、
+   * あとから項目が増えたときに、同じやり方で足していける。
+   * 戻り値は { added, updated, skipped }。 */
+  function cxImport(list) {
+    if (!Array.isArray(list)) return null;
+    var rows = cxRows();
+    function sig(r) { return ((r.keys || []).slice().sort()).join("|"); }
+    var res = { added: 0, updated: 0, skipped: 0 };
+    list.forEach(function (r) {
+      if (!r || typeof r !== "object") { res.skipped++; return; }
+      var keys = Array.isArray(r.keys) ? r.keys.filter(function (k) { return typeof k === "string"; }) : [];
+      var row = {
+        id: String(r.id || ("cx" + Date.now().toString(36) + res.added)).slice(0, 40),
+        name: String(r.name || "").slice(0, 40),
+        pt: Math.max(0, Math.round(num(r.pt))),
+        keys: keys
+      };
+      if (!row.name && !row.keys.length) { res.skipped++; return; }
+      var at = -1;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].id === row.id || (keys.length && sig(rows[i]) === sig(row))) { at = i; break; }
+      }
+      if (at >= 0) { rows[at] = row; res.updated++; } else { rows.push(row); res.added++; }
+    });
+    /* 条件に出てくる項目が「実績で追う項目」で切られていると、いつまでも0件になる。
+     * 読み込んだ行が使う項目は、数える側にも自動で入れる（お店が気づけないため）。 */
+    var sc = statsCfg();
+    rows.forEach(function (r) {
+      (r.keys || []).forEach(function (k) {
+        if (k.indexOf("plan:") === 0) sc.plans[k.slice(5)] = true;
+        if (k.indexOf("proc:") === 0) sc.procs[k.slice(5)] = true;
+        if (k.indexOf("ie:") === 0) sc.hikari = true;
+        if (k.indexOf("dcard:") === 0 && sc.dcard !== "type") sc.dcard = "type";
+        if (k.indexOf("denki:") === 0 && sc.denki !== "type") sc.denki = "type";
+        if (k === "gas" && sc.gas === "off") sc.gas = "one";
+        if (k.indexOf("opt:") === 0) delete sc.optSkip[k.slice(4).replace(/:exist$/, "")];
+        if (k === "highend") sc.highend = true;
+        if (k === "u15") sc.u15 = true;
+        if (k === "kaimashi") sc.kaimashi = true;
+      });
+    });
+    markEdited();
+    return res;
+  }
   // 商談にひとつの項目（光・5G）かどうか
   function cxWholeKey(k) { return String(k || "").indexOf("ie:") === 0; }
   /* 1行ぶんが、この応対で何件になるか。
@@ -10058,7 +10104,14 @@
     h += '<div class="actions">'
       + '<button type="button" class="btn-sub" data-cx-add="1">＋ 行を足す</button>'
       + '<button type="button" class="btn-sub" data-cx-fill="1">実績の項目から一気に作る</button>'
+      + '<label class="btn-sub file-btn">ファイルから読み込む'
+      + '<input type="file" id="cxFile" accept="application/json,.json" hidden></label>'
+      + '<button type="button" class="btn-sub" data-cx-save="1">いまの内容をファイルに保存</button>'
       + "</div>";
+    h += '<p class="hint">「ファイルから読み込む」は、<strong>同じ行は中身を差し替え、無い行は足します</strong>'
+      + '（手で足した行は消えません）。あとから項目が増えたときも、同じやり方で足していけます。<br>'
+      + '「いまの内容をファイルに保存」で控えを取れます。'
+      + '<strong>このファイルには点数が入っています。取り扱いにご注意ください。</strong></p>';
     h += '<p class="hint">「実績の項目から一気に作る」を押すと、'
       + '<strong>いま実績に出ている項目ぶんの行（点数は0）</strong>をまとめて作ります。'
       + 'そのあと点数を入れ、要らない行を消し、組み合わせたい行に条件を足してください。'
@@ -12642,6 +12695,24 @@
       }
       return false;
     }
+    if (kind === "change" && t.id === "cxFile") {
+      var file = t.files && t.files[0];
+      t.value = "";
+      if (!file) return true;
+      var fr = new FileReader();
+      fr.onload = function () {
+        var d = null;
+        try { d = JSON.parse(String(fr.result)); } catch (e) {}
+        if (!Array.isArray(d)) { window.alert("読み込めませんでした（ポイントの控えファイルを選んでください）。"); return; }
+        var r2 = cxImport(d);
+        renderMasterTab();
+        window.alert("読み込みました。足した行 " + r2.added + "件／差し替えた行 " + r2.updated + "件"
+          + (r2.skipped ? "／読めなかった行 " + r2.skipped + "件" : "") + "。");
+      };
+      fr.onerror = function () { window.alert("ファイルを読めませんでした。"); };
+      fr.readAsText(file);
+      return true;
+    }
     if (kind === "change" && t.hasAttribute("data-cx-key-add")) {
       var ai = idx("data-cx-key-add");
       var k = t.value;
@@ -12672,6 +12743,15 @@
     if (t.hasAttribute("data-cx-add")) {
       rows.push({ id: "cx" + Date.now().toString(36), name: "", pt: 0, keys: [] });
       markEdited(); renderMasterTab();
+      return true;
+    }
+    if (t.hasAttribute("data-cx-save")) {
+      var blob = new Blob([JSON.stringify(cxRows(), null, 2)], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "実績のポイント_" + todayYmd() + ".json";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
       return true;
     }
     if (t.hasAttribute("data-cx-fill")) {
@@ -14300,6 +14380,8 @@
         askCancel: function () { $("resultDlgCancel").click(); },
         /* 実績のポイント（お店が決める指標）の検査用 */
         cxSet: function (rows) { MASTER.cxPoints = rows || []; saveMaster(); },
+        // 本物の読み込み（実績で追う項目の自動有効化まで通る）
+        cxImport: function (rows) { return cxImport(rows); },
         cxCatalog: function () { return statsCatalog(); },
         cxBreak: function (lines) {
           return cxBreakdown(JSON.parse(JSON.stringify(store)), true, lines);

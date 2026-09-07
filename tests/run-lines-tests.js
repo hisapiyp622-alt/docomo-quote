@@ -296,6 +296,34 @@ function chk(name, cond, extra) {
   chk('⑨ 光は回線が2本でも商談に1件（42点）',
     cxIe.after === 42, String(cxIe.after) + ' / ' + JSON.stringify(cxIe.rows));
 
+  /* ---- ⑩ ポイントの読み込み（ファイルから足す）----
+   * あとから項目を足せるようにするための入口。
+   * ・同じ行は差し替え、無い行は足す（手で足した行は消さない）
+   * ・条件に使う項目が「実績で追う項目」で切られていると、いつまでも0件になるので、
+   *   読み込んだ行が使う項目は自動で数える側に入れる */
+  const imp = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    // 既定では数えていないプランを選ぶ（実績の項目に出ていないもの）
+    const off = m.plans.filter((p) => !L.cxCatalog()['plan:' + p.id])[0];
+    L.cxSet([{ id: 'keep', name: '手で足した行', pt: 7, keys: ['proc:shinki'] }]);
+    const before = L.cxCatalog()['plan:' + off.id] ? 'ある' : 'ない';
+    const res = L.cxImport([
+      { id: 'keep', name: '差し替え後', pt: 9, keys: ['proc:shinki'] },
+      { id: 'newone', name: '新規 × ' + off.name, pt: 50, keys: ['proc:shinki', 'plan:' + off.id] }
+    ]);
+    const after = L.cxCatalog()['plan:' + off.id] ? 'ある' : 'ない';
+    const rows = T.std.get() && null;
+    return { off: off.id, before: before, after: after, res: res,
+      names: L.cxBreak().map((x) => x.name),
+      all: (window.__KQ_TEST__.lines.cxCatalog(), null) };
+  });
+  chk('⑩ 読み込む前は、そのプランは実績の項目に出ていない', imp.before === 'ない', imp.before);
+  chk('⑩ 読み込むと、条件に使う項目が自動で数える側に入る', imp.after === 'ある', imp.after);
+  chk('⑩ 同じ行は差し替え、無い行は足す',
+    imp.res.added === 1 && imp.res.updated === 1 && imp.res.skipped === 0, JSON.stringify(imp.res));
+
   await browser.close();
   srv.close();
 
