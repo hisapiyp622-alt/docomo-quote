@@ -283,7 +283,9 @@ function chk(name, cond, extra) {
   const cxIe = await page.evaluate(() => {
     const T = window.__KQ_TEST__;
     const L = T.lines;
-    L.cxSet([{ id: 'ie', name: '光 1ギガ', pt: 42, keys: ['ie:1g'] }]);
+    /* 2026-09-07 から、光は申込区分（新規・転用・事業者変更）で分ける。
+     * 既定の申込区分は「新規」なので、その行を使う。 */
+    L.cxSet([{ id: 'ie', name: '光 1ギガ（新規）', pt: 42, keys: ['ie:1g:shinki'] }]);
     const before = L.cxTotal();
     // 光を入れて、申し込みにチェックする
     const ie = document.getElementById('ieEnabled');
@@ -899,6 +901,214 @@ function chk(name, cond, extra) {
   chk('⑳ 見積書の内訳に名前が出る',
     bw.sheetHasBiz === true && bw.sheetHasShain === true,
     JSON.stringify([bw.sheetHasBiz, bw.sheetHasShain]));
+
+  /* ---- ㉑ 機種の区分（自動／ハイエンド／スタンダード・2026-09-07）----
+   * 金額で自動的に決め、手でも変えられるようにする（店舗の指定）。 */
+  const kr = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    const base = { planId: plan, procType: 'shinki', procTodo: { shinki: true },
+      planChange: true, payMethod: 'ikkatsu' };
+    function keysFor(patch) {
+      L.fill(0, Object.assign({}, base, patch));
+      L.fill(1, {});
+      L.pick(0);
+      return Object.keys(L.items());
+    }
+    // 自動: 10万円以上 → ハイエンド ／ 10万円未満 → スタンダード
+    const autoHigh = keysFor({ deviceName: 'Pixel 10 Pro', devicePrice: 180000 });
+    const autoStd = keysFor({ deviceName: 'Galaxy A56', devicePrice: 65000 });
+    const autoIpHigh = keysFor({ deviceName: 'iPhone 17 Pro', devicePrice: 200000 });
+    // iPhone は機種名で見るので、高くても Pro・Air でなければスタンダード
+    const autoIpStd = keysFor({ deviceName: 'iPhone 17', devicePrice: 200000 });
+    // 手で選んだら、そちらが勝つ
+    const manStd = keysFor({ deviceName: 'Pixel 10 Pro', devicePrice: 180000,
+      kishuRank: 'std' });
+    const manHigh = keysFor({ deviceName: 'Galaxy A56', devicePrice: 65000,
+      kishuRank: 'high' });
+    // 端末を買っていないときは、どちらにも数えない
+    const noBuy = keysFor({ deviceName: 'Pixel 10 Pro', devicePrice: 180000,
+      payMethod: 'none' });
+    // 頭金は元値から引く（総額12万・頭金3万 → 元値9万 → スタンダード）
+    const atama = keysFor({ deviceName: 'Xperia 10', devicePrice: 120000, atamakin: 30000 });
+    // 画面の選び欄
+    L.fill(0, Object.assign({}, base, { deviceName: 'Galaxy A56', devicePrice: 65000 }));
+    L.pick(0);
+    const opts = Array.prototype.map.call(
+      document.querySelectorAll('#kishuRank option'), (o) => o.value);
+    const hintAuto = (document.getElementById('kishuRankHint') || {}).textContent || '';
+    L.fill(0, Object.assign({}, base, { deviceName: 'Galaxy A56', devicePrice: 65000,
+      kishuRank: 'high' }));
+    L.pick(0);
+    const hintMan = (document.getElementById('kishuRankHint') || {}).textContent || '';
+    const cat = L.cxCatalog();
+    return { autoHigh, autoStd, autoIpHigh, autoIpStd, manStd, manHigh, noBuy, atama,
+      opts, hintAuto, hintMan,
+      catA: cat['kishustd:android'] || '', catI: cat['kishustd:iphone'] || '' };
+  });
+  const hasK = (ks, k) => ks.indexOf(k) >= 0;
+  chk('㉑ 自動: 10万円以上の Android はハイエンド',
+    hasK(kr.autoHigh, 'highend:android') && !hasK(kr.autoHigh, 'kishustd:android'),
+    JSON.stringify(kr.autoHigh));
+  chk('㉑ 自動: 10万円未満の Android はスタンダード',
+    hasK(kr.autoStd, 'kishustd:android') && !hasK(kr.autoStd, 'highend:android'),
+    JSON.stringify(kr.autoStd));
+  chk('㉑ 自動: iPhone Pro はハイエンド',
+    hasK(kr.autoIpHigh, 'highend:iphone'), JSON.stringify(kr.autoIpHigh));
+  chk('㉑ 自動: iPhone は Pro・Air でなければ、高くてもスタンダード',
+    hasK(kr.autoIpStd, 'kishustd:iphone') && !hasK(kr.autoIpStd, 'highend:iphone'),
+    JSON.stringify(kr.autoIpStd));
+  chk('㉑ 手で「スタンダード」を選ぶと、金額が高くてもスタンダード',
+    hasK(kr.manStd, 'kishustd:android') && !hasK(kr.manStd, 'highend:android'),
+    JSON.stringify(kr.manStd));
+  chk('㉑ 手で「ハイエンド」を選ぶと、金額が安くてもハイエンド',
+    hasK(kr.manHigh, 'highend:android') && !hasK(kr.manHigh, 'kishustd:android'),
+    JSON.stringify(kr.manHigh));
+  chk('㉑ 端末購入なしのときは、どちらにも数えない',
+    !kr.noBuy.some((k) => k.indexOf('highend') === 0 || k.indexOf('kishustd') === 0),
+    JSON.stringify(kr.noBuy));
+  chk('㉑ 頭金は元値から引く（総額12万・頭金3万 → スタンダード）',
+    hasK(kr.atama, 'kishustd:android'), JSON.stringify(kr.atama));
+  chk('㉑ 選び欄は「自動・ハイエンド・スタンダード」',
+    JSON.stringify(kr.opts) === '["","high","std"]', JSON.stringify(kr.opts));
+  chk('㉑ 自動のときは、いまの判定を画面に出す',
+    /自動/.test(kr.hintAuto) && /スタンダード/.test(kr.hintAuto), kr.hintAuto);
+  chk('㉑ 手で選んだときは、その旨を画面に出す',
+    /手で選んで/.test(kr.hintMan), kr.hintMan);
+  chk('㉑ 実績の項目に Android と iPhone のスタンダードが並ぶ',
+    /Android/.test(kr.catA) && /iPhone/.test(kr.catI), kr.catA + ' / ' + kr.catI);
+
+  /* ---- ㉒ 光を申込区分で分ける（2026-09-07）---- */
+  const ha = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const cat = L.cxCatalog();
+    const out = {};
+    ['shinki', 'tenyo', 'jigyosha', 'kirikae'].forEach((a) => {
+      out[a] = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g', applyType: a }));
+    });
+    const old = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g' }));
+    const ten = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari10g',
+      applyType: 'jigyosha' }));
+    return { out: out, old: old, ten: ten,
+      catS: cat['ie:1g:shinki'] || '', catT: cat['ie:1g:tenyo'] || '',
+      catJ: cat['ie:1g:jigyosha'] || '', catK: cat['ie:1g:kirikae'] || '',
+      cat10: cat['ie:10g:jigyosha'] || '' };
+  });
+  chk('㉒ 実績の項目に 新規・転用・事業者変更・転用タイプC が並ぶ',
+    /新規/.test(ha.catS) && /転用/.test(ha.catT) && /事業者変更/.test(ha.catJ)
+    && /タイプC/.test(ha.catK),
+    [ha.catS, ha.catT, ha.catJ, ha.catK].join(' / '));
+  chk('㉒ 10ギガも申込区分で分かれる', /10ギガ/.test(ha.cat10) && /事業者変更/.test(ha.cat10),
+    ha.cat10);
+  chk('㉒ 新規を選ぶと、新規の行で数える',
+    ha.out.shinki.indexOf('ie:1g:shinki') >= 0, JSON.stringify(ha.out.shinki));
+  chk('㉒ 転用を選ぶと、転用の行で数える',
+    ha.out.tenyo.indexOf('ie:1g:tenyo') >= 0, JSON.stringify(ha.out.tenyo));
+  chk('㉒ 事業者変更を選ぶと、事業者変更の行で数える',
+    ha.out.jigyosha.indexOf('ie:1g:jigyosha') >= 0, JSON.stringify(ha.out.jigyosha));
+  chk('㉒ 10ギガの事業者変更も、そのぶんの行で数える',
+    ha.ten.indexOf('ie:10g:jigyosha') >= 0, JSON.stringify(ha.ten));
+  /* 保存を小さくしたあとも区分が残っているか。
+   * ここを見ないと、保存に残す処理を消しても項目のテストだけ通ってしまう。 */
+  const slim = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      hikari: L.slimIe({ enabled: true, product: 'hikari1g', applyType: 'jigyosha',
+        housing: 'ht', jimuFee: 4950 }),
+      home5g: L.slimIe({ enabled: true, product: 'home5g', h5Kubun: 'kishu',
+        h5DevicePrice: 73260 })
+    };
+  });
+  chk('㉒ 保存を小さくしても、光の申込区分は残る',
+    slim.hikari.applyType === 'jigyosha', JSON.stringify(slim.hikari));
+  chk('㉒ 保存を小さくしても、home 5G の区分は残る',
+    slim.home5g.h5Kubun === 'kishu', JSON.stringify(slim.home5g));
+  chk('㉒ 区分が入っていない以前の保存は、分けずにまとめる',
+    ha.old.indexOf('ie:1g') >= 0
+    && ha.old.filter((k) => k.indexOf('ie:1g:') === 0).length === 0,
+    JSON.stringify(ha.old));
+
+  /* ---- ㉓ プロバイダ OCN インターネット（2026-09-07・店舗の指定）----
+   * 画面の選択肢と同じ文字で見ているかまで確かめる。
+   * ここがズレると、選んでいるのに数えられない。 */
+  const ocn = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const opts = Array.prototype.map.call(
+      document.querySelectorAll('#ieProvider option'), (o) => o.value);
+    const on = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g',
+      applyType: 'shinki', provider: 'OCN インターネット' }));
+    const other = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g',
+      applyType: 'shinki', provider: '@nifty' }));
+    const none = Object.keys(L.itemsRawIe({ enabled: true, product: 'hikari1g',
+      applyType: 'shinki' }));
+    const slim = L.slimIe({ enabled: true, product: 'hikari1g', applyType: 'shinki',
+      provider: 'OCN インターネット', jimuFee: 4950 });
+    const cat = L.cxCatalog();
+    return { opts: opts, on: on, other: other, none: none, slim: slim,
+      cat: cat['ie:prov:ocn'] || '' };
+  });
+  chk('㉓ 画面の選択肢に「OCN インターネット」がある（同じ文字で見ている）',
+    ocn.opts.indexOf('OCN インターネット') >= 0, JSON.stringify(ocn.opts));
+  chk('㉓ 実績の項目に出る', /OCN インターネット/.test(ocn.cat), ocn.cat);
+  chk('㉓ OCN を選ぶと数える',
+    ocn.on.indexOf('ie:prov:ocn') >= 0, JSON.stringify(ocn.on));
+  chk('㉓ ほかのプロバイダでは数えない',
+    ocn.other.indexOf('ie:prov:ocn') < 0, JSON.stringify(ocn.other));
+  chk('㉓ プロバイダ未定のときは数えない',
+    ocn.none.indexOf('ie:prov:ocn') < 0, JSON.stringify(ocn.none));
+  chk('㉓ 保存を小さくしてもプロバイダは残る',
+    ocn.slim.provider === 'OCN インターネット', JSON.stringify(ocn.slim));
+
+  /* ---- ㉔ 光のオプション（テレビ・お電話）を数える（2026-09-07）----
+   * イエナカの実際のオプション一覧に、同じ id で載っていることまで見る。
+   * id がズレると、選んでいるのに数えられない。 */
+  const ieo = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const base = { enabled: true, product: 'hikari1g', applyType: 'shinki' };
+    const tv = Object.keys(L.itemsRawIe(Object.assign({}, base, { opts: { tv: true } })));
+    const dw = Object.keys(L.itemsRawIe(Object.assign({}, base, { opts: { denwa: true } })));
+    const bv = Object.keys(L.itemsRawIe(Object.assign({}, base, { opts: { denwaBV: true } })));
+    const none = Object.keys(L.itemsRawIe(Object.assign({}, base, { opts: {} })));
+    const slim = L.slimIe(Object.assign({}, base, { jimuFee: 4950,
+      opts: { tv: true, denwa: true, lanCard: true } }));
+    const cat = L.cxCatalog();
+    /* 画面のオプション一覧に、同じ id のチェック欄が実際に出ているか */
+    const ieEn = document.getElementById('ieEnabled');
+    if (ieEn && !ieEn.checked) {
+      ieEn.checked = true;
+      ieEn.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const ids = Array.prototype.map.call(
+      document.querySelectorAll('#ieOptList [data-ietile]'),
+      (el) => el.getAttribute('data-ietile'));
+    return { tv, dw, bv, none, slim, ids,
+      catTv: cat['ie:opt:tv'] || '', catDw: cat['ie:opt:denwa'] || '',
+      catBv: cat['ie:opt:denwaBV'] || '' };
+  });
+  chk('㉔ 実績の項目に テレビオプション・光電話・光電話バリューが並ぶ',
+    /テレビオプション/.test(ieo.catTv) && /ドコモ光電話/.test(ieo.catDw)
+    && /バリュー/.test(ieo.catBv),
+    [ieo.catTv, ieo.catDw, ieo.catBv].join(' / '));
+  chk('㉔ テレビオプションを選ぶと数える',
+    ieo.tv.indexOf('ie:opt:tv') >= 0, JSON.stringify(ieo.tv));
+  chk('㉔ ドコモ光電話を選ぶと数える',
+    ieo.dw.indexOf('ie:opt:denwa') >= 0, JSON.stringify(ieo.dw));
+  chk('㉔ 光電話バリューを選ぶと数える',
+    ieo.bv.indexOf('ie:opt:denwaBV') >= 0, JSON.stringify(ieo.bv));
+  chk('㉔ 選んでいないときは数えない',
+    !ieo.none.some((k) => k.indexOf('ie:opt:') === 0), JSON.stringify(ieo.none));
+  chk('㉔ 保存を小さくしても、数えるオプションの印は残る',
+    !!(ieo.slim.opts || {}).tv && !!(ieo.slim.opts || {}).denwa,
+    JSON.stringify(ieo.slim.opts));
+  chk('㉔ 数えないオプションは保存に残さない（保存を小さくするため）',
+    !(ieo.slim.opts || {}).lanCard, JSON.stringify(ieo.slim.opts));
+  chk('㉔ 光の画面に、同じ id のチェック欄が実際に出ている',
+    ieo.ids.indexOf('tv') >= 0 && ieo.ids.indexOf('denwa') >= 0
+    && ieo.ids.indexOf('denwaBV') >= 0, JSON.stringify(ieo.ids));
 
   await browser.close();
   srv.close();

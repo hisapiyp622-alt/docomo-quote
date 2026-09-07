@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.174.0";
+  var APP_VERSION = "1.175.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -501,7 +501,7 @@
    * 月額の割引額はプランごとに違うため data.js の discounts.kosodate に持つ。 */
   var KOSODATE_VOICE_OFF = 880;
   var SLIM_PATTERN_KEYS = ["planId", "planChange", "tierIdx", "procType", "procTodo", "visitPurposes", "visitPurpose", "hearty", "kosodate",
-    "kaimashi", "u15", "u39", "tablet", "shitadori", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
+    "kaimashi", "u15", "u39", "tablet", "shitadori", "kishuRank", "devicePrice", "atamakin", "deviceName", "payMethod", "todoDcard", "todoDcardType", "todoDenki", "todoDenkiType",
     "todoGas", "todoHikari", "options", "optionKubun", "feeItems", "accSel"];
 
   /* ---------- 大阪ガス（ドコモガス）エリアの目安判定 ----------
@@ -563,6 +563,16 @@
       out.ienaka = { enabled: !!d.ienaka.enabled, product: d.ienaka.product || "" };
       // home 5G の新規／機種変更（実績で分けるため・2026-09-07）
       if (d.ienaka.h5Kubun) out.ienaka.h5Kubun = d.ienaka.h5Kubun;
+      // 光の申込区分（新規・転用・事業者変更・転用タイプC。同じく実績で分ける）
+      if (d.ienaka.applyType) out.ienaka.applyType = d.ienaka.applyType;
+      // プロバイダ（実績で OCN インターネットを数えるため・2026-09-07）
+      if (d.ienaka.provider) out.ienaka.provider = d.ienaka.provider;
+      /* 実績で数える光のオプション（テレビ・お電話）。
+       * 全部は残さず、数えるものだけを残す（保存を小さくするため）。 */
+      var iopt = d.ienaka.opts || {};
+      var keep = {};
+      IE_STAT_OPTS.forEach(function (o) { if (iopt[o.id]) keep[o.id] = true; });
+      if (Object.keys(keep).length) out.ienaka.opts = keep;
     }
     return out;
   }
@@ -748,7 +758,7 @@
       return '<label class="check"><input type="checkbox" data-nqv="' + k + '"> ' + esc(VISIT_NAMES[k]) + "</label>";
     }).join("");
     var cat = statsCatalog();
-    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "iphone", "tablet", "shitadori:", "device",
+    var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function nqRank(k) {
       for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
@@ -1438,11 +1448,18 @@
     /* 機種ハイエンドを Android と iPhone に分ける（店舗の指定・2026-09-07）。
      * 配点が機種の種類で違うため。 */
     if (typeof c.highendSplit === "undefined") c.highendSplit = true;
+    if (typeof c.kishuStd === "undefined") c.kishuStd = true;  // （再掲）機種スタンダード
     if (typeof c.iphone === "undefined") c.iphone = true;      // （再掲）iPhone
     if (typeof c.tablet === "undefined") c.tablet = true;      // タブレット総販
     if (typeof c.shitadori === "undefined") c.shitadori = true; // 下取り
     // home 5G を新規／機種変更で分ける（店舗の指定・2026-09-07）
     if (typeof c.h5Kubun === "undefined") c.h5Kubun = true;
+    // 光を申込区分（新規・転用・事業者変更）で分ける（店舗の指定・2026-09-07）
+    if (typeof c.hikariApply === "undefined") c.hikariApply = true;
+    // プロバイダ「OCN インターネット」を数える（店舗の指定・2026-09-07）
+    if (typeof c.ocn === "undefined") c.ocn = true;
+    // 光のオプション（テレビ・お電話）を数える（店舗の指定・2026-09-07）
+    if (typeof c.ieOpts === "undefined") c.ieOpts = true;
     if (!c.optSkip) c.optSkip = { smart_hosho: true, anshin_pack: true };
     if (!c.feeSkip) c.feeSkip = {};
     if (typeof c.accs === "undefined") c.accs = true;
@@ -1462,6 +1479,15 @@
     var name = String(pt.deviceName || "");
     if (/iphone/i.test(name)) return statsKwTest(cfg.highendIpKw, name);
     return (num(pt.devicePrice) - num(pt.atamakin)) >= num(cfg.highendYen);
+  }
+  /* 機種の区分（ハイエンド／スタンダード）。
+   * 何も選んでいなければ金額で決め、手で選んでいればそれを使う
+   * （店舗の指定・2026-09-07）。端末を買っていない・値段が0円のときは
+   * どちらにも数えない（手で選んだときだけ数える）。 */
+  function statsKishuRank(pt, cfg) {
+    if (pt.kishuRank === "high" || pt.kishuRank === "std") return pt.kishuRank;
+    if (num(pt.devicePrice) <= 0) return "";
+    return statsIsHighEnd(pt, cfg) ? "high" : "std";
   }
   // 機種名が iPhone かどうか（実績の（再掲）iPhone とハイエンドの分け方で使う）
   function statsIsIPhone(pt) { return /iphone/i.test(String((pt && pt.deviceName) || "")); }
@@ -1510,6 +1536,20 @@
     hikari1g: "光 1ギガ", ahamo1g: "光 1ギガ",
     hikari10g: "光 10ギガ", ahamo10g: "光 10ギガ",
     home5g: "home 5G"
+  };
+  /* プロバイダ。画面の選択肢（ieProvider）と同じ文字にしておく。
+   * ここがズレると、選んでいるのに数えられなくなる。 */
+  var OCN_PROVIDER = "OCN インターネット";
+  /* 実績で数える光のオプション（店舗の指定・2026-09-07）。
+   * id はイエナカの OPTIONS と同じにしておく。ズレると数えられなくなる。 */
+  var IE_STAT_OPTS = [
+    { id: "tv", name: "ドコモ光テレビオプション" },
+    { id: "denwa", name: "ドコモ光電話" },
+    { id: "denwaBV", name: "ドコモ光電話バリュー" }
+  ];
+  /* 光の申込区分。イエナカの APPLY_LABEL と同じ並び・同じ言い方にする */
+  var STATS_APPLY_NAMES = {
+    shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用・タイプC"
   };
   var STATS_IE_KEYS = { hikari1g: "1g", ahamo1g: "1g", hikari10g: "10g", ahamo10g: "10g", home5g: "home5g" };
 
@@ -1643,12 +1683,23 @@
      * 支払い方法を持たない古い保存まで「端末購入なし」になり、
      * 過去の実績から機種販売が消えてしまう。 */
     var devBought = !ptRaw || !("payMethod" in ptRaw) || ptRaw.payMethod !== "none";
-    if (cfg.highend && devBought && statsIsHighEnd(pt, cfg)) {
-      if (cfg.highendSplit) {
-        var hk = statsIsIPhone(pt) ? "iphone" : "android";
-        out["highend:" + hk] = "（再掲）機種ハイエンド（" + (hk === "iphone" ? "iPhone" : "Android") + "）";
-      } else {
-        out["highend"] = "（再掲）機種ハイエンド";
+    if (devBought) {
+      var rank = statsKishuRank(pt, cfg);
+      var os = statsIsIPhone(pt) ? "iphone" : "android";
+      var osName = os === "iphone" ? "iPhone" : "Android";
+      if (rank === "high" && cfg.highend) {
+        if (cfg.highendSplit) {
+          out["highend:" + os] = "（再掲）機種ハイエンド（" + osName + "）";
+        } else {
+          out["highend"] = "（再掲）機種ハイエンド";
+        }
+      }
+      if (rank === "std" && cfg.kishuStd) {
+        if (cfg.highendSplit) {
+          out["kishustd:" + os] = "（再掲）機種スタンダード（" + osName + "）";
+        } else {
+          out["kishustd"] = "（再掲）機種スタンダード";
+        }
       }
     }
     if (cfg.iphone && devBought && statsIsIPhone(pt)) out["iphone"] = "（再掲）iPhone";
@@ -1834,6 +1885,9 @@
         if (k === "gas" && sc.gas === "off") sc.gas = "one";
         if (k.indexOf("opt:") === 0) delete sc.optSkip[k.slice(4).replace(/:exist$/, "")];
         if (k === "highend" || k.indexOf("highend:") === 0) sc.highend = true;
+        if (k === "kishustd" || k.indexOf("kishustd:") === 0) sc.kishuStd = true;
+        if (k === "ie:prov:ocn") sc.ocn = true;
+        if (k.indexOf("ie:opt:") === 0) sc.ieOpts = true;
         if (k === "iphone") sc.iphone = true;
         if (k === "tablet") sc.tablet = true;
         if (k.indexOf("shitadori:") === 0) sc.shitadori = true;
@@ -1924,8 +1978,30 @@
           } else {
             ieName += "（区分なし・以前の保存）";
           }
+        } else if (ie.product !== "home5g" && statsCfg().hikariApply) {
+          /* 光は申込区分（新規・転用・事業者変更・転用タイプC）で分ける
+           * （店舗の指定・2026-09-07）。home 5G と同じく、区分が入っていない
+           * 以前の保存は分けずにまとめる。 */
+          if (STATS_APPLY_NAMES[ie.applyType]) {
+            ieKey += ":" + ie.applyType;
+            ieName += "（" + STATS_APPLY_NAMES[ie.applyType] + "）";
+          } else {
+            ieName += "（区分なし・以前の保存）";
+          }
         }
         whole["ie:" + ieKey] = "光・5G: " + ieName;
+        /* プロバイダ「OCN インターネット」も数える（店舗の指定・2026-09-07）。
+         * 光の行とは別に、商談ごとに1件。 */
+        if (statsCfg().ocn && ie.provider === OCN_PROVIDER) {
+          whole["ie:prov:ocn"] = "光・5G: プロバイダ OCN インターネット";
+        }
+        /* 光のオプション（テレビ・お電話）。こちらも商談ごとに1件 */
+        if (statsCfg().ieOpts) {
+          var io2 = ie.opts || {};
+          IE_STAT_OPTS.forEach(function (o) {
+            if (io2[o.id]) whole["ie:opt:" + o.id] = "光・5G: " + o.name;
+          });
+        }
       }
     }
     return { lines: perLine, whole: whole };
@@ -2040,6 +2116,14 @@
         out["highend"] = "（再掲）機種ハイエンド";
       }
     }
+    if (cfg.kishuStd) {
+      if (cfg.highendSplit) {
+        out["kishustd:android"] = "（再掲）機種スタンダード（Android）";
+        out["kishustd:iphone"] = "（再掲）機種スタンダード（iPhone）";
+      } else {
+        out["kishustd"] = "（再掲）機種スタンダード";
+      }
+    }
     if (cfg.iphone) out["iphone"] = "（再掲）iPhone";
     if (cfg.tablet) out["tablet"] = "タブレット総販";
     if (cfg.shitadori) {
@@ -2076,8 +2160,23 @@
     }
     if (cfg.gas !== "off") out["gas"] = "ドコモガス";
     if (cfg.hikari) {
-      out["ie:1g"] = "光・5G: 光 1ギガ";
-      out["ie:10g"] = "光・5G: 光 10ギガ";
+      ["1g", "10g"].forEach(function (g) {
+        var gName = g === "1g" ? "光 1ギガ" : "光 10ギガ";
+        if (cfg.hikariApply) {
+          Object.keys(STATS_APPLY_NAMES).forEach(function (a) {
+            out["ie:" + g + ":" + a] = "光・5G: " + gName + "（" + STATS_APPLY_NAMES[a] + "）";
+          });
+          out["ie:" + g] = "光・5G: " + gName + "（区分なし・以前の保存）";
+        } else {
+          out["ie:" + g] = "光・5G: " + gName;
+        }
+      });
+      if (cfg.ocn) out["ie:prov:ocn"] = "光・5G: プロバイダ OCN インターネット";
+      if (cfg.ieOpts) {
+        IE_STAT_OPTS.forEach(function (o) {
+          out["ie:opt:" + o.id] = "光・5G: " + o.name;
+        });
+      }
       if (cfg.h5Kubun) {
         out["ie:home5g:shinki"] = "光・5G: home 5G（新規）";
         out["ie:home5g:kishu"] = "光・5G: home 5G（機種変更）";
@@ -2562,7 +2661,7 @@
     var catalog = statsCatalog();
 
     /* ---- 並び順 ---- */
-    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "iphone", "tablet", "shitadori:", "device",
+    var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
@@ -4940,7 +5039,7 @@
       /* ご来店の目的。①端末購入 以外で来店されて機種変更が入った場合は
        * 「買い増し」として実績に再掲する。①のときは買い増しの有無をチェックで持つ。 */
       visitPurposes: {}, kaimashi: false, u15: false, u39: false,
-      tablet: false, shitadori: "",
+      tablet: false, shitadori: "", kishuRank: "",
       procTodo: {}, todoDcard: false, todoDenki: false, todoGas: false, todoHikari: false,
       todoGasEco: "",     // ガスの区分（std=スタンダード / eco=エコジョーズ）
       todoDenkiNow: "", todoGasNow: "",   // 現在ご契約中の会社（解約のご案内用）
@@ -8694,6 +8793,29 @@
     { wrap: "heartyWrap", name: "ハーティ割引", on: function (d) { return !!d.hearty; } },
     { wrap: "kosodateWrap", name: "子育てサポート割引", on: function (d) { return !!d.kosodate; } }
   ];
+  /* 「自動」のときに、いま何と判定しているかを出す。
+   * 出さないと、手で選び直すべきかどうかが分からないため。 */
+  function renderKishuRankHint() {
+    var el = $("kishuRankHint");
+    if (!el) return;
+    if (state.kishuRank === "high" || state.kishuRank === "std") {
+      el.textContent = "手で選んでいます（"
+        + (state.kishuRank === "high" ? "ハイエンド" : "スタンダード")
+        + "）。自動に戻すと金額で判定します。";
+      return;
+    }
+    var cfg = statsCfg();
+    var rank = statsKishuRank(state, cfg);
+    if (!rank) {
+      el.textContent = "端末代金を入れると自動で判定します。";
+      return;
+    }
+    el.textContent = "自動: " + (rank === "high" ? "ハイエンド" : "スタンダード")
+      + "（" + (statsIsIPhone(state)
+        ? "iPhone は機種名で判定します"
+        : "元値" + yen(Math.max(0, num(state.devicePrice) - num(state.atamakin)))
+          + "・" + yen(num(cfg.highendYen)) + "以上でハイエンド") + "）";
+  }
   function renderDiscountHint() {
     var plan = currentPlan();
     var shown = hasPlan();
@@ -8767,6 +8889,8 @@
     renderAdhocMonthly();
     renderAdhocInitial();
     $("deviceName").value = state.deviceName;
+    $("kishuRank").value = state.kishuRank || "";
+    renderKishuRankHint();
     $("tablet").checked = !!state.tablet;
     $("shitadori").value = state.shitadori || "";
     $("devicePrice").value = state.devicePrice || "";
@@ -10453,6 +10577,15 @@
       + (sc.hikari ? " checked" : "") + "> 光・5G（1ギガ／10ギガ／home 5G）</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="h5Kubun"'
       + (sc.h5Kubun ? " checked" : "") + "> home 5G を新規と機種変更で分ける</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="hikariApply"'
+      + (sc.hikariApply ? " checked" : "")
+      + "> 光を申込区分で分ける（新規・転用・事業者変更）</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="ocn"'
+      + (sc.ocn ? " checked" : "")
+      + "> プロバイダ OCN インターネット</label>";
+    h += '<label class="check"><input type="checkbox" data-sc-flag="ieOpts"'
+      + (sc.ieOpts ? " checked" : "")
+      + "> 光のオプション（テレビオプション・お電話）</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="accs"'
       + (sc.accs ? " checked" : "") + "> アクセサリ（登録品）</label>";
     h += "</div></div>";
@@ -10522,7 +10655,7 @@
     /* 月の目標。入れた項目だけが実績の「目標と進捗」に出る（管理者だけに見えます）。 */
     var goals = MASTER.statsGoalItems || {};
     var cat = statsCatalog();
-    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "iphone", "tablet", "shitadori:", "device",
+    var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
       "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function gRank(k) {
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
@@ -13799,6 +13932,9 @@
     });
 
     // 端末
+    $("kishuRank").addEventListener("change", function () {
+      state.kishuRank = this.value; recalc();
+    });
     $("tablet").addEventListener("change", function () {
       state.tablet = this.checked; recalc();
     });
@@ -14677,6 +14813,13 @@
          * 入っていない形をそのまま作れるようにするため） */
         itemsRaw: function (pats) {
           return statsDataItems({ active: 0, patterns: pats || [] }, true, null);
+        },
+        /* 保存を小さくしたあと（slim）に、実績で使うものが残っているか。
+         * 実際の保存の道を通す。ここを通さないと、保存に残す処理を
+         * 消しても項目のテストだけ通ってしまう（2026-09-07 に実際そうだった）。 */
+        slimIe: function (ie) {
+          var it = slimSavedItem({ data: { patterns: [{}], ienaka: ie } });
+          return (it.data || {}).ienaka || {};
         },
         // 光・5Gの中身をそのまま渡して項目を拾う（以前の保存の形も作れる）
         itemsRawIe: function (ie) {
