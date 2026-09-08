@@ -191,6 +191,86 @@ function chk(name, cond, extra) {
   chk('⑥ それでも「この端末で入力があった」ことにはならない',
     store.edited === false, 'アプリの都合の変更を入力と数えている');
 
+  /* ---- ⑦ 別端末で次のお客様を始めたら、前のお客様の情報を残さない ----
+   * 氏名と請求内訳は同期されないので、同じお客様ならこの端末の内容を保つ。
+   * お客様の区切り（gen）が進んだときは、全回線で前のお客様の情報を外す。
+   * 内部の判定だけでなく、保存された実データと氏名入力欄の表示を確かめる。 */
+  const customers = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.sync;
+    const L = T.lines;
+    const gen = S.gen();
+    const expected = [];
+    for (let i = 0; i < L.max(); i++) {
+      const personal = {
+        custName: '検証のお客様' + (i + 1),
+        curBill: { lines: [{ n: '検証用の請求項目' + (i + 1), a: 1000 + i }],
+          total: 1000 + i, month: '2026年9月', gen: gen }
+      };
+      expected.push(personal);
+      L.fill(i, Object.assign({ planId: T.std.get().plans[0].id, procType: 'kishu' }, personal));
+    }
+    L.pick(L.max() - 1);
+    function readBack() {
+      const saved = JSON.parse(localStorage.getItem(S.quoteKey()));
+      const namesShown = [];
+      for (let i = 0; i < L.max(); i++) {
+        L.pick(i);
+        namesShown.push(document.getElementById('custName').value);
+      }
+      return { gen: saved.gen, namesShown: namesShown, patterns: saved.patterns.map((pt) => ({
+        custName: pt.custName, curBill: pt.curBill || null, deviceName: pt.deviceName
+      })) };
+    }
+    const same = JSON.parse(S.payload()); // 実際の送信と同じく、氏名・請求内訳は入れない
+    same.patterns.forEach((pt, i) => { pt.deviceName = '同じお客様の機種' + (i + 1); });
+    const oldPayload = JSON.stringify(same);
+    S.applyRemote(oldPayload, false);
+    const sameCustomer = readBack();
+
+    // 古い保存は gen が無い。区切り0の同じお客様として扱い、氏名を消さない。
+    const legacy = JSON.parse(oldPayload);
+    delete legacy.gen;
+    S.applyRemote(JSON.stringify(legacy), false);
+    const legacyCustomer = readBack();
+
+    const next = JSON.parse(S.payload());
+    next.gen = gen + 1;
+    next.patterns.forEach((pt, i) => { pt.deviceName = '次のお客様の機種' + (i + 1); });
+    S.applyRemote(JSON.stringify(next), false);
+    const nextCustomer = readBack();
+
+    // 次のお客様への切り替え後に、古い内容が遅れて届く場合（初回・継続中の両方）。
+    const stale = [true, false].map((first) => {
+      S.applyRemote(oldPayload, first);
+      return readBack();
+    });
+    return { gen: gen, expected: expected, same: sameCustomer, legacy: legacyCustomer,
+      next: nextCustomer, stale: stale };
+  });
+  chk('⑦ gen の無い旧形式の確認は、お客様の区切り0で行っている', customers.gen === 0);
+  customers.expected.forEach((personal, i) => {
+    const line = '回線' + (i + 1);
+    [ ['同じお客様の同期', customers.same], ['gen の無い旧形式の同期', customers.legacy] ]
+      .forEach(([label, result]) => {
+        chk('⑦ ' + label + 'でも' + line + 'の氏名と請求内訳が残る',
+          result.patterns[i].custName === personal.custName
+          && result.namesShown[i] === personal.custName
+          && JSON.stringify(result.patterns[i].curBill) === JSON.stringify(personal.curBill),
+          JSON.stringify(result.patterns[i]) + ' / 入力欄: ' + result.namesShown[i]);
+      });
+    chk('⑦ 別端末で次のお客様を始めると' + line + 'の前の氏名と請求内訳が消える',
+      customers.next.gen === customers.gen + 1
+      && customers.next.patterns[i].custName === '' && customers.next.namesShown[i] === ''
+      && customers.next.patterns[i].curBill === null,
+      JSON.stringify(customers.next.patterns[i]) + ' / 入力欄: ' + customers.next.namesShown[i]);
+  });
+  customers.stale.forEach((result, i) => {
+    chk('⑦ 古いお客様の同期が遅れて届いても次のお客様の内容を変えない（'
+      + (i === 0 ? '初回' : '継続中') + '）',
+    JSON.stringify(result) === JSON.stringify(customers.next), JSON.stringify(result));
+  });
+
   /* ---- ⑨「新しいお客様として始める」のあとに、前の見積もりが戻ってこないか ----
    * 2026-09-06 阪南で発生。新しいお客様として始めると、この端末の見積もりは
    * 空になる。ところがクラウドにはまだ前のお客様の内容が残っているため、

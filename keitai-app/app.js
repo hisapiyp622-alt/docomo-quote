@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.181.0";
+  var APP_VERSION = "1.181.1";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -6213,15 +6213,16 @@
     try {
       var incoming = JSON.parse(d.data);
       if (!incoming || !incoming.patterns) return;
-      /* お客様名・請求内訳は同期しないため、この端末で入力済みの内容を保持する。
-       * 請求内訳は「お客様の区切り（gen）」が同じときだけ付け直す。
+      /* お客様名・請求内訳は同期しないため、「お客様の区切り（gen）」が
+       * 同じときだけ、この端末で入力済みの内容を付け直す。
        * 他端末で入力をクリアして次のお客様を始めたときに、
-       * 前のお客様の請求内訳がこの端末で新しい見積もりに付くのを防ぐ */
+       * 前のお客様の氏名・請求内訳が新しい見積もりに付くのを防ぐ */
+      var sameCustomer = (incoming.gen | 0) === (store.gen | 0);
       for (var i = 0; i < PAT_MAX; i++) {
         var mine = (store.patterns[i] || {}).custName;
         var mineBill = (store.patterns[i] || {}).curBill;
         var pt = incoming.patterns[i] || {};
-        if (!pt.custName && mine) pt.custName = mine;
+        if (!pt.custName && mine && sameCustomer) pt.custName = mine;
         if (!pt.curBill && mineBill && (incoming.gen | 0) === (mineBill.gen | 0)) pt.curBill = mineBill;
         store.patterns[i] = Object.assign(defaultState(), pt);
         migratePattern(store.patterns[i]);
