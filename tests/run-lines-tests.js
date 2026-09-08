@@ -2715,6 +2715,60 @@ function chk(name, cond, extra) {
     /25か月目以降/.test(acc0.paid),
     acc0.paid.split('\n').filter((l) => /か月目/.test(l)).join(' / '));
 
+  /* ---- 59 実績の「全期間」で、確定（自動締め）した月が二重に数えられない（2026-09-08）----
+   * 月を確定すると、その月の数字は確定データに残る。ところが「全期間」では
+   * 生の保存からも同じ月を数えていたため、確定した月ぶんが2倍になっていた。
+   * ・ほかの担当者の保存は消えないので、その人のぶんがまるごと二重
+   * ・早見表の＋−の手修正も二重
+   * ・ポイントは逆に、確定すると静かに消えていた */
+  const stats = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    // 3か月前の日付（先々月以前なので自動で確定される）
+    const d = new Date();
+    d.setMonth(d.getMonth() - 3);
+    const old3 = d.getTime();
+    const dayKey = d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2)
+      + '/' + ('0' + d.getDate()).slice(-2);
+    // 成約1件ぶんの中身（機種変更）を作る
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', visitPurposes: { buy: true } });
+    L.pick(0);
+    const data = { active: 0, patterns: [L.state(0)] };
+    T.stats.addStaff('s2', '担当2');
+    function item(id, sid) {
+      return { id: id, savedAt: old3, name: 'テスト' + id, result: 'won',
+        data: JSON.parse(JSON.stringify(data)), wonData: JSON.parse(JSON.stringify(data)) };
+    }
+    const lists = { s1: [item('a1')], s2: [item('b1')] };
+    T.stats.setLists(lists);
+    // 手修正も1件入れる
+    T.stats.setAdj('s1', dayKey, 'proc:kishu', { prop: 0, won: 1 });
+    const before = T.stats.view('all', 'all');
+    const settled = T.stats.settle();
+    // 確定しても、店舗の保存（ほかの担当ぶん）は残ったまま
+    const after = T.stats.view('all', 'all');
+    function kishu(t) {
+      const m = t.match(/機種変更[^\n]{0,40}/);
+      return m ? m[0] : '（行なし）';
+    }
+    // ポイントの案内文（確定しても静かに消えないか）
+    function pt(t) {
+      const m = t.match(/ポイントの付く成約がまだありません/);
+      return m ? 'なし' : 'あり';
+    }
+    return { before: kishu(before), after: kishu(after), settled: settled,
+      snaps: Object.keys(T.stats.snaps()), ptBefore: pt(before), ptAfter: pt(after) };
+  });
+  chk('59 確定する前後で、全期間の成約数が変わらない',
+    stats.before === stats.after,
+    '確定前: ' + stats.before + '  /  確定後: ' + stats.after);
+  chk('59 確定そのものは行われている',
+    stats.settled === true && stats.snaps.length > 0, JSON.stringify(stats.snaps));
+  chk('59 確定してもポイントの案内が変わらない',
+    stats.ptBefore === stats.ptAfter,
+    '確定前: ' + stats.ptBefore + ' / 確定後: ' + stats.ptAfter);
+
   await browser.close();
   srv.close();
 
