@@ -13191,8 +13191,12 @@
         /* 頭金・23回分の総額は、その機種の条件として入れ直す。
          * 端末マスタが空のときは既定に戻す（前に選んだ機種の頭金が
          * そのまま残ると、別の機種の金額として出てしまうため）。 */
+        /* 頭金の初期値を入れるのは新規契約・機種変更だけ（autoAtamaProc）。
+         * MNPはSIMのみ・頭金なしのご案内が多いので基本なし（2026-07-30 安藤さん）。
+         * ここだけ事務手数料の判定（autoFeeProc・MNPを含む）を使っていたため、
+         * MNPで機種を選ぶと店頭でお支払いいただく額が勝手に増えていた（2026-09-08）。 */
         state.atamakin = (typeof d.atamakin === "number") ? num(d.atamakin)
-          : (autoFeeProc(state.procType) ? num(MASTER.fees.atamakin_default) : 0);
+          : (autoAtamaProc(state.procType) ? num(MASTER.fees.atamakin_default) : 0);
         $("atamakin").value = state.atamakin || "";
         var k23 = devKaedoki23(d, state.procType);
         state.kaedoki23 = (k23 === null) ? 0 : k23;
@@ -15368,7 +15372,7 @@
       state.staffName = keep.staffName;
       state.shopTel = keep.shopTel;
       state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
-      state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
+      state.atamakin = autoAtamaProc(state.procType) ? MASTER.fees.atamakin_default : 0;
       renderPatternTabs();
       syncFormFromState();
       recalc();
@@ -16484,7 +16488,8 @@
   loadState();
   if (!state.jimuFee && autoFeeProc(state.procType) && !localStorage.getItem(quoteKey())) {
     state.jimuFee = jimuFeeFor(state.procType);
-    state.atamakin = MASTER.fees.atamakin_default;
+    // 頭金の初期値は新規契約・機種変更だけ（MNPは基本なし・2026-07-30 安藤さん）
+    if (autoAtamaProc(state.procType)) state.atamakin = MASTER.fees.atamakin_default;
   }
   /* 成約・見送りは「⋯」を押したときだけ出す。
    * お客様に画面を見せながら操作するため、常時「成約」「見送り」の文字が

@@ -184,6 +184,40 @@ function chk(name, cond, extra) {
   chk('⑧ 取り込んだ機種に頭金3,300円が入っている',
     sheet && sheet.atamakin === 3300, JSON.stringify(sheet));
 
+  /* ---- ⑨ のりかえ（MNP）で機種を選んでも、頭金の初期値が勝手に入らない
+   *      （MNPはSIMのみ・頭金なしのご案内が多いので基本なし・2026-07-30 安藤さん）---- */
+  const atama = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const m = T.std.get();
+    m.fees.atamakin_default = 11000;
+    T.std.set(m);
+    // 頭金の登録が無い機種を用意する
+    T.devmaster.apply('機種名,本体価格\nテスト端末A,150000');
+    const out = {};
+    ['mnp', 'kishu', 'shinki'].forEach((proc) => {
+      T.lines.clearAll();
+      T.lines.pick(0);
+      T.lines.fill(0, { procType: proc, payMethod: 'bunkatsu36' });
+      T.lines.pick(0);
+      const sel = document.getElementById('deviceSelect');
+      const opt = Array.prototype.filter.call(sel.options, (o) => /テスト端末A/.test(o.textContent))[0];
+      sel.value = opt ? opt.value : '';
+      sel.dispatchEvent(new Event('change'));
+      out[proc] = { atama: document.getElementById('atamakin').value,
+        sheet: T.saved.sheetText() };
+    });
+    return out;
+  });
+  chk('⑨ MNPで機種を選んでも、頭金の初期値（11,000円）が入らない',
+    !Number(atama.mnp.atama), 'atamakin=' + atama.mnp.atama);
+  chk('⑨ MNPの見積書に「店頭お支払い 11,000円」と出ない',
+    atama.mnp.sheet.indexOf('11,000') < 0,
+    atama.mnp.sheet.split('\n').filter((l) => /11,000/.test(l)).join(' / '));
+  chk('⑨ 機種変更ではこれまでどおり頭金の初期値が入る',
+    Number(atama.kishu.atama) === 11000, 'atamakin=' + atama.kishu.atama);
+  chk('⑨ 新規契約でもこれまでどおり入る',
+    Number(atama.shinki.atama) === 11000, 'atamakin=' + atama.shinki.atama);
+
   await browser.close();
   srv.close();
 
