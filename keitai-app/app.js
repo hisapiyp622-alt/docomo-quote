@@ -10830,6 +10830,10 @@
         }
         h += row("ルーターレンタル", rrText);
       }
+      /* 10ギガでお買い上げの無線ルーター。申込ページのQRが無いプロバイダ
+       * （GMOとくとくBB・andline）でも、必ず1行として出す（2026-09-08）。 */
+      var r10gT = KQ_IENAKA.router10gText();
+      if (r10gT) h += row("無線ルーター（10ギガ・お買い上げ）", "<b>" + esc(r10gT) + "</b>");
     } else if (state.todoHikari) {
       // 手続き内容で光にチェックはあるが、「光・5G」の入力がまだ無いとき
       h += row("お申し込み", '<b style="color:var(--red)">光申し込み</b>　※「光・5G」の入力はありません');

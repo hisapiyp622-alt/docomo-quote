@@ -2303,6 +2303,18 @@
     isHikari: isHikari,
     // プロバイダを選べる商材か（ahamo光・タイプC・home 5G は選べない）
     hasProvider: hasProvider,
+    /* 10ギガでお買い上げいただく無線ルーター。買っていないときは空を返す。
+     * これまでは申込ページのQRでしか出ていなかったので、QRの無いプロバイダ
+     * （GMOとくとくBB・andline）だと引き継ぎシートに1行も出なかった（2026-09-08）。 */
+    router10gText: function () {
+      if (!canBuy10gRouter() || !state.router10g || !(num(state.router10gPrice) > 0)) return "";
+      var n = router10gSplitN();
+      var t = n > 0
+        ? yen(Math.floor(num(state.router10gPrice) / n)) + "/月 × " + n + "回（総額 "
+          + yen(num(state.router10gPrice)) + "）"
+        : yen(num(state.router10gPrice)) + "（一括・初期費用）";
+      return t;
+    },
     // いまの商材で実際に選ばれているオプションか（商材を変えると false になる）
     optOn: optOn,
     // 表に出してよいプロバイダ（選べない商材のときは空）

@@ -2660,6 +2660,35 @@ function chk(name, cond, extra) {
   chk('56 お客様の見積書も、もとの770円に戻っている',
     /770円/.test(swap.line) && !/880円/.test(swap.line), swap.line);
 
+  /* ---- 57 10ギガでお買い上げの無線ルーターが、必ず引き継ぎシートに出る（2026-09-08）----
+   * これまでは申込ページのQRでしか出ていなかったので、QRの無いプロバイダ
+   * （GMOとくとくBB・andline）だとシートに1行も出ず、登録の担当者が気づけなかった */
+  const r10 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    const out = {};
+    ['@nifty', 'GMOとくとくBB', 'andline'].forEach((pv) => {
+      L.clearAll(); L.pick(0);
+      S.ieOn('hikari10g', { provider: pv, providerType: 'shinki',
+        router10g: true, router10gPrice: 20064, router10gPay: 'b48' });
+      out[pv] = S.staffText();
+    });
+    // 買っていないときは出さない
+    L.clearAll(); L.pick(0);
+    S.ieOn('hikari10g', { provider: '@nifty', router10g: false, router10gPrice: 0 });
+    out.none = S.staffText();
+    return out;
+  });
+  ['@nifty', 'GMOとくとくBB', 'andline'].forEach((pv) => {
+    chk('57 ' + pv + ' でも、10ギガのルーター購入がシートに出る',
+      /無線ルーター（10ギガ・お買い上げ）/.test(r10[pv]) && /20,064/.test(r10[pv]),
+      r10[pv].split('\n').filter((l) => /ルーター/.test(l)).join(' / ') || '（1行も出ていません）');
+  });
+  chk('57 買っていないときは、余計な行を出さない',
+    !/無線ルーター（10ギガ・お買い上げ）/.test(r10.none),
+    r10.none.split('\n').filter((l) => /ルーター/.test(l)).join(' / '));
+
   await browser.close();
   srv.close();
 
