@@ -13688,6 +13688,9 @@
       }
     }, true);
   });
+  /* 長押しで何がつかまれたか（検査用）。並べ替えモードのときだけ書き込まれる */
+  var ARR_LAST = { kind: "", cls: "" };
+  function ARR_TEST_LAST() { return { kind: ARR_LAST.kind, cls: ARR_LAST.cls }; }
   function arrCancelHold() { if (ARR.timer) { clearTimeout(ARR.timer); ARR.timer = null; } }
   function arrBegin(kind, el, x, y) {
     var r = el.getBoundingClientRect();
@@ -13837,6 +13840,7 @@
       if (cat) { kind = "cat"; el = cat; }
       else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acc") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
       else if (card && /\bc[1-9]\b/.test(card.className)) { kind = "card"; el = card; }
+      ARR_LAST = { kind: kind, cls: el ? (el.className || "") : "" };   // 検査用
       if (!el) return;
       arrCancelHold();
       var x = e.clientX, y = e.clientY;
@@ -16496,6 +16500,21 @@
           var grid = el.nextElementSibling;
           return grid ? Array.prototype.map.call(grid.querySelectorAll(".tile .t-name"),
             function (e) { return (e.textContent || "").trim(); }) : [];
+        },
+        /* 並べ替えモードで、実際にその場所を長押ししたとき何がつかまれるか。
+         * 画面の pointerdown をそのまま通して、つかまれた要素を返す。 */
+        arrGrab: function (sel) {
+          enterArrange();
+          renderAccessoryTiles(); renderOptionList(); renderFeeItemList();
+          var t = document.querySelector(sel);
+          if (!t) { exitArrange(); return { found: false }; }
+          var r = t.getBoundingClientRect();
+          var ev = new PointerEvent("pointerdown", { bubbles: true, cancelable: true,
+            pointerType: "touch", clientX: r.left + 5, clientY: r.top + 5, button: 0 });
+          t.dispatchEvent(ev);
+          var got = ARR_TEST_LAST();
+          exitArrange();
+          return { found: true, kind: got.kind, cls: got.cls };
         },
         // ⑥アクセサリのタイルが「並べ替え」で掴めるか（実際の判定を通す）
         accDraggable: function () {

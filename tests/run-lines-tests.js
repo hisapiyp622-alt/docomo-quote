@@ -2841,6 +2841,31 @@ function chk(name, cond, extra) {
   chk('63 同じ店舗のままなら、IDは変えない（余計な受け取り直しをしない）',
     sw.c.skipsOwn === true, JSON.stringify(sw.c));
 
+  /* ---- 64 並べ替えモードで、長押ししたものがそのまま掴める（2026-09-08）----
+   * ⑥アクセサリのタイルを長押ししたときに、タイルではなくカードごと動くと
+   * ①〜⑨の並びが振り直されてしまう。実際の長押し（pointerdown）を通して見る */
+  const grab = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    m.accessories = [{ id: 'acX', name: 'テストケース', price: 3300 }];
+    T.std.set(m);
+    return {
+      acc: L.arrGrab('#accTileList .tile'),
+      opt: L.arrGrab('#optionList .tile'),
+      fee: L.arrGrab('#feeItemList .tile'),
+      card: L.arrGrab('#tab-quote .card.c6 h2')
+    };
+  });
+  chk('64 ⑥アクセサリのタイルは、タイルとして掴める（カードごと動かない）',
+    grab.acc.found && grab.acc.kind === 'tile', JSON.stringify(grab.acc));
+  chk('64 ④オプションのタイルも、タイルとして掴める',
+    grab.opt.found && grab.opt.kind === 'tile', JSON.stringify(grab.opt));
+  chk('64 ⑦初期費用のタイルも、タイルとして掴める',
+    grab.fee.found && grab.fee.kind === 'tile', JSON.stringify(grab.fee));
+  chk('64 カードの見出しを長押しすれば、これまでどおりカードが掴める',
+    grab.card.found && grab.card.kind === 'card', JSON.stringify(grab.card));
+
   await browser.close();
   srv.close();
 
