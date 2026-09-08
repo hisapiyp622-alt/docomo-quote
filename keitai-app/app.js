@@ -7864,10 +7864,23 @@
     var picked = state.todoGasDiscount || {};
     return gasDiscountList().filter(function (d) { return picked[d.id]; });
   }
-  function gasDiscountRate() {
+  function gasDiscountRaw() {
     var r = 0;
     gasDiscountPicked().forEach(function (d) { r += d.rate; });
+    return r;
+  }
+  function gasDiscountRate() {
+    var r = gasDiscountRaw();
     return GAS_DISC_CAPPED[state.todoGasType] ? Math.min(r, 9) : r;
+  }
+  /* 「最大3つ・9%まで」の上限に当たっているか。
+   * 当たっているときは、並んでいる割引率の足し算と合計が合わなくなるので、
+   * 画面と引き継ぎシートの両方に同じ断り書きを出す（2026-09-08）。 */
+  function gasDiscountOver() {
+    if (!GAS_DISC_CAPPED[state.todoGasType]) return "";
+    var picks = gasDiscountPicked(), raw = gasDiscountRaw();
+    if (picks.length <= 3 && raw <= 9) return "";
+    return "最大3つ・9%までのため " + raw + "% から減額";
   }
   // 手続き内容のチェックから手続き種別を決める（複数選択時の優先順）
   var PROC_ORDER = [["mnp", "mnp"], ["shinki", "shinki"], ["kishu", "kishu"], ["plan", "plan_only"]];
@@ -10363,12 +10376,10 @@
         + (picked[d.id] ? " checked" : "") + "> " + esc(d.name) + " " + d.rate + "%</label>";
     });
     var picks = gasDiscountPicked();
-    var raw = 0;
-    picks.forEach(function (d) { raw += d.rate; });
-    var over = capped && (picks.length > 3 || raw > 9);
+    var over = gasDiscountOver();
     if (picks.length) {
       h += '<span class="sub-note">計 ' + gasDiscountRate() + "%"
-        + (over ? "（最大3つ・9%までのため " + raw + "% から減額）" : "") + "　値引きの上限は4,400円/月</span>";
+        + (over ? "（" + over + "）" : "") + "　値引きの上限は4,400円/月</span>";
     } else if (capped) {
       h += '<span class="sub-note">割引対象は最大3つ・9%まで</span>';
     }
@@ -10704,15 +10715,26 @@
         var gname = state.todoGasType
           ? (GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA)
           : "";
-        if (gname && state.todoGasEco && gasEcoNeeded()) {
-          gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
+        /* 区分（スタンダード／エコジョーズ）が要るメニューなのに選ばれていないときは、
+         * 黙って消さずに「未選択」と出す。単位料金が変わるため、
+         * 登録の担当者が気づけないと違う料金でお申し込みになる（2026-09-08）。 */
+        var gEcoMissing = false;
+        if (gname && gasEcoNeeded()) {
+          if (state.todoGasEco) gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
+          else gEcoMissing = true;
         }
         h += row("ガス　プラン", gname ? "<b>" + esc(gname) + "</b>" : "<b>未選択</b>");
+        if (gEcoMissing) {
+          h += row("ガス　区分", '<b style="color:var(--red)">未選択</b>'
+            + "　※ スタンダードプランかエコジョーズプランかで単位料金が変わります");
+        }
         var gd2 = gasDiscountPicked();
         if (gd2.length) {
           h += row("ガス　割引オプション", "<b>" + gd2.map(function (d) {
             return esc(d.name) + " " + d.rate + "%";
-          }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
+          }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%"
+            + (gasDiscountOver() ? "（" + esc(gasDiscountOver()) + "）" : "")
+            + "（上限4,400円/月）");
         }
         var gc = energyPicked("gas");
         if (gc) {

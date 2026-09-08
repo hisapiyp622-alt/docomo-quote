@@ -2551,6 +2551,47 @@ function chk(name, cond, extra) {
     /スカパー申込フォーム/.test(qr.back),
     qr.back.split('\n').filter((l) => /スカパー/.test(l)).join(' / ') || '（出ていません）');
 
+  /* ---- 54 引き継ぎシートのガスの書き方（2026-09-08）----
+   * ・割引を4つ選ぶと画面は「最大3つ・9%までのため 12% から減額」と断るのに、
+   *   シートは「合計 9%」とだけ出て、並んだ割引率の足し算と合わなかった
+   * ・区分（スタンダード／エコジョーズ）を選び忘れても、シートには何も出なかった */
+  const gas = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'smart',
+      todoGasDiscount: { yukabath: true, solar: true, battery: true, kaitori: true } });
+    L.pick(0);
+    const many = S.staffText();
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'smart', todoGasDiscount: { solar: true } });
+    L.pick(0);
+    const few = S.staffText();
+    // 区分が要るメニュー（あっためトク）で、区分を選ばない
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'attame', todoGasEco: '' });
+    L.pick(0);
+    const noEco = S.staffText();
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'attame', todoGasEco: 'eco' });
+    L.pick(0);
+    const withEco = S.staffText();
+    return { many: many, few: few, noEco: noEco, withEco: withEco };
+  });
+  chk('54 割引を4つ選んだとき、シートにも「減額」の断りが出る',
+    /減額/.test(gas.many),
+    gas.many.split('\n').filter((l) => /割引|合計/.test(l)).join(' / '));
+  chk('54 上限に当たっていないときは、余計な断りを出さない',
+    !/減額/.test(gas.few),
+    gas.few.split('\n').filter((l) => /割引|合計/.test(l)).join(' / '));
+  chk('54 ガスの区分を選び忘れたら、シートに「未選択」と出る',
+    /区分/.test(gas.noEco) && /未選択/.test(gas.noEco),
+    gas.noEco.split('\n').filter((l) => /ガス/.test(l)).join(' / '));
+  chk('54 区分を選んであるときは、プラン名に続けて出る（余計な行は出さない）',
+    /エコジョーズプラン/.test(gas.withEco) && !/ガス　区分/.test(gas.withEco),
+    gas.withEco.split('\n').filter((l) => /ガス/.test(l)).join(' / '));
+
   await browser.close();
   srv.close();
 
