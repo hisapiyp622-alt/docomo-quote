@@ -333,19 +333,35 @@ function chk(name, cond, extra) {
     // 予告の付いたオプションを選ぶ／外す で、見積書に入る文が変わるか
     S.pick('option', 'smart_hosho', false); S.redraw();
     const off = S.notices();
+    /* 内部の値（notices）だけでなく、**お客様にお渡しする紙の文字**でも見る。
+     * 2026-09-08 まで、この一文は光の別紙にしか入っておらず、光を使わない
+     * お客様の見積書には1行も入っていなかった。それでも notices() だけを
+     * 見ていたテストは通り続けていた。 */
+    const sheetOff = S.sheetHtml();
     S.pick('option', 'smart_hosho', true); S.redraw();
     const on = S.notices();
+    const sheetOn = S.sheetHtml();
     const hint = document.getElementById('reviseHint');
     const hintShown = !!hint && !hint.hidden && /テスト用の改定予告/.test(hint.innerText);
     // 改定の日が来たら、もう予告ではないので出さない
     S.setToday('2026-12-01');
     const after = S.notices();
+    const sheetAfter = S.sheetHtml();
     S.setToday('2026-10-15');
-    return { off: off.length, on: on, hintShown: hintShown, after: after.length };
+    return { off: off.length, on: on, hintShown: hintShown, after: after.length,
+      sheetOff: /テスト用の改定予告/.test(sheetOff),
+      sheetOn: /テスト用の改定予告/.test(sheetOn),
+      sheetOnTitle: /今後の料金改定のお知らせ/.test(sheetOn),
+      sheetAfter: /テスト用の改定予告/.test(sheetAfter) };
   });
   chk('⑫ 選んでいないときは、見積書に予告が入らない', revView.off === 0, String(revView.off));
   chk('⑫ 選ぶと、その一文が見積書に入る',
     revView.on.length === 1 && /テスト用の改定予告/.test(revView.on[0]), JSON.stringify(revView.on));
+  chk('⑫ お客様にお渡しする見積書（紙）にも、その一文が実際に入る',
+    revView.sheetOn === true && revView.sheetOnTitle === true,
+    '本文=' + revView.sheetOn + ' 見出し=' + revView.sheetOnTitle);
+  chk('⑫ 選んでいないときは、紙にも入らない', revView.sheetOff === false, String(revView.sheetOff));
+  chk('⑫ 改定の日が来たら、紙からも消える', revView.sheetAfter === false, String(revView.sheetAfter));
   chk('⑫ 入力画面にも同じ一文が出る', revView.hintShown, String(revView.hintShown));
   chk('⑫ 改定の日が来たら、予告としては出さない', revView.after === 0, String(revView.after));
 

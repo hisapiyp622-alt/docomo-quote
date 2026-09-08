@@ -1979,6 +1979,70 @@ function chk(name, cond, extra) {
       && !/回線数のカウントには含まれます/.test(money[p].off)),
     ['libmo_gogo', 'libmo_nattoku'].map((p) => p + ': ' + (money[p] ? money[p].off : '?')).join(' / '));
 
+  /* ---- ㊸ お客様にお渡しする紙まわり（2026-09-08）----
+   *   #45 3枚組で印刷すると、3枚目（光の別紙）だけ店舗名・担当者・電話番号が違う
+   *   #46 ①〜⑨のカードを並べ替えると、画面のヒントの丸数字が古いまま
+   *   #36 成約の確認画面の回線一覧に、内部名「plan_only」がそのまま出る */
+  const sign = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', devicePrice: 100000,
+      shopName: 'テスト店A', staffName: '山田', shopTel: '06-0000-0000' });
+    T.lines.pick(0);
+    S.ieOn('hikari1g');            // 光を「見積もりに含める」（3枚目が出る条件）
+    S.scope('hikari');
+    const three = S.signs();
+    S.scope('phone');
+    const one = S.signs();
+    return { three: three, one: one };
+  });
+  chk('㊸ 見積書の発行元に、⑨で書き換えた店舗名・担当者・電話番号が出る',
+    sign.one.length > 0 && /テスト店A/.test(sign.one[0]) && /山田/.test(sign.one[0])
+      && /06-0000-0000/.test(sign.one[0]), JSON.stringify(sign.one));
+  chk('㊸ 3枚組にしても、どのページも同じ発行元になる',
+    sign.three.length > 0 && sign.three.every((t) => /テスト店A/.test(t) && /山田/.test(t)),
+    JSON.stringify(sign.three));
+
+  /* 内部の印の数ではなく、**実際に並べ替えて画面の文字が変わるか**で見る。
+   * ④オプションを先頭へ動かすと、④は①になる。説明文の中の「④オプション」も
+   * 「①オプション」に変わっていなければ、別のカードを指してしまう。 */
+  const circ = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const before = S.reorderCards(null);          // 既定の並び
+    const after = S.reorderCards(['c4', 'c1', 'c2', 'c3', 'c5', 'c6', 'c7', 'c8', 'c9']);
+    const back = S.reorderCards(null);            // 元に戻す
+    return { before: before, after: after, back: back };
+  });
+  const hasMaru4Before = circ.before.filter((t) => /④オプション/.test(t));
+  const stillMaru4 = circ.after.filter((t) => /④オプション/.test(t));
+  chk('㊸ 既定の並びでは、説明文が「④オプション」を指している',
+    hasMaru4Before.length > 0, JSON.stringify(circ.before).slice(0, 200));
+  chk('㊸ ④を先頭へ動かすと、説明文の丸数字も「①オプション」に変わる',
+    stillMaru4.length === 0 && circ.after.some((t) => /①オプション/.test(t)),
+    '残った④=' + JSON.stringify(stillMaru4).slice(0, 300));
+  chk('㊸ 並びを戻すと、説明文も元の番号に戻る',
+    circ.back.filter((t) => /④オプション/.test(t)).length === hasMaru4Before.length,
+    JSON.stringify(circ.back).slice(0, 200));
+
+  /* 成約の確認画面の「どの回線を数えるか」の欄に出る文字。
+   * プランを選んでいない（プラン変更だけの）回線では手続き名が出るが、
+   * そこに内部の値「plan_only」がそのまま出ていた。 */
+  const ls = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.saved.ieOn && T.saved.ieOn(null);
+    T.lines.fill(0, { procType: 'plan_only', planChange: true, voice: 'kake' });
+    T.lines.fill(1, { planId: 'max', procType: 'kishu', devicePrice: 100000 });
+    T.lines.pick(0);
+    const a = T.saved.save('回線の名前の検査');
+    return T.saved.wonLineText(a.id);
+  });
+  chk('㊸ 成約の確認画面の回線の欄に、内部名「plan_only」が出ない',
+    ls.length > 0 && ls.indexOf('plan_only') < 0, JSON.stringify(ls).slice(0, 250));
+  chk('㊸ かわりに「プラン変更」と日本語で出る',
+    /プラン変更/.test(ls), JSON.stringify(ls).slice(0, 250));
+
   await browser.close();
   srv.close();
 

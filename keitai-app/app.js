@@ -1205,7 +1205,10 @@
     }
     if (m.deviceName) bits.push(m.deviceName);
     else if (num(m.devicePrice) > 0) bits.push(yen(num(m.devicePrice)) + "の端末");
-    if (!bits.length && m.procType) bits.push(STATS_PROC_NAMES[m.procType] || m.procType);
+    /* STATS_PROC_NAMES の鍵は "plan"、画面の値は "plan_only" なので、
+     * ここで引くと「plan_only」がそのまま出ていた（2026-09-08）。
+     * 画面の値をそのまま日本語にする procName() を使う。 */
+    if (!bits.length && m.procType) bits.push(procName(m.procType));
     return bits.join("／");
   }
 
@@ -3916,6 +3919,33 @@
   function ienakaOn() {
     return typeof KQ_IENAKA !== "undefined" && KQ_IENAKA.isOn();
   }
+  /* お客様にお渡しする紙の下端に出す発行元（店舗名・担当者・電話番号）。
+   * ⑨備考でこの見積もりだけ書き換えられるので、まず state を見て、
+   * 空欄のときだけ店舗の設定で補う。光の別紙・開通の流れが config だけを
+   * 見ていたため、3枚組で印刷すると3枚目だけ店舗名・電話番号が出なかった
+   * （担当者名も違う人になっていた）（2026-09-08）。 */
+  /* 改定予告（5-2）。お客様のお手元に残る紙に書く。
+   * 画面のヒントだけだと、金額が変わったときに「聞いていない」になる。
+   * 2026-09-08 まで、これは光の別紙にしか入っておらず、光を使わないお客様
+   * （＝大多数）の見積書には1行も入っていなかった。入力画面は
+   * 「同じ内容が、お客様にお渡しする見積書にも入ります」と案内していた。 */
+  function reviseNoteHtml() {
+    var revs = reviseNotices(state);
+    if (!revs.length) return "";
+    return '<div class="revise-note"><b>今後の料金改定のお知らせ</b><ul>'
+      + revs.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+      + "</ul></div>";
+  }
+  function sheetSignHtml() {
+    var nm = state.shopName || config.storeName || "";
+    var st = state.staffName || (activeStaff().name || "");
+    var tel = state.shopTel || config.storeTel || "";
+    var sign = [];
+    if (nm) sign.push("<b>" + esc(nm) + "</b>");
+    if (st) sign.push("担当: " + esc(st));
+    if (tel) sign.push("TEL: " + esc(tel));
+    return sign.length ? '<div class="sheet-sign">' + sign.join("　") + "</div>" : "";
+  }
   /* 開通までの流れ（A4・1枚）。お客様へお渡しする説明用の紙 */
   function flowOnlySheet() {
     var today = new Date();
@@ -3924,17 +3954,13 @@
       + (today.getMonth() + 1) + "月" + today.getDate() + '日</span><span></span></div>';
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
     h += KQ_IENAKA.flowSheetHtml();
-    var sign = [];
-    if (config.storeName) sign.push(esc(config.storeName));
-    if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
-    if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
-    if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
+    h += sheetSignHtml();
     h += '<div class="disclaimer">工事日・切替日や所要日数は目安です。お申込み内容・時期・地域により前後します。'
       + "ご不明な点は店頭スタッフへご確認ください。<br>アプリ版 " + APP_VERSION + "</div>";
     return h;
   }
   /* 光だけの見積書（別紙）。中身はイエナカ側が作り、表題と発行元はここで付ける。 */
-  function ienakaOnlySheet(setWari) {
+  function ienakaOnlySheet(setWari, skipRevise) {
     var today = new Date();
     var h = '<h2 class="sheet-title">お見積書（ドコモ光・home 5G）</h2>';
     h += '<div class="sheet-meta"><span>作成日: ' + today.getFullYear() + "年"
@@ -3942,19 +3968,8 @@
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
     h += KQ_IENAKA.sheetHtml(setWari);
     if (state.quoteMemo) h += '<p class="memo">※ ' + esc(state.quoteMemo) + "</p>";
-    var sign = [];
-    if (config.storeName) sign.push(esc(config.storeName));
-    if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
-    if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
-    if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
-    /* 改定予告（5-2）。お客様のお手元に残る紙にも書く。
-     * 画面のヒントだけだと、12月に金額が変わったときに「聞いていない」になる。 */
-    var revs = reviseNotices(state);
-    if (revs.length) {
-      h += '<div class="revise-note"><b>今後の料金改定のお知らせ</b><ul>'
-        + revs.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
-        + "</ul></div>";
-    }
+    h += sheetSignHtml();
+    if (!skipRevise) h += reviseNoteHtml();
 
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "提供エリア・設備状況によりご契約いただけない場合があります。詳細は店頭スタッフへご確認ください。"
@@ -10735,6 +10750,8 @@
     if (state.shopTel) signParts.push("TEL: " + esc(state.shopTel));
     if (signParts.length) h += '<div class="sheet-sign">' + signParts.join("　") + "</div>";
 
+    h += reviseNoteHtml();
+
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。"
       + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
@@ -10745,7 +10762,7 @@
     if (sheetScope === "hikari" && ienakaOn()) {
       h += '<div class="sheet-page3">'
         + '<div class="page2-note no-print">――― 印刷時はここから3ページ目（光の別紙） ―――</div>'
-        + ienakaOnlySheet(r.dSet || 0) + "</div>";
+        + ienakaOnlySheet(r.dSet || 0, true) + "</div>";   // 同じ改定予告は1枚目に出しているので重ねない
     }
 
     $("sheetBody").innerHTML = h;
@@ -10853,7 +10870,7 @@
 
     h += '<div class="plan-sec"><span class="plan-lbl">ご来店の目的・プラスワン</span><div class="sub-checks">'
       + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
-      + "> 「来店目的別」の表を出す（目的ごとの応対数・成約・成約になった内容）</label>"
+      + "> 「ご来店目的別」の表を出す（目的ごとの応対数と、そこから決まった項目の件数）</label>"
       + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
       + "> プラスワン（再掲）</label></div>"
       + '<p class="hint">プラスワンは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
@@ -10968,9 +10985,10 @@
       + '<strong>U39</strong>は、<strong>新規・のりかえ（MNP）</strong>の回線で、手続き内容の'
       + '<strong>「U39（ご利用者が39歳以下）」にチェックしたとき</strong>に数えます'
       + '（チェック欄も、新規・のりかえのときだけ出ます）。<br>'
-      + '<strong>iPhone</strong>・<strong>タブレット総販</strong>・<strong>下取り</strong>は、'
-      + '機種の欄で入れたものを数えます（タブレットと下取りは、そこにある'
-      + '<strong>チェックと選び欄</strong>です）。<strong>お客様の紙には出ません。</strong><br>'
+      + '<strong>iPhone</strong>は機種名から、<strong>タブレット総販</strong>は機種の欄のチェックから数えます。'
+      + '<strong>下取り</strong>は<strong>④オプションの「その他」</strong>にあるタイルで選びます'
+      + '（金額は、これまでどおり「初期費用の追加項目」にマイナスで入れてください）。'
+      + '<strong>お客様の紙には出ません。</strong><br>'
       + '<strong>ハイエンドを分ける</strong>にチェックすると、実績の行が'
       + '「機種ハイエンド（Android）」「機種ハイエンド（iPhone）」の2つになります。'
       + '分け方を変えたときは、<strong>「実績のポイント」の条件も入れ直してください</strong>。</p></div>';
@@ -15330,6 +15348,55 @@
           return { shown: !!(f && !f.hidden),
             text: (f && !f.hidden && t) ? (t.innerText || "").replace(/\s*\n\s*/g, " | ") : "" };
         },
+        /* 3枚組（スマホ＋光の別紙）で印刷したときの、各ページの発行元の行。
+         * ⑨備考で書き換えた店舗名・担当者・電話番号が全ページで揃うことを見る。 */
+        signs: function () {
+          renderSheet();
+          return Array.prototype.map.call(document.querySelectorAll("#tab-sheet .sheet-sign"),
+            function (e) { return (e.textContent || "").trim(); });
+        },
+        // 見積書の出す内容（スマホのみ／スマホ＋光の別紙 など）を切り替える
+        scope: function (v) {
+          var el = document.querySelector('input[name="sheetScope"][value="' + v + '"]');
+          if (el) { el.checked = true; el.dispatchEvent(new Event("change", { bubbles: true })); }
+          renderSheet();
+          return !!el;
+        },
+        /* ①〜⑨のカードの並びを変える（マスタ設定で並べ替えたときと同じ）。
+         * 戻り値は、画面の説明文（丸数字を含むもの）に実際に出ている文字。 */
+        reorderCards: function (order) {
+          MASTER.quoteCardOrder = order && order.length ? order.slice() : null;
+          applyQuoteCardOrder();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#tab-quote .hint, #tab-quote .pat-note"),
+            function (e) { return (e.textContent || "").trim(); })
+            .filter(function (t) { return /[①-⑨]/.test(t); });
+        },
+        // 光・5Gを「見積もりに含める」状態にする（3枚組の紙を作れるようにする）
+        ieOn: function (product) {
+          if (typeof KQ_IENAKA === "undefined") return false;
+          store.ienaka.enabled = true;
+          store.ienaka.product = product || "hikari1g";
+          KQ_IENAKA.syncForm(); KQ_IENAKA.render();
+          recalc();
+          return ienakaOn();
+        },
+        /* 成約の確認画面を開いて、回線の選び欄に出ている文字を読む（開いたまま返す）。
+         * お客様の目に映る文字を見るため、内部の値ではなくここを見る。 */
+        wonLineText: function (id) {
+          var old = window.confirm; window.confirm = function () { return false; };
+          try { setSavedResult(id, "won"); } finally { window.confirm = old; }
+          var e = $("resultDlgLineList");
+          var t = e ? (e.innerText || "") : "";
+          var c = $("resultDlgCancel"); if (c) c.click();
+          return t;
+        },
+        // 見積書の本文（お客様の目に映る文字）
+        sheetText: function () {
+          renderSheet();
+          var e = $("tab-sheet");
+          return e ? e.innerText : "";
+        },
         // 「◯◯ は □□ の対象外です」の1行
         discountOff: function () {
           var e = $("discountOff");
@@ -15791,7 +15858,7 @@
     tpl: { t: "テンプレート", b: "よく使う見積もりの形を3つまで登録して、1タップで呼び出せます。\n・保存: 「現在の内容をテンプレに保存」→ 保存先のボタンをタップ → 名前を付けて保存\n・呼び出し: ボタンをタップ（お客様名と店舗情報は今の内容のまま残ります）\n・<b>削除: ボタンを長押しして、動かさずに離す</b>と出るメニューで「削除」を選びます（PCは右クリックでも出ます）\n・<b>並べ替え: 長押しでつかんだまま、別のボタンの上へ動かして離す</b>と入れ替わります\n・「テンプレート」は担当ごと、「店舗共通」は全担当で共有です" },
     purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします（複数可）。金額には影響しません。\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
     proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
-    c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
+    c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・のりかえ（MNP）・機種変更を選ぶと、⑦の事務手数料が自動で入ります</b>。<b>店頭頭金は新規契約・機種変更のときだけ</b>入ります（MNPはSIMのみ・頭金なしのご案内が多いため、必要なときは手で入れてください）。プラン変更はどちらも入りません。未選択の間も0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
     c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: mini・ahamo・irumo など<b>メールが有料オプションのプランを選んだときだけ</b>タイルが出ます。タップで選び、タイルの中で新規／継続／廃止を選びます。新規・継続は月額に入り、廃止は入りません。標準で込みのプラン（MAX等）ではタイルごと出ません" },
     c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: 券種は頭文字で選びます（R=dカード／G=GOLD／U=GOLD U／P=PLATINUM）。券種で⑧のdカード還元の自動計算も変わります\n・PLATINUM を選ぶと「還元率」の欄が出ます。初年度は20%、2年目以降は前年のショッピングご利用額で10〜20%に変わるので、お客様のカードの率に直してください\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・子育てサポート割引: みんなドコモ割とは重ねられません（重なったときは計算に入れません）。子育てサポート割引とも同時適用できず、片方を選ぶともう片方は外れます\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
     c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定で変えられます（担当者コードの画面から開きます。タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },
