@@ -1487,6 +1487,69 @@ function chk(name, cond, extra) {
     re.usedCurrent === true && re.items.indexOf('plan:poikatsu_max') >= 0,
     String(re.usedCurrent) + ' / ' + JSON.stringify(re.items));
 
+  /* ---- ㉜ 記録済みの見積もりを開いて、別のお客様に直したとき（2026-09-08）----
+   * 「開く」で読んだ記録済みの保存に、次のお客様の内容を書き込んでしまい、
+   * 前のお客様の成約内容がすり替わって、新しいお客様は1件も数えられなかった。 */
+  const ov = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    // お客様A: ドコモMAX・のりかえ → 保存して成約
+    L.fill(0, { planId: 'max', procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const a = S.save('お客様A');
+    S.won(a.id, false);                    // 保存したときの内容で成約
+    // 後日、お客様Aの見積もりを「開く」→ お客様B用に直す
+    S.open(a.id);
+    L.fill(0, { planId: 'poikatsu_max', procType: 'shinki', procTodo: { shinki: true },
+      planChange: true });
+    L.pick(0);
+    const nAfterOpen = S.count();
+    // 見積もり画面の「⋯→成約」を押す
+    const nAfterWon = S.recordWon();
+    const list = S.list();
+    const aItem = list.filter((x) => x.id === a.id)[0] || {};
+    const other = list.filter((x) => x.id !== a.id)[0] || null;
+    return {
+      nAfterOpen, nAfterWon,
+      aPlan: ((((aItem.wonData || aItem.data) || {}).patterns || [{}])[0] || {}).planId,
+      newMade: !!other,
+      newPlan: other ? (((other.wonData || other.data || {}).patterns || [{}])[0] || {}).planId : ''
+    };
+  });
+  chk('㉜ 記録済みを開いて直したときは、新しい1件として増える',
+    ov.nAfterWon === ov.nAfterOpen + 1, ov.nAfterOpen + ' → ' + ov.nAfterWon);
+  chk('㉜ お客様Aの成約内容が、お客様Bの内容にすり替わらない',
+    ov.aPlan === 'max', String(ov.aPlan));
+  chk('㉜ お客様Bはお客様Bの内容で数える',
+    ov.newMade === true && ov.newPlan === 'poikatsu_max',
+    String(ov.newMade) + ' / ' + String(ov.newPlan));
+
+  /* ---- ㉝ 成約を記録したあとに「保存」を押しても、2件に増えない（2026-09-08）---- */
+  const dupSave = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const n0 = S.recordWon();          // 保存せずに「⋯→成約」
+    /* そのあと「保存」を押す（名前は変えない＝ふつうの押し方）。
+     * 名前を変えて保存したときは、別の1件にするのが元からの動き。 */
+    S.save('');
+    const n1 = S.count();
+    const list = S.list();
+    return { n0, n1, result: (list[0] || {}).result, name: (list[0] || {}).name };
+  });
+  chk('㉝ 成約のあとに保存しても、同じお客様が2件にならない',
+    dupSave.n1 === dupSave.n0 && dupSave.n0 === 1,
+    dupSave.n0 + ' → ' + dupSave.n1);
+  chk('㉝ 保存し直しても、成約の印は消えない',
+    dupSave.result === 'won', String(dupSave.result));
+
   await browser.close();
   srv.close();
 

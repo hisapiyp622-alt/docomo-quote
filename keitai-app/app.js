@@ -671,9 +671,7 @@
     if (viewOnlyStop()) return null;
     var r = calc();
     var nm = String(name || "").trim().slice(0, 40);
-    var prev = propSrcId ? savedList.filter(function (x) {
-      return x.id === propSrcId && !x.result && !x.sentTo && !x.slim && !x.noQuote && !x.auto;
-    })[0] : null;
+    var prev = propOwnItem();
     if (prev && (!nm || nm === prev.name)) {
       if (nm) prev.name = nm;
       prev.custName = state.custName || "";
@@ -706,6 +704,7 @@
     renderSaved();
     // いま保存した内容＝この応対の提案。あとで「成約」を押したらここに紐づく
     propSrcId = item.id;
+    propDone = false;
     if (!propSnap) propSnap = JSON.parse(JSON.stringify(item.data));
     persistProp();
     return item;
@@ -727,6 +726,7 @@
     // この応対はこの保存の続き。保存した内容を提案として控える
     propSrcId = id;
     propSnap = JSON.parse(JSON.stringify(it.data));
+    propDone = !!it.result;   // 記録済みを開いたら、書き替えずに新しい1件にする
     persistProp();
     return true;
   }
@@ -1072,27 +1072,42 @@
    * 戻ったりアプリを開き直したりしたときに消えてしまい、画面には同じ見積もりが
    * 出ているのに「別の見積もりです」と言われて、店頭で最後に直した内容を
    * 成約として記録できなかった（2026-09-08 の見直しで判明）。 */
+  /* すでに成約・見送りを記録した保存を「開く」で読んだかどうか。
+   * その状態で内容を別のお客様に直して成約・保存を押すと、前のお客様の
+   * 記録を上書きしてしまうため、別の応対として扱う（2026-09-08 の見直し）。 */
+  var propDone = false;
   function propKey(staffId) { return quoteKey(staffId) + ":prop"; }
   function persistProp() {
     try {
       if (!propSrcId && !propSnap) { localStorage.removeItem(propKey()); return; }
-      lsSet(propKey(), JSON.stringify({ srcId: propSrcId, snap: propSnap }));
+      lsSet(propKey(), JSON.stringify({ srcId: propSrcId, snap: propSnap, done: propDone }));
     } catch (e) {}
   }
   function loadProp() {
-    propSnap = null; propSrcId = null;
+    propSnap = null; propSrcId = null; propDone = false;
     try {
       var o = JSON.parse(localStorage.getItem(propKey()) || "null");
       if (!o) return;
       propSrcId = o.srcId || null;
       propSnap = o.snap || null;
+      propDone = !!o.done;
     } catch (e) {}
+  }
+  /* この応対が「自分で作った記録」として書き替えてよい保存かどうか。
+   * 記録済みのものを開いただけのときは、書き替えずに新しい1件にする。 */
+  function propOwnItem() {
+    if (!propSrcId || propDone) return null;
+    return savedList.filter(function (x) {
+      return x.id === propSrcId && !x.sentTo && !x.slim && !x.noQuote && !x.auto;
+    })[0] || null;
   }
   function markPropOpened() {
     // 見積書を最初に開いたときだけ控える（開き直しでは上書きしない）
     if (!propSnap) { propSnap = snapStore(); persistProp(); }
   }
-  function resetPropTracking() { propSnap = null; propSrcId = null; persistProp(); }
+  function resetPropTracking() {
+    propSnap = null; propSrcId = null; propDone = false; persistProp();
+  }
   /* 成約・見送りを記録するときの確認。担当が2名以上いる店舗では
    * 「決めた担当」を選べる（コンデザが提案を作り、担当者が成約を決める運用）。
    * 既定はログイン中の担当なので、1人で完結する運用では今までどおり。 */
@@ -1302,7 +1317,7 @@
   }
   function recordOutcome2(result, byStaff, wonAdj, lines) {
     var label = result === "won" ? "成約" : "見送り";
-    var src = propSrcId ? savedList.filter(function (x) { return x.id === propSrcId; })[0] : null;
+    var src = propOwnItem();
     var it;
     if (src) {
       it = src;
@@ -1341,6 +1356,7 @@
     /* 同じ応対でもう一度押したら「記録し直し」になるように紐づけたままにする。
      * 次のお客様は「入力をクリア」か保存の読み込みで区切られる */
     propSrcId = it.id;
+    propDone = false;   // ここから先は、この応対が作った記録として押し直せる
     if (!propSnap) propSnap = JSON.parse(JSON.stringify(it.data));
     persistProp();
     var msg = $("recOutcomeMsg");
@@ -14976,6 +14992,16 @@
         },
         // いま画面の見積もりが、どの保存の続きか
         srcId: function () { return propSrcId; },
+        // 保存済みの見積もりを「開く」（本物の道）
+        open: function (id) { return loadSavedQuote(id); },
+        // 見積もり画面の「⋯→成約」を押す（保存を選ばずに記録する道）
+        recordWon: function () {
+          recordOutcome("won");
+          var b = $("resultDlgOk");
+          if (b) b.click();
+          return savedList.length;
+        },
+        count: function () { return savedList.length; },
         /* アプリを開き直したときと同じことをする（画面の中の覚えを捨てて、
          * 端末に残したものから読み直す）。 */
         reopen: function () {
