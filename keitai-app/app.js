@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.180.0";
+  var APP_VERSION = "1.181.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -3056,24 +3056,50 @@
         vpItemBag[vk][k] = (vpItemBag[vk][k] || 0) + bv[vk];
       });
     });
+    /* 獲得した項目は、文字を並べるのではなく**項目ごとの列**で出す
+     * （店舗の指定・2026-09-08）。成約・成約率の列は使わないので出さない。 */
     var vpRows = [];
+    var vpItemKeys = [];
     if (statsCfg().visit && vpKeys.length) {
-      h += "<h3>ご来店の目的</h3>";
-      h += '<div class="stats-scroll"><table class="stats-table"><tr><th>目的</th><th>応対</th>'
-        + "<th>成約</th><th>成約率</th><th>成約した内容</th></tr>";
+      // 実際に立っている項目だけを列にする（0だけの列は出さない）
+      var seenK = {};
       vpKeys.forEach(function (k) {
-        var pr = vpAgg[k].prop, wn = vpAgg[k].won;
-        var rate = pr ? Math.round(wn * 100 / pr) + "%" : "－";
-        var txt = dItemText(vpItemBag[k]);
-        vpRows.push({ name: vName(k), prop: pr, won: wn, rate: rate, items: txt });
-        h += "<tr><td>" + esc(vName(k)) + "</td><td>" + pr + "</td><td>" + wn + "</td>"
-          + "<td>" + rate + "</td>"
-          + '<td class="day-items">' + (txt ? esc(txt) : "－") + "</td></tr>";
+        Object.keys(vpItemBag[k] || {}).forEach(function (ik) { seenK[ik] = true; });
       });
+      vpItemKeys = Object.keys(seenK).sort(function (x, y) {
+        return (rank(x) - rank(y)) || (dItemName(x) < dItemName(y) ? -1 : 1);
+      });
+      h += "<h3>ご来店目的別</h3>";
+      h += '<div class="stats-scroll"><table class="stats-table"><tr><th>目的</th><th>応対</th>'
+        + vpItemKeys.map(function (ik) { return "<th>" + esc(dItemName(ik)) + "</th>"; }).join("")
+        + "</tr>";
+      vpKeys.forEach(function (k) {
+        var pr = vpAgg[k].prop;
+        var bag = vpItemBag[k] || {};
+        vpRows.push({ name: vName(k), prop: pr,
+          items: vpItemKeys.map(function (ik) { return bag[ik] || 0; }) });
+        h += "<tr><td>" + esc(vName(k)) + "</td><td>" + pr + "</td>"
+          + vpItemKeys.map(function (ik) {
+              return "<td>" + (bag[ik] ? bag[ik] : "－") + "</td>";
+            }).join("")
+          + "</tr>";
+      });
+      // 縦の合計（項目ごとに、どの目的から何件決まったかの合計）
+      if (vpItemKeys.length) {
+        var vTot = 0;
+        vpKeys.forEach(function (k) { vTot += vpAgg[k].prop; });
+        h += '<tr class="total"><td><b>合計</b></td><td><b>' + vTot + "</b></td>"
+          + vpItemKeys.map(function (ik) {
+              var t = 0;
+              vpKeys.forEach(function (k) { t += (vpItemBag[k] || {})[ik] || 0; });
+              return "<td><b>" + (t || "－") + "</b></td>";
+            }).join("") + "</tr>";
+      }
       h += "</table></div>";
       h += '<p class="hint"><strong>応対</strong>はその目的で来店されたお客様の数、'
-        + "<strong>成約</strong>はそのうち成約になった数です。"
-        + "目的を2つ以上選んだ応対は、それぞれの行に数えます。</p>";
+        + "そのとなりは<strong>そこから決まった項目の件数</strong>です。"
+        + "目的を2つ以上選んだ応対は、それぞれの行に数えます"
+        + "（そのため、合計は応対の数と一致しないことがあります）。</p>";
     }
 
     /* ---- 日別（折りたたみ）----
@@ -3180,7 +3206,7 @@
     statsLast = {
       month: mFil, staffName: sName, admin: viewAll,
       items: items, iKeys: iKeys, vCols: vCols, vName: vName,
-      visits: vpRows,
+      visits: vpRows, visitCols: vpItemKeys, visitColName: dItemName,
       days: dayRows,
       staff: config.staff.filter(function (s) { return sFil === "all" || s.id === sFil; }).map(function (s) {
         var a5 = staffAgg[s.id] || { prop: 0, won: 0, undone: 0 };
@@ -3314,10 +3340,12 @@
 
     if (L.visits && L.visits.length) {
       lines.push("");
-      lines.push("ご来店の目的");
-      lines.push("目的,応対,成約,成約率,成約した内容");
+      lines.push("ご来店目的別");
+      lines.push(["目的", "応対"].concat((L.visitCols || []).map(function (ik) {
+        return L.visitColName ? L.visitColName(ik) : ik;
+      })).map(csvCell).join(","));
       L.visits.forEach(function (v2) {
-        lines.push([v2.name, v2.prop, v2.won, v2.rate, v2.items || ""].map(csvCell).join(","));
+        lines.push([v2.name, v2.prop].concat(v2.items || []).map(csvCell).join(","));
       });
     }
     if (L.days && L.days.length) {
@@ -15069,6 +15097,35 @@
           });
           persistSaved(); renderSaved();
           return savedList[0].id;
+        },
+        /* 実績の画面を実際に描いて、「ご来店目的別」の表を読む。
+         * 内部の値ではなく、画面に出ている文字と表の形を見る。 */
+        visitTable: function () {
+          statsLists = null;
+          renderStats(true);
+          var body = $("tab-saved") || document.body;
+          var heads = Array.prototype.filter.call(
+            body.querySelectorAll("h3"), function (el) { return /ご来店目的/.test(el.textContent); });
+          if (!heads.length) {
+            /* 見出しが変わっていたら、いま出ている見出しを返す（何が出ているか
+             * 分かるように）。cols・rows は必ず配列で返す。 */
+            var all = Array.prototype.map.call(body.querySelectorAll("h3"),
+              function (el) { return (el.textContent || "").trim(); });
+            return { found: false, title: all.join(" / "), cols: [], rows: [] };
+          }
+          var tbl = heads[0].nextElementSibling
+            && heads[0].nextElementSibling.querySelector("table");
+          if (!tbl) return { found: true, title: heads[0].textContent, cols: [], rows: [] };
+          return {
+            found: true,
+            title: heads[0].textContent,
+            cols: Array.prototype.map.call(tbl.querySelectorAll("tr:first-child th"),
+              function (el) { return (el.textContent || "").trim(); }),
+            rows: Array.prototype.map.call(tbl.querySelectorAll("tr"), function (tr) {
+              return Array.prototype.map.call(tr.querySelectorAll("td"),
+                function (td) { return (td.textContent || "").trim(); });
+            }).filter(function (r) { return r.length; })
+          };
         },
         // 実績のポイントの合計（保存した記録から数える・実績画面と同じ道）
         cxTotalSaved: function () {
