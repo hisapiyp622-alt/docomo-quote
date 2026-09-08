@@ -15280,6 +15280,46 @@
           return savedList.length;
         },
         count: function () { return savedList.length; },
+        // 端末に残っている「どの保存の続きか」の記録（本物の鍵で読む）
+        propStored: function () {
+          try { return localStorage.getItem(propKey()); } catch (e) { return null; }
+        },
+        /* 成約の確認画面を開いたまま、他の端末からの同期が届いた状況を作る。
+         * watchSaved と同じく savedList を**配列ごと**入れ替えてから「記録する」を押す。 */
+        wonWithSync: function (id) {
+          var old = window.confirm;
+          window.confirm = function () { return false; };   // 「いま画面の内容で」は使わない
+          try { setSavedResult(id, "won"); } finally { window.confirm = old; }
+          // ここで他の端末の同期が届いた（中身は同じだが、別のオブジェクトになる）
+          savedList = JSON.parse(JSON.stringify(savedList));
+          var b = $("resultDlgOk");
+          if (b) b.click();
+          var it = savedList.filter(function (x) { return x.id === id; })[0] || {};
+          return { result: it.result || "", count: savedList.length };
+        },
+        // 保存の一覧の大きさ（クラウドへ送る形の文字数）と、1件あたりの大きさ
+        sizes: function () {
+          return { total: savedSendLen(savedList), limit: SAVED_SEND_LIMIT,
+            one: savedList.length ? savedSendLen([savedList[0]]) : 0,
+            slim: savedList.filter(function (x) { return x.slim; }).length };
+        },
+        // 同じ中身の保存をたくさん作る（容量の頭打ちを見るため）
+        bulk: function (n, patch) {
+          for (var i = 0; i < n; i++) {
+            for (var j = 0; j < PAT_MAX; j++) {
+              store.patterns[j] = Object.assign(defaultState(), patch || {});
+              migratePattern(store.patterns[j]);
+            }
+            store.active = 0; state = store.patterns[0];
+            saveQuote("検査用" + i);
+          }
+          return savedList.length;
+        },
+        // 見積もり画面のU15・U39のチェック欄が出ているか
+        u15u39: function () {
+          var a = $("u15Field"), b = $("u39Field");
+          return { u15: !!(a && !a.hidden), u39: !!(b && !b.hidden) };
+        },
         /* アプリを開き直したときと同じことをする（画面の中の覚えを捨てて、
          * 端末に残したものから読み直す）。 */
         reopen: function () {

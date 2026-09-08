@@ -307,6 +307,68 @@ function chk(name, cond, extra) {
   chk('⑨ 前のお客様の内容は「保存」タブの自動控えに残っている',
     fresh.autoNames.length > 0, JSON.stringify(fresh.autoNames));
 
+  /* ---- ⑩ 2026-09-08 の全体デバッグ ----
+   *   #2  他の端末が「次のお客様」を始めた内容が届いても、この端末が覚えている
+   *       「どの保存の続きか」が切れず、前のお客様の保存が中身だけ入れ替わっていた
+   *   #29 2台を同時に開いていると、触っていない側に「自動控え」が次々でき、
+   *       実績の応対（提案）件数が水増しされていた */
+  const cut = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.sync;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    T.saved.clear();
+    // お客様Aの見積もりを作って保存（＝この保存の続き、という覚えが付く）
+    L.fill(0, { planId: plan, procType: 'kishu', deviceName: 'お客様Aの機種' });
+    L.pick(0);
+    const a = T.saved.save('お客様A');
+    const srcBefore = T.saved.srcId();
+    // 他の端末が「次のお客様」を始めた内容（お客様の区切りが1つ進んでいる）
+    const other = JSON.parse(S.payload());
+    other.gen = (other.gen | 0) + 1;
+    other.patterns[0].deviceName = 'お客様Bの機種';
+    S.applyRemote(JSON.stringify(other));
+    const srcAfter = T.saved.srcId();
+    // この状態で保存を押したら、お客様Aの保存が書き替わらず新しい1件になるはず
+    const b = T.saved.save('お客様B');
+    const aStill = (T.saved.list ? T.saved.list() : []).filter((x) => x.id === a.id)[0] || null;
+    return {
+      srcBefore: srcBefore, srcAfter: srcAfter,
+      newItem: b && b.id !== a.id,
+      aKept: !!(aStill && JSON.stringify(aStill.data).indexOf('お客様Aの機種') >= 0),
+      count: T.saved.count()
+    };
+  });
+  chk('⑩ 保存した直後は「どの保存の続きか」を覚えている', !!cut.srcBefore, String(cut.srcBefore));
+  chk('⑩ 他の端末が次のお客様を始めた内容が届いたら、その覚えを切る',
+    cut.srcAfter === null, String(cut.srcAfter));
+  chk('⑩ そのあとの保存は新しい1件になる', cut.newItem === true && cut.count === 2,
+    '件数=' + cut.count);
+  chk('⑩ お客様Aの提案内容が書き替わらずに残っている', cut.aKept === true);
+
+  const noStash = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.sync;
+    const L = T.lines;
+    const plan = T.std.get().plans[0].id;
+    T.saved.clear();
+    // この端末は「見ているだけ」。同期で受け取った内容がそのまま入っている
+    L.fill(0, { planId: plan, procType: 'kishu', deviceName: 'もう一方の端末の入力' });
+    L.pick(0);
+    S.markSig();                       // ここまでが「最後に同期した中身」
+    // もう一方の端末が入力を続け、更新が5回届く
+    for (let i = 0; i < 5; i++) {
+      const o = JSON.parse(S.payload());
+      o.patterns[0].deviceName = 'もう一方の端末の入力' + i;
+      S.applyRemote(JSON.stringify(o));
+      S.markSig();
+    }
+    return { autos: S.autoNames(), count: T.saved.count() };
+  });
+  chk('⑩ 触っていない端末に「自動控え」が増えない（実績の応対が水増しされない）',
+    noStash.autos.length === 0 && noStash.count === 0,
+    '自動控え=' + JSON.stringify(noStash.autos) + ' 保存件数=' + noStash.count);
+
   await browser.close();
   srv.close();
 

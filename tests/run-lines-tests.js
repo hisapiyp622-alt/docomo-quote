@@ -1805,6 +1805,119 @@ function chk(name, cond, extra) {
     '回線1に「ドコモ MAX」=' + (stf.t1.indexOf('ドコモ MAX') >= 0)
       + ' / 回線2に「ドコモ mini」=' + (stf.t2.indexOf('ドコモ mini') >= 0));
 
+  /* ---- ㊶ 2026-09-08 の全体デバッグで見つかった、実績と保存の重い不具合 ----
+   *   #1  開き直すと「どの保存の続きか」が毎回消え、成約で保存が2件に増える
+   *   #4  成約の確認画面を出している間に同期が届くと、押した成約が消える
+   *   #9  回線2以降でU39・U15の欄が出ないのに、実績では数えていた
+   *   #20 4〜5回線だと保存が41〜55件で頭打ちになり、古い見積もりが黙って消える
+   *   #21 1回線だけの見積もりで「自動控え」が二重にできる
+   * 内部の値ではなく、**本物の再読み込み**と**画面に出ている件数**で見る。 */
+
+  // --- #1 本物の再読み込みを挟む（S.reopen() では enterStaff を通らず素通りする）
+  const beforeReload = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', devicePrice: 100000 });
+    T.lines.pick(0);
+    const a = T.saved.save('再読み込みの検査');
+    return { id: a.id, srcId: T.saved.srcId(), stored: !!T.saved.propStored(), count: T.saved.count() };
+  });
+  await page.reload();
+  await page.waitForFunction(() => window.__KQ_TEST__ && window.__KQ_TEST__.saved, null, { timeout: 20000 });
+  const afterReload = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    return { srcId: T.saved.srcId(), stored: !!T.saved.propStored(), count: T.saved.count() };
+  });
+  const afterWon = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const n = T.saved.recordWon();
+    const list = T.saved.list ? T.saved.list() : null;
+    return { count: n, wonCount: (list || []).filter((x) => x.result === 'won').length };
+  });
+  chk('㊶ 保存した直後は「どの保存の続きか」を覚えている',
+    beforeReload.srcId === beforeReload.id && beforeReload.stored,
+    'srcId=' + beforeReload.srcId + ' 端末に残った=' + beforeReload.stored);
+  chk('㊶ アプリを開き直しても、その覚えが消えない',
+    afterReload.srcId === beforeReload.id && afterReload.stored,
+    'srcId=' + afterReload.srcId + ' 端末に残った=' + afterReload.stored);
+  chk('㊶ 開き直したあと成約を押しても、保存は1件のまま（2件に増えない）',
+    afterWon.count === 1, '保存件数=' + afterWon.count);
+  chk('㊶ その1件が成約になっている',
+    afterWon.wonCount === 1, '成約の件数=' + afterWon.wonCount);
+
+  // --- #21 1回線だけの見積もりで、自動控えが二重にできない
+  const stash1 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', devicePrice: 100000 });
+    for (let i = 1; i < 5; i++) T.lines.fill(i, {});
+    T.lines.pick(0);
+    T.saved.save('1回線だけ');
+    T.sync.newCustomer();           // 「新しいお客様として始める」と同じ流れ
+    return { count: T.saved.count(), autos: T.sync.autoNames() };
+  });
+  chk('㊶ 1回線だけの見積もりを保存したあと次のお客様に移っても、自動控えが増えない',
+    stash1.count === 1 && stash1.autos.length === 0,
+    '保存件数=' + stash1.count + ' 自動控え=' + JSON.stringify(stash1.autos));
+
+  // --- #4 確認画面を出している間に同期が届いても、押した成約が消えない
+  const wonSync = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu' });
+    T.lines.pick(0);
+    const a = T.saved.save('同期が割り込む検査');
+    return T.saved.wonWithSync(a.id);
+  });
+  chk('㊶ 成約の確認中に同期が届いても、押した成約が記録される',
+    wonSync.result === 'won', '結果=' + JSON.stringify(wonSync));
+
+  // --- #9 回線2以降でもU39・U15の欄が出る（回線1の手続きを引き継ぐ）
+  const u = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'shinki', procTodo: { shinki: true } });
+    T.lines.fill(1, { planId: 'mini' });          // 回線2は手続きを選び直していない
+    T.lines.pick(1);
+    const line2 = T.saved.u15u39();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true } });
+    T.lines.pick(1);
+    const line2kishu = T.saved.u15u39();
+    T.lines.pick(0);
+    return { line2, line2kishu };
+  });
+  chk('㊶ 回線1が新規なら、回線2でもU39・U15の欄が出る',
+    u.line2.u39 === true && u.line2.u15 === true, JSON.stringify(u.line2));
+  chk('㊶ 回線1が機種変更なら、回線2でも欄は出ない（出し分けを壊していない）',
+    u.line2kishu.u39 === false && u.line2kishu.u15 === false, JSON.stringify(u.line2kishu));
+
+  // --- #20 4〜5回線の見積もりをたくさん保存しても、件数が減らない
+  const bulk = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    /* ご家族4〜5回線＋オプション・アクセサリ・追加項目まで入った、実際にありうる
+     * 重さの見積もり。1件あたり約16,000字で、48件ほどで送信の上限(780,000字)に届く。
+     * 上限より前に「軽くする（slim）」が働かないと、ここで古いものが消え始める。 */
+    const heavy = {
+      planId: 'max', procType: 'kishu', devicePrice: 130000,
+      deviceName: 'テスト機種ABCDEFG', custName: 'テストのお客様',
+      options: { smart_hosho: true, anshin_pack: true, netflix: true },
+      optionKubun: { smart_hosho: 'new', anshin_pack: 'new', netflix: 'new' },
+      procTodo: { kishu: true }, visitPurposes: { buy: true },
+      adhocMonthly: Array.from({ length: 8 }, (_, i) => ({ name: '追加項目のテスト' + i, amount: 1100, months: 12 })),
+      adhocInitial: Array.from({ length: 8 }, (_, i) => ({ name: '初期費用のテスト' + i, amount: 3300 })),
+      accessories: Array.from({ length: 8 }, (_, i) => ({ name: 'アクセサリのテスト' + i, price: 5500, pay: 'once' })),
+      quoteMemo: 'あ'.repeat(200), todoOther: 'い'.repeat(200)
+    };
+    const n = T.saved.bulk(70, heavy);
+    return { count: n, sizes: T.saved.sizes() };
+  });
+  chk('㊶ 5回線の重い見積もりを70件保存しても、保存が減らない（古いものが黙って消えない）',
+    bulk.count === 70, '保存件数=' + bulk.count + '（70件のはず）／' + JSON.stringify(bulk.sizes));
+  chk('㊶ そのとき、古いものは「捨てる」のではなく「軽くする」で収めている',
+    bulk.sizes.slim > 0 && bulk.sizes.total <= bulk.sizes.limit,
+    JSON.stringify(bulk.sizes));
+
   await browser.close();
   srv.close();
 
