@@ -265,6 +265,13 @@
   function lsDone(key) {
     if (!lsFail[key]) return;
     delete lsFail[key];
+    /* 空きが戻ったかもしれないので、まず履歴の本文を置き直してみる。
+     * これをしないと、履歴だけが「保存できず」のまま残り、
+     * 空きを作っても赤い警告と「同期✓（端末に保存できず）」が消えなかった
+     * （2026-09-08）。中で書けたら lsDone(HIST_KEY) が走って印が消える。 */
+    if (key !== HIST_KEY && lsFail[HIST_KEY] && typeof histSaveLocal === "function") {
+      try { histSaveLocal(); } catch (e) {}
+    }
     if (lsFailed()) return;
     storageWarnHide();
     // 空きが戻ったら、履歴の本文も端末に置き直す（また入らなければ自動で減らす）
@@ -2675,6 +2682,9 @@
    * ・削除は「確定済みの月」の自分の保存だけ
    * という順で守っている。 */
   var STATS_SNAP_KEEP = 24;   // 確定を残す月数
+  /* 確定データ全体の大きさの上限（文字数）。料金マスタはクラウドの1つの文書に
+   * 収まる必要があり、ルールでは 880,000字まで。余裕をみてここで頭打ちにする。 */
+  var STATS_SNAP_MAX_LEN = 400000;
 
   function monthShift(m, n) {
     var y = +m.slice(0, 4), mo = +m.slice(5) + n;
@@ -2810,6 +2820,13 @@
     // 古い確定は間引く（料金マスタが際限なく大きくならないように）
     var all = Object.keys(snaps).sort();
     while (all.length > STATS_SNAP_KEEP) { delete snaps[all.shift()]; }
+    /* 月数だけでなく**大きさ**でも間引く。担当が数人いるお店では、確定データが
+     * 1か月ぶんで数万字になり、24か月ぶん貯まると料金マスタがクラウドの
+     * 上限（ルールで 880,000字）を超えて、マスタの同期が「権限エラー」で
+     * 止まってしまう（2026-09-08）。古い月から落とす。 */
+    while (all.length > 1 && JSON.stringify(snaps).length > STATS_SNAP_MAX_LEN) {
+      delete snaps[all.shift()];
+    }
     saveMaster();
     return true;
   }
@@ -3618,9 +3635,20 @@
     months: "の期間", plans: "の対象プラン", amountChoices: "の割引額の選択肢",
     bakuageTier: "の爆アゲ区分", dcard10: "のdカードGOLD10%対象",
     includes5min: "の5分通話無料", group: "の表示グループ",
-    voiceOverrides: "の通話オプションの金額"
+    voiceOverrides: "の通話オプションの金額",
+    /* ここに無い項目は「の<英語のまま>」と出てしまう。マスタを直したときの履歴は
+     * お店の人が読むものなので、料金表にある項目はすべて日本語にしておく
+     * （2026-09-08 の見直しで poikatsuPt・maxBonus などが英語のまま出ていた）。 */
+    poikatsuPt: "のポイ活の還元上限", maxBonus: "の「選べる特典」の対象",
+    hideOnPlans: "を選べないプラン", wariOff: "の通話オプション割引",
+    tiers: "の容量ごとの金額", msAny: "のマンション提供", typec: "のタイプC",
+    jimu: "の契約事務手数料", koji: "の工事費", monthly: "の月額",
+    own: "の「店舗独自」", category: "の置き場所（カテゴリ）", pay: "の支払い先",
+    url: "のリンク先", desc: "のご案内文", kubunExist: "の「既存」の区分",
+    suppress: "の重ねられない割引", keepAnyway: "の「うちはまだ使う」"
   };
-  var HIST_UNITS = { bakuage: "%", bakuage2: "%", bakuageFixed: "pt", months: "か月" };
+  var HIST_UNITS = { bakuage: "%", bakuage2: "%", bakuageFixed: "pt", months: "か月",
+    poikatsuPt: "pt" };
   function histIsNum(v) { return typeof v === "number" && isFinite(v); }
   function histAmt(v, unit) {
     if (!histIsNum(v)) return "（なし）";
@@ -3700,6 +3728,11 @@
       }
       if (k2 === "keepAnyway") {
         out.push(head + (vb ? "を「うちはまだ使う」にしました" : "の「うちはまだ使う」を外しました"));
+        return;
+      }
+      if (k2 === "img") {
+        // 写真は中身（とても長い文字列）を出さず、変えたことだけを書く
+        out.push(head + (vb ? "の写真を変更" : "の写真を削除"));
         return;
       }
       var lab = HIST_FIELD_LABELS[k2] || ("の" + k2);
@@ -4458,10 +4491,18 @@
       backupMsg("読み込みに失敗したため、元の内容に戻しました。端末の空き容量をご確認ください。", true);
       return;
     }
+    /* 端末側の「最後に直した時刻」を、いま（＝復元した時刻）にしておく。
+     * 圏外でもここは必ず通る。これが無いと、通信が戻ったときに
+     * クラウドの古い内容のほうが新しいと判断され、復元が取り消されていた
+     * （2026-09-08）。 */
+    markStoreAt();
+    Object.keys(d.templates || {}).forEach(function (id) { markTplAt(id); });
+
     /* クラウド利用時は、読み込んだ内容をその場でクラウドへ書き戻す。
      * これをしないと、立ち上げ直したときにクラウドの古い内容が
      * 降ってきて、復元した内容が数秒で元に戻ってしまう（復元が効かない）。 */
     if (cloudOn()) {
+      backupMsg("クラウドへ反映しています…");
       var jobs = [];
       var cfgPush = cfg2 || config;
       jobs.push(storeDoc().set(stamp({
@@ -4485,10 +4526,27 @@
       Object.keys(d.templates || {}).forEach(function (id) {
         jobs.push(tplDoc(id).set(stamp({ list: JSON.stringify(d.templates[id]) })));
       });
+      /* 圏外だと、クラウドへの書き込みは「端末にためたまま」になり、
+       * この約束はいつまでも返ってこない。そのままだと確認のあと何も起きず、
+       * お店は復元できたのかどうか分からなかった（2026-09-08）。
+       * 時間を切って、必ず画面を進める。 */
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        window.alert("端末には読み込みました。\n"
+          + "ただし、いま通信できていないため、クラウドにはまだ届いていません。\n"
+          + "電波の入る場所でこのアプリを開くと、自動で反映されます。");
+        location.reload();
+      }, 10000);
       Promise.all(jobs).then(function () {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
         window.alert("バックアップを読み込み、クラウドへも反映しました。画面を読み込み直します。");
         location.reload();
       }, function () {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
         window.alert("端末には読み込みましたが、クラウドへの反映に失敗しました。\n"
           + "通信できる場所で、もう一度バックアップを読み込んでください。\n"
           + "（このまま使うと、クラウドの古い内容に戻ることがあります）");
@@ -4914,7 +4972,17 @@
   }
   // 更新で何が変わるかの一覧（履歴の差分と同じ仕組みを使う）
   function masterUpdateChanges() {
-    return histChanges(JSON.stringify(MASTER), JSON.stringify(buildUpdatedMaster()));
+    /* 版数（masterVersion）と基準日（updated）は、更新があるときは必ず違う。
+     * これを比べたままだと、中身がまったく変わらない更新でも
+     * 「変わる内容（1件）内容を変更しました」と出て、お店には何も分からなかった
+     * （2026-09-08。v17→v18 は、店舗へは届かない置き場所の変更だけだった）。
+     * ここでは「中身が変わったか」だけを見て、変わっていなければ
+     * 「金額の変更はありません（版数だけが新しくなります）」と正直に出す。 */
+    var cur = JSON.parse(JSON.stringify(MASTER));
+    var next = buildUpdatedMaster();
+    next.masterVersion = cur.masterVersion;
+    next.updated = cur.updated;
+    return histChanges(JSON.stringify(cur), JSON.stringify(next));
   }
   /* 更新で新しく「受付終了」になるもの（4-11）。
    * 変わる内容の一覧は12件で打ち切られるので、いちばん大事なこれは別枠にして
@@ -5231,8 +5299,12 @@
     if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
     ["denki", "gas"].forEach(function (k) {
       if (!MASTER.energyCompanies[k] || !MASTER.energyCompanies[k].length) {
+        /* お店が消した会社は入れ直さない。記録を見ないと、
+         * 全部消したときに次の起動で丸ごと復活していた（2026-09-08）。 */
+        var rm = MASTER.removedIds || [];
         MASTER.energyCompanies[k] = JSON.parse(JSON.stringify(
-          (DEFAULT_DATA.energyCompanies && DEFAULT_DATA.energyCompanies[k]) || []));
+          ((DEFAULT_DATA.energyCompanies && DEFAULT_DATA.energyCompanies[k]) || [])
+            .filter(function (c) { return rm.indexOf(c.id) < 0; })));
       }
     });
     /* 引き継ぎシートの「データ移行」に出す項目の印を初期データから補完する。
@@ -5828,12 +5900,22 @@
   }
 
   // 店舗設定（店舗名・担当者一覧）の送信
+  /* 送るのを少し待って、まとめて送る仕組み。ただしアプリを閉じる・他のアプリへ
+   * 切り替えるときの「いま送る」（cloudFlushNow）では、待たずにその場で送る。
+   * 2026-09-08 まで cloudFlushNow は待ち時間の関数を呼び直していただけで、
+   * 実際には送らずに待ち直していた（閉じた瞬間の内容が届かないことがあった）。 */
+  var CLOUD_NOW = false;
+  function cloudLater(key, fn, ms) {
+    if (CLOUD_NOW) { CLOUD[key] = null; try { fn(); } catch (e) {} return null; }
+    CLOUD[key] = setTimeout(fn, ms);
+    return CLOUD[key];
+  }
   function pushConfig() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     markStoreAt();   // 送る前に閉じても、次に開いたときに送り直せるように
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     syncStatus("同期中…", "");
-    CLOUD.cfgTimer = setTimeout(function () {
+    cloudLater("cfgTimer", function () {
       CLOUD.cfgTimer = null;
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
       var cfgSig = JSON.stringify([config.storeName || "", config.storeTel || "", config.staff, config.adminLock]);
@@ -5881,7 +5963,7 @@
      * その端末のアプリの版を、店舗が使っている版として記録してしまうため。 */
     if (superActing()) return;
     if (CLOUD.metaTimer) clearTimeout(CLOUD.metaTimer);
-    CLOUD.metaTimer = setTimeout(function () {
+    cloudLater("metaTimer", function () {
       CLOUD.metaTimer = null;
       if (!cloudOn() || superActing()) return;
       var fld = storeMetaFields();
@@ -5898,7 +5980,7 @@
     markStoreAt();
     if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
     syncStatus("同期中…", "");
-    CLOUD.masterTimer = setTimeout(function () {
+    cloudLater("masterTimer", function () {
       CLOUD.masterTimer = null;
       if (!cloudOn()) return;
       /* 端末への保存が失敗していると、localStorage には古い内容が残っている。
@@ -5931,7 +6013,7 @@
     var sid = activeStaff().id;
     if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
     syncStatus("同期中…", "");
-    CLOUD.quoteTimer = setTimeout(function () {
+    cloudLater("quoteTimer", function () {
       CLOUD.quoteTimer = null;
       if (!cloudOn()) return;
       var qSig = quotePayload();
@@ -5980,7 +6062,7 @@
     markTplAt(sid);
     if (CLOUD.tplTimer) clearTimeout(CLOUD.tplTimer);
     syncStatus("同期中…", "");
-    CLOUD.tplTimer = setTimeout(function () {
+    cloudLater("tplTimer", function () {
       CLOUD.tplTimer = null;
       if (!cloudOn()) return;
       tplDoc(sid).set(stamp({ list: JSON.stringify(templates) })).then(cloudOk, cloudNg);
@@ -6017,7 +6099,7 @@
     markTplAt(STORE_TPL_ID);
     if (CLOUD.tplStoreTimer) clearTimeout(CLOUD.tplStoreTimer);
     syncStatus("同期中…", "");
-    CLOUD.tplStoreTimer = setTimeout(function () {
+    cloudLater("tplStoreTimer", function () {
       CLOUD.tplStoreTimer = null;
       if (!cloudOn()) return;
       tplDoc(STORE_TPL_ID).set(stamp({ list: JSON.stringify(storeTemplates) })).then(cloudOk, cloudNg);
@@ -6051,7 +6133,7 @@
     var sid = activeStaff().id;
     if (CLOUD.savedTimer) clearTimeout(CLOUD.savedTimer);
     syncStatus("同期中…", "");
-    CLOUD.savedTimer = setTimeout(function () {
+    cloudLater("savedTimer", function () {
       CLOUD.savedTimer = null;
       if (!cloudOn()) return;
       // お客様名・請求内訳（個人情報）はクラウドへ送らない
@@ -6733,13 +6815,14 @@
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         if (!k) continue;
-        if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
+        if (k === MASTER_KEY || k === MASTER_AT_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
           || k === WIZ_SKIP_KEY                      // 「初期設定は済み」の印（前の店舗のものを持ち込まない）
           || k === STORE_AT_KEY                       // 店舗情報・料金マスタを最後に直した時刻
           || k.indexOf(TPL_AT_KEY + ":") === 0        // テンプレートを最後に直した時刻
           || k.indexOf(NS + "-quote-at:") === 0      // 見積もりを最後に直した時刻の控え
           || k.indexOf(STATE_KEY + ":") === 0
           || k.indexOf(SAVED_KEY + ":") === 0
+          || k.indexOf(SAVED_DEL_KEY + ":") === 0   // 前の店舗で消した記録を持ち込まない
           || k.indexOf(TPL_KEY + ":") === 0) kill.push(k);
       }
       kill.forEach(function (k) { localStorage.removeItem(k); });
@@ -7140,16 +7223,20 @@
    * 送りかけの内容は、止める前に必ず送り切る。 */
   var CLOUD_PAUSED = false;
   function cloudFlushNow() {
-    // 待ち時間の途中でも、いま送る
-    [["cfgTimer", pushConfig], ["masterTimer", markMasterEdit], ["quoteTimer", markLocalEdit],
-      ["metaTimer", pushStoreMeta],
-     ["savedTimer", pushSaved], ["tplTimer", pushTemplates], ["tplStoreTimer", pushStoreTemplates]]
-      .forEach(function (pair) {
-        if (!CLOUD[pair[0]]) return;
-        clearTimeout(CLOUD[pair[0]]);
-        CLOUD[pair[0]] = null;
-        try { pair[1](); } catch (e) {}
-      });
+    /* 待ち時間の途中でも、いま送る。CLOUD_NOW を立てると cloudLater が
+     * 待たずにその場で送るので、呼び直した関数がそのまま送信になる。 */
+    CLOUD_NOW = true;
+    try {
+      [["cfgTimer", pushConfig], ["masterTimer", markMasterEdit], ["quoteTimer", markLocalEdit],
+        ["metaTimer", pushStoreMeta],
+       ["savedTimer", pushSaved], ["tplTimer", pushTemplates], ["tplStoreTimer", pushStoreTemplates]]
+        .forEach(function (pair) {
+          if (!CLOUD[pair[0]]) return;
+          clearTimeout(CLOUD[pair[0]]);
+          CLOUD[pair[0]] = null;
+          try { pair[1](); } catch (e) {}
+        });
+    } finally { CLOUD_NOW = false; }
   }
   function cloudDetach() {
     ["unsubStore", "unsubQuote", "unsubSaved", "unsubTpl", "unsubTplStore"].forEach(function (k) {
@@ -13338,6 +13425,10 @@
         var k = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
         if (pt[k] === c.id) pt[k] = "";
       });
+      /* 消したことを記録しておく。記録が無いと、次の料金表の更新で
+       * 初期データから復活していた（キャンペーンの削除と同じ形・2026-09-08）。 */
+      if (!MASTER.removedIds) MASTER.removedIds = [];
+      if (c.id && MASTER.removedIds.indexOf(c.id) < 0) MASTER.removedIds.push(c.id);
       list.splice(+parts[1], 1);
       energyTouch(true); return true;
     }
@@ -15677,6 +15768,42 @@
         // 本物の読み込み（実績で追う項目の自動有効化まで通る）
         cxImport: function (rows) { return cxImport(rows); },
         cxCatalog: function () { return cxCatalog(); },
+        /* 「いま送る」（アプリを閉じる・他のアプリへ切り替える）で、
+         * 待っていたぶんが**実際にクラウドへ送られる**かを見る。
+         * 送り先は偽物に差し替えて、何回 set() が呼ばれたかを数える。 */
+        flushNow: function () {
+          var calls = [];
+          var real = { db: CLOUD.db, enabled: CLOUD.enabled, user: CLOUD.user };
+          var colStub;
+          var docStub = {
+            set: function (o) { calls.push(JSON.stringify(o).slice(0, 40)); return Promise.resolve(); },
+            collection: function () { return colStub; }
+          };
+          colStub = { doc: function () { return docStub; } };
+          CLOUD.db = { collection: function () { return colStub; } };
+          CLOUD.enabled = true;
+          CLOUD.user = { uid: "test" };
+          CLOUD_SENT = {};                        // 「同じ内容だから送らない」を無効化
+          var keys = ["cfgTimer", "masterTimer", "quoteTimer", "metaTimer",
+            "savedTimer", "tplTimer", "tplStoreTimer"];
+          keys.forEach(function (k) { CLOUD[k] = setTimeout(function () {}, 60000); });
+          try { cloudFlushNow(); } catch (e) { calls.push("エラー: " + e.message); }
+          keys.forEach(function (k) { if (CLOUD[k]) { clearTimeout(CLOUD[k]); CLOUD[k] = null; } });
+          CLOUD.db = real.db; CLOUD.enabled = real.enabled; CLOUD.user = real.user;
+          return calls;
+        },
+        // 店舗を切り替えたときに端末から消える鍵かどうか
+        wipeKeys: function () {
+          var before = [];
+          try {
+            localStorage.setItem(MASTER_AT_KEY, JSON.stringify({ v: 1, at: 1 }));
+            localStorage.setItem(SAVED_DEL_KEY + ":zz", "{}");
+            before = [!!localStorage.getItem(MASTER_AT_KEY), !!localStorage.getItem(SAVED_DEL_KEY + ":zz")];
+            wipeStoreLocal();
+            return { before: before,
+              after: [!!localStorage.getItem(MASTER_AT_KEY), !!localStorage.getItem(SAVED_DEL_KEY + ":zz")] };
+          } catch (e) { return null; }
+        },
         // ④オプションの「その他」に出ているタイルの文字（実績の印を含む）
         otherTiles: function () {
           renderOptionList();
@@ -15893,6 +16020,8 @@
         ended: function () { return masterUpdateEnded(); },
         // 改定予告（5-2）
         revise: function () { return masterUpdateRevise(); },
+        // マスタを直したときの「変更した内容」（履歴に出る文）
+        histChanges: function (a, b) { return histChanges(a, b); },
         // 店内の印を付ける（マスタを直したときと同じ状態にする）
         markEdited: function () { markEdited(); },
         // お客様の見積書の中身（社内の印が混ざっていないかを見る）

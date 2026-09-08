@@ -2242,6 +2242,18 @@ function chk(name, cond, extra) {
     opx && opx.choices.indexOf(opx.price) >= 0,
     JSON.stringify(opx));
 
+  /* ---- ㊻ 保存領域・店舗の切り替え・「いま送る」（2026-09-08）----
+   *   #30 アプリを閉じるときの「いま送る」が、実際には送らず待ち直していた
+   *   #60 別の店舗にログインしても「料金表の適用日」が前の店舗のまま残る */
+  const flush = await page.evaluate(() => window.__KQ_TEST__.lines.flushNow());
+  chk('㊻ 「いま送る」で、待っていたぶんが実際にクラウドへ送られる（待ち直さない）',
+    flush.length >= 1, '送信の回数=' + flush.length + ' ' + JSON.stringify(flush).slice(0, 200));
+
+  const wipe = await page.evaluate(() => window.__KQ_TEST__.lines.wipeKeys());
+  chk('㊻ 店舗を切り替えると、料金表の適用日と削除の記録も端末から消える',
+    wipe && wipe.before[0] && wipe.before[1] && !wipe.after[0] && !wipe.after[1],
+    JSON.stringify(wipe));
+
   await browser.close();
   srv.close();
 

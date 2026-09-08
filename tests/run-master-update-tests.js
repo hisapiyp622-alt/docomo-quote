@@ -456,6 +456,48 @@ function chk(name, cond, extra) {
   chk('⑭ ボタンの文字も「置き換える」になる',
     tpl2.filled.button === '置き換える', tpl2.filled.button);
 
+  /* ---- ⑬ 2026-09-08 の全体デバッグ ----
+   *   #52 中身が変わらない更新でも「変わる内容（1件）内容を変更しました」と出て、
+   *       お店には何が変わるのか分からなかった（版数と基準日は必ず違うため）
+   *   #51 履歴の「変更した内容」に英語のままの項目名が出る */
+  const mu = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    const d = S.dist();
+    // 中身は同じで、版数と基準日だけを上げた更新
+    d.masterVersion = d.masterVersion + 1;
+    d.updated = '2026-12-31';
+    S.setDist(d);
+    S.redraw();
+    const box = document.querySelector('#masterBody .mu-box');
+    const only = box ? (box.innerText || '') : '';
+    // 中身も変える更新
+    const d2 = S.dist();
+    (d2.options || []).forEach((o) => { if (o.id === 'smart_hosho') o.price = o.price + 100; });
+    S.setDist(d2);
+    S.redraw();
+    const box2 = document.querySelector('#masterBody .mu-box');
+    return { only: only, withChange: box2 ? (box2.innerText || '') : '' };
+  });
+  chk('⑬ 中身が変わらない更新では「内容を変更しました」と言わない',
+    /版数だけ/.test(mu.only) && !/内容を変更しました/.test(mu.only),
+    mu.only.replace(/\s+/g, ' ').slice(0, 200));
+  chk('⑬ 中身が変わる更新では、何が変わるかを出す',
+    /変わる内容/.test(mu.withChange) && !/内容を変更しました/.test(mu.withChange),
+    mu.withChange.replace(/\s+/g, ' ').slice(0, 200));
+
+  const hist = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    const m = S.get();
+    const before = JSON.stringify(m);
+    (m.plans || []).forEach((p) => { if (p.id === 'poikatsu_max') p.poikatsuPt = 3000; });
+    const after = JSON.stringify(m);
+    return S.histChanges ? S.histChanges(before, after) : null;
+  });
+  chk('⑬ 履歴の「変更した内容」に英語のままの項目名を出さない',
+    hist && hist.lines.length && !hist.lines.some((t) => /poikatsuPt|maxBonus/.test(t))
+      && hist.lines.some((t) => /ポイ活の還元上限/.test(t)),
+    JSON.stringify(hist && hist.lines));
+
   await browser.close();
   srv.close();
 
