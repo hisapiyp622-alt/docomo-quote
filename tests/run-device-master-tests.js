@@ -79,7 +79,8 @@ function chk(name, cond, extra) {
 
   const parse = (text) => page.evaluate((t) => {
     const r = window.__KQ_TEST__.devmaster.parse(t);
-    return { list: r.list, skipped: r.skipped, note: window.__KQ_TEST__.devmaster.note(r.head) };
+    return { list: r.list, skipped: r.skipped, ambiguous: r.ambiguous,
+      note: window.__KQ_TEST__.devmaster.note(r.head) };
   }, text);
 
   /* ---- ① 数字の無い見出し（これまでも読めていた形） ---- */
@@ -151,6 +152,18 @@ function chk(name, cond, extra) {
   ].join('\n'));
   chk('⑥ 「145,200」と割れていても 145,200円 と読む',
     g.list.length === 1 && g.list[0].price === 145200, JSON.stringify(g.list));
+
+  /* ---- ⑥-2 見出しの無い一覧で、在庫数と金額の頭をつながない ---- */
+  const g2 = await parse('iPhone 17 128GB,12,145,200\nGalaxy S26,3,132,000');
+  const g2n = g2.list.map((x) => x.name + ':' + x.price).join(' / ');
+  chk('⑥ 在庫数と金額の頭をつないだ、実在しない金額を作らない',
+    !/12145|3132/.test(g2n), g2n);
+  chk('⑥ 決められない行は取り込まず、飛ばしたことを数える',
+    g2.list.length === 0 && g2.ambiguous === 2, g2n + ' ambiguous=' + g2.ambiguous);
+  const g3 = await parse('iPhone 17 128GB,145200,12\nGalaxy S26,132000,3');
+  chk('⑥ 在庫数が金額のうしろにある一覧は、これまでどおり読める',
+    g3.list.length === 2 && g3.list[0].price === 145200 && g3.list[1].price === 132000,
+    JSON.stringify(g3.list));
 
   /* ---- ⑦ 取り込んだあとの案内 ---- */
   chk('⑦ 頭金・23回分を読めたことが案内に出る',

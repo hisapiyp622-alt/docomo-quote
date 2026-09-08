@@ -12834,48 +12834,69 @@
   }
   /* j列目から金額を読む。「145,200」が引用符なしで列に割れている場合はつなぎ直す。
    * 読めたら {value, next} を、読めなければ null を返す。 */
-  function devNumAt(cols, j) {
+  function devNumAt(cols, j, joinOk) {
     var v = devDigits(cols[j] || "");
     if (!/^\d+$/.test(v)) return null;
-    while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
+    while (joinOk && /^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
       v += devDigits(cols[j + 1]);
       j++;
     }
     return { value: parseInt(v, 10), next: j };
   }
+  // j列目が「桁区切りで割れた金額の頭」に見えるか（1〜3桁のあとに3桁が続く）
+  function devSplitLooks(cols, j) {
+    return /^\d{1,3}$/.test(devDigits(cols[j] || ""))
+      && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1] || ""));
+  }
   function parseDeviceText(text) {
-    var out = [], skipped = 0;
+    var out = [], skipped = 0, ambiguous = 0;
     var head = null;   // 見出しがあれば {price, atamakin, kaedoki23} の列番号
-    var headTried = false;   // 見出しらしい行を1度でも見たか（先頭に空行やタイトル行があってもよい）
+    // まず全部の行を欄に分ける（列の数を数えてから読むため）
+    var rows = [];
     String(text || "").split(/\r\n|\r|\n/).forEach(function (line) {
       if (!line.trim()) return;
       var cols = (line.indexOf("\t") >= 0 ? line.split("\t") : splitCsvLine(line))
         .map(function (c) { return String(c).replace(/^"|"$/g, "").trim(); });
       if (cols.length < 2) { skipped++; return; }
-      // 見出し行は読み飛ばす（どの列が何かはここで覚える）。まだ1件も読んでいない間だけ探す
-      if (!headTried && !out.length) {
-        headTried = true;
-        if (devIsHeadRow(cols)) {
-          head = {};
-          cols.forEach(function (c, j) {
-            if (j === 0) return;
-            var k23col = /(23|カエドキ|残価)/.test(c);
-            if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
-            // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
-            else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
-            else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
-            else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
-            else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
-          });
-          return;
-        }
-      }
+      rows.push(cols);
+    });
+    // 見出し行は読み飛ばす（どの列が何かはここで覚える）。先頭に空行やタイトル行があってもよい
+    if (rows.length && devIsHeadRow(rows[0])) {
+      head = {};
+      rows.shift().forEach(function (c, j) {
+        if (j === 0) return;
+        var k23col = /(23|カエドキ|残価)/.test(c);
+        if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
+        // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
+        else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
+        else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
+        else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
+        else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
+        head.cols = j + 1;
+      });
+    }
+    /* 「145,200」が引用符なしで列に割れているかどうかは、
+     * その行の欄の数が“ふつうの行”より多いかどうかで見分ける。
+     * 見出しがあれば見出しの欄の数、無ければいちばん多い欄の数を「ふつう」とする。
+     * これをしないと、在庫数の列（例: 12）と金額の頭（145）をつないで
+     * 12,145円 という、どこにも存在しない金額を作ってしまう（2026-09-08）。 */
+    var baseCols = head ? head.cols : (function () {
+      var cnt = {}, best = 0, bestN = 0;
+      rows.forEach(function (c) { cnt[c.length] = (cnt[c.length] || 0) + 1; });
+      Object.keys(cnt).forEach(function (k) {
+        if (cnt[k] > bestN || (cnt[k] === bestN && +k > best)) { best = +k; bestN = cnt[k]; }
+      });
+      return best;
+    })();
+
+    rows.forEach(function (cols) {
+      var joinOk = cols.length > baseCols;
       var name = cols[0];
-      var price = 0, found = false;
+      var price = 0, found = false, amb = false;
       if (head && head.price !== undefined) {
         /* 見出しで本体価格の列が分かっているときは、その列だけを見る。
          * 空欄や「－」のときは、隣の頭金・23回分を本体価格と取り違えないよう、その行を飛ばす。 */
-        var hit = devNumAt(cols, head.price);
+        var hit = devNumAt(cols, head.price, joinOk);
         if (hit) { price = hit.value; found = true; }
       } else {
         // 見出しで場所が分かっている列（頭金・23回分）は本体価格として拾わない
@@ -12887,26 +12908,30 @@
         }
         for (var j = 1; j < cols.length; j++) {
           if (used[j]) continue;
-          var hit2 = devNumAt(cols, j);
+          var hit2 = devNumAt(cols, j, joinOk);
           if (!hit2) continue;
+          /* つなぎ直せば金額になりそうなのに、欄の数からは割れているとは言えない行。
+           * どちらの金額か決められないので、勝手に決めずに飛ばして知らせる。 */
+          if (!joinOk && devSplitLooks(cols, j)) { amb = true; break; }
           price = hit2.value;
           found = true;
           break;
         }
       }
+      if (amb) { skipped++; ambiguous++; return; }
       if (!name || !found) { skipped++; return; }
       if (name.length > 60) name = name.slice(0, 60);
       var rec = { name: name, price: price };
       if (head) {
         ["atamakin", "kaedoki23", "kaedoki23Mnp", "kaedoki23Shinki"].forEach(function (k) {
           if (head[k] === undefined) return;
-          var hit3 = devNumAt(cols, head[k]);
+          var hit3 = devNumAt(cols, head[k], joinOk);
           if (hit3) rec[k] = hit3.value;
         });
       }
       out.push(rec);
     });
-    return { list: out, skipped: skipped, head: head };
+    return { list: out, skipped: skipped, ambiguous: ambiguous, head: head };
   }
   // 「a,"b,c",d」のような引用符付きCSVを1行分に分ける
   function splitCsvLine(line) {
@@ -13053,7 +13078,12 @@
       renderDeviceMaster();
       say(r.list.length + "件を取り込みました。"
         + (r.skipped ? "（読み取れなかった " + r.skipped + "行は飛ばしました）" : "")
-        + devHeadNote(r.head)
+        + (r.ambiguous
+            ? "そのうち " + r.ambiguous + "行は、金額が桁区切りのカンマで列に割れているのか"
+              + "在庫数などの別の数字なのか決められませんでした。"
+              + "1行目に見出し（機種名,本体価格,…）を付けるか、"
+              + '金額を "145,200" のように引用符で囲んでもう一度お試しください。'
+            : "")
         + "見積もりの機種名がプルダウンになります。");
       if (wrap) { wrap.hidden = true; box.value = ""; }
     }
