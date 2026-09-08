@@ -538,6 +538,14 @@
     out.innerHTML = h + '<span class="hint" style="display:block">郵便番号の上3桁での目安です。番地単位の除外があるため、最終のエリア判定はお申込み時の受付で確認されます。入力した郵便番号は保存されません。</span>';
   }
 
+  /* 郵便番号の欄と判定結果を消す。この欄は画面だけのもので見積もりには入らないため、
+   * 入力をクリアしても消えず、次のお客様に前の方の判定が出たままになっていた（2026-09-08）。 */
+  function clearGasArea() {
+    var inp = $("gasAreaZip"), out = $("gasAreaResult");
+    if (inp) inp.value = "";
+    if (out) out.innerHTML = "";
+  }
+
   /* 中身が何も入っていない回線かどうか（保存を小さくするために使う）。
    * 回線の番号（何番目か）は実績の記録で使うので、**後ろの空きだけ**を落とす。
    *
@@ -6775,6 +6783,7 @@
     store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
     // 次のお客様なので、前の応対（どの保存の続きか）とは切り離す
     resetPropTracking();
+    clearGasArea();   // 郵便番号のエリア判定も、前のお客様のものを残さない
     for (var i = 0; i < PAT_MAX; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
@@ -15378,6 +15387,7 @@
        * 継続のお客様のために開いたまま次の接客に入ると、
        * 受付が終わったものを新規のお客様にご案内してしまう。 */
       showEnded = false;
+      clearGasArea();   // 郵便番号のエリア判定も、前のお客様のものを残さない
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
       store.patterns = newPatterns();
@@ -15416,6 +15426,7 @@
       state.shopName = keep.shopName;
       state.staffName = keep.staffName;
       state.shopTel = keep.shopTel;
+      clearGasArea();   // 郵便番号のエリア判定も、この回線の入力と一緒に消す
       renderPatternTabs();
       syncFormFromState();
       recalc();

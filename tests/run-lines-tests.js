@@ -2482,6 +2482,42 @@ function chk(name, cond, extra) {
     (csvOut.flat || '（空）').split('\r\n').filter((l) => /手修正/.test(l)).join(' / ')
       || '手修正の行なし（行数' + String(csvOut.flat || '').split('\r\n').length + '）');
 
+  /* ---- 52 郵便番号のエリア判定が、入力のクリアで消える（2026-09-08）----
+   * この欄は画面だけのもので見積もりに入らないため、消し忘れると
+   * 次のお客様の画面に前の方の郵便番号と判定が出たままになる */
+  const zip = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    function put() {
+      const inp = document.getElementById('gasAreaZip');
+      inp.value = '5300001';
+      inp.dispatchEvent(new Event('input'));
+      const out = document.getElementById('gasAreaResult');
+      return { v: inp.value, t: (out.innerText || '').slice(0, 40) };
+    }
+    function now() {
+      const inp = document.getElementById('gasAreaZip');
+      const out = document.getElementById('gasAreaResult');
+      return { v: inp.value, t: (out.innerText || '').trim() };
+    }
+    L.clearAll(); L.pick(0);
+    const before = put();
+    L.clearAll();
+    const afterAll = now();
+    const before2 = put();
+    L.fill(0, { procType: 'kishu' });
+    L.pick(0);
+    L.clearOne();
+    const afterOne = now();
+    return { before: before, afterAll: afterAll, before2: before2, afterOne: afterOne };
+  });
+  chk('52 郵便番号を入れると、エリアの判定が出る',
+    /大阪市/.test(zip.before.t), JSON.stringify(zip.before));
+  chk('52 「全回線をクリア」で、郵便番号と判定が消える',
+    zip.afterAll.v === '' && zip.afterAll.t === '', JSON.stringify(zip.afterAll));
+  chk('52 「この回線をクリア」でも消える',
+    zip.afterOne.v === '' && zip.afterOne.t === '', JSON.stringify(zip.afterOne));
+
   await browser.close();
   srv.close();
 
