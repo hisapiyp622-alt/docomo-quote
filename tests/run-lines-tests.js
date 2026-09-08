@@ -1591,6 +1591,39 @@ function chk(name, cond, extra) {
   chk('㉞ id が重ならない',
     imp2.uniq === imp2.ids.length, JSON.stringify(imp2.ids));
 
+  /* ---- ㉟ タイプCの光と、商材を変えたときの取りこぼし（2026-09-08）---- */
+  const tc = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      // タイプC（1ギガ・10ギガ）が、英語の内部名でなく日本語で数えられるか
+      c1: L.itemsRawIe({ enabled: true, product: 'hikaric', applyType: 'kirikae' }),
+      c10: L.itemsRawIe({ enabled: true, product: 'hikaric10g', applyType: 'kirikae' }),
+      // 商材を home 5G に変えたのに、光だけのオプション・プロバイダが残っている場合
+      moved: L.itemsRawIe({ enabled: true, product: 'home5g', h5Kubun: 'shinki',
+        provider: 'OCN インターネット', opts: { tv: true, denwa: true, homeDenwaLight: true } }),
+      // ふつうの光では、これまでどおり数える
+      normal: L.itemsRawIe({ enabled: true, product: 'hikari1g', applyType: 'shinki',
+        provider: 'OCN インターネット', opts: { tv: true } })
+    };
+  });
+  const k1 = Object.keys(tc.c1), k10 = Object.keys(tc.c10);
+  chk('㉟ タイプC（1ギガ）は「光 1ギガ」として数える（英語の内部名にしない）',
+    k1.some((k) => k.indexOf('ie:1g') === 0) && !k1.some((k) => /hikaric/.test(k)),
+    JSON.stringify(tc.c1));
+  chk('㉟ タイプC（10ギガ）は「光 10ギガ」として数える',
+    k10.some((k) => k.indexOf('ie:10g') === 0) && !k10.some((k) => /hikaric/.test(k)),
+    JSON.stringify(tc.c10));
+  const km = Object.keys(tc.moved);
+  chk('㉟ home 5G に変えたら、光だけのオプションは数えない',
+    km.indexOf('ie:opt:tv') < 0 && km.indexOf('ie:opt:denwa') < 0, JSON.stringify(km));
+  chk('㉟ home 5G でも選べる homeでんわ は、これまでどおり数える',
+    km.indexOf('ie:opt:homeDenwaLight') >= 0, JSON.stringify(km));
+  chk('㉟ home 5G ではプロバイダを数えない（欄が出ない商材のため）',
+    km.indexOf('ie:prov:ocn') < 0, JSON.stringify(km));
+  const kn = Object.keys(tc.normal);
+  chk('㉟ ふつうの光では、テレビもプロバイダもこれまでどおり数える',
+    kn.indexOf('ie:opt:tv') >= 0 && kn.indexOf('ie:prov:ocn') >= 0, JSON.stringify(kn));
+
   await browser.close();
   srv.close();
 

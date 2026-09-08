@@ -1601,9 +1601,13 @@
 
   /* 光・5Gの集計はブランドを分けず速度でまとめる。
    * ドコモ光1ギガ＋ahamo光1ギガ＝「光 1ギガ」、10ギガも同様。 */
+  /* タイプC（ケーブルテレビの設備で提供する光）も、1ギガ・10ギガとして数える。
+   * 入れ忘れていたため、実績に「hikaric」と英語の内部名が出ていて、
+   * しかも項目の一覧に無いので目標も配点も付けられなかった
+   * （2026-09-08 の見直しで判明）。 */
   var STATS_IE_NAMES = {
-    hikari1g: "光 1ギガ", ahamo1g: "光 1ギガ",
-    hikari10g: "光 10ギガ", ahamo10g: "光 10ギガ",
+    hikari1g: "光 1ギガ", ahamo1g: "光 1ギガ", hikaric: "光 1ギガ",
+    hikari10g: "光 10ギガ", ahamo10g: "光 10ギガ", hikaric10g: "光 10ギガ",
     home5g: "home 5G"
   };
   /* プロバイダ。画面の選択肢（ieProvider）と同じ文字にしておく。
@@ -1611,19 +1615,32 @@
   var OCN_PROVIDER = "OCN インターネット";
   /* 実績で数える光のオプション（店舗の指定・2026-09-07）。
    * id はイエナカの OPTIONS と同じにしておく。ズレると数えられなくなる。 */
+  /* for は「その商材で申し込めるか」。イエナカの IENAKA_OPTS と同じにする。
+   * 商材を変えても印は消えないので、ここで見ないと、画面から消えたはずの
+   * オプションを実績にだけ数えてしまう（2026-09-08 の見直しで判明）。 */
+  var IE_HIKARI_ONLY = ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"];
   var IE_STAT_OPTS = [
-    { id: "tv", name: "ドコモ光テレビオプション" },
-    { id: "denwa", name: "ドコモ光電話" },
-    { id: "denwaBV", name: "ドコモ光電話バリュー" },
-    { id: "homeDenwaLight", name: "homeでんわ ライト" },
-    { id: "homeDenwaBasic", name: "homeでんわ ベーシック" },
-    { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン" }
+    { id: "tv", name: "ドコモ光テレビオプション", for: IE_HIKARI_ONLY },
+    { id: "denwa", name: "ドコモ光電話", for: IE_HIKARI_ONLY },
+    { id: "denwaBV", name: "ドコモ光電話バリュー", for: IE_HIKARI_ONLY },
+    { id: "homeDenwaLight", name: "homeでんわ ライト",
+      for: IE_HIKARI_ONLY.concat(["home5g"]) },
+    { id: "homeDenwaBasic", name: "homeでんわ ベーシック",
+      for: IE_HIKARI_ONLY.concat(["home5g"]) },
+    { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン", for: IE_HIKARI_ONLY }
   ];
+  /* プロバイダを選べる商材か（タイプC・ahamo光・home 5G は欄が出ない）。
+   * イエナカの $("ieProviderField").hidden と同じ条件。 */
+  var IE_PROVIDER_PRODUCTS = { hikari1g: true, hikari10g: true };
   /* 光の申込区分。イエナカの APPLY_LABEL と同じ並び・同じ言い方にする */
   var STATS_APPLY_NAMES = {
     shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用・タイプC"
   };
-  var STATS_IE_KEYS = { hikari1g: "1g", ahamo1g: "1g", hikari10g: "10g", ahamo10g: "10g", home5g: "home5g" };
+  var STATS_IE_KEYS = {
+    hikari1g: "1g", ahamo1g: "1g", hikaric: "1g",
+    hikari10g: "10g", ahamo10g: "10g", hikaric10g: "10g",
+    home5g: "home5g"
+  };
 
   // 1パターンから「提案した項目」を拾う {key: 表示名}
   /* 何を数えるかは statsCfg()（マスタ設定の「実績で追う項目」）に従う。
@@ -2120,14 +2137,17 @@
         whole["ie:" + ieKey] = "光・5G: " + ieName;
         /* プロバイダ「OCN インターネット」も数える（店舗の指定・2026-09-07）。
          * 光の行とは別に、商談ごとに1件。 */
-        if (statsCfg().ocn && ie.provider === OCN_PROVIDER) {
+        if (statsCfg().ocn && ie.provider === OCN_PROVIDER
+            && IE_PROVIDER_PRODUCTS[ie.product]) {
           whole["ie:prov:ocn"] = "光・5G: プロバイダ OCN インターネット";
         }
         /* 光のオプション（テレビ・お電話）。こちらも商談ごとに1件 */
         if (statsCfg().ieOpts) {
           var io2 = ie.opts || {};
           IE_STAT_OPTS.forEach(function (o) {
-            if (io2[o.id]) whole["ie:opt:" + o.id] = "光・5G: " + o.name;
+            if (!io2[o.id]) return;
+            if (o.for && o.for.indexOf(ie.product) < 0) return;  // その商材では申し込めない
+            whole["ie:opt:" + o.id] = "光・5G: " + o.name;
           });
         }
       }
