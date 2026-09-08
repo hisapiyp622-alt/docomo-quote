@@ -10,3 +10,4 @@ package-lock.json
 dist-product/
 tools/docomo-watch-state.json
 firestore-debug.log
+dist-internal/

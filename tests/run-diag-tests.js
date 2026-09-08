@@ -110,6 +110,20 @@ g=await openAs('hisapiyp622-alt.github.io',true);
 chk('⑪ 社内版は同じアドレスでも止めない',
   (await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !e||e.hidden;}))===true);
 await g.c.close();
+/* 配信先の引っ越し（2026-09-08）: Cloudflare Pages の試用の住所（*.pages.dev）からも
+ * 本番のクラウドに入れてはいけない。「github.io なら止める」だと素通りするので、
+ * 「許す住所だけを書く」形（PROD_HOSTS）にした。ここはそれを見張る。 */
+for (const host of ['frontalk.pages.dev','abc123.frontalk.pages.dev','frontalk-app.example.com']) {
+  g=await openAs(host,false);
+  const band=await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !!e&&!e.hidden&&/開発用/.test(e.textContent);});
+  const signed=await trySignIn(g.pg);
+  chk('⑫ 配信元でない住所（'+host+'）では帯が出て、ログインできない', band && signed===0, '帯='+band+' 送信='+signed);
+  await g.c.close();
+}
+g=await openAs('frontalk.pages.dev',true);
+chk('⑬ 社内版は pages.dev でも止めない（別のクラウドなので対象外）',
+  (await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !e||e.hidden;}))===true);
+await g.c.close();
 await b2.close();
 srv.close();
 const bad=errs.filter(e=>!/テスト用/.test(e));

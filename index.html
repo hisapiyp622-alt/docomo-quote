@@ -1003,6 +1003,21 @@
         個人情報を持ち出さないようにしています。含める場合は、ファイルの保管場所にご注意ください。</p>
       <p class="hint" id="backupMsg" hidden></p>
     </div>
+    <!-- 引っ越し（住所の変更）。社内版だけに出る（app.js の initMove）。製品版は住所が変わらないので使わない -->
+    <div class="card" data-mroom="store" id="moveCard" hidden>
+      <h2>引っ越し（住所の変更）</h2>
+      <p class="hint">社内版の住所（アドレス）が変わるときに使います。<strong>古い住所で「持ち出す」</strong>→ ファイルが保存される →
+        <strong>新しい住所で「持ち込む」</strong>の順です。保存した見積もり・お客様名・作りかけの見積もり・担当者・料金表・
+        イエナカ（阪南・常盤東）の、<strong>この端末の中身をそのまま運びます</strong>。クラウドには書きません。
+        持ち出しても、この端末の中身は消えません。</p>
+      <div class="actions">
+        <button class="btn-sub" id="moveExportBtn" type="button">この端末のデータを持ち出す</button>
+        <label class="btn-sub file-btn">新しい住所で持ち込む
+          <input type="file" id="moveImportFile" accept="application/json,.json" hidden>
+        </label>
+      </div>
+      <p class="hint" id="moveMsg" hidden></p>
+    </div>
     <div id="masterBody"><!-- JSで生成 --></div>
   </section>
 
@@ -1101,6 +1116,8 @@
       <button class="btn-main" id="setupNext" type="button">次へ</button>
     </div>
     <p class="login-lead" id="setupSkipWrap"><button type="button" class="link-btn" id="setupSkip">あとで設定する</button></p>
+    <!-- 社内版だけ: 旧アドレスで持ち出したファイルをここから取り込める（app.js の initMove） -->
+    <p class="login-lead" id="setupMoveWrap" hidden><button type="button" class="link-btn" id="setupMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
   </div>
 </div>
 
@@ -1124,6 +1141,8 @@
     </div>
     <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">マスタ設定を開く（料金・担当者の登録）</button><br>
       <span class="login-note">店舗IDとパスワードが必要です。</span></p>
+    <!-- 社内版だけ: 旧アドレスで持ち出したファイルをここから取り込める（app.js の initMove） -->
+    <p class="login-lead" id="staffMoveWrap" hidden><button type="button" class="link-btn" id="staffMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
   </form>
 </div>
 
