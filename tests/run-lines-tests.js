@@ -317,7 +317,9 @@ function chk(name, cond, extra) {
     const off = m.plans.filter((p) => !L.statsCatalog()['plan:' + p.id])[0];
     /* オプションは 2026-09-07 から全部数えるようにしたので、
      * マスタ設定の画面で1つ外してから試す（実際に押す道を通す）。 */
-    const offOpt = m.options[0];
+    /* 一覧の順番に頼らない。ドコモメールは「プランに付いてくるかどうか」の選択で
+     * 獲得ではないため実績に数えない（statsSkipOpt）ので、数える対象のものを選ぶ。 */
+    const offOpt = m.options.filter((o) => !!L.statsCatalog()['opt:' + o.id])[0];
     L.optSkipUi(offOpt.id, false);
     L.cxSet([{ id: 'keep', name: '手で足した行', pt: 7, keys: ['proc:shinki'] }]);
     const before = L.statsCatalog()['plan:' + off.id] ? 'ある' : 'ない';
@@ -1656,6 +1658,28 @@ function chk(name, cond, extra) {
       .every((k) => sel[k] && sel[k].hiddenOnes.length === 0),
     JSON.stringify(Object.keys(sel).map((k) => [k, sel[k] && sel[k].hiddenOnes])));
 
+  /* 店舗ごとの機能スイッチ（契約の器の features）を「切」にした場面。
+   * 2026-09-08 まで、テスト中は必ず「入」だったため、商材を絞り込む道を
+   * 一度も通っておらず、この確認は空回りしていた。 */
+  const feat = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    const on = L.feat(null);
+    const withC = L.ieSelectOpts('ieProduct', 'hikari1g');
+    const off = L.feat({ typec: false });
+    const noC = L.ieSelectOpts('ieProduct', 'hikari1g');
+    L.feat(null);
+    return { on: on, withC: withC, off: off, noC: noC };
+  });
+  chk('㊱ テストの既定では、タイプCの機能は「入」',
+    feat.on.typec === true, JSON.stringify(feat.on));
+  chk('㊱ タイプCの機能を「切」にすると、商材の一覧からタイプCが消える',
+    feat.off.typec === false
+      && feat.withC.values.some((v) => /hikaric/.test(v))
+      && !feat.noC.values.some((v) => /hikaric/.test(v)),
+    '入: ' + JSON.stringify(feat.withC.values) + ' ／ 切: ' + JSON.stringify(feat.noC.values));
+  chk('㊱ 「切」のときも、hidden で隠すのではなく一覧から外している',
+    feat.noC.hiddenOnes.length === 0, JSON.stringify(feat.noC.hiddenOnes));
+
   /* ---- ㊲ 見積もりなしの成約にもポイントが付く（2026-09-08）----
    * 実績の件数には出るのに、ポイントだけ1点も付いていなかった。 */
   const nq = await page.evaluate(() => {
@@ -1804,6 +1828,540 @@ function chk(name, cond, extra) {
       && stf.t1 !== stf.t2,
     '回線1に「ドコモ MAX」=' + (stf.t1.indexOf('ドコモ MAX') >= 0)
       + ' / 回線2に「ドコモ mini」=' + (stf.t2.indexOf('ドコモ mini') >= 0));
+
+  /* ---- ㊶ 2026-09-08 の全体デバッグで見つかった、実績と保存の重い不具合 ----
+   *   #1  開き直すと「どの保存の続きか」が毎回消え、成約で保存が2件に増える
+   *   #4  成約の確認画面を出している間に同期が届くと、押した成約が消える
+   *   #9  回線2以降でU39・U15の欄が出ないのに、実績では数えていた
+   *   #20 4〜5回線だと保存が41〜55件で頭打ちになり、古い見積もりが黙って消える
+   *   #21 1回線だけの見積もりで「自動控え」が二重にできる
+   * 内部の値ではなく、**本物の再読み込み**と**画面に出ている件数**で見る。 */
+
+  // --- #1 本物の再読み込みを挟む（S.reopen() では enterStaff を通らず素通りする）
+  const beforeReload = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', devicePrice: 100000 });
+    T.lines.pick(0);
+    const a = T.saved.save('再読み込みの検査');
+    return { id: a.id, srcId: T.saved.srcId(), stored: !!T.saved.propStored(), count: T.saved.count() };
+  });
+  await page.reload();
+  await page.waitForFunction(() => window.__KQ_TEST__ && window.__KQ_TEST__.saved, null, { timeout: 20000 });
+  const afterReload = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    return { srcId: T.saved.srcId(), stored: !!T.saved.propStored(), count: T.saved.count() };
+  });
+  const afterWon = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const n = T.saved.recordWon();
+    const list = T.saved.list ? T.saved.list() : null;
+    return { count: n, wonCount: (list || []).filter((x) => x.result === 'won').length };
+  });
+  chk('㊶ 保存した直後は「どの保存の続きか」を覚えている',
+    beforeReload.srcId === beforeReload.id && beforeReload.stored,
+    'srcId=' + beforeReload.srcId + ' 端末に残った=' + beforeReload.stored);
+  chk('㊶ アプリを開き直しても、その覚えが消えない',
+    afterReload.srcId === beforeReload.id && afterReload.stored,
+    'srcId=' + afterReload.srcId + ' 端末に残った=' + afterReload.stored);
+  chk('㊶ 開き直したあと成約を押しても、保存は1件のまま（2件に増えない）',
+    afterWon.count === 1, '保存件数=' + afterWon.count);
+  chk('㊶ その1件が成約になっている',
+    afterWon.wonCount === 1, '成約の件数=' + afterWon.wonCount);
+
+  // --- #21 1回線だけの見積もりで、自動控えが二重にできない
+  const stash1 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', devicePrice: 100000 });
+    for (let i = 1; i < 5; i++) T.lines.fill(i, {});
+    T.lines.pick(0);
+    T.saved.save('1回線だけ');
+    T.sync.newCustomer();           // 「新しいお客様として始める」と同じ流れ
+    return { count: T.saved.count(), autos: T.sync.autoNames() };
+  });
+  chk('㊶ 1回線だけの見積もりを保存したあと次のお客様に移っても、自動控えが増えない',
+    stash1.count === 1 && stash1.autos.length === 0,
+    '保存件数=' + stash1.count + ' 自動控え=' + JSON.stringify(stash1.autos));
+
+  // --- #4 確認画面を出している間に同期が届いても、押した成約が消えない
+  const wonSync = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu' });
+    T.lines.pick(0);
+    const a = T.saved.save('同期が割り込む検査');
+    return T.saved.wonWithSync(a.id);
+  });
+  chk('㊶ 成約の確認中に同期が届いても、押した成約が記録される',
+    wonSync.result === 'won', '結果=' + JSON.stringify(wonSync));
+
+  // --- #9 回線2以降でもU39・U15の欄が出る（回線1の手続きを引き継ぐ）
+  const u = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.lines.fill(0, { planId: 'max', procType: 'shinki', procTodo: { shinki: true } });
+    T.lines.fill(1, { planId: 'mini' });          // 回線2は手続きを選び直していない
+    T.lines.pick(1);
+    const line2 = T.saved.u15u39();
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true } });
+    T.lines.pick(1);
+    const line2kishu = T.saved.u15u39();
+    T.lines.pick(0);
+    return { line2, line2kishu };
+  });
+  chk('㊶ 回線1が新規なら、回線2でもU39・U15の欄が出る',
+    u.line2.u39 === true && u.line2.u15 === true, JSON.stringify(u.line2));
+  chk('㊶ 回線1が機種変更なら、回線2でも欄は出ない（出し分けを壊していない）',
+    u.line2kishu.u39 === false && u.line2kishu.u15 === false, JSON.stringify(u.line2kishu));
+
+  // --- #20 4〜5回線の見積もりをたくさん保存しても、件数が減らない
+  const bulk = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    /* ご家族4〜5回線＋オプション・アクセサリ・追加項目まで入った、実際にありうる
+     * 重さの見積もり。1件あたり約16,000字で、48件ほどで送信の上限(780,000字)に届く。
+     * 上限より前に「軽くする（slim）」が働かないと、ここで古いものが消え始める。 */
+    const heavy = {
+      planId: 'max', procType: 'kishu', devicePrice: 130000,
+      deviceName: 'テスト機種ABCDEFG', custName: 'テストのお客様',
+      options: { smart_hosho: true, anshin_pack: true, netflix: true },
+      optionKubun: { smart_hosho: 'new', anshin_pack: 'new', netflix: 'new' },
+      procTodo: { kishu: true }, visitPurposes: { buy: true },
+      adhocMonthly: Array.from({ length: 8 }, (_, i) => ({ name: '追加項目のテスト' + i, amount: 1100, months: 12 })),
+      adhocInitial: Array.from({ length: 8 }, (_, i) => ({ name: '初期費用のテスト' + i, amount: 3300 })),
+      accessories: Array.from({ length: 8 }, (_, i) => ({ name: 'アクセサリのテスト' + i, price: 5500, pay: 'once' })),
+      quoteMemo: 'あ'.repeat(200), todoOther: 'い'.repeat(200)
+    };
+    const n = T.saved.bulk(70, heavy);
+    return { count: n, sizes: T.saved.sizes() };
+  });
+  chk('㊶ 5回線の重い見積もりを70件保存しても、保存が減らない（古いものが黙って消えない）',
+    bulk.count === 70, '保存件数=' + bulk.count + '（70件のはず）／' + JSON.stringify(bulk.sizes));
+  chk('㊶ そのとき、古いものは「捨てる」のではなく「軽くする」で収めている',
+    bulk.sizes.slim > 0 && bulk.sizes.total <= bulk.sizes.limit,
+    JSON.stringify(bulk.sizes));
+
+  /* ---- ㊷ お客様に見せる金額に関わる不具合（2026-09-08）----
+   *   #23 LIBMO でドコモの通話オプションが「プランに込み 0円」と出て、見積書にも載る
+   *   #24 ahamo で「旧」（770円・1,870円）が選べる。ahamo にその金額の通話オプションは無い
+   *   #26 「かけ放題オプション(1000) 1,100円」がどのプランでも選べ、ドコモ MAX で 880円 安く出る
+   *   #53 料金マスタに「ドコモメール」が無く、ahamo・mini・irumo でメールの欄が出ない
+   *   #25 LIBMO なのに「みんなドコモ割（回線数のカウントには含まれます）」と案内される
+   * 見るのは内部の設定ではなく、**画面のタイルに出ている文字**。 */
+  const money = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    function pick(pid) {
+      const t = document.getElementById('procType');
+      if (t) { t.value = 'mnp'; t.dispatchEvent(new Event('change', { bubbles: true })); }
+      const grp = document.getElementById('planGroup');
+      const sel = document.getElementById('planId');
+      if (!Array.prototype.some.call(sel.options, (o) => o.value === pid) && grp) {
+        for (const g of grp.options) {
+          grp.value = g.value; grp.dispatchEvent(new Event('change', { bubbles: true }));
+          if (Array.prototype.some.call(sel.options, (o) => o.value === pid)) break;
+        }
+      }
+      if (!Array.prototype.some.call(sel.options, (o) => o.value === pid)) return null;
+      sel.value = pid; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return { tiles: S.voiceTiles(), mail: S.mailField(), off: S.discountOff() };
+    }
+    const out = {};
+    ['max', 'mini', 'ahamo', 'ahamo_poikatsu', 'irumo', 'libmo_gogo', 'libmo_nattoku'].forEach((p) => {
+      out[p] = pick(p);
+    });
+    return out;
+  });
+  const joined = (p) => (money[p] ? money[p].tiles.join(' ／ ') : '(プランが出ない)');
+  chk('㊷「かけ放題オプション(1000)」がどのプランにも出ない（ドコモ MAX で880円安く出ない）',
+    ['max', 'mini', 'ahamo', 'irumo'].every((p) => money[p] && !/\(1000\)/.test(joined(p))),
+    ['max', 'mini', 'ahamo', 'irumo'].map((p) => p + ': ' + joined(p)).join(' / '));
+  chk('㊷ ahamo・ahamo ポイ活で「旧」（770円・1,870円）が出ない',
+    ['ahamo', 'ahamo_poikatsu'].every((p) => money[p]
+      && !/770円/.test(joined(p)) && !/1,870円/.test(joined(p))),
+    ['ahamo', 'ahamo_poikatsu'].map((p) => p + ': ' + joined(p)).join(' / '));
+  chk('㊷ ahamo のかけ放題は 1,100円のまま（正しい金額は消していない）',
+    money.ahamo && /1,100円/.test(joined('ahamo')), joined('ahamo'));
+  chk('㊷ ドコモ MAX のかけ放題は 1,980円のまま',
+    money.max && /1,980円/.test(joined('max')), joined('max'));
+  chk('㊷ LIBMO では、ドコモの通話オプションを1つも出さない（「プランに込み」と言わない）',
+    ['libmo_gogo', 'libmo_nattoku'].every((p) => money[p]
+      && money[p].tiles.length === 1 && /通話オプションなし/.test(money[p].tiles[0])),
+    ['libmo_gogo', 'libmo_nattoku'].map((p) => p + ': ' + joined(p)).join(' / '));
+  chk('㊷ ahamo・ドコモ mini・irumo で、ドコモメールの欄が 330円 で出る',
+    ['ahamo', 'ahamo_poikatsu', 'mini', 'irumo'].every((p) => money[p]
+      && money[p].mail.shown && /330円/.test(money[p].mail.text)),
+    ['ahamo', 'ahamo_poikatsu', 'mini', 'irumo']
+      .map((p) => p + ': ' + (money[p] ? JSON.stringify(money[p].mail) : '?')).join(' / '));
+  chk('㊷ ドコモ MAX ではメールの欄を出さない（標準で込みのため）',
+    money.max && money.max.mail.shown === false, JSON.stringify(money.max && money.max.mail));
+  chk('㊷ LIBMO では「みんなドコモ割（回線数のカウントには含まれます）」と言わない',
+    ['libmo_gogo', 'libmo_nattoku'].every((p) => money[p]
+      && !/回線数のカウントには含まれます/.test(money[p].off)),
+    ['libmo_gogo', 'libmo_nattoku'].map((p) => p + ': ' + (money[p] ? money[p].off : '?')).join(' / '));
+
+  /* ---- ㊸ お客様にお渡しする紙まわり（2026-09-08）----
+   *   #45 3枚組で印刷すると、3枚目（光の別紙）だけ店舗名・担当者・電話番号が違う
+   *   #46 ①〜⑨のカードを並べ替えると、画面のヒントの丸数字が古いまま
+   *   #36 成約の確認画面の回線一覧に、内部名「plan_only」がそのまま出る */
+  const sign = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    T.lines.fill(0, { planId: 'max', procType: 'kishu', devicePrice: 100000,
+      shopName: 'テスト店A', staffName: '山田', shopTel: '06-0000-0000' });
+    T.lines.pick(0);
+    S.ieOn('hikari1g');            // 光を「見積もりに含める」（3枚目が出る条件）
+    S.scope('hikari');
+    const three = S.signs();
+    S.scope('phone');
+    const one = S.signs();
+    return { three: three, one: one };
+  });
+  chk('㊸ 見積書の発行元に、⑨で書き換えた店舗名・担当者・電話番号が出る',
+    sign.one.length > 0 && /テスト店A/.test(sign.one[0]) && /山田/.test(sign.one[0])
+      && /06-0000-0000/.test(sign.one[0]), JSON.stringify(sign.one));
+  chk('㊸ 3枚組にしても、どのページも同じ発行元になる',
+    sign.three.length > 0 && sign.three.every((t) => /テスト店A/.test(t) && /山田/.test(t)),
+    JSON.stringify(sign.three));
+
+  /* 内部の印の数ではなく、**実際に並べ替えて画面の文字が変わるか**で見る。
+   * ④オプションを先頭へ動かすと、④は①になる。説明文の中の「④オプション」も
+   * 「①オプション」に変わっていなければ、別のカードを指してしまう。 */
+  const circ = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const before = S.reorderCards(null);          // 既定の並び
+    const after = S.reorderCards(['c4', 'c1', 'c2', 'c3', 'c5', 'c6', 'c7', 'c8', 'c9']);
+    const back = S.reorderCards(null);            // 元に戻す
+    return { before: before, after: after, back: back };
+  });
+  const hasMaru4Before = circ.before.filter((t) => /④オプション/.test(t));
+  const stillMaru4 = circ.after.filter((t) => /④オプション/.test(t));
+  chk('㊸ 既定の並びでは、説明文が「④オプション」を指している',
+    hasMaru4Before.length > 0, JSON.stringify(circ.before).slice(0, 200));
+  chk('㊸ ④を先頭へ動かすと、説明文の丸数字も「①オプション」に変わる',
+    stillMaru4.length === 0 && circ.after.some((t) => /①オプション/.test(t)),
+    '残った④=' + JSON.stringify(stillMaru4).slice(0, 300));
+  chk('㊸ 並びを戻すと、説明文も元の番号に戻る',
+    circ.back.filter((t) => /④オプション/.test(t)).length === hasMaru4Before.length,
+    JSON.stringify(circ.back).slice(0, 200));
+
+  /* 成約の確認画面の「どの回線を数えるか」の欄に出る文字。
+   * プランを選んでいない（プラン変更だけの）回線では手続き名が出るが、
+   * そこに内部の値「plan_only」がそのまま出ていた。 */
+  const ls = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    T.saved.clear();
+    T.saved.ieOn && T.saved.ieOn(null);
+    T.lines.fill(0, { procType: 'plan_only', planChange: true, voice: 'kake' });
+    T.lines.fill(1, { planId: 'max', procType: 'kishu', devicePrice: 100000 });
+    T.lines.pick(0);
+    const a = T.saved.save('回線の名前の検査');
+    return T.saved.wonLineText(a.id);
+  });
+  chk('㊸ 成約の確認画面の回線の欄に、内部名「plan_only」が出ない',
+    ls.length > 0 && ls.indexOf('plan_only') < 0, JSON.stringify(ls).slice(0, 250));
+  chk('㊸ かわりに「プラン変更」と日本語で出る',
+    /プラン変更/.test(ls), JSON.stringify(ls).slice(0, 250));
+
+  /* ---- ㊹ 実績の項目・一覧まわり（2026-09-08）----
+   *   #10 「（再掲）機種スタンダード」だけ外すチェックが無い
+   *   #12 dカードの種類・でんきのメニュー未選択の行が、項目一覧に無い
+   *   #15 ポイントの控えを読み込むと、同じ id の行が2つできる
+   *   #17 追っていない項目の目標が、内部の英数字のまま残って消せない
+   *   #18 料金表から消えた商材が、実績に内部の英数字で出る
+   *   #19 ポイント表の読み込みで、店舗独自サービスなどが数える側に戻らない */
+  const catX = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    const c = L.statsCatalog();
+    return {
+      flags: L.scFlags(),
+      hasDcardX: !!c['dcard:x'], hasDenkiX: !!c['denki:x'],
+      dcardXName: c['dcard:x'] || '', denkiXName: c['denki:x'] || ''
+    };
+  });
+  chk('㊹ 「（再掲）機種スタンダード」を外すチェックが、設定の画面にある',
+    catX.flags.indexOf('kishuStd') >= 0, JSON.stringify(catX.flags));
+  chk('㊹ dカード・でんきの「未選択」も項目一覧に出る（目標・配点を設定できる）',
+    catX.hasDcardX && catX.hasDenkiX,
+    catX.dcardXName + ' / ' + catX.denkiXName);
+
+  /* 前のほうに「条件だけ同じ行」があると、id で探す前にそちらを差し替えてしまい、
+   * 同じ id の行が2つ残っていた。そうなると実績のポイント表が
+   * 「件数×点数≠小計」になる（同じ行が2回数えられる）。 */
+  const impDup = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    L.cxSet([
+      { id: 'aaa', name: '前の行（条件が同じ）', pt: 10, keys: ['proc:shinki'] },
+      { id: 'bbb', name: 'あとの行', pt: 20, keys: ['proc:kishu'] }
+    ]);
+    // ファイルの行は id が bbb。条件は前の行（aaa）と同じ
+    L.cxImport([{ id: 'bbb', name: '読み込んだ行', pt: 30, keys: ['proc:shinki'] }]);
+    const rows = L.cxRowsNow();
+    const ids = rows.map((r) => r.id);
+    // 実際に成約させて、ポイントの表が「件数×点数＝小計」になっているかも見る
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'shinki', procTodo: { shinki: true } });
+    L.pick(0);
+    const a = S.save('ポイントの検査');
+    S.won(a.id, false);
+    const cx = S.cxTotalSaved();
+    const bad = Object.keys(cx.rows).filter((k) => cx.rows[k].total !== cx.rows[k].pt * cx.rows[k].n);
+    return { ids: ids, dup: ids.length !== new Set(ids).size,
+      total: cx.total, bad: bad, rows: Object.keys(cx.rows).map((k) => k + ':' + JSON.stringify(cx.rows[k])) };
+  });
+  chk('㊹ ポイントの控えを読み込んでも、同じ id の行が2つできない',
+    impDup.dup === false, JSON.stringify(impDup.ids));
+  chk('㊹ ポイントの表が「件数×点数＝小計」になっている',
+    impDup.bad.length === 0, JSON.stringify(impDup.rows));
+
+  const ownBack = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    // 数える側から外してある項目を、ポイントの条件に使って読み込む
+    const opt = m.options.filter((o) => !!L.statsCatalog()['opt:' + o.id])[0];
+    L.optSkipUi(opt.id, false);
+    const before = !!L.statsCatalog()['opt:' + opt.id];
+    L.cxImport([{ id: 'z1', name: '検査', pt: 5, keys: ['opt:' + opt.id] }]);
+    return { before: before, after: !!L.statsCatalog()['opt:' + opt.id] };
+  });
+  chk('㊹ ポイントの条件に使った項目は、読み込みで数える側に戻る',
+    ownBack.before === false && ownBack.after === true, ownBack.before + ' → ' + ownBack.after);
+
+  const goalOrphan = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    // 一覧に無いキーに目標を入れる（＝「実績で追う項目」から外したあとの状態）
+    L.setGoal('opt:kensa_nai_koumoku', 3);
+    const labels = L.goalLabels();
+    const rows = L.goalRows();
+    L.setGoal('opt:kensa_nai_koumoku', 0);
+    return { labels: labels.filter((t) => /kensa_nai_koumoku/.test(t)), rows: rows };
+  });
+  chk('㊹ 追っていない項目の目標にも、マスタ設定に欄が出る（消せる）',
+    goalOrphan.labels.length === 1 && /いまは追っていない項目/.test(goalOrphan.labels[0]),
+    JSON.stringify(goalOrphan.labels));
+
+  const delName = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    // 料金表に無いオプションを付けた保存を作り、実績に出る名前を見る
+    const items = T.lines.itemsRaw([{ options: { op_9999999999999: true },
+      optionKubun: { op_9999999999999: 'new' }, planId: 'max', procType: 'kishu' }]);
+    return Object.keys(items).map((k) => k + '=' + items[k].name);
+  });
+  chk('㊹ 料金表から消えた商材でも、実績に内部の英数字を出さない',
+    delName.some((t) => /削除された商材/.test(t)) && !delName.some((t) => /=op_9999999999999/.test(t)),
+    JSON.stringify(delName));
+
+  /* ---- ㊺ 画面の動き（2026-09-08）----
+   *   #33 プラン世代をLIBMOにしたまま手続きを機種変更に変えると、LIBMOが選べたまま
+   *   #37 回線を切り替えて戻ると、手で入れた事務手数料0円が4,950円に戻る
+   *   #38 ⑥アクセサリのタイルが「並べ替え」で掴めない
+   *   #40 選択式オプションの金額欄を選択肢に無い額にすると、表示と計算額が食い違う
+   *   #41 「その他」が全部受付終了になると、実績の印のタイルが画面から消える */
+  const grp = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const pt = document.getElementById('procType');
+    const setProc = (v) => { pt.value = v; pt.dispatchEvent(new Event('change', { bubbles: true })); };
+    setProc('mnp');
+    const onMnp = S.planGroups();
+    // 世代だけ LIBMO にして（プランは選ばない）、手続きを機種変更へ
+    const gsel = document.getElementById('planGroup');
+    gsel.value = 'libmo'; gsel.dispatchEvent(new Event('change', { bubbles: true }));
+    setProc('kishu');
+    const afterKishu = S.planGroups();
+    // LIBMO のプランを選んである見積もりでは残る
+    setProc('mnp');
+    gsel.value = 'libmo'; gsel.dispatchEvent(new Event('change', { bubbles: true }));
+    const psel = document.getElementById('planId');
+    const libmo = Array.prototype.filter.call(psel.options, (o) => /libmo/.test(o.value))[0];
+    if (libmo) { psel.value = libmo.value; psel.dispatchEvent(new Event('change', { bubbles: true })); }
+    setProc('kishu');
+    const withPlan = S.planGroups();
+    setProc('kishu');
+    return { onMnp, afterKishu, withPlan };
+  });
+  chk('㊺ のりかえ（MNP）のときは LIBMO が選べる',
+    grp.onMnp.indexOf('libmo') >= 0, JSON.stringify(grp.onMnp));
+  chk('㊺ プラン未選択のまま機種変更に変えると、LIBMO は一覧から消える',
+    grp.afterKishu.indexOf('libmo') < 0, JSON.stringify(grp.afterKishu));
+  chk('㊺ LIBMO のプランを選んである見積もりでは、機種変更にしても残る（金額を変えない）',
+    grp.withPlan.indexOf('libmo') >= 0, JSON.stringify(grp.withPlan));
+
+  const fee = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const L = T.lines;
+    L.fill(0, {}); L.fill(1, {});
+    L.pick(0);
+    const pt = document.getElementById('procType');
+    pt.value = 'shinki'; pt.dispatchEvent(new Event('change', { bubbles: true }));
+    const auto = S.fees();
+    // 手で 0円 にする（SIMのみで手数料を取らないご案内）
+    const j = document.getElementById('jimuFee');
+    j.value = '0'; j.dispatchEvent(new Event('input', { bubbles: true }));
+    const byHand = S.fees();
+    L.pick(1); L.pick(0);          // 回線を切り替えて戻る
+    const back = S.fees();
+    return { auto, byHand, back };
+  });
+  chk('㊺ 新規を選ぶと事務手数料が自動で入る（今までどおり）',
+    Number(fee.auto.jimu) > 0, JSON.stringify(fee.auto));
+  chk('㊺ 回線を切り替えて戻っても、手で入れた0円が戻らない',
+    Number(fee.back.jimu) === 0 && fee.back.jimu === fee.byHand.jimu,
+    JSON.stringify(fee.byHand) + ' → ' + JSON.stringify(fee.back));
+
+  const tiles = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const m = T.std.get();
+    const before = S.otherTiles();
+    // 「その他」のオプションを全部 受付終了 にする
+    (m.options || []).forEach((o) => {
+      if ((o.category || 'その他') === 'その他') o.retiredFrom = '2020-01-01';
+    });
+    T.std.set(m);
+    const after = S.otherTiles();
+    (m.options || []).forEach((o) => { delete o.retiredFrom; });
+    // 出荷の料金表にはアクセサリが1件も入っていないので、検査用に1つ足す
+    m.accessories = (m.accessories || []).concat(
+      [{ id: 'acc_kensa', name: '検査用アクセサリ', price: 3300 }]);
+    T.std.set(m);
+    const drag = S.accDraggable();
+    m.accessories = (m.accessories || []).filter((a) => a.id !== 'acc_kensa');
+    T.std.set(m);
+    return { before, after, drag: drag };
+  });
+  chk('㊺ 「その他」が全部受付終了でも、実績の印のタイルが残る',
+    tiles.after && tiles.after.some((t) => /下取り/.test(t))
+      && tiles.after.some((t) => /dカード初回利用/.test(t)),
+    JSON.stringify(tiles.after));
+  chk('㊺ 実績の印のタイルが二重に出ない',
+    tiles.before && tiles.before.filter((t) => /dカード初回利用/.test(t)).length === 1,
+    JSON.stringify(tiles.before));
+  chk('㊺ ⑥アクセサリのタイルが「並べ替え」で掴める（案内どおり）',
+    tiles.drag === true, String(tiles.drag));
+
+  const opx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const m = T.std.get();
+    const o = (m.options || [])[0];
+    o.priceChoices = [550, 1100]; o.price = 550;
+    T.std.set(m);
+    // 選択肢に無い額を入れて、指を離す
+    const r = S.setOptPrice(o.id, 9999);
+    return r;
+  });
+  chk('㊺ 選択式オプションの金額欄に選択肢に無い額を入れたら、一番上の金額に合わせる',
+    opx && opx.choices.indexOf(opx.price) >= 0,
+    JSON.stringify(opx));
+
+  /* ---- ㊻ 保存領域・店舗の切り替え・「いま送る」（2026-09-08）----
+   *   #30 アプリを閉じるときの「いま送る」が、実際には送らず待ち直していた
+   *   #60 別の店舗にログインしても「料金表の適用日」が前の店舗のまま残る */
+  const flush = await page.evaluate(() => window.__KQ_TEST__.lines.flushNow());
+  chk('㊻ 「いま送る」で、待っていたぶんが実際にクラウドへ送られる（待ち直さない）',
+    flush.length >= 1, '送信の回数=' + flush.length + ' ' + JSON.stringify(flush).slice(0, 200));
+
+  const wipe = await page.evaluate(() => window.__KQ_TEST__.lines.wipeKeys());
+  chk('㊻ 店舗を切り替えると、料金表の適用日と削除の記録も端末から消える',
+    wipe && wipe.before[0] && wipe.before[1] && !wipe.after[0] && !wipe.after[1],
+    JSON.stringify(wipe));
+
+  /* ---- ㊼ 成約の確認画面の「−・＋」と、見積もりなしの成約のポイント（2026-09-08）----
+   *   #13 確認画面で「−」して消した項目が、ポイントにはそのまま残っていた
+   *   #14 見積もりなしの成約で、別々の回線の項目が1回線にまとめられ、
+   *       組み合わせの行が二重に数えられていた */
+  const adjCx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    for (let i = 0; i < 5; i++) L.fill(i, {});     // 前の検査の中身を残さない
+    L.cxSet([
+      { id: 'g1', name: 'dカード GOLD', pt: 40, keys: ['dcard:gold'] },
+      { id: 'k1', name: '機種変更', pt: 12, keys: ['proc:kishu'] }
+    ]);
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true, dcard: true },
+      todoDcard: true, todoDcardType: 'gold' });
+    L.pick(0);
+    const a = S.save('補正の検査');
+    // 確認画面で dカード GOLD を「−」して 0件にしてから記録する
+    const before = S.won(a.id, false);
+    const cxBefore = S.cxTotalSaved();
+    S.clear();
+    for (let i = 0; i < 5; i++) L.fill(i, {});
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true, dcard: true },
+      todoDcard: true, todoDcardType: 'gold' });
+    L.pick(0);
+    const b = S.save('補正の検査2');
+    const after = S.wonMinus(b.id, 'dcard:gold');
+    const cxAfter = S.cxTotalSaved();
+    return { itemsBefore: Object.keys(before.items || {}), cxBefore: cxBefore.total,
+      itemsAfter: Object.keys(after.items || {}), cxAfter: cxAfter.total,
+      rows: Object.keys(cxAfter.rows) };
+  });
+  chk('㊼ そのままなら、項目もポイントも両方入る（52点）',
+    adjCx.itemsBefore.indexOf('dcard:gold') >= 0 && adjCx.cxBefore === 52,
+    JSON.stringify(adjCx.itemsBefore) + ' 合計=' + adjCx.cxBefore);
+  chk('㊼ 確認画面で「−」して消したら、実績の項目から消える',
+    adjCx.itemsAfter.indexOf('dcard:gold') < 0, JSON.stringify(adjCx.itemsAfter));
+  chk('㊼ 同じように、ポイントからも引かれる（12点になる）',
+    adjCx.cxAfter === 12, '合計=' + adjCx.cxAfter + ' 行=' + JSON.stringify(adjCx.rows));
+
+  const nqCx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.cxSet([
+      { id: 'a1', name: '新規 × dカード GOLD', pt: 20, keys: ['proc:shinki', 'dcard:gold'] },
+      { id: 'a2', name: '機種変更 × dカード GOLD', pt: 5, keys: ['proc:kishu', 'dcard:gold'] }
+    ]);
+    // 見積もりなしの成約: 新規1・機種変更1・dカードGOLD1（GOLDは1枚だけ）
+    S.addNoQuote({ 'proc:shinki': 1, 'proc:kishu': 1, 'dcard:gold': 1 });
+    const one = S.cxTotalSaved();
+    S.clear();
+    // dカードGOLDを2枚売った日は、両方の行が1件ずつ当たる
+    S.addNoQuote({ 'proc:shinki': 1, 'proc:kishu': 1, 'dcard:gold': 2 });
+    const two = S.cxTotalSaved();
+    return { one: one.total, oneRows: one.rows, two: two.total };
+  });
+  chk('㊼ 見積もりなしの成約で、dカード1枚を2つの組み合わせ行が取り合わない（20点）',
+    nqCx.one === 20, '合計=' + nqCx.one + ' ' + JSON.stringify(nqCx.oneRows));
+  chk('㊼ 2枚売った日は、両方の行が1件ずつ当たる（25点）',
+    nqCx.two === 25, '合計=' + nqCx.two);
+
+  /* ---- ㊽ 機種名が空でも機種販売に数える（2026-09-08・店舗の判断）---- */
+  const dev = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    L.scSet('device', 'all');        // 機種販売＝「全機種」にする
+    // 機種名は空、端末代金だけ入っている（急いでいるときに起きる）
+    const noName = L.itemsRaw([{ planId: 'max', procType: 'kishu', payMethod: 'ikkatsu',
+      devicePrice: 130000 }]);
+    const withName = L.itemsRaw([{ planId: 'max', procType: 'kishu', payMethod: 'ikkatsu',
+      devicePrice: 130000, deviceName: 'テスト機種' }]);
+    // 端末購入なしの回線は、これまでどおり数えない
+    const noBuy = L.itemsRaw([{ planId: 'max', procType: 'kishu', payMethod: 'none',
+      devicePrice: 130000 }]);
+    L.scSet('device', 'off');
+    return { noName: Object.keys(noName), withName: Object.keys(withName),
+      noBuy: Object.keys(noBuy) };
+  });
+  chk('㊽ 機種名が空でも、端末代金が入っていれば「機種販売」に数える',
+    dev.noName.indexOf('device') >= 0, JSON.stringify(dev.noName));
+  chk('㊽ 機種名を入れたときも、これまでどおり数える',
+    dev.withName.indexOf('device') >= 0, JSON.stringify(dev.withName));
+  chk('㊽ 「端末購入なし」の回線は、これまでどおり数えない',
+    dev.noBuy.indexOf('device') < 0, JSON.stringify(dev.noBuy));
 
   await browser.close();
   srv.close();

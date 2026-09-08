@@ -25,7 +25,7 @@ jobs:
       - name: 構文チェック（全JSファイル）
         run: |
           set -e
-          for f in keitai-app/*.js *.js ienaka-app/*.js; do
+          for f in keitai-app/*.js *.js ienaka-app/*.js ienaka-demo/*.js; do
             [ -e "$f" ] || continue
             node --check "$f"
             echo "ok: $f"

@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.14.0-demo";
+  var APP_VERSION = "2.15.0-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -9,13 +9,21 @@
    * 生成・コピー元はどちらも このファイル（ienaka-app/app.js）。 */
   var INTERNAL = typeof window !== "undefined" && !!window.IENAKA_INTERNAL;
   var DEMO = typeof window !== "undefined" && !!window.IENAKA_DEMO;
-  /* 保存領域は3者で完全に分ける。同じサイト（同一オリジン）に同居しているため、
-   * 同じ名前を使うと、実際の店舗で使った内容がデモ版に出てしまう。 */
-  var KEY = INTERNAL ? "ienaka-internal-v1" : DEMO ? "ienaka-demo-v1" : "ienaka-app-v1";
+  /* 社内版を複数の店舗で使うときの「店舗の札」。tools/build-internal.js が
+   * 店舗ごとのURL（例: /ienaka-tokiwahigashi/）を作るときに window.IENAKA_STORE へ
+   * 札（例: "tokiwahigashi"）を入れる。札があると、端末内の保存領域と
+   * クラウドの同期先が店舗ごとに完全に分かれる。札なし＝阪南（従来どおり）。 */
+  var STORE_TAG = (typeof window !== "undefined" && window.IENAKA_STORE) ? String(window.IENAKA_STORE) : "";
+  /* 保存領域は版・店舗ごとに完全に分ける。同じサイト（同一オリジン）に同居しているため、
+   * 同じ名前を使うと、実際の店舗で使った内容が別の店舗やデモ版に出てしまう。 */
+  var KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-v1" : "ienaka-internal-v1")
+    : DEMO ? "ienaka-demo-v1" : "ienaka-app-v1";
   /* ケータイ見積もりとの引き渡し（店舗名・担当者名・お客様名）。
    * 社内版どうし・製品版どうしでだけやり取りする。デモ版は相手がいないので
-   * 受け取らない（実際のお客様名を拾ってしまわないように）。 */
-  var HANDOFF_KEY = DEMO ? "" : INTERNAL ? "dq-handoff-v1" : "kq-handoff-v1";
+   * 受け取らない（実際のお客様名を拾ってしまわないように）。
+   * 店舗の札つき（阪南以外）も、同居する阪南のケータイ見積もりの内容を
+   * 拾ってしまわないよう受け取らない。 */
+  var HANDOFF_KEY = DEMO ? "" : INTERNAL ? (STORE_TAG ? "" : "dq-handoff-v1") : "kq-handoff-v1";
 
   /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
   var PRODUCTS = {
@@ -201,6 +209,18 @@
     { v: "jigyosha", t: "事業者変更（他社光コラボから）", notC: true },
     { v: "kirikae", t: "転用（タイプC）" }
   ];
+  /* 住居タイプの表示名と、料金表を引くときの鍵。
+   * 料金表は 戸建（ht）と マンション（ms）の2つしか持っていないので、
+   * 「マンション（100M）」は ms として引く。この読み替えが無かったため、
+   * ms100 を選ぶと料金表に無い鍵を引いて画面が固まっていた（2026-09-08）。
+   * ケータイ内蔵版（keitai-app/ienaka.js:152-153）と同じにする。 */
+  var HOUSING_LABEL = { ht: "戸建", ms: "マンション", ms100: "マンション100M" };
+  function hKey() { return state.housing === "ms100" ? "ms" : state.housing; }
+  var IE_HOUSING_OPTS = [
+    { v: "ht", t: "戸建" },
+    { v: "ms", t: "マンション" },
+    { v: "ms100", t: "マンション（100M）" }
+  ];
   function ieFillSelect(id, list, cur) {
     var sel = $(id);
     if (!sel) return cur;
@@ -246,6 +266,10 @@
        * どれかを入れたら、合計は内訳から計算する（上の1行は使わない）。
        * 内訳を入れていない古い見積もりは、今までどおり上の1行で出る。 */
       typecKeepTv: 0, typecKeepPhone: 0, typecKeepOther: 0, typecKeepOff: 0,
+      /* 転用（タイプC）のいまの回線設備。hikari=光回線（工事なし）／coax=同軸ケーブル
+       * （光への切り替え工事あり。工事はケーブルテレビ会社が行う・2026-08-29共有）。
+       * typecKoji はその工事料（同社の案内額。わかるときだけ入れる・初期費用に載る） */
+      typecLine: "hikari", typecKoji: null,
       curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング）
       /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
        * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
@@ -257,7 +281,8 @@
    * 店舗名は端末ごとの設定として保存する（クラウド利用時は端末間で揃う）。
    * 見積もりは全端末・全員で共通の1枚（2026-08-24 に担当者ごとの分離をやめた）。
    * 担当者名は見積もり本体（state.staffName）に入れて一緒に保存・同期する。 */
-  var CFG_KEY = INTERNAL ? "ienaka-internal-config-v1" : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
+  var CFG_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-config-v1" : "ienaka-internal-config-v1")
+    : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
   function defaultConfig() { return { storeName: "" }; }
   var config = defaultConfig();
   var oldCfg = null; // 担当者分離時代の設定（見積もりの引き継ぎにだけ使う）
@@ -318,12 +343,18 @@
   /* 商材・住居・タイプ変更時に標準料金をセット */
   function applyDefaults() {
     var p = PRODUCTS[state.product];
+    /* タイプCはマンションタイプの提供がない（提携ケーブルテレビの提供条件）。
+     * 料金を引く前に戸建へ寄せる（マンションのまま引くと金額がずれる） */
+    /* タイプCはマンションタイプの提供が無い（戸建のみ）。
+     * ただし 10ギガ タイプC は戸建・マンション同額で、マンションタイプを
+     * 出している提携ケーブルテレビも多いため、寄せない（msAny）。 */
+    if (p.typec && !p.msAny && state.housing !== "ht") state.housing = "ht";
     if (state.product === "home5g") {
       state.baseMonthly = p.monthly;
       state.kojiFee = 0; state.kojiFree = false;
     } else {
-      state.baseMonthly = p.monthly[state.housing][state.ptype];
-      state.kojiFee = p.koji[state.housing];
+      state.baseMonthly = p.monthly[hKey()][state.ptype];
+      state.kojiFee = p.koji[hKey()];
       if (canBuy10gRouter()) applyRouter10gDefault();
     }
     state.jimuFee = p.jimu;
@@ -515,7 +546,7 @@
     // 回線工事費: 申込区分から自動判定（新規=標準28,600円／転用・事業者変更=0円）
     var koji = 0;
     if (isHikari() && state.applyType === "shinki") {
-      koji = PRODUCTS[state.product].koji[state.housing];
+      koji = PRODUCTS[state.product].koji[hKey()];
     }
     // オプション工事料も新規のみ自動加算（転用・事業者変更は設備そのまま移行のため0円）
     var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneKoji = 0, phoneChecked = false;
@@ -607,6 +638,13 @@
     }
     if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
       initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
+    }
+    /* 転用（タイプC）で、いまの回線が同軸ケーブルの場合の光切り替え工事料。
+     * 工事はケーブルテレビ会社が行い、金額も同社の案内による（2026-08-29共有）。
+     * 金額がわかっているときだけ入力してもらい、一括の初期費用として載せる。 */
+    if (isHikari() && state.applyType === "kirikae"
+        && (state.typecLine || "hikari") === "coax" && num(state.typecKoji) > 0) {
+      initRows.push({ name: "光切り替え工事料（ケーブルテレビ会社の請求）", amount: num(state.typecKoji) });
     }
     state.extraInitial.forEach(function (a) {
       if (!a.name && !num(a.amount)) return;
@@ -725,7 +763,13 @@
       step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
       step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug", "本日から");
     } else if (PRODUCTS[state.product].typec) {
-      if (state.applyType === "kirikae") {
+      if (state.applyType === "kirikae" && (state.typecLine || "hikari") === "coax") {
+        /* いまが同軸ケーブルの場合は、光への切り替え工事が入る（工事はケーブルテレビ会社） */
+        step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切り替え）", "shop", "本日");
+        step("光への切り替え工事（立ち会いをお願いします）", "いまの同軸ケーブルから光回線へ切り替える工事です。ケーブルテレビ会社が行います（日程・工事料は同社からのご案内をご確認ください）", "tools", "後日");
+        step("ご利用開始", "切り替え前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "工事の当日から");
+        noteTo("ご利用開始", "お電話・テレビはケーブルテレビのご契約のまま続きます（ドコモとケーブルテレビで請求が分かれます）");
+      } else if (state.applyType === "kirikae") {
         step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切替）", "shop", "本日");
         step("回線切替日", "工事や設定変更はありません。いまお使いの機器のままです", "router", "切替日");
         step("ご利用開始", "切替前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "切替日から");
@@ -965,10 +1009,12 @@
     if (sg.to == null) return sg.from === 1 ? "毎月" : sg.from + "か月目以降";
     return (sg.from === 1 ? "〜" : sg.from + "〜") + sg.to + "か月目";
   }
-  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "切替" };
+  /* kirikae（内部の値の名前は昔のまま）＝ケーブルテレビのネットからタイプCへの
+   * 乗り換え。表記は「転用（タイプC）」（店舗の指定・2026-08-29。工事なしの扱いは変わらない） */
+  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用（タイプC）" };
   function productLabel() {
     if (state.product === "home5g") return "";
-    var parts = [state.housing === "ht" ? "戸建" : "マンション"];
+    var parts = [HOUSING_LABEL[state.housing] || "戸建"];
     if (!PRODUCTS[state.product].noPtype) parts.push("タイプ" + state.ptype);
     parts.push(APPLY_LABEL[state.applyType] || "新規");
     return "（" + parts.join("・") + "）";
@@ -1177,6 +1223,21 @@
 
   function syncForm() {
     $("product").value = state.product;
+    /* タイプC: 関西の提携ケーブルテレビはマンションタイプを提供していない
+     * （店舗の共有・2026-08-29）。住居タイプは戸建だけにする。 */
+    /* 10ギガ タイプCは戸建・マンションが同額で、マンションタイプを出している
+     * ケーブルテレビ会社も多いため、戸建に寄せない（msAny）。 */
+    var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec
+      && !PRODUCTS[state.product].msAny);
+    if (isCms && state.housing !== "ht") state.housing = "ht";
+    /* 戸建てだけのときは、マンションを一覧そのものから外す
+     * （disabled で選べなくはなるが、iPhone・iPad では hidden が効かず、
+     *  選べないものが見えたままになるため） */
+    state.housing = ieFillSelect("housing", IE_HOUSING_OPTS.filter(function (o) {
+      return !isCms || o.v === "ht";
+    }), state.housing);
+    var hNote = $("housingNote");
+    if (hNote) hNote.hidden = !isCms;
     $("housing").value = state.housing;
     $("ptype").value = state.ptype;
     $("baseMonthly").value = state.baseMonthly || "";
@@ -1192,7 +1253,7 @@
     var isC = !!PRODUCTS[state.product].typec;
     if (isC && (state.applyType === "tenyo" || state.applyType === "jigyosha")) state.applyType = "kirikae";
     if (!isC && state.applyType === "kirikae") state.applyType = "shinki";
-    /* 「切替」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
+    /* 「転用（タイプC）」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
     state.applyType = ieFillSelect("applyType", IE_APPLY_OPTS.filter(function (o) {
       if (o.notC && isC) return state.applyType === o.v;
       return true;
@@ -1219,6 +1280,14 @@
     var h10c = $("typec10gHint");
     if (h10c) h10c.hidden = state.product !== "hikaric10g";
     if (document.activeElement !== $("typecKeep")) $("typecKeep").value = state.typecKeepAmt || "";
+    // 転用（タイプC）: いまの回線設備で工事の有無が変わる
+    var isKirikae = isC && state.applyType === "kirikae";
+    var coax = (state.typecLine || "hikari") === "coax";
+    $("typecLineField").hidden = !isKirikae;
+    $("typecLine").value = state.typecLine || "hikari";
+    $("typecKojiField").hidden = !(isKirikae && coax);
+    $("typecLineHint").hidden = !(isKirikae && coax);
+    if (document.activeElement !== $("typecKoji")) $("typecKoji").value = state.typecKoji || "";
     $("providerTypeField").hidden = !ptOn;
     // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す
     $("visitWrap").hidden = $("providerField").hidden || state.provider !== "@nifty";
@@ -1317,8 +1386,11 @@
   }
   function storeDoc() {
     /* 社内版はログインを使わないため、決め打ちの置き場と同期する。
-     * ケータイ見積もりの社内版（settings/docomoQuoteStore）とは別のドキュメント。 */
-    if (INTERNAL) return CLOUD.db.collection("settings").doc("ienakaInternalStore");
+     * ケータイ見積もりの社内版（settings/docomoQuoteStore）とは別のドキュメント。
+     * 店舗の札つきは店舗ごとの置き場（settings/ienakaStore_札）。
+     * 新しい札を増やしたら、recipe-box のFirestoreルールにもその置き場を足すこと。 */
+    if (INTERNAL) return CLOUD.db.collection("settings")
+      .doc(STORE_TAG ? "ienakaStore_" + STORE_TAG : "ienakaInternalStore");
     return CLOUD.db.collection("stores").doc(CLOUD.user.uid);
   }
   /* 見積もりは全員共通の1枚。担当者別（quotes/{担当id}）だったころの
@@ -1378,6 +1450,8 @@
       var incoming = JSON.parse(d.data);
       // お客様名は同期しないため、この端末で入力済みの名前を保持する
       if (incoming && !incoming.custName && state.custName) incoming.custName = state.custName;
+      // 引き継いだ担当者名は、初回の受信で前の担当者名に戻さない
+      if (incoming && handoffStaff) { incoming.staffName = handoffStaff; handoffStaff = ""; }
       state = Object.assign(defaultState(), incoming);
       migrateState(state);
       try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {}
@@ -1768,7 +1842,12 @@
       }
     }
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
-    h += '<div class="disclaimer">【デモ版】本見積もりはデモ用のサンプルで、実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。本書は当ツールが作成した概算のご案内であり、NTTドコモが発行するものではありません。<br>イエナカ見積もり 版 ' + APP_VERSION + "</div>";
+    /* デモ版（営業のQR配布用）は、お客様の紙と間違われないように断り書きを変える。
+     * 分岐をここに持たせることで、デモ版を原本から生成できるようにする（2026-09-08）。 */
+    h += '<div class="disclaimer">' + (DEMO
+      ? "【デモ版】本見積もりはデモ用のサンプルで、実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。本書は当ツールが作成した概算のご案内であり、NTTドコモが発行するものではありません。"
+      : "本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。詳細は店頭スタッフへご確認ください。")
+      + "<br>イエナカ見積もり 版 " + APP_VERSION + "</div>";
     $("sheetBody").innerHTML = h;
   }
 
@@ -1849,7 +1928,7 @@
     h += row("商材", esc(p.name));
     if (isHikari()) {
       h += row("申込区分", APPLY_LABEL[state.applyType] || "新規");
-      h += row("住居タイプ", state.housing === "ht" ? "戸建" : "マンション");
+      h += row("住居タイプ", HOUSING_LABEL[state.housing] || "戸建");
       if (!p.noPtype) {
         var pvNote = "（タイプ" + esc(state.ptype) + "）";
         if (state.provider) {
@@ -1910,7 +1989,13 @@
       r.optKojiRows.forEach(function (x) { h += row("　内訳: " + esc(x.name), yen(x.amount)); });
       if (r.koji > 0) h += row("工事費 実質0円特典", state.kojiFree ? "適用（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）" : "適用なし");
     } else if (isHikari()) {
-      h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
+      if (state.applyType === "kirikae" && (state.typecLine || "hikari") === "coax") {
+        // 同軸ケーブルからの転用（タイプC）は、光への切り替え工事あり（ケーブルテレビ会社の請求）
+        h += row("工事費（光切り替え・ケーブルテレビ会社）", num(state.typecKoji) > 0
+          ? yen(num(state.typecKoji)) : "ケーブルテレビ会社の案内による");
+      } else {
+        h += row("工事費", "0円（" + (APPLY_LABEL[state.applyType] || "") + "）");
+      }
     }
     r.tvRegRows.forEach(function (x) { h += row(esc(x.name), yen(x.amount)); });
     if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
@@ -2062,6 +2147,8 @@
         state["typecKeep" + k] = num(this.value); recalc();
       });
     });
+  $("typecLine").addEventListener("change", function () { state.typecLine = this.value; syncForm(); recalc(); });
+  $("typecKoji").addEventListener("input", function () { state.typecKoji = num(this.value); recalc(); });
   $("storePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
   $("setWariTotal").addEventListener("input", function () { state.setWariTotal = num(this.value); recalc(); });
   $("dcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
@@ -2167,6 +2254,8 @@
 
   /* ケータイ見積もりから移ってきたときは、店舗名・担当者名・お客様名を引き継ぐ。
    * 同一オリジンの localStorage 経由。読んだら消す（次に開いたときに残らないように）。 */
+  // ケータイ見積もりから引き継いだ担当者名（同期で戻されないように控える）
+  var handoffStaff = "";
   function takeHandoff() {
     if (!HANDOFF_KEY) return;   // デモ版は引き継がない
     var raw = null;
@@ -2180,30 +2269,22 @@
     if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return;
 
     if (d.storeName) { config.storeName = d.storeName; }
-    if (d.staffName) state.staffName = d.staffName;
+    /* 引き継いだ担当者名は、同期の初回受信で前の担当者名に戻らないよう
+     * この起動のあいだだけ守る。担当者名はふだん「みんなで共有する1枚」に
+     * 入れて同期するので、常に守ると別の端末で直した名前が伝わらなくなる。
+     * ここは「引き継いだ直後の1回だけ」に限る（2026-09-08）。 */
+    if (d.staffName) { state.staffName = d.staffName; handoffStaff = d.staffName; }
     if (d.custName) state.custName = d.custName;
     saveConfig();
     save();
   }
 
-  /* ケータイ見積もりへ戻るとき、担当者名とお客様名を渡す。
-   * 向こうで担当者コードを聞かれずに済むようにするため。 */
+  /* ヘッダーの「← ケータイ見積もり」リンクはどの版でも出さない。
+   * 製品の単体出荷（--with-ienaka）は 2026-08-24 から、社内版も 2026-08-26 から。
+   * 行き来すると端末間同期の内容が混ざりやすく、事故のもとになるため。
+   * ケータイ見積もり → イエナカの方向の引き継ぎ（takeHandoff）はそのまま。 */
   var backLink = $("toKeitai");
-  /* 製品版の単体出荷（--with-ienaka）ではケータイ見積もりとの行き来をさせない。
-   * 行き来すると端末間同期の内容が混ざりやすく、事故のもとになるため（2026-08-24 方針）。
-   * リンクを使うのは阪南の社内版（INTERNAL）だけ。 */
-  if (backLink && !INTERNAL) { backLink.hidden = true; backLink = null; }
-  if (backLink) {
-    backLink.addEventListener("click", function () {
-      try {
-        localStorage.setItem(HANDOFF_KEY, JSON.stringify({
-          staffName: state.staffName || "",
-          custName: state.custName || "",
-          from: "ienaka", at: Date.now()
-        }));
-      } catch (e) {}
-    });
-  }
+  if (backLink) backLink.hidden = true;
 
 
   /* ---------- 検算テスト用の窓口（tests/run-ienaka-tests.js から呼ぶ） ----------
@@ -2217,6 +2298,17 @@
     platRate: function () { return platRate(); },
     reviseNotices: function () { return reviseNotices(); },
     version: APP_VERSION,
+    /* ケータイ見積もりから担当者名を引き継いだあと、同期の初回受信で
+     * 前の担当者名に戻らないかを見る（2026-09-08）。 */
+    handoffThenSync: function (staffName, remoteStaff) {
+      state.staffName = staffName; handoffStaff = staffName;
+      var payload = JSON.stringify(Object.assign({}, defaultState(), { staffName: remoteStaff }));
+      applyRemoteQuote({ data: payload });
+      var first = state.staffName;
+      // 2回目からは、ふつうに同期で入れ替わってよい（共有する内容のため）
+      applyRemoteQuote({ data: payload });
+      return { first: first, second: state.staffName };
+    },
     run: function (patch) {
       var keep = JSON.parse(JSON.stringify(state));
       var d = defaultState();

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.182.0";
+  var APP_VERSION = "1.183.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -265,6 +265,13 @@
   function lsDone(key) {
     if (!lsFail[key]) return;
     delete lsFail[key];
+    /* 空きが戻ったかもしれないので、まず履歴の本文を置き直してみる。
+     * これをしないと、履歴だけが「保存できず」のまま残り、
+     * 空きを作っても赤い警告と「同期✓（端末に保存できず）」が消えなかった
+     * （2026-09-08）。中で書けたら lsDone(HIST_KEY) が走って印が消える。 */
+    if (key !== HIST_KEY && lsFail[HIST_KEY] && typeof histSaveLocal === "function") {
+      try { histSaveLocal(); } catch (e) {}
+    }
     if (lsFailed()) return;
     storageWarnHide();
     // 空きが戻ったら、履歴の本文も端末に置き直す（また入らなければ自動で減らす）
@@ -591,22 +598,52 @@
   function savedListJson(list) {
     try { return JSON.stringify(list); } catch (e) { return ""; }
   }
-  /* 大きすぎるときに縮める。まず古いものから中身を落とし、
-   * それでも収まらなければ古いものを落とす（実績は確定＝スナップショットに残る）。
-   * 縮めたときは true を返す。 */
+  /* クラウドへ送る形（お客様名・請求内訳を落としたもの）の写しを作る。
+   * 大きさを測るときも必ずこの形で測る。端末の中身のまま測ると、
+   * 実際に送る量より多く見積もって、必要以上に早く縮め始めてしまう。 */
+  function savedSendCopy(list) {
+    var copy = JSON.parse(JSON.stringify(list));
+    copy.forEach(function (it) {
+      it.custName = "";
+      ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+      ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+    });
+    return copy;
+  }
+  function savedSendLen(list) { return savedListJson(savedSendCopy(list)).length; }
+  /* 送る形が大きすぎるときに、端末の一覧の中身を軽くする（slim）。
+   *
+   * 2026-09-08 まで、ここは「まず新しい60件より古いものを軽くし、
+   * それでも収まらなければ list.pop() で古いものを丸ごと捨てる」だった。
+   * ところが for の開始が i >= SAVED_FULL（60）なので、保存が60件たまる前は
+   * **1件も軽くされず、いきなり削除だけが走っていた**。回線4〜5本の見積もりでは
+   * 41〜55件で頭打ちになり、古い見積もりと、その分の当月・先月の実績が
+   * 警告も記録も無く消えていた（実測: 60回の応対が実績で42回になった）。
+   *
+   * いまは削除を一切しない。軽くするだけで、足りなければ
+   * 「送る側」で減らす（savedSendFit）。端末の中身はお店の資産なので、
+   * クラウドの大きさの都合で消してはいけない。 */
   function shrinkSavedList(list, limit) {
     var changed = false;
-    for (var i = list.length - 1; i >= SAVED_FULL && savedListJson(list).length > limit; i--) {
+    // ① まず「新しい60件」より古いものを軽くする（これまでどおり）
+    for (var i = list.length - 1; i >= SAVED_FULL && savedSendLen(list) > limit; i--) {
       if (list[i] && !list[i].slim) { slimSavedItem(list[i]); changed = true; }
     }
-    while (list.length > 1 && savedListJson(list).length > limit) {
-      list.pop();          // いちばん古いものから外す（並びは新しい順）
-      changed = true;
+    // ② それでも収まらなければ、新しい1件を残して全部軽くする（捨てるよりまし）
+    for (var j = list.length - 1; j >= 1 && savedSendLen(list) > limit; j--) {
+      if (list[j] && !list[j].slim) { slimSavedItem(list[j]); changed = true; }
     }
     return changed;
   }
+  /* 送る形が limit を超えているとき、**送る写しのほうだけ**古いものから減らす。
+   * 端末の一覧はそのまま。減らした件数を返す。 */
+  function savedSendFit(copy, limit) {
+    var dropped = 0;
+    while (copy.length > 1 && savedListJson(copy).length > limit) { copy.pop(); dropped++; }
+    return dropped;
+  }
   /* 新しい方から SAVED_FULL 件を残して、それより古いものを軽くする。
-   * 件数の上限と、クラウドへ送れる大きさの上限も合わせてここで掛ける。 */
+   * 件数の上限（SAVED_MAX）も合わせてここで掛ける。 */
   function trimSavedList(list) {
     list.sort(function (a2, b2) { return (b2.savedAt || 0) - (a2.savedAt || 0); });
     if (list.length > SAVED_MAX) list = list.slice(0, SAVED_MAX);
@@ -615,6 +652,12 @@
     return list;
   }
   var savedList = [];
+  /* 同期で savedList が配列ごと入れ替わっても、同じ保存に書けるようにする。
+   * 確認画面など「間があく」処理の前に掴んだものは、書く直前にこれで取り直す。 */
+  function liveSavedItem(it) {
+    if (!it || !it.id) return it || null;
+    return savedList.filter(function (x) { return x.id === it.id; })[0] || null;
+  }
   function savedKey(staffId) { return SAVED_KEY + ":" + (staffId || activeStaff().id); }
   function loadSaved() {
     savedList = [];
@@ -860,6 +903,9 @@
       label: "渡す担当", choices: others, value: others[0].id, okText: "渡す"
     }, function (to) {
       if (!to) return;
+      // 確認の間に同期が届いていることがあるので、書く直前に取り直す（2026-09-08）
+      it = liveSavedItem(it);
+      if (!it) { savedNote("この見積もりは、ほかの端末で消されたようです。もう一度お試しください。"); return; }
       var now = Date.now();
       var copy = JSON.parse(JSON.stringify(it));
       copy.id = "q" + now + "x" + Math.floor(Math.random() * 10000);
@@ -1166,7 +1212,10 @@
     }
     if (m.deviceName) bits.push(m.deviceName);
     else if (num(m.devicePrice) > 0) bits.push(yen(num(m.devicePrice)) + "の端末");
-    if (!bits.length && m.procType) bits.push(STATS_PROC_NAMES[m.procType] || m.procType);
+    /* STATS_PROC_NAMES の鍵は "plan"、画面の値は "plan_only" なので、
+     * ここで引くと「plan_only」がそのまま出ていた（2026-09-08）。
+     * 画面の値をそのまま日本語にする procName() を使う。 */
+    if (!bits.length && m.procType) bits.push(procName(m.procType));
     return bits.join("／");
   }
 
@@ -1437,6 +1486,12 @@
     else delete it.wonLines;
   }
   function setSavedResult2(it, result, byStaff, wonAdj, useCurrent, lines) {
+    /* 確認画面（数える回線・項目の±）を出している間に他の端末から同期が届くと、
+     * watchSaved が savedList を配列ごと入れ替えるため、掴んでいた it が
+     * いまの一覧から外れる。そのまま書いても保存にも画面にも入らず、
+     * 押した成約が黙って消えていた（2026-09-08）。書く直前に取り直す。 */
+    it = liveSavedItem(it);
+    if (!it) { savedNote("この見積もりは、ほかの端末で消されたようです。もう一度お試しください。"); return; }
     if (result === "won") {
       /* 回線1〜5 は1商談の中の別の番号。中身のある回線ぶんが成約として数えられるが、
        * 見比べていただくために作った回線は、成約の確認画面で外せる（2026-09-05）。 */
@@ -1570,6 +1625,15 @@
   function statsIsIPhone(pt) { return /iphone/i.test(String((pt && pt.deviceName) || "")); }
   // 下取りの区分（実績だけに使う印）
   var SHITADORI_NAMES = { target: "下取り（指定機種）", other: "下取り（指定外機種）" };
+  /* 料金表から消えた商材の名前。過去の成約はそのまま数える（消すと実績が減る）が、
+   * 名前が分からないときに内部の英数字（op_1784460515071）をそのまま出していたため、
+   * お店が何のことか分からなかった（2026-09-08）。行そのものは id ごとに分けたままで、
+   * 見出しだけ日本語にし、見分けが付くよう末尾4文字を添える。 */
+  function statsDefName(def, id) {
+    if (def && def.name) return def.name;
+    var t = String(id || "");
+    return "（削除された商材" + (t.length > 4 ? " …" + t.slice(-4) : "") + "）";
+  }
   /* U15のプラン。新規・MNPでこれを選んでいたら「（再掲）U15」に数える */
   var U15_PLANS = { u15_debut: true, u15: true };
   /* 実績のキーからプランのidを取り出す（"plan:mini:t1" → "mini"） */
@@ -1806,9 +1870,16 @@
     if (cfg.shitadori && SHITADORI_NAMES[pt.shitadori]) {
       out["shitadori:" + pt.shitadori] = SHITADORI_NAMES[pt.shitadori];
     }
-    if (pt.deviceName && devBought) {
+    /* 「全機種」のときは、機種名が空でも端末が売れていれば数える。
+     * 機種名に頼っていたため、急いで代金だけ入れた回線では「機種販売」が
+     * 0件のまま「（再掲）機種ハイエンド」だけが立ち、再掲のほうが元より
+     * 多い表になっていた（2026-09-08・店舗の判断で過去の数も直す）。
+     * 「機種名で絞る」（kw）は、名前が無いと絞りようがないので今までどおり。 */
+    var devSold = devBought
+      && (pt.deviceName || num(pt.devicePrice) > 0 || pt.kishuRank);
+    if (devSold) {
       if (cfg.device === "all") out["device"] = "機種販売";
-      else if (cfg.device === "kw" && statsKwTest(cfg.deviceKw, pt.deviceName)) {
+      else if (cfg.device === "kw" && pt.deviceName && statsKwTest(cfg.deviceKw, pt.deviceName)) {
         out["device"] = "（再掲）" + cfg.deviceKw;
       }
     }
@@ -1845,11 +1916,11 @@
       if (def && def.own) out["own:o:" + id] = "独自: " + def.name;
       else if (kb2 === "exist") {
         // 既存（もともとご加入のものをドコモ経由へ）は新規と分けて数える
-        out["opt:" + id + ":exist"] = "オプション: " + (def ? def.name : id) + "（既存）";
+        out["opt:" + id + ":exist"] = "オプション: " + statsDefName(def, id) + "（既存）";
       } else {
         /* 既存の区分がある商材（Amazonプライム）は、どちらの行か分かるように
          * 新規にも区分を付ける。区分の無い商材はこれまでどおり名前だけ。 */
-        out["opt:" + id] = "オプション: " + (def ? def.name : id)
+        out["opt:" + id] = "オプション: " + statsDefName(def, id)
           + (optHasExist(def) ? "（新規）" : "");
       }
     });
@@ -1871,7 +1942,7 @@
       Object.keys(pt.accSel || {}).forEach(function (id) {
         if (!pt.accSel[id]) return;
         var def = MASTER.accessories.filter(function (o) { return o.id === id; })[0];
-        out["acc:" + id] = "アクセサリ: " + (def ? def.name : id);
+        out["acc:" + id] = "アクセサリ: " + statsDefName(def, id);
       });
     }
     return out;
@@ -1970,11 +2041,16 @@
         keys: keys
       };
       if (!row.name && !row.keys.length) { res.skipped++; return; }
+      /* 突き合わせは二段。まず**全行を id で**探し、見つからなければ条件で探す。
+       * 1つの繰り返しで両方を見ていたため、前のほうに条件の一致する行があると
+       * そちらを差し替えてしまい、同じ id の行が2つ残っていた。そうなると
+       * 実績のポイント表が「件数×点数≠小計」になる（2026-09-08）。 */
       var at = -1;
-      for (var i = 0; i < rows.length; i++) {
-        // id で照合するのは、ファイルに id が書いてあるときだけ
-        if (hadId && rows[i].id === row.id) { at = i; break; }
-        if (keys.length && sig(rows[i]) === sig(row)) { at = i; break; }
+      if (hadId) {
+        for (var i = 0; i < rows.length; i++) if (rows[i].id === row.id) { at = i; break; }
+      }
+      if (at < 0 && keys.length) {
+        for (var j = 0; j < rows.length; j++) if (sig(rows[j]) === sig(row)) { at = j; break; }
       }
       if (at >= 0) { rows[at] = row; res.updated++; } else { rows.push(row); res.added++; }
     });
@@ -1992,6 +2068,12 @@
         if (k.indexOf("denki:") === 0 && sc.denki !== "type") sc.denki = "type";
         if (k === "gas" && sc.gas === "off") sc.gas = "one";
         if (k.indexOf("opt:") === 0) delete sc.optSkip[k.slice(4).replace(/:exist$/, "")];
+        /* 店舗独自サービス・独自商材・商材・アクセサリも同じように数える側へ戻す。
+         * ここに書いていなかったため、条件に使ってもその行がずっと0点だった。 */
+        if (k.indexOf("own:o:") === 0) delete sc.optSkip[k.slice(6)];
+        if (k.indexOf("own:f:") === 0) delete sc.feeSkip[k.slice(6)];
+        if (k.indexOf("fee:") === 0) delete sc.feeSkip[k.slice(4)];
+        if (k.indexOf("acc:") === 0) sc.accs = true;
         if (k === "highend" || k.indexOf("highend:") === 0) sc.highend = true;
         if (k === "kishustd" || k.indexOf("kishustd:") === 0) sc.kishuStd = true;
         if (k === "ie:prov:ocn") sc.ocn = true;
@@ -2068,10 +2150,84 @@
     }
     return { lines: perLine, whole: whole };
   }
-  function cxBreakdown(d, won, lines, itemMap) {
+  /* 成約の確認画面の「−・＋」を、回線ごとの一覧にも反映する。
+   * 「−」… その項目を持っている回線から、減らした件数ぶん取り除く
+   * 「＋」… その項目を持っていない回線に足す（足りなければ回線を1本増やす）
+   * これが無かったため、確認画面で消した項目がポイントにだけ残り、
+   * 同じ実績画面の「項目別」の表と食い違っていた（2026-09-08）。 */
+  function cxApplyAdj(sets, adj) {
+    if (!adj) return sets;
+    Object.keys(adj).forEach(function (k) {
+      var dd = num(adj[k]);
+      if (!dd) return;
+      if (cxWholeKey(k)) {                       // 商談にひとつの項目（光・5G）
+        if (dd < 0) delete sets.whole[k];
+        else if (!sets.whole[k]) sets.whole[k] = k;
+        return;
+      }
+      var i;
+      if (dd < 0) {
+        for (i = sets.lines.length - 1; i >= 0 && dd < 0; i--) {
+          if (sets.lines[i][k]) { delete sets.lines[i][k]; dd++; }
+        }
+      } else {
+        for (i = 0; i < sets.lines.length && dd > 0; i++) {
+          if (!sets.lines[i][k]) { sets.lines[i][k] = true; dd--; }
+        }
+        while (dd > 0) { var o = {}; o[k] = true; sets.lines.push(o); dd--; }
+      }
+    });
+    return sets;
+  }
+  /* 「見積もりなしの成約」は回線の内訳が分からないので、1件の項目が
+   * 2つの組み合わせ行に同時に使われないよう、点数の高い行から取り合いを決める。
+   * これが無かったため、別々の回線の項目が1回線にまとめられ、
+   * 組み合わせの行が二重に数えられていた（2026-09-08）。 */
+  function cxBreakdownFromItems(map) {
     var rows = cxRows();
     if (!rows.length) return [];
-    var sets = itemMap ? cxSetsFromItems(itemMap) : statsKeySets(d, won, lines);
+    var left = {}, exists = {};
+    Object.keys(map || {}).forEach(function (k) {
+      left[k] = Math.max(0, num(map[k].n) || 1);
+      exists[k] = true;
+    });
+    var order = rows.map(function (r, i) { return i; }).sort(function (a, b) {
+      return (num(rows[b].pt) - num(rows[a].pt)) || (a - b);
+    });
+    var got = {};
+    order.forEach(function (i) {
+      var keys = (rows[i].keys || []).filter(function (k) { return !cxWholeKey(k); });
+      var whole = (rows[i].keys || []).filter(cxWholeKey);
+      // 商談にひとつの項目（光・5G）は取り合いにしない
+      if (whole.some(function (k) { return !exists[k]; })) { got[i] = { n: 0, covered: 0 }; return; }
+      if (!keys.length) {
+        got[i] = { n: whole.length ? 1 : 0, covered: 0 };
+        return;
+      }
+      if (keys.some(function (k) { return !exists[k]; })) { got[i] = { n: 0, covered: 0 }; return; }
+      var n = Math.min.apply(null, keys.map(function (k) { return left[k] || 0; }));
+      if (n > 0) {
+        keys.forEach(function (k) { left[k] -= n; });
+        got[i] = { n: n, covered: 0 };
+      } else {
+        // 条件はそろっていたが、もっと点数の高い行に取られた
+        got[i] = { n: 0, covered: 1 };
+      }
+    });
+    var out = [];
+    rows.forEach(function (r, i) {
+      var g = got[i];
+      if (!g || (!g.n && !g.covered)) return;
+      out.push({ id: r.id, name: r.name || "（名前なし）", pt: num(r.pt),
+        n: g.n, total: num(r.pt) * g.n, covered: g.covered });
+    });
+    return out;
+  }
+  function cxBreakdown(d, won, lines, itemMap, adj) {
+    if (itemMap) return cxBreakdownFromItems(itemMap);
+    var rows = cxRows();
+    if (!rows.length) return [];
+    var sets = cxApplyAdj(statsKeySets(d, won, lines), adj);
     var ms = rows.map(function (r) { return cxRowMatch(r, sets); });
     var sigs = ms.map(function (m) {
       if (!m) return null;
@@ -2332,11 +2488,15 @@
     else if (cfg.dcard === "type") {
       var dcN = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
       Object.keys(dcN).forEach(function (k) { out["dcard:" + k] = dcN[k]; });
+      /* 種類を選ばずに申し込んだ回線は "dcard:x" で数える（statsPatternItems）。
+       * 一覧にも出しておかないと、目標・ポイントの条件・手修正のどれもできない。 */
+      out["dcard:x"] = "dカード（種別未選択）";
     }
     if (cfg.denki === "one") out["denki"] = "ドコモでんき";
     else if (cfg.denki === "type") {
       out["denki:basic"] = "でんき Basic";
       out["denki:green"] = "でんき Green";
+      out["denki:x"] = "でんき（メニュー未選択）";
     }
     if (cfg.gas !== "off") out["gas"] = "ドコモガス";
     if (cfg.hikari) {
@@ -2558,7 +2718,8 @@
           });
           /* ポイント（マスタ設定の「実績のポイント」）。成約した内容で数える。 */
           cxBreakdown(it.wonData || it.data, true, it.wonLines,
-            it.noQuote ? statsSavedItems(it, true, true) : null).forEach(function (x) {
+            it.noQuote ? statsSavedItems(it, true) : null,
+            it.noQuote ? null : it.wonAdj).forEach(function (x) {
             if (!cxAgg[x.id]) {
               cxAgg[x.id] = { name: x.name, pt: x.pt, n: 0, total: 0, covered: 0 };
             }
@@ -2603,6 +2764,9 @@
    * ・削除は「確定済みの月」の自分の保存だけ
    * という順で守っている。 */
   var STATS_SNAP_KEEP = 24;   // 確定を残す月数
+  /* 確定データ全体の大きさの上限（文字数）。料金マスタはクラウドの1つの文書に
+   * 収まる必要があり、ルールでは 880,000字まで。余裕をみてここで頭打ちにする。 */
+  var STATS_SNAP_MAX_LEN = 400000;
 
   function monthShift(m, n) {
     var y = +m.slice(0, 4), mo = +m.slice(5) + n;
@@ -2738,6 +2902,13 @@
     // 古い確定は間引く（料金マスタが際限なく大きくならないように）
     var all = Object.keys(snaps).sort();
     while (all.length > STATS_SNAP_KEEP) { delete snaps[all.shift()]; }
+    /* 月数だけでなく**大きさ**でも間引く。担当が数人いるお店では、確定データが
+     * 1か月ぶんで数万字になり、24か月ぶん貯まると料金マスタがクラウドの
+     * 上限（ルールで 880,000字）を超えて、マスタの同期が「権限エラー」で
+     * 止まってしまう（2026-09-08）。古い月から落とす。 */
+    while (all.length > 1 && JSON.stringify(snaps).length > STATS_SNAP_MAX_LEN) {
+      delete snaps[all.shift()];
+    }
     saveMaster();
     return true;
   }
@@ -3191,7 +3362,7 @@
           var g = num(goals[k]);
           var w = (items[k] && items[k].won) || 0;
           var est = passed ? Math.round(w * daysIn / passed) : 0;
-          h += "<tr><td>" + esc(catalog[k] || k) + "</td><td>" + g + "</td><td>" + w + "</td>"
+          h += "<tr><td>" + esc(catalog[k] || (k + "（いまは追っていない項目）")) + "</td><td>" + g + "</td><td>" + w + "</td>"
             + '<td class="' + (w >= g ? "ok-cell" : "warn-cell") + '">' + Math.max(0, g - w) + "</td>"
             + "<td>" + (isCur ? est : w) + "</td></tr>";
         });
@@ -3298,6 +3469,17 @@
     var rows = statsFlatRows(statsLists, mFil, sFil, function (it, sid) {
       return viewAll || sid === me || resStaffOf(it, sid) === me;
     });
+    /* 確定済みの月は、1件ずつの明細（生の保存）を端末から消して数字だけ残している。
+     * その月を選んで押すと、見出しだけのCSVが黙って落ちてきていた（2026-09-08）。
+     * 何も言わずに空のファイルを渡さず、その旨を画面に出す。 */
+    if (!rows.length) {
+      var settled = !!statsSnapshots()[mFil];
+      savedNote(settled
+        ? mFil + " は確定済みのため、1件ずつの明細（分析用CSV）は出せません。"
+          + "画面の数字と「CSVで保存」はご覧いただけます。"
+        : "この期間には、書き出せる明細がありません。");
+      return;
+    }
     var lines = ["日付,曜日,担当,来店目的,種別,項目,件数"];
     rows.forEach(function (r) { lines.push(r.map(csvCell).join(",")); });
     var csv = "\uFEFF" + lines.join("\r\n");
@@ -3546,9 +3728,20 @@
     months: "の期間", plans: "の対象プラン", amountChoices: "の割引額の選択肢",
     bakuageTier: "の爆アゲ区分", dcard10: "のdカードGOLD10%対象",
     includes5min: "の5分通話無料", group: "の表示グループ",
-    voiceOverrides: "の通話オプションの金額"
+    voiceOverrides: "の通話オプションの金額",
+    /* ここに無い項目は「の<英語のまま>」と出てしまう。マスタを直したときの履歴は
+     * お店の人が読むものなので、料金表にある項目はすべて日本語にしておく
+     * （2026-09-08 の見直しで poikatsuPt・maxBonus などが英語のまま出ていた）。 */
+    poikatsuPt: "のポイ活の還元上限", maxBonus: "の「選べる特典」の対象",
+    hideOnPlans: "を選べないプラン", wariOff: "の通話オプション割引",
+    tiers: "の容量ごとの金額", msAny: "のマンション提供", typec: "のタイプC",
+    jimu: "の契約事務手数料", koji: "の工事費", monthly: "の月額",
+    own: "の「店舗独自」", category: "の置き場所（カテゴリ）", pay: "の支払い先",
+    url: "のリンク先", desc: "のご案内文", kubunExist: "の「既存」の区分",
+    suppress: "の重ねられない割引", keepAnyway: "の「うちはまだ使う」"
   };
-  var HIST_UNITS = { bakuage: "%", bakuage2: "%", bakuageFixed: "pt", months: "か月" };
+  var HIST_UNITS = { bakuage: "%", bakuage2: "%", bakuageFixed: "pt", months: "か月",
+    poikatsuPt: "pt" };
   function histIsNum(v) { return typeof v === "number" && isFinite(v); }
   function histAmt(v, unit) {
     if (!histIsNum(v)) return "（なし）";
@@ -3628,6 +3821,11 @@
       }
       if (k2 === "keepAnyway") {
         out.push(head + (vb ? "を「うちはまだ使う」にしました" : "の「うちはまだ使う」を外しました"));
+        return;
+      }
+      if (k2 === "img") {
+        // 写真は中身（とても長い文字列）を出さず、変えたことだけを書く
+        out.push(head + (vb ? "の写真を変更" : "の写真を削除"));
         return;
       }
       var lab = HIST_FIELD_LABELS[k2] || ("の" + k2);
@@ -3871,6 +4069,33 @@
   function ienakaOn() {
     return typeof KQ_IENAKA !== "undefined" && KQ_IENAKA.isOn();
   }
+  /* お客様にお渡しする紙の下端に出す発行元（店舗名・担当者・電話番号）。
+   * ⑨備考でこの見積もりだけ書き換えられるので、まず state を見て、
+   * 空欄のときだけ店舗の設定で補う。光の別紙・開通の流れが config だけを
+   * 見ていたため、3枚組で印刷すると3枚目だけ店舗名・電話番号が出なかった
+   * （担当者名も違う人になっていた）（2026-09-08）。 */
+  /* 改定予告（5-2）。お客様のお手元に残る紙に書く。
+   * 画面のヒントだけだと、金額が変わったときに「聞いていない」になる。
+   * 2026-09-08 まで、これは光の別紙にしか入っておらず、光を使わないお客様
+   * （＝大多数）の見積書には1行も入っていなかった。入力画面は
+   * 「同じ内容が、お客様にお渡しする見積書にも入ります」と案内していた。 */
+  function reviseNoteHtml() {
+    var revs = reviseNotices(state);
+    if (!revs.length) return "";
+    return '<div class="revise-note"><b>今後の料金改定のお知らせ</b><ul>'
+      + revs.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+      + "</ul></div>";
+  }
+  function sheetSignHtml() {
+    var nm = state.shopName || config.storeName || "";
+    var st = state.staffName || (activeStaff().name || "");
+    var tel = state.shopTel || config.storeTel || "";
+    var sign = [];
+    if (nm) sign.push("<b>" + esc(nm) + "</b>");
+    if (st) sign.push("担当: " + esc(st));
+    if (tel) sign.push("TEL: " + esc(tel));
+    return sign.length ? '<div class="sheet-sign">' + sign.join("　") + "</div>" : "";
+  }
   /* 開通までの流れ（A4・1枚）。お客様へお渡しする説明用の紙 */
   function flowOnlySheet() {
     var today = new Date();
@@ -3879,17 +4104,13 @@
       + (today.getMonth() + 1) + "月" + today.getDate() + '日</span><span></span></div>';
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
     h += KQ_IENAKA.flowSheetHtml();
-    var sign = [];
-    if (config.storeName) sign.push(esc(config.storeName));
-    if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
-    if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
-    if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
+    h += sheetSignHtml();
     h += '<div class="disclaimer">工事日・切替日や所要日数は目安です。お申込み内容・時期・地域により前後します。'
       + "ご不明な点は店頭スタッフへご確認ください。<br>アプリ版 " + APP_VERSION + "</div>";
     return h;
   }
   /* 光だけの見積書（別紙）。中身はイエナカ側が作り、表題と発行元はここで付ける。 */
-  function ienakaOnlySheet(setWari) {
+  function ienakaOnlySheet(setWari, skipRevise) {
     var today = new Date();
     var h = '<h2 class="sheet-title">お見積書（ドコモ光・home 5G）</h2>';
     h += '<div class="sheet-meta"><span>作成日: ' + today.getFullYear() + "年"
@@ -3897,19 +4118,8 @@
     if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
     h += KQ_IENAKA.sheetHtml(setWari);
     if (state.quoteMemo) h += '<p class="memo">※ ' + esc(state.quoteMemo) + "</p>";
-    var sign = [];
-    if (config.storeName) sign.push(esc(config.storeName));
-    if (activeStaff().name) sign.push("担当: " + esc(activeStaff().name));
-    if (config.storeTel) sign.push("TEL: " + esc(config.storeTel));
-    if (sign.length) h += '<div class="sheet-sign">' + sign.join("　") + "</div>";
-    /* 改定予告（5-2）。お客様のお手元に残る紙にも書く。
-     * 画面のヒントだけだと、12月に金額が変わったときに「聞いていない」になる。 */
-    var revs = reviseNotices(state);
-    if (revs.length) {
-      h += '<div class="revise-note"><b>今後の料金改定のお知らせ</b><ul>'
-        + revs.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
-        + "</ul></div>";
-    }
+    h += sheetSignHtml();
+    if (!skipRevise) h += reviseNoteHtml();
 
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "提供エリア・設備状況によりご契約いただけない場合があります。詳細は店頭スタッフへご確認ください。"
@@ -4374,10 +4584,18 @@
       backupMsg("読み込みに失敗したため、元の内容に戻しました。端末の空き容量をご確認ください。", true);
       return;
     }
+    /* 端末側の「最後に直した時刻」を、いま（＝復元した時刻）にしておく。
+     * 圏外でもここは必ず通る。これが無いと、通信が戻ったときに
+     * クラウドの古い内容のほうが新しいと判断され、復元が取り消されていた
+     * （2026-09-08）。 */
+    markStoreAt();
+    Object.keys(d.templates || {}).forEach(function (id) { markTplAt(id); });
+
     /* クラウド利用時は、読み込んだ内容をその場でクラウドへ書き戻す。
      * これをしないと、立ち上げ直したときにクラウドの古い内容が
      * 降ってきて、復元した内容が数秒で元に戻ってしまう（復元が効かない）。 */
     if (cloudOn()) {
+      backupMsg("クラウドへ反映しています…");
       var jobs = [];
       var cfgPush = cfg2 || config;
       jobs.push(storeDoc().set(stamp({
@@ -4401,10 +4619,27 @@
       Object.keys(d.templates || {}).forEach(function (id) {
         jobs.push(tplDoc(id).set(stamp({ list: JSON.stringify(d.templates[id]) })));
       });
+      /* 圏外だと、クラウドへの書き込みは「端末にためたまま」になり、
+       * この約束はいつまでも返ってこない。そのままだと確認のあと何も起きず、
+       * お店は復元できたのかどうか分からなかった（2026-09-08）。
+       * 時間を切って、必ず画面を進める。 */
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        window.alert("端末には読み込みました。\n"
+          + "ただし、いま通信できていないため、クラウドにはまだ届いていません。\n"
+          + "電波の入る場所でこのアプリを開くと、自動で反映されます。");
+        location.reload();
+      }, 10000);
       Promise.all(jobs).then(function () {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
         window.alert("バックアップを読み込み、クラウドへも反映しました。画面を読み込み直します。");
         location.reload();
       }, function () {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
         window.alert("端末には読み込みましたが、クラウドへの反映に失敗しました。\n"
           + "通信できる場所で、もう一度バックアップを読み込んでください。\n"
           + "（このまま使うと、クラウドの古い内容に戻ることがあります）");
@@ -4685,7 +4920,10 @@
       var todo = (st && st.procTodo) || {};
       var pt = st && st.procType;
       if (todo.mnp || todo.shinki || pt === "mnp" || pt === "shinki") return true;
-      if (st && st.planGroup === "libmo") return true;
+      /* すでに LIBMO の**プランを選んである**見積もりでは残す（保存を開いたときに
+       * 金額が変わらないように）。世代だけ LIBMO でプラン未選択のときに残すと、
+       * 手続きを機種変更へ変えても LIBMO が選べたままになっていた（2026-09-08）。 */
+      if (st && st.planGroup === "libmo" && st.planId) return true;
       return (MASTER.plans || []).some(function (pl) {
         return pl.group === "libmo" && pl.id === (st && st.planId);
       });
@@ -4827,7 +5065,17 @@
   }
   // 更新で何が変わるかの一覧（履歴の差分と同じ仕組みを使う）
   function masterUpdateChanges() {
-    return histChanges(JSON.stringify(MASTER), JSON.stringify(buildUpdatedMaster()));
+    /* 版数（masterVersion）と基準日（updated）は、更新があるときは必ず違う。
+     * これを比べたままだと、中身がまったく変わらない更新でも
+     * 「変わる内容（1件）内容を変更しました」と出て、お店には何も分からなかった
+     * （2026-09-08。v17→v18 は、店舗へは届かない置き場所の変更だけだった）。
+     * ここでは「中身が変わったか」だけを見て、変わっていなければ
+     * 「金額の変更はありません（版数だけが新しくなります）」と正直に出す。 */
+    var cur = JSON.parse(JSON.stringify(MASTER));
+    var next = buildUpdatedMaster();
+    next.masterVersion = cur.masterVersion;
+    next.updated = cur.updated;
+    return histChanges(JSON.stringify(cur), JSON.stringify(next));
   }
   /* 更新で新しく「受付終了」になるもの（4-11）。
    * 変わる内容の一覧は12件で打ち切られるので、いちばん大事なこれは別枠にして
@@ -5144,8 +5392,12 @@
     if (!MASTER.energyCompanies) MASTER.energyCompanies = {};
     ["denki", "gas"].forEach(function (k) {
       if (!MASTER.energyCompanies[k] || !MASTER.energyCompanies[k].length) {
+        /* お店が消した会社は入れ直さない。記録を見ないと、
+         * 全部消したときに次の起動で丸ごと復活していた（2026-09-08）。 */
+        var rm = MASTER.removedIds || [];
         MASTER.energyCompanies[k] = JSON.parse(JSON.stringify(
-          (DEFAULT_DATA.energyCompanies && DEFAULT_DATA.energyCompanies[k]) || []));
+          ((DEFAULT_DATA.energyCompanies && DEFAULT_DATA.energyCompanies[k]) || [])
+            .filter(function (c) { return rm.indexOf(c.id) < 0; })));
       }
     });
     /* 引き継ぎシートの「データ移行」に出す項目の印を初期データから補完する。
@@ -5741,12 +5993,22 @@
   }
 
   // 店舗設定（店舗名・担当者一覧）の送信
+  /* 送るのを少し待って、まとめて送る仕組み。ただしアプリを閉じる・他のアプリへ
+   * 切り替えるときの「いま送る」（cloudFlushNow）では、待たずにその場で送る。
+   * 2026-09-08 まで cloudFlushNow は待ち時間の関数を呼び直していただけで、
+   * 実際には送らずに待ち直していた（閉じた瞬間の内容が届かないことがあった）。 */
+  var CLOUD_NOW = false;
+  function cloudLater(key, fn, ms) {
+    if (CLOUD_NOW) { CLOUD[key] = null; try { fn(); } catch (e) {} return null; }
+    CLOUD[key] = setTimeout(fn, ms);
+    return CLOUD[key];
+  }
   function pushConfig() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
     markStoreAt();   // 送る前に閉じても、次に開いたときに送り直せるように
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     syncStatus("同期中…", "");
-    CLOUD.cfgTimer = setTimeout(function () {
+    cloudLater("cfgTimer", function () {
       CLOUD.cfgTimer = null;
       if (!cloudOn()) return; // 送信待ちの間にログアウトした場合は送らない
       var cfgSig = JSON.stringify([config.storeName || "", config.storeTel || "", config.staff, config.adminLock]);
@@ -5794,7 +6056,7 @@
      * その端末のアプリの版を、店舗が使っている版として記録してしまうため。 */
     if (superActing()) return;
     if (CLOUD.metaTimer) clearTimeout(CLOUD.metaTimer);
-    CLOUD.metaTimer = setTimeout(function () {
+    cloudLater("metaTimer", function () {
       CLOUD.metaTimer = null;
       if (!cloudOn() || superActing()) return;
       var fld = storeMetaFields();
@@ -5811,7 +6073,7 @@
     markStoreAt();
     if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
     syncStatus("同期中…", "");
-    CLOUD.masterTimer = setTimeout(function () {
+    cloudLater("masterTimer", function () {
       CLOUD.masterTimer = null;
       if (!cloudOn()) return;
       /* 端末への保存が失敗していると、localStorage には古い内容が残っている。
@@ -5844,7 +6106,7 @@
     var sid = activeStaff().id;
     if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
     syncStatus("同期中…", "");
-    CLOUD.quoteTimer = setTimeout(function () {
+    cloudLater("quoteTimer", function () {
       CLOUD.quoteTimer = null;
       if (!cloudOn()) return;
       var qSig = quotePayload();
@@ -5893,7 +6155,7 @@
     markTplAt(sid);
     if (CLOUD.tplTimer) clearTimeout(CLOUD.tplTimer);
     syncStatus("同期中…", "");
-    CLOUD.tplTimer = setTimeout(function () {
+    cloudLater("tplTimer", function () {
       CLOUD.tplTimer = null;
       if (!cloudOn()) return;
       tplDoc(sid).set(stamp({ list: JSON.stringify(templates) })).then(cloudOk, cloudNg);
@@ -5930,7 +6192,7 @@
     markTplAt(STORE_TPL_ID);
     if (CLOUD.tplStoreTimer) clearTimeout(CLOUD.tplStoreTimer);
     syncStatus("同期中…", "");
-    CLOUD.tplStoreTimer = setTimeout(function () {
+    cloudLater("tplStoreTimer", function () {
       CLOUD.tplStoreTimer = null;
       if (!cloudOn()) return;
       tplDoc(STORE_TPL_ID).set(stamp({ list: JSON.stringify(storeTemplates) })).then(cloudOk, cloudNg);
@@ -5964,29 +6226,24 @@
     var sid = activeStaff().id;
     if (CLOUD.savedTimer) clearTimeout(CLOUD.savedTimer);
     syncStatus("同期中…", "");
-    CLOUD.savedTimer = setTimeout(function () {
+    cloudLater("savedTimer", function () {
       CLOUD.savedTimer = null;
       if (!cloudOn()) return;
       // お客様名・請求内訳（個人情報）はクラウドへ送らない
-      var list = JSON.parse(JSON.stringify(savedList));
-      list.forEach(function (it) {
-        it.custName = "";
-        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-        ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-      });
-      /* 送る直前にも大きさを測る。超えていたら、この端末の一覧そのものを
-       * 縮めてから送る（縮めないと送信が拒否され、同期が止まったままになる）。 */
+      var list = savedSendCopy(savedList);
+      /* 送る直前にも大きさを測る。超えていたら、まず端末の一覧の中身を軽くし、
+       * それでも収まらないぶんは**送る写しのほうだけ**古いものから外す。
+       * 端末の保存そのものは消さない（消すと、その応対の実績まで消える）。 */
       if (savedListJson(list).length > SAVED_SEND_LIMIT) {
         savedList = trimSavedList(savedList);
         lsSet(savedKey(sid), JSON.stringify(savedList));
         renderSaved();
-        list = JSON.parse(JSON.stringify(savedList));
-        list.forEach(function (it) {
-          it.custName = "";
-          (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-          ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-        });
-        shrinkSavedList(list, SAVED_SEND_LIMIT);
+        list = savedSendCopy(savedList);
+        var dropped = savedSendFit(list, SAVED_SEND_LIMIT);
+        if (dropped) {
+          syncStatus("同期✓（古い" + dropped + "件は端末のみ）", "");
+          logAdd("同期", "保存の一覧が大きいため、古い" + dropped + "件はクラウドへ送っていません（端末には残っています）");
+        }
       }
       savedDoc(sid).set(stamp({
         list: JSON.stringify(list),
@@ -6205,7 +6462,14 @@
     /* クラウドの内容を当てる＝この端末の作りかけが置き換わる。
      * 中身があって、届いた内容と違うときは、消える前に控えを残す（4-40）。 */
     try {
-      if (localQuoteHasContent() && quotePayload() !== String(d.data)) {
+      /* 控えを残すのは「この端末で入力していた内容が、いま消える」ときだけ。
+       * 最後に同期した中身のままなら、この端末では何も入力していないので
+       * 控えは要らない。これが無かったため、2台を同時に開いていると
+       * 触っていない側に自動控えが次々でき、実績の応対件数が水増しされていた
+       * （2026-09-08）。quoteSigLoaded は applyRemoteQuote の最後で更新される。 */
+      var lastSig = quoteSigLoaded[activeStaff().id] || "";
+      if (localQuoteHasContent() && quotePayload() !== String(d.data)
+          && quotePayload() !== lastSig) {
         stashQuoteAuto("この端末の内容");
       }
     } catch (eS) {}
@@ -6227,6 +6491,10 @@
         store.patterns[i] = Object.assign(defaultState(), pt);
         migratePattern(store.patterns[i]);
       }
+      /* 他の端末が「次のお客様」を始めた内容が届いたら、この端末が覚えている
+       * 「どの保存の続きか」も切り離す。切らないと、次にこの端末で保存・成約を
+       * 押したときに、前のお客様の保存が中身だけ入れ替わってしまう（2026-09-08）。 */
+      if (!sameCustomer) resetPropTracking();
       store.active = Math.min(Math.max(incoming.active | 0, 0), PAT_MAX - 1);
       store.gen = incoming.gen | 0;
       state = store.patterns[store.active];
@@ -6457,6 +6725,8 @@
     var tel = config.storeTel || src.shopTel || "";
     store.active = 0;
     store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
+    // 次のお客様なので、前の応対（どの保存の続きか）とは切り離す
+    resetPropTracking();
     for (var i = 0; i < PAT_MAX; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
@@ -6491,7 +6761,11 @@
    * 省くと今までどおり「自動控え 日付 時刻」になる。 */
   function stashQuoteAuto(why) {
     if (!quoteHasInput()) return null;
-    var cur = JSON.stringify(store);
+    /* 手で保存した内容と同じかどうかを見る。保存は snapStore()（後ろの空の回線を
+     * 落とした形）で作られるので、こちらも同じ形で比べる。JSON.stringify(store) の
+     * ままだと、回線1本だけの見積もりで必ず食い違い、同じ応対が「自動控え」として
+     * もう1件でき、実績の応対数が2件になっていた（2026-09-08）。 */
+    var cur = JSON.stringify(snapStore());
     if (savedList.some(function (it) { return !it.slim && it.data && JSON.stringify(it.data) === cur; })) return null;
     var r = null;
     try { r = calc(); } catch (e) {}
@@ -6560,7 +6834,14 @@
   // fresh=true … 担当者コード画面から入ったとき（新しいお客様として始める）
   function enterStaff(s, fresh) {
     masterOnly = false; // 担当者が決まったので通常の画面に戻す
-    resetPropTracking(); // 担当が替わったら前の応対と切り離す
+    /* ここで resetPropTracking() を呼んではいけない（2026-09-08）。
+     * この関数は起動のたびに afterStoreLogin から呼ばれるため、端末に残した
+     * 「どの保存の続きか」（propKey）を毎回消してしまい、1.180.0 の直しが
+     * まったく効いていなかった。しかも config.activeStaffId を書き替える前に
+     * 走るので、消していたのは「前の担当」の記録だった。
+     * 切り離しは resetQuoteForNewCustomer（＝新しいお客様として始めるとき）に置く。
+     * 担当を替えたときは、すぐ下の loadState() → loadProp() が
+     * 画面の中の覚えを null に戻してから、その担当の記録を読み直すので取りこぼさない。 */
     config.activeStaffId = s.id;
     saveConfig();
     showStaffGate(false);
@@ -6627,13 +6908,14 @@
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         if (!k) continue;
-        if (k === MASTER_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
+        if (k === MASTER_KEY || k === MASTER_AT_KEY || k === CFG_KEY || k === HIST_KEY || k === CONTRACT_KEY
           || k === WIZ_SKIP_KEY                      // 「初期設定は済み」の印（前の店舗のものを持ち込まない）
           || k === STORE_AT_KEY                       // 店舗情報・料金マスタを最後に直した時刻
           || k.indexOf(TPL_AT_KEY + ":") === 0        // テンプレートを最後に直した時刻
           || k.indexOf(NS + "-quote-at:") === 0      // 見積もりを最後に直した時刻の控え
           || k.indexOf(STATE_KEY + ":") === 0
           || k.indexOf(SAVED_KEY + ":") === 0
+          || k.indexOf(SAVED_DEL_KEY + ":") === 0   // 前の店舗で消した記録を持ち込まない
           || k.indexOf(TPL_KEY + ":") === 0) kill.push(k);
       }
       kill.forEach(function (k) { localStorage.removeItem(k); });
@@ -7034,16 +7316,20 @@
    * 送りかけの内容は、止める前に必ず送り切る。 */
   var CLOUD_PAUSED = false;
   function cloudFlushNow() {
-    // 待ち時間の途中でも、いま送る
-    [["cfgTimer", pushConfig], ["masterTimer", markMasterEdit], ["quoteTimer", markLocalEdit],
-      ["metaTimer", pushStoreMeta],
-     ["savedTimer", pushSaved], ["tplTimer", pushTemplates], ["tplStoreTimer", pushStoreTemplates]]
-      .forEach(function (pair) {
-        if (!CLOUD[pair[0]]) return;
-        clearTimeout(CLOUD[pair[0]]);
-        CLOUD[pair[0]] = null;
-        try { pair[1](); } catch (e) {}
-      });
+    /* 待ち時間の途中でも、いま送る。CLOUD_NOW を立てると cloudLater が
+     * 待たずにその場で送るので、呼び直した関数がそのまま送信になる。 */
+    CLOUD_NOW = true;
+    try {
+      [["cfgTimer", pushConfig], ["masterTimer", markMasterEdit], ["quoteTimer", markLocalEdit],
+        ["metaTimer", pushStoreMeta],
+       ["savedTimer", pushSaved], ["tplTimer", pushTemplates], ["tplStoreTimer", pushStoreTemplates]]
+        .forEach(function (pair) {
+          if (!CLOUD[pair[0]]) return;
+          clearTimeout(CLOUD[pair[0]]);
+          CLOUD[pair[0]] = null;
+          try { pair[1](); } catch (e) {}
+        });
+    } finally { CLOUD_NOW = false; }
   }
   function cloudDetach() {
     ["unsubStore", "unsubQuote", "unsubSaved", "unsubTpl", "unsubTplStore"].forEach(function (k) {
@@ -8544,10 +8830,19 @@
 
   /* U15の欄は、新規・MNPのときだけ出す。U15のプランを選んでいれば
    * チェックが無くても実績に入るので、その旨を出しておく。 */
+  /* 回線2以降の手続きは、店頭では選び直さないことが多い。数える側
+   * （statsPatternItems）は回線1の手続きを引き継いで数えているのに、
+   * U15・U39 のチェック欄だけ自分の回線の手続きしか見ておらず、
+   * 「欄が出ないのに実績では新規として数える」状態だった（2026-09-08）。
+   * 欄の出し分けも、数える側と同じ「回線1を引き継ぐ」考え方にそろえる。 */
+  function baseTodoOf() {
+    if ((store.active | 0) === 0) return null;   // 回線1は自分の手続きだけを見る
+    return procTodoOf(store.patterns[0]);
+  }
   function renderU15() {
     var f = $("u15Field"), n = $("u15Note"), cb = $("u15");
     if (!f || !cb) return;
-    var todo = state.procTodo || {};
+    var todo = procTodoOf(state) || baseTodoOf() || {};
     var newLine = !!(todo.shinki || todo.mnp) || state.procType === "shinki" || state.procType === "mnp";
     f.hidden = !newLine;
     cb.checked = !!state.u15;
@@ -8564,7 +8859,7 @@
   function renderU39() {
     var f = $("u39Field"), n = $("u39Note"), cb = $("u39");
     if (!f || !cb) return;
-    var on = u39Line(state);
+    var on = u39Line(state, procTodoOf(state) || baseTodoOf());
     f.hidden = !on;
     if (n) n.hidden = !on;
     cb.checked = !!state.u39;
@@ -8725,7 +9020,7 @@
   /* ドコモメールが「有料オプション」になるプラン。ここに無いプランは
    * 標準で込みなので、②のプルダウン自体を出さない（2026-08-21 店頭確認）。
    * 対象を増減するときは、この一覧を直すだけでよい。 */
-  var MAIL_PAID_PLANS = ["mini", "ahamo", "irumo"];
+  var MAIL_PAID_PLANS = ["mini", "ahamo", "ahamo_poikatsu", "irumo"];
   function mailPaidPlan() { return MAIL_PAID_PLANS.indexOf(currentPlan().id) >= 0; }
   function mailOptDef() {
     return MASTER.options.filter(function (o) {
@@ -8844,7 +9139,11 @@
         return stdPick(o, state.options[o.id] || state.optionKubun[o.id]);
       });
       var accItems = accInCategory(cat);
-      if (!items.length && !accItems.length) return;
+      /* 「その他」には実績の印のタイル（下取り・dカード／d払い初回利用）を置いている。
+       * 中身が0件でも見出しと枠を必ず出す。ここで抜けていたため、その他の
+       * オプションが全部受付終了になると印のタイルが画面から消えていた
+       * （2026-09-08）。ほかのカテゴリは、これまでどおり空なら出さない。 */
+      if (!items.length && !accItems.length && cat !== "その他") return;
       h += '<div class="opt-cat">' + esc(cat) + "</div>";
       var bonusFree = maxBonusFree(state, currentPlan().id);
       var bonusTarget = maxBonusPlan(currentPlan().id);
@@ -8887,9 +9186,9 @@
       }).join("") + accItems.map(accTileHtml).join("")
         + (cat === "その他" ? statMarkTiles() : "") + "</div>";
     });
-    // 「その他」が1つも無い店舗でも、実績の印は出す
-    if (optCategories().indexOf("その他") < 0
-        || !MASTER.options.some(function (o) { return (o.category || "その他") === "その他"; })) {
+    /* 「その他」というカテゴリ自体が並びから外されている店舗でも、実績の印は出す
+     * （上の繰り返しで必ず1回出るようになったので、二重にならないよう条件はこれだけ） */
+    if (optCategories().indexOf("その他") < 0) {
       h += '<div class="opt-cat">その他</div><div class="tile-grid">'
         + statMarkTiles() + "</div>";
     }
@@ -9049,7 +9348,10 @@
    * 出しておくと、対象外なのに選べてしまい、案内を誤りやすいため。
    * 何が対象外なのかは1行にまとめて下に出す。 */
   var DISCOUNT_FIELDS = [
+    /* note は「対象外です」の1行に添える言葉。みんなドコモ割の回線数に数えられるのは
+     * ドコモの回線だけなので、LIBMO（別の会社の回線）では添えない（2026-09-08）。 */
     { wrap: "minnaWrap", name: "みんなドコモ割", note: "回線数のカウントには含まれます",
+      noteSkipGroups: ["libmo"],
       on: function (d) { return !!(d.minna2 || d.minna3); } },
     { wrap: "dSetWrap", name: "ドコモ光／home 5G セット割", on: function (d) { return !!d.set; } },
     { wrap: "dCardWrap", name: "dカードお支払割", on: function (d) { return !!(d.dcard || d.dcardGold); } },
@@ -9099,7 +9401,8 @@
       el.hidden = !ok;
       /* quiet の割引（法人プランだけのもの）は、対象外でも一覧に並べない。
        * 個人のお客様に「社員割の対象外です」と出ても意味がないため。 */
-      if (!ok && !f.quiet) offs.push(f.name + (f.note ? "（" + f.note + "）" : ""));
+      var noteOk = f.note && !(f.noteSkipGroups || []).some(function (g) { return g === plan.group; });
+      if (!ok && !f.quiet) offs.push(f.name + (noteOk ? "（" + f.note + "）" : ""));
     });
     // ポイ活の還元ポイントは、ポイ活プランのときだけ出す
     var pk = !shown || poikatsuPlan(plan.id);
@@ -10658,6 +10961,8 @@
     if (state.shopTel) signParts.push("TEL: " + esc(state.shopTel));
     if (signParts.length) h += '<div class="sheet-sign">' + signParts.join("　") + "</div>";
 
+    h += reviseNoteHtml();
+
     h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。'
       + "キャンペーン・割引の適用可否は契約条件により変わります。詳細は店頭スタッフへご確認ください。"
       + "本書は当店が作成したご案内であり、NTTドコモが発行するものではありません。<br>"
@@ -10668,7 +10973,7 @@
     if (sheetScope === "hikari" && ienakaOn()) {
       h += '<div class="sheet-page3">'
         + '<div class="page2-note no-print">――― 印刷時はここから3ページ目（光の別紙） ―――</div>'
-        + ienakaOnlySheet(r.dSet || 0) + "</div>";
+        + ienakaOnlySheet(r.dSet || 0, true) + "</div>";   // 同じ改定予告は1枚目に出しているので重ねない
     }
 
     $("sheetBody").innerHTML = h;
@@ -10776,7 +11081,7 @@
 
     h += '<div class="plan-sec"><span class="plan-lbl">ご来店の目的・プラスワン</span><div class="sub-checks">'
       + '<label class="check"><input type="checkbox" data-sc-visit="1"' + (sc.visit ? " checked" : "")
-      + "> 「来店目的別」の表を出す（目的ごとの応対数・成約・成約になった内容）</label>"
+      + "> 「ご来店目的別」の表を出す（目的ごとの応対数と、そこから決まった項目の件数）</label>"
       + '<label class="check"><input type="checkbox" data-sc-kaimashi="1"' + (sc.kaimashi ? " checked" : "")
       + "> プラスワン（再掲）</label></div>"
       + '<p class="hint">プラスワンは、<strong>端末購入以外のご用件で来店されて機種変更になった場合</strong>と、'
@@ -10871,6 +11176,10 @@
       + (sc.u39 ? " checked" : "") + "> （再掲）U39（新規・のりかえのとき）</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="highendSplit"'
       + (sc.highendSplit ? " checked" : "") + "> ハイエンドを Android と iPhone に分ける</label>";
+    /* 「（再掲）機種スタンダード」だけチェックが無く、いちど数え始めると
+     * 外せなかった（2026-09-08）。ほかの再掲と同じ形で出す。 */
+    h += '<label class="check"><input type="checkbox" data-sc-flag="kishuStd"'
+      + (sc.kishuStd ? " checked" : "") + "> （再掲）機種スタンダード</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="iphone"'
       + (sc.iphone ? " checked" : "") + "> （再掲）iPhone</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="dcardFirst"'
@@ -10891,9 +11200,10 @@
       + '<strong>U39</strong>は、<strong>新規・のりかえ（MNP）</strong>の回線で、手続き内容の'
       + '<strong>「U39（ご利用者が39歳以下）」にチェックしたとき</strong>に数えます'
       + '（チェック欄も、新規・のりかえのときだけ出ます）。<br>'
-      + '<strong>iPhone</strong>・<strong>タブレット総販</strong>・<strong>下取り</strong>は、'
-      + '機種の欄で入れたものを数えます（タブレットと下取りは、そこにある'
-      + '<strong>チェックと選び欄</strong>です）。<strong>お客様の紙には出ません。</strong><br>'
+      + '<strong>iPhone</strong>は機種名から、<strong>タブレット総販</strong>は機種の欄のチェックから数えます。'
+      + '<strong>下取り</strong>は<strong>④オプションの「その他」</strong>にあるタイルで選びます'
+      + '（金額は、これまでどおり「初期費用の追加項目」にマイナスで入れてください）。'
+      + '<strong>お客様の紙には出ません。</strong><br>'
       + '<strong>ハイエンドを分ける</strong>にチェックすると、実績の行が'
       + '「機種ハイエンド（Android）」「機種ハイエンド（iPhone）」の2つになります。'
       + '分け方を変えたときは、<strong>「実績のポイント」の条件も入れ直してください</strong>。</p></div>';
@@ -10937,14 +11247,27 @@
     h += '<p class="hint">項目ごとの<strong>月の成約目標</strong>を入れると、実績に「目標と進捗」の表が出ます'
       + '（残りの件数と、いまのペースでの着地見込み）。空欄の項目は出ません。</p>';
     h += '<div class="goal-grid">';
-    Object.keys(cat).sort(function (a2, b2) {
-      return (gRank(a2) - gRank(b2)) || (cat[a2] < cat[b2] ? -1 : 1);
+    /* 「実績で追う項目」から外した項目に目標が残っていると、実績には
+     * 内部の英数字（opt:smart_hosho）のまま出るのに、この画面には欄が無く
+     * 消せなかった（2026-09-08）。一覧に無いキーも欄を出して片づけられるようにする。 */
+    var goalKeys = Object.keys(cat);
+    var orphan = Object.keys(goals).filter(function (k) {
+      return num(goals[k]) > 0 && !cat[k];
+    });
+    goalKeys.concat(orphan).sort(function (a2, b2) {
+      return (gRank(a2) - gRank(b2)) || ((cat[a2] || a2) < (cat[b2] || b2) ? -1 : 1);
     }).forEach(function (k) {
-      h += '<label class="goal-item"><span>' + esc(cat[k]) + "</span>"
+      h += '<label class="goal-item"><span>' + esc(cat[k] || (k + "（いまは追っていない項目）")) + "</span>"
         + '<input type="number" min="0" data-sc-goal="' + esc(k) + '" value="'
         + (num(goals[k]) || "") + '" placeholder="－"></label>';
     });
-    h += "</div></div>";
+    h += "</div>";
+    if (orphan.length) {
+      h += '<p class="hint">末尾の<strong>「いまは追っていない項目」</strong>は、'
+        + '「実績で追う項目」でチェックを外したあとも目標が残っているものです。'
+        + '空欄にすると実績の表からも消えます。</p>';
+    }
+    h += "</div>";
     h += "</div>";
     return h;
   }
@@ -12743,10 +13066,10 @@
   function switchPattern(i) {
     store.active = i;
     state = store.patterns[i];
-    if (!state.jimuFee && autoFeeProc(state.procType) && !state.planId) {
-      state.jimuFee = jimuFeeFor(state.procType);
-      state.atamakin = MASTER.fees.atamakin_default;
-    }
+    /* ここで事務手数料・頭金を入れ直してはいけない（2026-09-08）。
+     * 手で 0円 にした事務手数料が 4,950円 に戻り、頭金も勝手に入っていた。
+     * 手続き種別を選んだ時点で applyProcType が入れており、
+     * 起動直後のぶんも別で入れているので、切り替えのたびの入れ直しは要らない。 */
     syncFormFromState();
     recalc();
   }
@@ -12982,11 +13305,14 @@
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
   }
   /* タイルがどの入れ物へ移れるか。data-opt=④のカテゴリ内、
-   * data-acsel=④のカテゴリ内と⑥、data-fee=⑦の中だけ */
+   * data-acc=④のカテゴリ内と⑥、data-fee=⑦の中だけ
+   * （2026-09-08 まで data-acsel を見ていたが、それはタイルの中の
+   *   プルダウンに付く印で、タイル自体には付かない。そのため⑥の
+   *   アクセサリのタイルが「並べ替え」で掴めなかった） */
   function arrTileAllowed(tile, grid) {
     if (tile.hasAttribute("data-statmark")) return false;   // 実績の印は並べ替えない
     if (tile.hasAttribute("data-opt")) return !!grid.closest("#optionList");
-    if (tile.hasAttribute("data-acsel")) return !!(grid.closest("#optionList") || grid.closest("#accTileList"));
+    if (tile.hasAttribute("data-acc")) return !!(grid.closest("#optionList") || grid.closest("#accTileList"));
     if (tile.hasAttribute("data-fee")) return !!grid.closest("#feeItemList");
     return false;
   }
@@ -13058,13 +13384,13 @@
         if (!grid || !grid.classList.contains("tile-grid")) return;
         grid.querySelectorAll(".tile").forEach(function (t) {
           var oid = t.getAttribute("data-opt");
-          var aid = t.getAttribute("data-acsel");
+          var aid = t.getAttribute("data-acc");
           if (oid && optById[oid]) { optById[oid].category = cat; optSeq.push(optById[oid]); }
           if (aid && accById[aid]) { accById[aid].category = cat; accSeq.push(accById[aid]); }
         });
       });
-      document.querySelectorAll("#accTileList .tile[data-acsel]").forEach(function (t) {
-        var a = accById[t.getAttribute("data-acsel")];
+      document.querySelectorAll("#accTileList .tile[data-acc]").forEach(function (t) {
+        var a = accById[t.getAttribute("data-acc")];
         if (a) { a.category = ""; accSeq.push(a); }
       });
       document.querySelectorAll("#feeItemList .tile[data-fee]").forEach(function (t) {
@@ -13110,7 +13436,7 @@
       var tile = t.closest("#tab-quote .tile");
       var card = t.closest("#tab-quote .card");
       if (cat) { kind = "cat"; el = cat; }
-      else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acsel") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
+      else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acc") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
       else if (card && /\bc[1-9]\b/.test(card.className)) { kind = "card"; el = card; }
       if (!el) return;
       arrCancelHold();
@@ -13192,6 +13518,10 @@
         var k = parts[0] === "gas" ? "todoGasNow" : "todoDenkiNow";
         if (pt[k] === c.id) pt[k] = "";
       });
+      /* 消したことを記録しておく。記録が無いと、次の料金表の更新で
+       * 初期データから復活していた（キャンペーンの削除と同じ形・2026-09-08）。 */
+      if (!MASTER.removedIds) MASTER.removedIds = [];
+      if (c.id && MASTER.removedIds.indexOf(c.id) < 0) MASTER.removedIds.push(c.id);
       list.splice(+parts[1], 1);
       energyTouch(true); return true;
     }
@@ -14884,6 +15214,20 @@
       handleListEvent(t, "input");
     });
     $("masterBody").addEventListener("change", function (e) {
+      /* 選択式オプションの「金額欄」を、選択肢に無い額にしたまま指を離したとき。
+       * 案内文は「一番上の金額に合わせます」と言っているのに合わせていなかったため、
+       * ④のタイルのプルダウンの表示と、実際に計算される額が食い違っていた
+       * （2026-09-08）。入力中は邪魔しないよう、確定した時点で合わせる。 */
+      var opi = e.target.getAttribute && e.target.getAttribute("data-op-price");
+      if (opi !== null && opi !== undefined) {
+        var oo = (MASTER.options || [])[+opi];
+        if (oo && oo.priceChoices && oo.priceChoices.length
+            && oo.priceChoices.indexOf(num(oo.price)) < 0) {
+          normalizeChoices(oo);
+          markEdited(); renderMasterTab(); renderOptionList(); recalc();
+          return;
+        }
+      }
       if (handlePlanEvent(e.target, "change")) return;
       if (handleCxEvent(e.target, "change")) return;
       if (handleStatsCfgEvent(e.target, "change")) return;
@@ -15207,6 +15551,124 @@
           return savedList.length;
         },
         count: function () { return savedList.length; },
+        /* 成約の確認画面で、ある項目を「−」で0件にしてから記録する。
+         * 画面のボタンを実際に押す（内部の値を直接いじらない）。 */
+        wonMinus: function (id, key) {
+          var old = window.confirm; window.confirm = function () { return false; };
+          try { setSavedResult(id, "won"); } finally { window.confirm = old; }
+          var row = document.querySelector('.res-item[data-resk="' + key + '"]');
+          var minus = row && row.querySelector('[data-res-d="-1"]');
+          if (minus) minus.click();
+          var b = $("resultDlgOk"); if (b) b.click();
+          var it = savedList.filter(function (x) { return x.id === id; })[0] || {};
+          return { result: it.result || "", wonAdj: it.wonAdj || null,
+            items: statsSavedItems(it, true, false) };
+        },
+        // 端末に残っている「どの保存の続きか」の記録（本物の鍵で読む）
+        propStored: function () {
+          try { return localStorage.getItem(propKey()); } catch (e) { return null; }
+        },
+        /* 成約の確認画面を開いたまま、他の端末からの同期が届いた状況を作る。
+         * watchSaved と同じく savedList を**配列ごと**入れ替えてから「記録する」を押す。 */
+        wonWithSync: function (id) {
+          var old = window.confirm;
+          window.confirm = function () { return false; };   // 「いま画面の内容で」は使わない
+          try { setSavedResult(id, "won"); } finally { window.confirm = old; }
+          // ここで他の端末の同期が届いた（中身は同じだが、別のオブジェクトになる）
+          savedList = JSON.parse(JSON.stringify(savedList));
+          var b = $("resultDlgOk");
+          if (b) b.click();
+          var it = savedList.filter(function (x) { return x.id === id; })[0] || {};
+          return { result: it.result || "", count: savedList.length };
+        },
+        // 保存の一覧の大きさ（クラウドへ送る形の文字数）と、1件あたりの大きさ
+        sizes: function () {
+          return { total: savedSendLen(savedList), limit: SAVED_SEND_LIMIT,
+            one: savedList.length ? savedSendLen([savedList[0]]) : 0,
+            slim: savedList.filter(function (x) { return x.slim; }).length };
+        },
+        // 同じ中身の保存をたくさん作る（容量の頭打ちを見るため）
+        bulk: function (n, patch) {
+          for (var i = 0; i < n; i++) {
+            for (var j = 0; j < PAT_MAX; j++) {
+              store.patterns[j] = Object.assign(defaultState(), patch || {});
+              migratePattern(store.patterns[j]);
+            }
+            store.active = 0; state = store.patterns[0];
+            saveQuote("検査用" + i);
+          }
+          return savedList.length;
+        },
+        // ②の通話オプションのタイルに出ている文字（お客様の目に映るもの）
+        voiceTiles: function () {
+          return Array.prototype.map.call(document.querySelectorAll("#voiceTiles .tile"),
+            function (t) { return (t.innerText || "").replace(/\s*\n\s*/g, " | "); });
+        },
+        // ②のドコモメールの欄（出ているか・出ている文字）
+        mailField: function () {
+          var f = $("mailField"), t = $("mailTile");
+          return { shown: !!(f && !f.hidden),
+            text: (f && !f.hidden && t) ? (t.innerText || "").replace(/\s*\n\s*/g, " | ") : "" };
+        },
+        /* 3枚組（スマホ＋光の別紙）で印刷したときの、各ページの発行元の行。
+         * ⑨備考で書き換えた店舗名・担当者・電話番号が全ページで揃うことを見る。 */
+        signs: function () {
+          renderSheet();
+          return Array.prototype.map.call(document.querySelectorAll("#tab-sheet .sheet-sign"),
+            function (e) { return (e.textContent || "").trim(); });
+        },
+        // 見積書の出す内容（スマホのみ／スマホ＋光の別紙 など）を切り替える
+        scope: function (v) {
+          var el = document.querySelector('input[name="sheetScope"][value="' + v + '"]');
+          if (el) { el.checked = true; el.dispatchEvent(new Event("change", { bubbles: true })); }
+          renderSheet();
+          return !!el;
+        },
+        /* ①〜⑨のカードの並びを変える（マスタ設定で並べ替えたときと同じ）。
+         * 戻り値は、画面の説明文（丸数字を含むもの）に実際に出ている文字。 */
+        reorderCards: function (order) {
+          MASTER.quoteCardOrder = order && order.length ? order.slice() : null;
+          applyQuoteCardOrder();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#tab-quote .hint, #tab-quote .pat-note"),
+            function (e) { return (e.textContent || "").trim(); })
+            .filter(function (t) { return /[①-⑨]/.test(t); });
+        },
+        // 光・5Gを「見積もりに含める」状態にする（3枚組の紙を作れるようにする）
+        ieOn: function (product) {
+          if (typeof KQ_IENAKA === "undefined") return false;
+          store.ienaka.enabled = true;
+          store.ienaka.product = product || "hikari1g";
+          KQ_IENAKA.syncForm(); KQ_IENAKA.render();
+          recalc();
+          return ienakaOn();
+        },
+        /* 成約の確認画面を開いて、回線の選び欄に出ている文字を読む（開いたまま返す）。
+         * お客様の目に映る文字を見るため、内部の値ではなくここを見る。 */
+        wonLineText: function (id) {
+          var old = window.confirm; window.confirm = function () { return false; };
+          try { setSavedResult(id, "won"); } finally { window.confirm = old; }
+          var e = $("resultDlgLineList");
+          var t = e ? (e.innerText || "") : "";
+          var c = $("resultDlgCancel"); if (c) c.click();
+          return t;
+        },
+        // 見積書の本文（お客様の目に映る文字）
+        sheetText: function () {
+          renderSheet();
+          var e = $("tab-sheet");
+          return e ? e.innerText : "";
+        },
+        // 「◯◯ は □□ の対象外です」の1行
+        discountOff: function () {
+          var e = $("discountOff");
+          return e && !e.hidden ? (e.textContent || "").trim() : "";
+        },
+        // 見積もり画面のU15・U39のチェック欄が出ているか
+        u15u39: function () {
+          var a = $("u15Field"), b = $("u39Field");
+          return { u15: !!(a && !a.hidden), u39: !!(b && !b.hidden) };
+        },
         /* アプリを開き直したときと同じことをする（画面の中の覚えを捨てて、
          * 端末に残したものから読み直す）。 */
         reopen: function () {
@@ -15412,6 +15874,123 @@
         // 本物の読み込み（実績で追う項目の自動有効化まで通る）
         cxImport: function (rows) { return cxImport(rows); },
         cxCatalog: function () { return cxCatalog(); },
+        /* 「いま送る」（アプリを閉じる・他のアプリへ切り替える）で、
+         * 待っていたぶんが**実際にクラウドへ送られる**かを見る。
+         * 送り先は偽物に差し替えて、何回 set() が呼ばれたかを数える。 */
+        flushNow: function () {
+          var calls = [];
+          var real = { db: CLOUD.db, enabled: CLOUD.enabled, user: CLOUD.user };
+          var colStub;
+          var docStub = {
+            set: function (o) { calls.push(JSON.stringify(o).slice(0, 40)); return Promise.resolve(); },
+            collection: function () { return colStub; }
+          };
+          colStub = { doc: function () { return docStub; } };
+          CLOUD.db = { collection: function () { return colStub; } };
+          CLOUD.enabled = true;
+          CLOUD.user = { uid: "test" };
+          CLOUD_SENT = {};                        // 「同じ内容だから送らない」を無効化
+          var keys = ["cfgTimer", "masterTimer", "quoteTimer", "metaTimer",
+            "savedTimer", "tplTimer", "tplStoreTimer"];
+          keys.forEach(function (k) { CLOUD[k] = setTimeout(function () {}, 60000); });
+          try { cloudFlushNow(); } catch (e) { calls.push("エラー: " + e.message); }
+          keys.forEach(function (k) { if (CLOUD[k]) { clearTimeout(CLOUD[k]); CLOUD[k] = null; } });
+          CLOUD.db = real.db; CLOUD.enabled = real.enabled; CLOUD.user = real.user;
+          return calls;
+        },
+        // 店舗を切り替えたときに端末から消える鍵かどうか
+        wipeKeys: function () {
+          var before = [];
+          try {
+            localStorage.setItem(MASTER_AT_KEY, JSON.stringify({ v: 1, at: 1 }));
+            localStorage.setItem(SAVED_DEL_KEY + ":zz", "{}");
+            before = [!!localStorage.getItem(MASTER_AT_KEY), !!localStorage.getItem(SAVED_DEL_KEY + ":zz")];
+            wipeStoreLocal();
+            return { before: before,
+              after: [!!localStorage.getItem(MASTER_AT_KEY), !!localStorage.getItem(SAVED_DEL_KEY + ":zz")] };
+          } catch (e) { return null; }
+        },
+        // 「実績で追う項目」の設定を直に変える（検査用）
+        scSet: function (k, v) { statsCfg()[k] = v; markEdited(); return statsCfg()[k]; },
+        /* 店舗ごとの機能スイッチ（契約の器の features）を差し替える。
+         * 2026-09-08 まで、切にした場面を通るテストが1件も無く、
+         * ㊱の「商材の一覧」の確認が空回りしていた。 */
+        feat: function (obj) {
+          contractInfo = obj ? { uid: "test", status: "active", features: obj } : null;
+          applyFeaturesUi();
+          return { typec: !!window.KQ_FEAT("typec") };
+        },
+        // ④オプションの「その他」に出ているタイルの文字（実績の印を含む）
+        otherTiles: function () {
+          renderOptionList();
+          var cats = Array.prototype.slice.call(document.querySelectorAll("#optionList .opt-cat"));
+          var el = cats.filter(function (c) { return (c.textContent || "").trim() === "その他"; })[0];
+          if (!el) return null;
+          var grid = el.nextElementSibling;
+          return grid ? Array.prototype.map.call(grid.querySelectorAll(".tile .t-name"),
+            function (e) { return (e.textContent || "").trim(); }) : [];
+        },
+        // ⑥アクセサリのタイルが「並べ替え」で掴めるか（実際の判定を通す）
+        accDraggable: function () {
+          renderAccessoryTiles();
+          var t = document.querySelector("#accTileList .tile");
+          var g = t && t.closest(".tile-grid");
+          return !!(t && g && arrTileAllowed(t, g));
+        },
+        // 「プラン世代」の一覧に実際に並んでいる中身
+        planGroups: function () {
+          renderPlanGroupSelect();
+          var sel = $("planGroup");
+          return sel ? Array.prototype.map.call(sel.options, function (o) { return o.value; }) : [];
+        },
+        // ⑦事務手数料と店頭頭金の、いまの入力欄の値
+        fees: function () { return { jimu: $("jimuFee").value, atama: $("atamakin").value }; },
+        // 選択式オプションの金額欄を直して、指を離したときと同じことをする
+        setOptPrice: function (id, v) {
+          renderMasterTab();
+          var idx = -1;
+          (MASTER.options || []).forEach(function (o, i) { if (o.id === id) idx = i; });
+          if (idx < 0) return null;
+          var inp = document.querySelector('[data-op-price="' + idx + '"]');
+          if (!inp) return null;
+          MASTER.options[idx].price = v;
+          inp.value = v;
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
+          var o2 = MASTER.options[idx];
+          return { price: o2.price, choices: (o2.priceChoices || []).slice() };
+        },
+        /* マスタ設定の「実績で追う項目」に出ているチェックの文字（画面から読む）。
+         * 設定の値ではなく、実際に押せる欄があるかを見る。 */
+        scFlags: function () {
+          renderMasterTab();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#masterBody [data-sc-flag]"),
+            function (e) { return e.getAttribute("data-sc-flag"); });
+        },
+        // 「実績の目標」に出ている欄の見出し
+        goalLabels: function () {
+          renderMasterTab();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#masterBody .goal-item span"),
+            function (e) { return (e.textContent || "").trim(); });
+        },
+        // 目標を直に入れる（マスタ設定の欄と同じところへ書く）
+        setGoal: function (k, n) {
+          if (!MASTER.statsGoalItems) MASTER.statsGoalItems = {};
+          MASTER.statsGoalItems[k] = n; markEdited();
+        },
+        // 実績の表に出ている「目標と進捗」の項目名
+        goalRows: function () {
+          renderStats(true);
+          var body = $("statsBody");
+          var heads = Array.prototype.filter.call(body.querySelectorAll("h3"),
+            function (el) { return /目標と進捗/.test(el.textContent); });
+          if (!heads.length) return [];
+          var tbl = heads[0].nextElementSibling && heads[0].nextElementSibling.querySelector("table");
+          if (!tbl) return [];
+          return Array.prototype.map.call(tbl.querySelectorAll("tr td:first-child"),
+            function (e) { return (e.textContent || "").trim(); });
+        },
         statsCatalog: function () { return statsCatalog(); },
         cxBreak: function (lines) {
           return cxBreakdown(JSON.parse(JSON.stringify(store)), true, lines);
@@ -15557,6 +16136,8 @@
         ended: function () { return masterUpdateEnded(); },
         // 改定予告（5-2）
         revise: function () { return masterUpdateRevise(); },
+        // マスタを直したときの「変更した内容」（履歴に出る文）
+        histChanges: function (a, b) { return histChanges(a, b); },
         // 店内の印を付ける（マスタを直したときと同じ状態にする）
         markEdited: function () { markEdited(); },
         // お客様の見積書の中身（社内の印が混ざっていないかを見る）
@@ -15656,9 +16237,9 @@
    * 仕組みを知らないと戸惑うところを優先して書く。 */
   var QUOTE_HELP = {
     tpl: { t: "テンプレート", b: "よく使う見積もりの形を3つまで登録して、1タップで呼び出せます。\n・保存: 「現在の内容をテンプレに保存」→ 保存先のボタンをタップ → 名前を付けて保存\n・呼び出し: ボタンをタップ（お客様名と店舗情報は今の内容のまま残ります）\n・<b>削除: ボタンを長押しして、動かさずに離す</b>と出るメニューで「削除」を選びます（PCは右クリックでも出ます）\n・<b>並べ替え: 長押しでつかんだまま、別のボタンの上へ動かして離す</b>と入れ替わります\n・「テンプレート」は担当ごと、「店舗共通」は全担当で共有です" },
-    purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします（複数可）。金額には影響しません。\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
+    purpose: { t: "ご来店の目的", b: "お客様が何をしに来られたかにチェックします。金額には影響しません。\n・<b>いちばん近いものを1つだけ</b>選んでください（実績の合計が応対の数と合わなくなるため）\n・引き継ぎシートと実績の集計に使われます\n・1商談に1つで、回線1に入れた内容が使われます\n・「端末購入」以外で来られて、その場で機種もご購入になったときは「買い増しあり」にチェックすると、実績に買い増しとして数えられます" },
     proc: { t: "手続き内容", b: "今回の応対でやることにチェックします。引き継ぎシートの「やること」欄になります。\n・機種変更・新規・MNP・プラン変更は①の手続き種別と連動し、事務手数料の判定に使われます（複数チェックのときは MNP → 新規 → 機種変更 → プラン変更 の順で判定）\n・dカード・でんき・ガス・光にチェックすると、種類を選ぶ欄が開きます\n・「その他」は引き継ぎシートにそのまま載ります。お客様名などの個人情報は書かないでください" },
-    c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・機種変更を選ぶと、⑦の事務手数料と店頭頭金が自動で入ります</b>（MNP・プラン変更は店頭で発生しないため入りません）。未選択の間はどちらも0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
+    c1: { t: "① 契約内容", b: "・手続き種別: <b>新規契約・のりかえ（MNP）・機種変更を選ぶと、⑦の事務手数料が自動で入ります</b>。<b>店頭頭金は新規契約・機種変更のときだけ</b>入ります（MNPはSIMのみ・頭金なしのご案内が多いため、必要なときは手で入れてください）。プラン変更はどちらも入りません。未選択の間も0円のままです\n・プラン世代: いま受付中の「現行プラン」と、継続中の方向けの「旧プラン（受付終了）」を切り替えます\n・料金プラン: 選ぶと月額の計算が始まります。段階制プランは「想定データ利用量」も選びます\n・「料金プランの変更あり」は引き継ぎシート用のチェックです" },
     c2: { t: "② 通話・メール", b: "・通話オプション: 5分通話無料／かけ放題を選びます。<b>かけ放題のときは留守番電話・キャッチホンが無料の扱い</b>になり、見積書では通話オプションの行にまとめて出ます\n・ネットワークサービス: 留守番電話などにチェックし、新規／継続／廃止を選びます。継続は月額に入り、廃止は入りません（引き継ぎシートに廃止として載ります）\n・ドコモメール: mini・ahamo・irumo など<b>メールが有料オプションのプランを選んだときだけ</b>タイルが出ます。タップで選び、タイルの中で新規／継続／廃止を選びます。新規・継続は月額に入り、廃止は入りません。標準で込みのプラン（MAX等）ではタイルごと出ません" },
     c3: { t: "③ 割引", b: "チェックを入れると適用されます。みんなドコモ割は回線数、dカードお支払割はカードの種類、長期利用割は年数がチェックの下に開きます。\n・「その他割引」を開くと、ハーティ割引と子育てサポート割引（ひとり親世帯・要確認書類）が選べます\n月額から引かれる割引を選びます。割引額はプランごとにマスタ設定で決まっています。\n・みんなドコモ割: ご家族の回線数で選びます\n・ドコモ光／home 5G セット割: 光やhome 5Gと一緒にお使いになる場合にチェックします\n・dカードお支払割: 券種は頭文字で選びます（R=dカード／G=GOLD／U=GOLD U／P=PLATINUM）。券種で⑧のdカード還元の自動計算も変わります\n・PLATINUM を選ぶと「還元率」の欄が出ます。初年度は20%、2年目以降は前年のショッピングご利用額で10〜20%に変わるので、お客様のカードの率に直してください\n・ハーティ割引: みんなドコモ割・dカードお支払割とは重ねられません（重なったときは計算に入れません）\n・子育てサポート割引: みんなドコモ割とは重ねられません（重なったときは計算に入れません）。子育てサポート割引とも同時適用できず、片方を選ぶともう片方は外れます\n・キャンペーンの割引をチェックすると、<b>終了後の金額まで見積書の「月額の推移」に自動で出ます</b>" },
     c4: { t: "④ オプション・サービス", b: "お客様が使うサービスをタップで選びます。\n・区分（新規・継続・廃止）を選ぶと引き継ぎシートに反映されます。「廃止」は料金に入れません\n・金額が複数あるサービスはプルダウンで選べます\n・並び順・単価・取り扱いはマスタ設定で変えられます（担当者コードの画面から開きます。タイルの長押しドラッグで並べ替え）\n・「＋ 月額の追加項目」で、リストにない項目を±の金額で足せます（割引はマイナスで）。<b>月数を入れると「◯か月間だけ」になり、月額の推移に反映されます</b>" },

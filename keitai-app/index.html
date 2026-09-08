@@ -100,6 +100,7 @@
         <label class="check"><input type="checkbox" data-visit="ask"> 問合せ</label>
         <label class="check"><input type="checkbox" data-visit="other"> その他</label>
       </div>
+      <p class="hint">いちばん近いものを<strong>1つだけ</strong>選んでください（2つ以上選ぶと、実績の「ご来店目的別」の合計が応対の数と合わなくなります）。</p>
       <p class="hint" id="visitOnLine1" hidden></p>
       <label class="check" id="kaimashiField" hidden><input type="checkbox" id="kaimashi"> 買い増しあり（お手持ちに追加でご購入）</label>
       <p class="hint" id="kaimashiNote" hidden></p>
@@ -297,7 +298,7 @@
       </div>
       <p class="hint" id="kishuRankHint"></p>
       <label class="check"><input type="checkbox" id="tablet"> タブレット（実績の「タブレット総販」に数えます）</label>
-      <p class="hint">「タブレット」は<strong>実績の集計だけに使います</strong>。<strong>お客様の見積書・引き継ぎシートには出ません。</strong><br><strong>下取り・dカード初回利用・d払い初回利用</strong>は、<strong>④オプションの「その他」</strong>にまとめました。下取りの<strong>金額</strong>は、これまでどおり「初期費用の追加項目」にマイナスで入れてください。</p>
+      <p class="hint" data-remap-circled>「タブレット」は<strong>実績の集計だけに使います</strong>。<strong>お客様の見積書・引き継ぎシートには出ません。</strong><br><strong>下取り・dカード初回利用・d払い初回利用</strong>は、<strong>④オプションの「その他」</strong>にまとめました。下取りの<strong>金額</strong>は、これまでどおり「初期費用の追加項目」にマイナスで入れてください。</p>
       <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
       <div class="field" id="kaedoki23Field" hidden>
         <label for="kaedoki23">23回分の総額（頭金込み）</label>
@@ -427,7 +428,7 @@
       <label class="check" id="dcardAutoWrap" hidden>
         <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
       </label>
-      <p class="hint" id="dcardAutoHint" hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM は③で選んだ還元率）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
+      <p class="hint" id="dcardAutoHint" data-remap-circled hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM は③で選んだ還元率）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
       <div class="revise-hint" id="reviseHint" hidden></div>
     </div>
 

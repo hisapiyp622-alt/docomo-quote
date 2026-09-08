@@ -333,19 +333,35 @@ function chk(name, cond, extra) {
     // 予告の付いたオプションを選ぶ／外す で、見積書に入る文が変わるか
     S.pick('option', 'smart_hosho', false); S.redraw();
     const off = S.notices();
+    /* 内部の値（notices）だけでなく、**お客様にお渡しする紙の文字**でも見る。
+     * 2026-09-08 まで、この一文は光の別紙にしか入っておらず、光を使わない
+     * お客様の見積書には1行も入っていなかった。それでも notices() だけを
+     * 見ていたテストは通り続けていた。 */
+    const sheetOff = S.sheetHtml();
     S.pick('option', 'smart_hosho', true); S.redraw();
     const on = S.notices();
+    const sheetOn = S.sheetHtml();
     const hint = document.getElementById('reviseHint');
     const hintShown = !!hint && !hint.hidden && /テスト用の改定予告/.test(hint.innerText);
     // 改定の日が来たら、もう予告ではないので出さない
     S.setToday('2026-12-01');
     const after = S.notices();
+    const sheetAfter = S.sheetHtml();
     S.setToday('2026-10-15');
-    return { off: off.length, on: on, hintShown: hintShown, after: after.length };
+    return { off: off.length, on: on, hintShown: hintShown, after: after.length,
+      sheetOff: /テスト用の改定予告/.test(sheetOff),
+      sheetOn: /テスト用の改定予告/.test(sheetOn),
+      sheetOnTitle: /今後の料金改定のお知らせ/.test(sheetOn),
+      sheetAfter: /テスト用の改定予告/.test(sheetAfter) };
   });
   chk('⑫ 選んでいないときは、見積書に予告が入らない', revView.off === 0, String(revView.off));
   chk('⑫ 選ぶと、その一文が見積書に入る',
     revView.on.length === 1 && /テスト用の改定予告/.test(revView.on[0]), JSON.stringify(revView.on));
+  chk('⑫ お客様にお渡しする見積書（紙）にも、その一文が実際に入る',
+    revView.sheetOn === true && revView.sheetOnTitle === true,
+    '本文=' + revView.sheetOn + ' 見出し=' + revView.sheetOnTitle);
+  chk('⑫ 選んでいないときは、紙にも入らない', revView.sheetOff === false, String(revView.sheetOff));
+  chk('⑫ 改定の日が来たら、紙からも消える', revView.sheetAfter === false, String(revView.sheetAfter));
   chk('⑫ 入力画面にも同じ一文が出る', revView.hintShown, String(revView.hintShown));
   chk('⑫ 改定の日が来たら、予告としては出さない', revView.after === 0, String(revView.after));
 
@@ -439,6 +455,48 @@ function chk(name, cond, extra) {
     JSON.stringify(tpl2.filled));
   chk('⑭ ボタンの文字も「置き換える」になる',
     tpl2.filled.button === '置き換える', tpl2.filled.button);
+
+  /* ---- ⑬ 2026-09-08 の全体デバッグ ----
+   *   #52 中身が変わらない更新でも「変わる内容（1件）内容を変更しました」と出て、
+   *       お店には何が変わるのか分からなかった（版数と基準日は必ず違うため）
+   *   #51 履歴の「変更した内容」に英語のままの項目名が出る */
+  const mu = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    const d = S.dist();
+    // 中身は同じで、版数と基準日だけを上げた更新
+    d.masterVersion = d.masterVersion + 1;
+    d.updated = '2026-12-31';
+    S.setDist(d);
+    S.redraw();
+    const box = document.querySelector('#masterBody .mu-box');
+    const only = box ? (box.innerText || '') : '';
+    // 中身も変える更新
+    const d2 = S.dist();
+    (d2.options || []).forEach((o) => { if (o.id === 'smart_hosho') o.price = o.price + 100; });
+    S.setDist(d2);
+    S.redraw();
+    const box2 = document.querySelector('#masterBody .mu-box');
+    return { only: only, withChange: box2 ? (box2.innerText || '') : '' };
+  });
+  chk('⑬ 中身が変わらない更新では「内容を変更しました」と言わない',
+    /版数だけ/.test(mu.only) && !/内容を変更しました/.test(mu.only),
+    mu.only.replace(/\s+/g, ' ').slice(0, 200));
+  chk('⑬ 中身が変わる更新では、何が変わるかを出す',
+    /変わる内容/.test(mu.withChange) && !/内容を変更しました/.test(mu.withChange),
+    mu.withChange.replace(/\s+/g, ' ').slice(0, 200));
+
+  const hist = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.std;
+    const m = S.get();
+    const before = JSON.stringify(m);
+    (m.plans || []).forEach((p) => { if (p.id === 'poikatsu_max') p.poikatsuPt = 3000; });
+    const after = JSON.stringify(m);
+    return S.histChanges ? S.histChanges(before, after) : null;
+  });
+  chk('⑬ 履歴の「変更した内容」に英語のままの項目名を出さない',
+    hist && hist.lines.length && !hist.lines.some((t) => /poikatsuPt|maxBonus/.test(t))
+      && hist.lines.some((t) => /ポイ活の還元上限/.test(t)),
+    JSON.stringify(hist && hist.lines));
 
   await browser.close();
   srv.close();
