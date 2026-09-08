@@ -1702,6 +1702,35 @@ function chk(name, cond, extra) {
   chk('㊳ 「保存したときの内容のまま成約」でも、数えた回線の案内が出る',
     rest.note === true, rest.txt);
 
+  /* ---- ㊴ 実績の「ご来店目的別」を表にする（2026-09-08・店舗の指定）----
+   * 成約・成約率の列はいらない。獲得した項目は文字の羅列ではなく列で出す。 */
+  const vp = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    // 来店目的「端末購入」で、機種変更のお客様を1人（成約まで）
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true },
+      planChange: true, visitPurposes: { buy: true } });
+    L.fill(1, {});
+    L.pick(0);
+    const a = S.save('お客様A');
+    S.won(a.id, false);
+    return S.visitTable();
+  });
+  chk('㊴ 見出しが「ご来店目的別」になっている',
+    vp.found === true && /ご来店目的別/.test(vp.title), vp.title);
+  chk('㊴ 「成約」「成約率」の列を出さない',
+    vp.cols.indexOf('成約') < 0 && vp.cols.indexOf('成約率') < 0, JSON.stringify(vp.cols));
+  chk('㊴ 「目的」「応対」の列は残す',
+    vp.cols[0] === '目的' && vp.cols[1] === '応対', JSON.stringify(vp.cols));
+  chk('㊴ 獲得した項目が、それぞれの列になっている',
+    vp.cols.length > 2 && vp.cols.some((c) => /機種変更/.test(c)), JSON.stringify(vp.cols));
+  chk('㊴ 件数が数字で入っている（文字の羅列ではない）',
+    vp.rows.some((r) => r[0] === '端末購入' && r.slice(2).some((c) => c === '1')),
+    JSON.stringify(vp.rows));
+  chk('㊴ 合計の行が出る', vp.rows.some((r) => r[0] === '合計'), JSON.stringify(vp.rows));
+
   await browser.close();
   srv.close();
 
