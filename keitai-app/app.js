@@ -591,22 +591,52 @@
   function savedListJson(list) {
     try { return JSON.stringify(list); } catch (e) { return ""; }
   }
-  /* 大きすぎるときに縮める。まず古いものから中身を落とし、
-   * それでも収まらなければ古いものを落とす（実績は確定＝スナップショットに残る）。
-   * 縮めたときは true を返す。 */
+  /* クラウドへ送る形（お客様名・請求内訳を落としたもの）の写しを作る。
+   * 大きさを測るときも必ずこの形で測る。端末の中身のまま測ると、
+   * 実際に送る量より多く見積もって、必要以上に早く縮め始めてしまう。 */
+  function savedSendCopy(list) {
+    var copy = JSON.parse(JSON.stringify(list));
+    copy.forEach(function (it) {
+      it.custName = "";
+      ((it.data || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+      ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
+    });
+    return copy;
+  }
+  function savedSendLen(list) { return savedListJson(savedSendCopy(list)).length; }
+  /* 送る形が大きすぎるときに、端末の一覧の中身を軽くする（slim）。
+   *
+   * 2026-09-08 まで、ここは「まず新しい60件より古いものを軽くし、
+   * それでも収まらなければ list.pop() で古いものを丸ごと捨てる」だった。
+   * ところが for の開始が i >= SAVED_FULL（60）なので、保存が60件たまる前は
+   * **1件も軽くされず、いきなり削除だけが走っていた**。回線4〜5本の見積もりでは
+   * 41〜55件で頭打ちになり、古い見積もりと、その分の当月・先月の実績が
+   * 警告も記録も無く消えていた（実測: 60回の応対が実績で42回になった）。
+   *
+   * いまは削除を一切しない。軽くするだけで、足りなければ
+   * 「送る側」で減らす（savedSendFit）。端末の中身はお店の資産なので、
+   * クラウドの大きさの都合で消してはいけない。 */
   function shrinkSavedList(list, limit) {
     var changed = false;
-    for (var i = list.length - 1; i >= SAVED_FULL && savedListJson(list).length > limit; i--) {
+    // ① まず「新しい60件」より古いものを軽くする（これまでどおり）
+    for (var i = list.length - 1; i >= SAVED_FULL && savedSendLen(list) > limit; i--) {
       if (list[i] && !list[i].slim) { slimSavedItem(list[i]); changed = true; }
     }
-    while (list.length > 1 && savedListJson(list).length > limit) {
-      list.pop();          // いちばん古いものから外す（並びは新しい順）
-      changed = true;
+    // ② それでも収まらなければ、新しい1件を残して全部軽くする（捨てるよりまし）
+    for (var j = list.length - 1; j >= 1 && savedSendLen(list) > limit; j--) {
+      if (list[j] && !list[j].slim) { slimSavedItem(list[j]); changed = true; }
     }
     return changed;
   }
+  /* 送る形が limit を超えているとき、**送る写しのほうだけ**古いものから減らす。
+   * 端末の一覧はそのまま。減らした件数を返す。 */
+  function savedSendFit(copy, limit) {
+    var dropped = 0;
+    while (copy.length > 1 && savedListJson(copy).length > limit) { copy.pop(); dropped++; }
+    return dropped;
+  }
   /* 新しい方から SAVED_FULL 件を残して、それより古いものを軽くする。
-   * 件数の上限と、クラウドへ送れる大きさの上限も合わせてここで掛ける。 */
+   * 件数の上限（SAVED_MAX）も合わせてここで掛ける。 */
   function trimSavedList(list) {
     list.sort(function (a2, b2) { return (b2.savedAt || 0) - (a2.savedAt || 0); });
     if (list.length > SAVED_MAX) list = list.slice(0, SAVED_MAX);
@@ -615,6 +645,12 @@
     return list;
   }
   var savedList = [];
+  /* 同期で savedList が配列ごと入れ替わっても、同じ保存に書けるようにする。
+   * 確認画面など「間があく」処理の前に掴んだものは、書く直前にこれで取り直す。 */
+  function liveSavedItem(it) {
+    if (!it || !it.id) return it || null;
+    return savedList.filter(function (x) { return x.id === it.id; })[0] || null;
+  }
   function savedKey(staffId) { return SAVED_KEY + ":" + (staffId || activeStaff().id); }
   function loadSaved() {
     savedList = [];
@@ -860,6 +896,9 @@
       label: "渡す担当", choices: others, value: others[0].id, okText: "渡す"
     }, function (to) {
       if (!to) return;
+      // 確認の間に同期が届いていることがあるので、書く直前に取り直す（2026-09-08）
+      it = liveSavedItem(it);
+      if (!it) { savedNote("この見積もりは、ほかの端末で消されたようです。もう一度お試しください。"); return; }
       var now = Date.now();
       var copy = JSON.parse(JSON.stringify(it));
       copy.id = "q" + now + "x" + Math.floor(Math.random() * 10000);
@@ -1437,6 +1476,12 @@
     else delete it.wonLines;
   }
   function setSavedResult2(it, result, byStaff, wonAdj, useCurrent, lines) {
+    /* 確認画面（数える回線・項目の±）を出している間に他の端末から同期が届くと、
+     * watchSaved が savedList を配列ごと入れ替えるため、掴んでいた it が
+     * いまの一覧から外れる。そのまま書いても保存にも画面にも入らず、
+     * 押した成約が黙って消えていた（2026-09-08）。書く直前に取り直す。 */
+    it = liveSavedItem(it);
+    if (!it) { savedNote("この見積もりは、ほかの端末で消されたようです。もう一度お試しください。"); return; }
     if (result === "won") {
       /* 回線1〜5 は1商談の中の別の番号。中身のある回線ぶんが成約として数えられるが、
        * 見比べていただくために作った回線は、成約の確認画面で外せる（2026-09-05）。 */
@@ -5968,25 +6013,20 @@
       CLOUD.savedTimer = null;
       if (!cloudOn()) return;
       // お客様名・請求内訳（個人情報）はクラウドへ送らない
-      var list = JSON.parse(JSON.stringify(savedList));
-      list.forEach(function (it) {
-        it.custName = "";
-        (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-        ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-      });
-      /* 送る直前にも大きさを測る。超えていたら、この端末の一覧そのものを
-       * 縮めてから送る（縮めないと送信が拒否され、同期が止まったままになる）。 */
+      var list = savedSendCopy(savedList);
+      /* 送る直前にも大きさを測る。超えていたら、まず端末の一覧の中身を軽くし、
+       * それでも収まらないぶんは**送る写しのほうだけ**古いものから外す。
+       * 端末の保存そのものは消さない（消すと、その応対の実績まで消える）。 */
       if (savedListJson(list).length > SAVED_SEND_LIMIT) {
         savedList = trimSavedList(savedList);
         lsSet(savedKey(sid), JSON.stringify(savedList));
         renderSaved();
-        list = JSON.parse(JSON.stringify(savedList));
-        list.forEach(function (it) {
-          it.custName = "";
-          (it.data.patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-          ((it.wonData || {}).patterns || []).forEach(function (pt) { pt.custName = ""; delete pt.curBill; });
-        });
-        shrinkSavedList(list, SAVED_SEND_LIMIT);
+        list = savedSendCopy(savedList);
+        var dropped = savedSendFit(list, SAVED_SEND_LIMIT);
+        if (dropped) {
+          syncStatus("同期✓（古い" + dropped + "件は端末のみ）", "");
+          logAdd("同期", "保存の一覧が大きいため、古い" + dropped + "件はクラウドへ送っていません（端末には残っています）");
+        }
       }
       savedDoc(sid).set(stamp({
         list: JSON.stringify(list),
@@ -6205,7 +6245,14 @@
     /* クラウドの内容を当てる＝この端末の作りかけが置き換わる。
      * 中身があって、届いた内容と違うときは、消える前に控えを残す（4-40）。 */
     try {
-      if (localQuoteHasContent() && quotePayload() !== String(d.data)) {
+      /* 控えを残すのは「この端末で入力していた内容が、いま消える」ときだけ。
+       * 最後に同期した中身のままなら、この端末では何も入力していないので
+       * 控えは要らない。これが無かったため、2台を同時に開いていると
+       * 触っていない側に自動控えが次々でき、実績の応対件数が水増しされていた
+       * （2026-09-08）。quoteSigLoaded は applyRemoteQuote の最後で更新される。 */
+      var lastSig = quoteSigLoaded[activeStaff().id] || "";
+      if (localQuoteHasContent() && quotePayload() !== String(d.data)
+          && quotePayload() !== lastSig) {
         stashQuoteAuto("この端末の内容");
       }
     } catch (eS) {}
@@ -6227,6 +6274,10 @@
         store.patterns[i] = Object.assign(defaultState(), pt);
         migratePattern(store.patterns[i]);
       }
+      /* 他の端末が「次のお客様」を始めた内容が届いたら、この端末が覚えている
+       * 「どの保存の続きか」も切り離す。切らないと、次にこの端末で保存・成約を
+       * 押したときに、前のお客様の保存が中身だけ入れ替わってしまう（2026-09-08）。 */
+      if (!sameCustomer) resetPropTracking();
       store.active = Math.min(Math.max(incoming.active | 0, 0), PAT_MAX - 1);
       store.gen = incoming.gen | 0;
       state = store.patterns[store.active];
@@ -6457,6 +6508,8 @@
     var tel = config.storeTel || src.shopTel || "";
     store.active = 0;
     store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
+    // 次のお客様なので、前の応対（どの保存の続きか）とは切り離す
+    resetPropTracking();
     for (var i = 0; i < PAT_MAX; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
@@ -6491,7 +6544,11 @@
    * 省くと今までどおり「自動控え 日付 時刻」になる。 */
   function stashQuoteAuto(why) {
     if (!quoteHasInput()) return null;
-    var cur = JSON.stringify(store);
+    /* 手で保存した内容と同じかどうかを見る。保存は snapStore()（後ろの空の回線を
+     * 落とした形）で作られるので、こちらも同じ形で比べる。JSON.stringify(store) の
+     * ままだと、回線1本だけの見積もりで必ず食い違い、同じ応対が「自動控え」として
+     * もう1件でき、実績の応対数が2件になっていた（2026-09-08）。 */
+    var cur = JSON.stringify(snapStore());
     if (savedList.some(function (it) { return !it.slim && it.data && JSON.stringify(it.data) === cur; })) return null;
     var r = null;
     try { r = calc(); } catch (e) {}
@@ -6560,7 +6617,14 @@
   // fresh=true … 担当者コード画面から入ったとき（新しいお客様として始める）
   function enterStaff(s, fresh) {
     masterOnly = false; // 担当者が決まったので通常の画面に戻す
-    resetPropTracking(); // 担当が替わったら前の応対と切り離す
+    /* ここで resetPropTracking() を呼んではいけない（2026-09-08）。
+     * この関数は起動のたびに afterStoreLogin から呼ばれるため、端末に残した
+     * 「どの保存の続きか」（propKey）を毎回消してしまい、1.180.0 の直しが
+     * まったく効いていなかった。しかも config.activeStaffId を書き替える前に
+     * 走るので、消していたのは「前の担当」の記録だった。
+     * 切り離しは resetQuoteForNewCustomer（＝新しいお客様として始めるとき）に置く。
+     * 担当を替えたときは、すぐ下の loadState() → loadProp() が
+     * 画面の中の覚えを null に戻してから、その担当の記録を読み直すので取りこぼさない。 */
     config.activeStaffId = s.id;
     saveConfig();
     showStaffGate(false);
@@ -8544,10 +8608,19 @@
 
   /* U15の欄は、新規・MNPのときだけ出す。U15のプランを選んでいれば
    * チェックが無くても実績に入るので、その旨を出しておく。 */
+  /* 回線2以降の手続きは、店頭では選び直さないことが多い。数える側
+   * （statsPatternItems）は回線1の手続きを引き継いで数えているのに、
+   * U15・U39 のチェック欄だけ自分の回線の手続きしか見ておらず、
+   * 「欄が出ないのに実績では新規として数える」状態だった（2026-09-08）。
+   * 欄の出し分けも、数える側と同じ「回線1を引き継ぐ」考え方にそろえる。 */
+  function baseTodoOf() {
+    if ((store.active | 0) === 0) return null;   // 回線1は自分の手続きだけを見る
+    return procTodoOf(store.patterns[0]);
+  }
   function renderU15() {
     var f = $("u15Field"), n = $("u15Note"), cb = $("u15");
     if (!f || !cb) return;
-    var todo = state.procTodo || {};
+    var todo = procTodoOf(state) || baseTodoOf() || {};
     var newLine = !!(todo.shinki || todo.mnp) || state.procType === "shinki" || state.procType === "mnp";
     f.hidden = !newLine;
     cb.checked = !!state.u15;
@@ -8564,7 +8637,7 @@
   function renderU39() {
     var f = $("u39Field"), n = $("u39Note"), cb = $("u39");
     if (!f || !cb) return;
-    var on = u39Line(state);
+    var on = u39Line(state, procTodoOf(state) || baseTodoOf());
     f.hidden = !on;
     if (n) n.hidden = !on;
     cb.checked = !!state.u39;
