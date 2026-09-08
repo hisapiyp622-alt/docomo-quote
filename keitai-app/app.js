@@ -5993,6 +5993,16 @@
   function loadContractCache() {
     try { contractInfo = JSON.parse(localStorage.getItem(CONTRACT_KEY) || "null"); } catch (e) { contractInfo = null; }
   }
+  /* いま見ている店舗の契約かどうか。上位（代理店・エリア）や保守が
+   * 停止中の別店舗を見たあと、その控えが端末に残ってしまい、
+   * 契約が正常な店舗にも「ご利用が停止されています」と出続けていた（2026-09-08）。
+   * 別の店舗の控えは使わない（読めるまでは止めない）。 */
+  function contractCurrent() {
+    if (!contractInfo) return null;
+    var now = (typeof effectiveUid === "function") ? effectiveUid() : null;
+    if (now && contractInfo.uid && contractInfo.uid !== now) return null;
+    return contractInfo;
+  }
   function saveContractCache() {
     try {
       if (contractInfo) localStorage.setItem(CONTRACT_KEY, JSON.stringify(contractInfo));
@@ -6003,7 +6013,8 @@
   function fetchContract() {
     if (INTERNAL) return Promise.resolve(false);   // 社内版に契約の器は無い
     if (!cloudOn()) return Promise.resolve(false);
-    var uid = CLOUD.user.uid;
+    // 誰の契約を読んだのかを残す。上位・保守が別の店舗を見ているときは、その店舗のid
+    var uid = effectiveUid();
     return contractsDoc().get().then(function (snap) {
       if (!snap.exists) {
         contractInfo = null;
@@ -6026,13 +6037,15 @@
   /* 店舗ごとの機能スイッチ。書いていない機能は「あり」。
    * 社内版・器の無い店舗・お試し中も、書かれていない限り全部あり。 */
   function featOn(key) {
-    var f = contractInfo && contractInfo.features;
+    var c0 = contractCurrent();
+    var f = c0 && c0.features;
     return !f || f[key] !== false;
   }
   window.KQ_FEAT = featOn;   // 光・5Gタブ（ienaka.js）からも同じ判定を使う
   /* 機能スイッチの値そのもの（一覧や名前の置き換えなど、真偽以外の設定用） */
   window.KQ_FEATVAL = function (key) {
-    var f = contractInfo && contractInfo.features;
+    var c1 = contractCurrent();
+    var f = c1 && c1.features;
     return f ? f[key] : undefined;
   };
   /* スイッチが切り替わったら、出し分けのある画面を描き直す */
@@ -6041,7 +6054,7 @@
   }
   /* 使えない状態か。"" = 使える ／ "trialEnded"=お試し終了 ／ "suspended"=停止 */
   function contractBlocked() {
-    var c = contractInfo;
+    var c = contractCurrent();
     if (!c) return "";
     if (c.status === "suspended") return "suspended";
     if (c.status === "trial" && c.trialEndsAt && Date.now() > c.trialEndsAt) return "trialEnded";
@@ -6055,7 +6068,7 @@
     var bar = $("trialBar"), ov = $("contractOverlay");
     if (!bar || !ov) return;
     var blocked = contractBlocked();
-    var c = contractInfo;
+    var c = contractCurrent();
     var showBar = !!(c && c.status === "trial" && c.trialEndsAt && !blocked);
     bar.hidden = !showBar;
     if (showBar) {
@@ -16440,6 +16453,21 @@
           contractInfo = obj ? { uid: "test", status: "active", features: obj } : null;
           applyFeaturesUi();
           return { typec: !!window.KQ_FEAT("typec") };
+        },
+        /* 別の店舗の契約の控えが端末に残っているときに、いまの店舗を
+         * 止めてしまわないか（上位・保守が停止中の店舗を見たあと）。 */
+        contractOther: function (cacheUid, nowUid, status) {
+          var realUser = CLOUD.user, realAct = CLOUD.actAsUid;
+          contractInfo = { uid: cacheUid, status: status || "suspended", trialEndsAt: 0, fetchedAt: 1 };
+          CLOUD.user = { uid: nowUid };
+          CLOUD.actAsUid = null;
+          renderContract();
+          var ov = $("contractOverlay"), t = $("contractTitle");
+          var out = { blocked: !!(ov && !ov.hidden), title: t ? (t.textContent || "") : "" };
+          contractInfo = null;
+          CLOUD.user = realUser; CLOUD.actAsUid = realAct;
+          renderContract();
+          return out;
         },
         // ④オプションの「その他」に出ているタイルの文字（実績の印を含む）
         otherTiles: function () {

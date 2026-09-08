@@ -2804,6 +2804,23 @@ function chk(name, cond, extra) {
     stats.ptBefore === stats.ptAfter,
     '確定前: ' + stats.ptBefore + ' / 確定後: ' + stats.ptAfter);
 
+  /* ---- 62 別の店舗の契約の控えで、いまの店舗を止めない（2026-09-08）----
+   * 上位（代理店・エリア）や保守が「停止中」の店舗を見ると、その控えが端末に残る。
+   * そのあと契約が正常な店舗を開いても「ご利用が停止されています」と出続けていた */
+  const contract = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.lines;
+    return {
+      other: S.contractOther('shopA', 'shopB', 'suspended'),
+      same: S.contractOther('shopA', 'shopA', 'suspended')
+    };
+  });
+  chk('62 別の店舗の「停止中」で、いまの店舗を止めない',
+    contract.other.blocked === false,
+    '止まっています: ' + contract.other.title);
+  chk('62 その店舗自身が停止中のときは、これまでどおり止める',
+    contract.same.blocked === true && /停止/.test(contract.same.title),
+    JSON.stringify(contract.same));
+
   await browser.close();
   srv.close();
 
