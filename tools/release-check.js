@@ -9,6 +9,7 @@
  *     （上げ忘れると、店舗の端末に新しいアプリが届かない）
  *  3. changelog.js の先頭の日付が、未来になっていないか
  *  4. node tools/build-internal.js を流し直しても差分が出ないか
+ *  5. node tools/build-demo.js --check（営業用デモが単体版とズレていないか）
  *     （＝ルート・/ienaka/ の生成物が最新のまま。作り直し忘れの検出）
  *
  * どれも「配ったのに届かない」「社内版だけ古い」を防ぐためのもの。
@@ -103,6 +104,17 @@ try {
   } else ok.push('生成物（ルート・/ienaka/）は最新です');
 } catch (e) {
   ng.push('tools/build-internal.js の実行に失敗しました: ' + String(e.message || e).split('\n')[0]);
+}
+
+/* 5. 営業用デモ（/ienaka-demo/）が、イエナカ単体版と同じ中身か
+ * 2026-09-08 まで手作業の写しだったため、写し忘れが積み重なり、
+ * 営業でお客様にお見せする画面に 1,320円 安い金額が出ていた。 */
+try {
+  execSync('node tools/build-demo.js --check', { cwd: ROOT, stdio: 'pipe' });
+  ok.push('営業用デモは単体版と同じ中身です');
+} catch (e) {
+  ng.push('営業用デモ（/ienaka-demo/）が古いままです'
+    + '（node tools/build-demo.js を実行してコミットしてください）');
 }
 
 if (ok.length) console.log('確認: ' + ok.join(' / '));

@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.14.0";
+  var APP_VERSION = "2.15.0";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -209,6 +209,13 @@
     { v: "jigyosha", t: "事業者変更（他社光コラボから）", notC: true },
     { v: "kirikae", t: "転用（タイプC）" }
   ];
+  /* 住居タイプの表示名と、料金表を引くときの鍵。
+   * 料金表は 戸建（ht）と マンション（ms）の2つしか持っていないので、
+   * 「マンション（100M）」は ms として引く。この読み替えが無かったため、
+   * ms100 を選ぶと料金表に無い鍵を引いて画面が固まっていた（2026-09-08）。
+   * ケータイ内蔵版（keitai-app/ienaka.js:152-153）と同じにする。 */
+  var HOUSING_LABEL = { ht: "戸建", ms: "マンション", ms100: "マンション100M" };
+  function hKey() { return state.housing === "ms100" ? "ms" : state.housing; }
   var IE_HOUSING_OPTS = [
     { v: "ht", t: "戸建" },
     { v: "ms", t: "マンション" },
@@ -346,8 +353,8 @@
       state.baseMonthly = p.monthly;
       state.kojiFee = 0; state.kojiFree = false;
     } else {
-      state.baseMonthly = p.monthly[state.housing][state.ptype];
-      state.kojiFee = p.koji[state.housing];
+      state.baseMonthly = p.monthly[hKey()][state.ptype];
+      state.kojiFee = p.koji[hKey()];
       if (canBuy10gRouter()) applyRouter10gDefault();
     }
     state.jimuFee = p.jimu;
@@ -539,7 +546,7 @@
     // 回線工事費: 申込区分から自動判定（新規=標準28,600円／転用・事業者変更=0円）
     var koji = 0;
     if (isHikari() && state.applyType === "shinki") {
-      koji = PRODUCTS[state.product].koji[state.housing];
+      koji = PRODUCTS[state.product].koji[hKey()];
     }
     // オプション工事料も新規のみ自動加算（転用・事業者変更は設備そのまま移行のため0円）
     var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneKoji = 0, phoneChecked = false;
@@ -1007,7 +1014,7 @@
   var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用（タイプC）" };
   function productLabel() {
     if (state.product === "home5g") return "";
-    var parts = [state.housing === "ht" ? "戸建" : "マンション"];
+    var parts = [HOUSING_LABEL[state.housing] || "戸建"];
     if (!PRODUCTS[state.product].noPtype) parts.push("タイプ" + state.ptype);
     parts.push(APPLY_LABEL[state.applyType] || "新規");
     return "（" + parts.join("・") + "）";
@@ -1833,7 +1840,12 @@
       }
     }
     if (state.quoteMemo) h += '<div class="memo">※ ' + esc(state.quoteMemo) + "</div>";
-    h += '<div class="disclaimer">本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。詳細は店頭スタッフへご確認ください。<br>イエナカ見積もり 版 ' + APP_VERSION + "</div>";
+    /* デモ版（営業のQR配布用）は、お客様の紙と間違われないように断り書きを変える。
+     * 分岐をここに持たせることで、デモ版を原本から生成できるようにする（2026-09-08）。 */
+    h += '<div class="disclaimer">' + (DEMO
+      ? "【デモ版】本見積もりはデモ用のサンプルで、実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。本書は当ツールが作成した概算のご案内であり、NTTドコモが発行するものではありません。"
+      : "本見積もりは概算です。実際のご契約時の金額・適用条件とは異なる場合があります。提供エリア・設備状況により契約できない場合があります。詳細は店頭スタッフへご確認ください。")
+      + "<br>イエナカ見積もり 版 " + APP_VERSION + "</div>";
     $("sheetBody").innerHTML = h;
   }
 
@@ -1914,7 +1926,7 @@
     h += row("商材", esc(p.name));
     if (isHikari()) {
       h += row("申込区分", APPLY_LABEL[state.applyType] || "新規");
-      h += row("住居タイプ", state.housing === "ht" ? "戸建" : "マンション");
+      h += row("住居タイプ", HOUSING_LABEL[state.housing] || "戸建");
       if (!p.noPtype) {
         var pvNote = "（タイプ" + esc(state.ptype) + "）";
         if (state.provider) {

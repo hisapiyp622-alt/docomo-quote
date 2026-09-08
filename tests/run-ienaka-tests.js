@@ -17,7 +17,12 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const GOLDEN = path.join(__dirname, 'golden-ienaka.json');
+/* --update は既定で「差分を見せるだけ」。書き換えるには --yes も付ける。
+ * ケータイ側（run-calc-tests.js）は 4-36 でそうしたのに、こちらは
+ * --update だけでアプリの出力をそのまま正解に焼き直せてしまい、
+ * 金額が狂っても気づけない状態だった（2026-09-08）。 */
 const UPDATE = process.argv.indexOf('--update') >= 0;
+const YES = process.argv.indexOf('--yes') >= 0;
 
 function playwright() {
   try { return require('playwright'); } catch (e) {}
@@ -29,6 +34,11 @@ function playwright() {
 const CASES = {
   'hikari1g_ht_A_shinki': {},
   'hikari1g_mansion': { housing: 'ms' },
+  /* マンション（100M）。料金表は 戸建（ht）と マンション（ms）しか持っていないので、
+   * ms100 は ms として引く。この読み替えが無いと、料金表に無い鍵を引いて
+   * 画面が固まり、金額が戸建のまま直らなかった（2026-09-08）。 */
+  'hikari1g_ms100': { housing: 'ms100' },
+  'hikari10g_ms100': { product: 'hikari10g', housing: 'ms100' },
   'hikari1g_typeB': { ptype: 'B' },
   'hikari10g': { product: 'hikari10g' },
   'ahamo1g': { product: 'ahamo1g' },
@@ -126,6 +136,12 @@ async function runOn(page, url, port) {
 
   const integrated = await runOn(page, '/keitai-app/?kqtest=1', port);
   const standalone = await runOn(page, '/ienaka-app/', port);
+  /* 営業用デモ（/ienaka-demo/）も同じ計算になることを見る（2026-09-08）。
+   * デモは tools/build-demo.js が単体版から作るが、生成物が古いまま
+   * コミットされることがあるので、実際に動かして金額で確かめる。
+   * 2026-09-08 まで、デモだけタイプC×マンションが 4,400円（正しくは 5,720円）と
+   * 出ていたのに、テストはデモ版を1度も開いていなかった。 */
+  const demo = await runOn(page, '/ienaka-demo/', port);
 
   /* PLATINUM の還元率の欄が、画面でもきちんと出入りするか（製品化レビュー 5-1）。
    * 計算だけ直っていても、欄が出なければお店からは率を変えられない。
@@ -310,14 +326,28 @@ async function runOn(page, url, port) {
       ? Object.keys(val).sort().reduce((o, k2) => { o[k2] = val[k2]; return o; }, {})
       : val);
   const diffs = [];
+  const demoDiffs = [];
   for (const name of Object.keys(CASES)) {
     if (INTEGRATED_ONLY.indexOf(name) >= 0) continue;
     const a = stable(integrated[name]);
     const b = stable(standalone[name]);
     if (a !== b) diffs.push({ name, a, b });
+    const c = stable(demo[name]);
+    if (b !== c) demoDiffs.push({ name, a: b, b: c });
   }
 
-  if (UPDATE) {
+  if (UPDATE && !YES) {
+    const before = fs.existsSync(GOLDEN) ? JSON.parse(fs.readFileSync(GOLDEN, 'utf8')) : {};
+    const changed = Object.keys(integrated).filter(
+      (k) => JSON.stringify(before[k]) !== JSON.stringify(integrated[k]));
+    console.log(changed.length
+      ? '正解と違うのは ' + changed.length + '件です:\n  ・' + changed.join('\n  ・')
+      : '正解との違いはありません。');
+    console.log('\n中身を確かめて、意図した料金変更であれば --yes を付けて実行してください:');
+    console.log('  node tests/run-ienaka-tests.js --update --yes');
+    process.exit(changed.length ? 1 : 0);
+  }
+  if (UPDATE && YES) {
     fs.writeFileSync(GOLDEN, JSON.stringify(integrated, null, 2) + '\n');
     console.log(`golden-ienaka.json を更新しました（${Object.keys(integrated).length}ケース）`);
   }
@@ -348,9 +378,10 @@ async function runOn(page, url, port) {
     process.exit(1);
   }
   console.log('2026年12月の改定（ドコモ光 最大12%）: 問題なし');
+  const shared = Object.keys(CASES).length - INTEGRATED_ONLY.length;
   console.log(`光・5Gの金額テスト: ${ok}/${Object.keys(CASES).length} OK`
-    + `（統合版と単体版の一致: ${Object.keys(CASES).length - INTEGRATED_ONLY.length - diffs.length}`
-    + `/${Object.keys(CASES).length - INTEGRATED_ONLY.length}）`);
+    + `（統合版と単体版の一致: ${shared - diffs.length}/${shared}`
+    + ` ／ 単体版と営業用デモの一致: ${shared - demoDiffs.length}/${shared}）`);
   bad.forEach((b) => {
     console.error('✗ ' + b.name + '\n    期待: ' + JSON.stringify(b.want && b.want.segs)
       + '\n    実際: ' + JSON.stringify(b.got && b.got.segs));
@@ -359,7 +390,12 @@ async function runOn(page, url, port) {
     console.error('✗ 統合版と単体版で結果が違う: ' + d.name
       + '\n    統合版: ' + d.a.slice(0, 200) + '\n    単体版: ' + d.b.slice(0, 200));
   });
-  if (bad.length || diffs.length) {
+  demoDiffs.forEach((d) => {
+    console.error('✗ 単体版と営業用デモで結果が違う: ' + d.name
+      + '\n    単体版: ' + d.a.slice(0, 200) + '\n    デモ版: ' + d.b.slice(0, 200)
+      + '\n    → node tools/build-demo.js でデモを作り直してください');
+  });
+  if (bad.length || diffs.length || demoDiffs.length) {
     if (bad.length) console.error('\n意図した料金変更の場合は node tests/run-ienaka-tests.js --update で golden を更新してください。');
     process.exit(1);
   }

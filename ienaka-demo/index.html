@@ -92,9 +92,21 @@
           <option value="shinki">新規</option>
           <option value="tenyo">転用（フレッツ光から）</option>
           <option value="jigyosha">事業者変更（他社光コラボから）</option>
-          <option value="kirikae">切替（ケーブルテレビのネットから・工事なし）</option>
+          <option value="kirikae">転用（タイプC）</option>
         </select>
       </div>
+      <div class="field" id="typecLineField" hidden>
+        <label for="typecLine">いまのネット回線の設備（転用・タイプC）</label>
+        <select id="typecLine">
+          <option value="hikari">光回線（工事なし・そのまま切り替え）</option>
+          <option value="coax">同軸ケーブル（光への切り替え工事が必要）</option>
+        </select>
+      </div>
+      <div class="field" id="typecKojiField" hidden>
+        <label for="typecKoji">光切り替え工事料（ケーブルテレビ会社の案内額・不明なら空欄）</label>
+        <input type="number" id="typecKoji" inputmode="numeric" min="0" placeholder="金額がわかれば入力">
+      </div>
+      <p class="hint" id="typecLineHint" hidden>光への切り替え工事は<strong>ケーブルテレビ会社が行います</strong>。日程・工事料は同社からのご案内をご確認ください（金額を入れると初期費用に載ります）。</p>
       <div class="field" id="typecKeepField" hidden>
         <label for="typecKeep">ケーブルテレビに残る月額（参考・ZTV等からの請求）</label>
         <input type="number" id="typecKeep" inputmode="numeric" min="0" placeholder="例）2200">
@@ -126,6 +138,7 @@
             <option value="ms">マンション</option>
           </select>
         </div>
+        <p class="hint" id="housingNote" hidden>タイプCは<strong>マンションタイプの提供がありません</strong>（提携ケーブルテレビの提供条件）。戸建のみです。</p>
         <div class="field" id="ptypeField">
           <label for="ptype">プロバイダ料金タイプ</label>
           <select id="ptype">
@@ -364,10 +377,9 @@
 </div>
 
 <!-- デモ版: クラウド同期は使わないため Firebase は読み込まない -->
-<script src="../keitai-app/qr.js"></script>
 <script>window.IENAKA_DEMO = true;</script>
+<script src="../keitai-app/qr.js"></script>
 <script src="app.js"></script>
-/* デモ版: オンライン専用のため Service Worker は登録しない（オフラインでは使えません） */
-
+<!-- デモ版: オンライン専用のため Service Worker は登録しない（オフラインでは使えません） -->
 </body>
 </html>

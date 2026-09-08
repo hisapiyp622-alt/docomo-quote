@@ -89,6 +89,101 @@
       }
     ]
   },
+  "hikari1g_ms100": {
+    "monthly": 5607,
+    "initial": 4950,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 4400,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 1,
+        "monthly": 5607
+      },
+      {
+        "from": 2,
+        "to": 7,
+        "monthly": 5591
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 4400
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 3209
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 4400
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 1ギガ（マンション100M・タイプA・新規）",
+        "amount": 4400
+      }
+    ]
+  },
+  "hikari10g_ms100": {
+    "monthly": 1707,
+    "initial": 11730,
+    "koji": 28600,
+    "kojiPt": 1191,
+    "dcardAutoPt": 0,
+    "dcardPt": 0,
+    "dcardEligible": 6380,
+    "catvKeep": 0,
+    "catvKeepRows": [],
+    "dcardApply": false,
+    "segs": [
+      {
+        "from": 1,
+        "to": 1,
+        "monthly": 1707
+      },
+      {
+        "from": 2,
+        "to": 6,
+        "monthly": 1691
+      },
+      {
+        "from": 7,
+        "to": 7,
+        "monthly": 7571
+      },
+      {
+        "from": 8,
+        "to": 24,
+        "monthly": 6380
+      },
+      {
+        "from": 25,
+        "to": 31,
+        "monthly": 5189
+      },
+      {
+        "from": 32,
+        "to": "inf",
+        "monthly": 6380
+      }
+    ],
+    "rows": [
+      {
+        "name": "ドコモ光 10ギガ（マンション100M・タイプA・新規）",
+        "amount": 6380
+      }
+    ]
+  },
   "hikari1g_typeB": {
     "monthly": 7147,
     "initial": 4950,
