@@ -8536,10 +8536,25 @@
     var ssb = $("saveStoreTplBtn");
     if (ssb) ssb.textContent = tplStoreSaveMode ? "保存先の店舗共通ボタンをタップ（ここを押すとキャンセル）" : "現在の内容を店舗共通に保存";
   }
+  /* テンプレートに入れない項目（そのお客様だけの数字・文字）。
+   * お客様名と同じ理由で、次のお客様の見積書に前のお客様の内容が出ないようにする。
+   * 店舗共通テンプレは店内で共有されるので、メモが混ざらないようにも要る（2026-09-08）。
+   *   currentInst / currentInstMonths … 現在の分割支払金（請求内訳の読み取りから入る）
+   *   quoteMemo                        … 見積書のメモ
+   *   todoOther                        … 引き継ぎシートの特記事項
+   *   visitPurposes / kaimashi         … ご来店の目的（1商談に1つ・回線1が持つ）
+   *   shitadori                        … 下取り
+   *   usePoint / usePointAmount        … ポイントのご利用額
+   *   mnpBenefitType / mnpBenefitAmt   … MNP特典としてご案内した額
+   *   curBill                          … 請求内訳の読み取り（端末内のみ）
+   */
+  var TPL_CUST_KEYS = ["custName", "shopName", "staffName", "shopTel", "curBill",
+    "currentInst", "currentInstMonths", "quoteMemo", "todoOther",
+    "visitPurposes", "kaimashi", "shitadori",
+    "usePoint", "usePointAmount", "mnpBenefitType", "mnpBenefitAmt"];
   function tplSnapshot() {
     var snap = JSON.parse(JSON.stringify(state));
-    delete snap.custName; delete snap.shopName; delete snap.staffName; delete snap.shopTel;
-    delete snap.curBill;  // 請求内訳の読み取りは端末内のみ（テンプレにも入れない）
+    TPL_CUST_KEYS.forEach(function (k) { delete snap[k]; });
     return snap;
   }
   function tplApply(i, isStore) {
@@ -8550,10 +8565,17 @@
         : "テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください");
       return;
     }
-    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel, curBill: state.curBill || null };
+    /* いま応対中のお客様の内容は、テンプレートで上書きしない。
+     * 前に保存したテンプレートには焼き付いたままのものがあるので、
+     * 保存のときだけでなく当てはめるときにも必ず取り除く（2026-09-08）。 */
+    var keep = {};
+    TPL_CUST_KEYS.forEach(function (k) { keep[k] = state[k]; });
+    keep.curBill = state.curBill || null;
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     migratePattern(store.patterns[store.active]);
     state = store.patterns[store.active];
+    // 保存した当時の金額のままにならないよう、いまの料金表・端末マスタに合わせ直す
+    var refreshed = tplRefreshPrices(state);
     /* テンプレートに入っていた「受付が終わったもの」は外す（製品化レビュー 4-11）。
      * 外さないと、終わった割引が満額のままお客様の見積書に載ってしまう。
      * 外したものは必ず名前で知らせる（黙って減らさない）。
@@ -8561,11 +8583,49 @@
     var dropped = tplDropEnded(state);
     syncFormFromState();
     recalc();
+    var notes = [];
     if (dropped.length) {
-      tplMsg("このテンプレートの「" + dropped.join("」「")
+      notes.push("このテンプレートの「" + dropped.join("」「")
         + "」は、ドコモの受付が終わっているため外しました"
         + "（継続でお使いのお客様のぶんは「受付が終わったものも出す」から選べます）");
     }
+    if (refreshed.length) {
+      notes.push("テンプレートに保存されていた金額が今と違ったので、いまの金額に直しました（"
+        + refreshed.join("／") + "）");
+    }
+    if (notes.length) tplMsg(notes.join(" "));
+  }
+  /* テンプレートを当てはめたとき、保存した当時の金額のままになっているものを
+   * いまの料金表・端末マスタの金額に直す。直したものは必ず名前で知らせる。
+   * （保存した見積もりは当時の金額のままでよいが、テンプレートは
+   *   これから作る見積もりのひな型なので、古い金額を出してはいけない・2026-09-08） */
+  function tplRefreshPrices(st) {
+    var out = [];
+    var dev = devByName(st.deviceName);
+    if (dev) {
+      if (num(dev.price) !== num(st.devicePrice)) {
+        out.push("機種代金 " + yen(num(st.devicePrice)) + " → " + yen(num(dev.price)));
+        st.devicePrice = num(dev.price);
+      }
+      var k23 = devKaedoki23(dev, st.procType);
+      if (k23 !== null && num(k23) !== num(st.kaedoki23)) {
+        out.push("カエドキ23回分 " + yen(num(st.kaedoki23)) + " → " + yen(num(k23)));
+        st.kaedoki23 = num(k23);
+      }
+      var atm = (typeof dev.atamakin === "number") ? num(dev.atamakin) : null;
+      if (atm !== null && atm !== num(st.atamakin)) {
+        out.push("店頭頭金 " + yen(num(st.atamakin)) + " → " + yen(atm));
+        st.atamakin = atm;
+      }
+    }
+    if (st.procType) {
+      var jimu = autoFeeProc(st.procType) ? num(jimuFeeFor(st.procType)) : 0;
+      if (jimu !== num(st.jimuFee)) {
+        out.push("契約事務手数料 " + yen(num(st.jimuFee)) + " → " + yen(jimu));
+        st.jimuFee = jimu;
+      }
+    }
+    return out;
   }
   // 受付が終わっているオプション・初期費用・キャンペーンの選択を外し、外した名前を返す
   function tplDropEnded(st) {
@@ -9022,6 +9082,14 @@
    * 対象を増減するときは、この一覧を直すだけでよい。 */
   var MAIL_PAID_PLANS = ["mini", "ahamo", "ahamo_poikatsu", "irumo"];
   function mailPaidPlan() { return MAIL_PAID_PLANS.indexOf(currentPlan().id) >= 0; }
+  /* ドコモメール（@docomo.ne.jp）そのものが使えないプラン。
+   * ここに書いたプランでは、引き継ぎシートに「プランに標準で込み」と
+   * 印字しない（使えないのに込みと書くと、店頭でご案内を誤る・2026-09-08）。 */
+  var MAIL_NA_PLANS = ["libmo_nattoku", "libmo_gogo", "dataplus", "kids"];
+  function mailNaPlan(st) {
+    var id = (st ? (planById(st.planId) || {}) : currentPlan()).id;
+    return MAIL_NA_PLANS.indexOf(id) >= 0;
+  }
   function mailOptDef() {
     return MASTER.options.filter(function (o) {
       return o.id === "docomomail" || (o.name || "").indexOf("ドコモメール") >= 0;
@@ -10401,7 +10469,7 @@
     var mailKbSheet = mailDefSheet
       ? (state.optionKubun[mailDefSheet.id] || (state.options[mailDefSheet.id] ? "new" : ""))
       : "";
-    h += row("ドコモメール", !mailPaidPlan()
+    if (!mailNaPlan(state)) h += row("ドコモメール", !mailPaidPlan()
       ? "プランに標準で込み"
       : mailKbSheet === "off"
         ? '<b style="color:var(--red)">廃止</b>'
@@ -10613,7 +10681,9 @@
       /* プロバイダは、選ばれていないときも行を出す。
        * 選ばないとルーター申込・フォローコールのQRが出ないため、
        * 出ていない理由がその場で分かるようにする（店頭の指摘・2026-08-11）。 */
-      if (KQ_IENAKA.isHikari() && !isTypec(store.ienaka)) {
+      /* ahamo光はプロバイダ一体型、タイプC・home 5G はケーブルテレビ／ドコモの設備。
+       * これらは欄そのものが出ないので、前の商材で選んだプロバイダを印字しない */
+      if (KQ_IENAKA.hasProvider()) {
         h += row("プロバイダ", store.ienaka.provider
           ? esc(store.ienaka.provider) + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）"
           : '<b style="color:var(--red)">未選択</b>　※ 申込ページのQRは、プロバイダを選ぶと出ます');
@@ -15465,6 +15535,11 @@
         renderMailOpt(); recalc();
       },
       tplSave: function (i) { templates[i] = { name: "検査用", state: tplSnapshot() }; persistTemplates(); },
+      // テンプレートに保存された中身（お客様だけの数字・文字が入っていないかを見る）
+      tplStored: function (i) { return templates[i] ? JSON.parse(JSON.stringify(templates[i].state)) : null; },
+      tplApply: function (i) { tplApply(i, false); },
+      // テンプレートを当てはめたときに出る知らせの文
+      tplNote: function () { var e = $("tplMsg"); return e ? (e.textContent || "").trim() : ""; },
       /* 保存まわりの検査（製品化レビュー 5-3） */
       saved: {
         // 名前を付けずに保存したときの初期値
@@ -15702,6 +15777,12 @@
           var e = $("tab-sheet");
           return e ? e.innerText : "";
         },
+        // 引き継ぎシートの本文（担当者の目に映る文字）
+        staffText: function () {
+          renderStaffSheet();
+          var e = $("staffSheetBody");
+          return e ? e.innerText : "";
+        },
         // 「◯◯ は □□ の対象外です」の1行
         discountOff: function () {
           var e = $("discountOff");
@@ -15769,6 +15850,8 @@
           saveState();
         },
         pick: function (i) { switchPattern(i); },
+        // i番目の回線の中身を読む
+        state: function (i) { return JSON.parse(JSON.stringify(store.patterns[i])); },
         // 画面のボタンを実際に押す（「この回線をクリア」「全回線をクリア」）
         clearOne: function (top) { var b = $(top ? "clearPatternTop" : "clearPattern"); if (b) b.click(); },
         clearAll: function (top) { var b = $(top ? "clearQuoteTop" : "clearQuote"); if (b) b.click(); },
