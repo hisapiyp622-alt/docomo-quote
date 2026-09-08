@@ -47,7 +47,7 @@
  * 「マスタを初期値に戻す」でこの標準構成に戻る。
  * ========================================================= */
 const DEFAULT_DATA = {
-  "masterVersion": 18,
+  "masterVersion": 19,
   "updated": "2026-09-08",
   "fees": {
     "jimu_shinki": 4950,
@@ -727,6 +727,10 @@ const DEFAULT_DATA = {
       "url": "https://www.docomo.ne.jp/charge/kakeho_light/",
       "name": "5分通話無料オプション",
       "price": 880,
+      "hideOnPlans": [
+        "libmo_nattoku",
+        "libmo_gogo"
+      ],
       "wariOff": 880
     },
     {
@@ -735,7 +739,13 @@ const DEFAULT_DATA = {
       "name": "5分通話無料オプション（旧）",
       "price": 770,
       "hideOnPlans": [
-        "mini"
+        "mini",
+        "ahamo",
+        "ahamo_poikatsu",
+        "biz_unlimited",
+        "biz_kakehodai",
+        "libmo_nattoku",
+        "libmo_gogo"
       ],
       "wariOff": 770
     },
@@ -744,6 +754,10 @@ const DEFAULT_DATA = {
       "url": "https://www.docomo.ne.jp/charge/kakeho/",
       "name": "かけ放題オプション",
       "price": 1980,
+      "hideOnPlans": [
+        "libmo_nattoku",
+        "libmo_gogo"
+      ],
       "wariOff": 880
     },
     {
@@ -752,7 +766,13 @@ const DEFAULT_DATA = {
       "name": "かけ放題オプション（旧）",
       "price": 1870,
       "hideOnPlans": [
-        "mini"
+        "mini",
+        "ahamo",
+        "ahamo_poikatsu",
+        "biz_unlimited",
+        "biz_kakehodai",
+        "libmo_nattoku",
+        "libmo_gogo"
       ],
       "wariOff": 770
     },
@@ -760,10 +780,25 @@ const DEFAULT_DATA = {
       "id": "kake1000",
       "name": "かけ放題オプション(1000)",
       "price": 1100,
-      "wariOff": 0
+      "hideOnPlans": [
+        "libmo_nattoku",
+        "libmo_gogo"
+      ],
+      "wariOff": 0,
+      "retiredFrom": "2026-09-08"
     }
   ],
   "options": [
+    {
+      "id": "docomomail",
+      "url": "https://www.docomo.ne.jp/service/docomo_mail_option/",
+      "name": "ドコモメールオプション",
+      "price": 330,
+      "category": "その他",
+      "note": "ドコモメール（@docomo.ne.jp）が標準で付かないプラン（ahamo・ドコモ mini・irumo）で使うための有料オプション。初回のお申し込みから31日間は無料。月途中の契約・解約は日割り。②の欄で選びます（④のタイルには出ません）。",
+      "carrier": true,
+      "own": false
+    },
     {
       "id": "smart_hosho",
       "url": "https://www.docomo.ne.jp/service/smart_anshin_hoshou/",

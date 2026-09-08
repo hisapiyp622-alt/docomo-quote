@@ -317,7 +317,9 @@ function chk(name, cond, extra) {
     const off = m.plans.filter((p) => !L.statsCatalog()['plan:' + p.id])[0];
     /* オプションは 2026-09-07 から全部数えるようにしたので、
      * マスタ設定の画面で1つ外してから試す（実際に押す道を通す）。 */
-    const offOpt = m.options[0];
+    /* 一覧の順番に頼らない。ドコモメールは「プランに付いてくるかどうか」の選択で
+     * 獲得ではないため実績に数えない（statsSkipOpt）ので、数える対象のものを選ぶ。 */
+    const offOpt = m.options.filter((o) => !!L.statsCatalog()['opt:' + o.id])[0];
     L.optSkipUi(offOpt.id, false);
     L.cxSet([{ id: 'keep', name: '手で足した行', pt: 7, keys: ['proc:shinki'] }]);
     const before = L.statsCatalog()['plan:' + off.id] ? 'ある' : 'ない';
@@ -1917,6 +1919,65 @@ function chk(name, cond, extra) {
   chk('㊶ そのとき、古いものは「捨てる」のではなく「軽くする」で収めている',
     bulk.sizes.slim > 0 && bulk.sizes.total <= bulk.sizes.limit,
     JSON.stringify(bulk.sizes));
+
+  /* ---- ㊷ お客様に見せる金額に関わる不具合（2026-09-08）----
+   *   #23 LIBMO でドコモの通話オプションが「プランに込み 0円」と出て、見積書にも載る
+   *   #24 ahamo で「旧」（770円・1,870円）が選べる。ahamo にその金額の通話オプションは無い
+   *   #26 「かけ放題オプション(1000) 1,100円」がどのプランでも選べ、ドコモ MAX で 880円 安く出る
+   *   #53 料金マスタに「ドコモメール」が無く、ahamo・mini・irumo でメールの欄が出ない
+   *   #25 LIBMO なのに「みんなドコモ割（回線数のカウントには含まれます）」と案内される
+   * 見るのは内部の設定ではなく、**画面のタイルに出ている文字**。 */
+  const money = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    function pick(pid) {
+      const t = document.getElementById('procType');
+      if (t) { t.value = 'mnp'; t.dispatchEvent(new Event('change', { bubbles: true })); }
+      const grp = document.getElementById('planGroup');
+      const sel = document.getElementById('planId');
+      if (!Array.prototype.some.call(sel.options, (o) => o.value === pid) && grp) {
+        for (const g of grp.options) {
+          grp.value = g.value; grp.dispatchEvent(new Event('change', { bubbles: true }));
+          if (Array.prototype.some.call(sel.options, (o) => o.value === pid)) break;
+        }
+      }
+      if (!Array.prototype.some.call(sel.options, (o) => o.value === pid)) return null;
+      sel.value = pid; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return { tiles: S.voiceTiles(), mail: S.mailField(), off: S.discountOff() };
+    }
+    const out = {};
+    ['max', 'mini', 'ahamo', 'ahamo_poikatsu', 'irumo', 'libmo_gogo', 'libmo_nattoku'].forEach((p) => {
+      out[p] = pick(p);
+    });
+    return out;
+  });
+  const joined = (p) => (money[p] ? money[p].tiles.join(' ／ ') : '(プランが出ない)');
+  chk('㊷「かけ放題オプション(1000)」がどのプランにも出ない（ドコモ MAX で880円安く出ない）',
+    ['max', 'mini', 'ahamo', 'irumo'].every((p) => money[p] && !/\(1000\)/.test(joined(p))),
+    ['max', 'mini', 'ahamo', 'irumo'].map((p) => p + ': ' + joined(p)).join(' / '));
+  chk('㊷ ahamo・ahamo ポイ活で「旧」（770円・1,870円）が出ない',
+    ['ahamo', 'ahamo_poikatsu'].every((p) => money[p]
+      && !/770円/.test(joined(p)) && !/1,870円/.test(joined(p))),
+    ['ahamo', 'ahamo_poikatsu'].map((p) => p + ': ' + joined(p)).join(' / '));
+  chk('㊷ ahamo のかけ放題は 1,100円のまま（正しい金額は消していない）',
+    money.ahamo && /1,100円/.test(joined('ahamo')), joined('ahamo'));
+  chk('㊷ ドコモ MAX のかけ放題は 1,980円のまま',
+    money.max && /1,980円/.test(joined('max')), joined('max'));
+  chk('㊷ LIBMO では、ドコモの通話オプションを1つも出さない（「プランに込み」と言わない）',
+    ['libmo_gogo', 'libmo_nattoku'].every((p) => money[p]
+      && money[p].tiles.length === 1 && /通話オプションなし/.test(money[p].tiles[0])),
+    ['libmo_gogo', 'libmo_nattoku'].map((p) => p + ': ' + joined(p)).join(' / '));
+  chk('㊷ ahamo・ドコモ mini・irumo で、ドコモメールの欄が 330円 で出る',
+    ['ahamo', 'ahamo_poikatsu', 'mini', 'irumo'].every((p) => money[p]
+      && money[p].mail.shown && /330円/.test(money[p].mail.text)),
+    ['ahamo', 'ahamo_poikatsu', 'mini', 'irumo']
+      .map((p) => p + ': ' + (money[p] ? JSON.stringify(money[p].mail) : '?')).join(' / '));
+  chk('㊷ ドコモ MAX ではメールの欄を出さない（標準で込みのため）',
+    money.max && money.max.mail.shown === false, JSON.stringify(money.max && money.max.mail));
+  chk('㊷ LIBMO では「みんなドコモ割（回線数のカウントには含まれます）」と言わない',
+    ['libmo_gogo', 'libmo_nattoku'].every((p) => money[p]
+      && !/回線数のカウントには含まれます/.test(money[p].off)),
+    ['libmo_gogo', 'libmo_nattoku'].map((p) => p + ': ' + (money[p] ? money[p].off : '?')).join(' / '));
 
   await browser.close();
   srv.close();

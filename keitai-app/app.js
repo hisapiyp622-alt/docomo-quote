@@ -8798,7 +8798,7 @@
   /* ドコモメールが「有料オプション」になるプラン。ここに無いプランは
    * 標準で込みなので、②のプルダウン自体を出さない（2026-08-21 店頭確認）。
    * 対象を増減するときは、この一覧を直すだけでよい。 */
-  var MAIL_PAID_PLANS = ["mini", "ahamo", "irumo"];
+  var MAIL_PAID_PLANS = ["mini", "ahamo", "ahamo_poikatsu", "irumo"];
   function mailPaidPlan() { return MAIL_PAID_PLANS.indexOf(currentPlan().id) >= 0; }
   function mailOptDef() {
     return MASTER.options.filter(function (o) {
@@ -9122,7 +9122,10 @@
    * 出しておくと、対象外なのに選べてしまい、案内を誤りやすいため。
    * 何が対象外なのかは1行にまとめて下に出す。 */
   var DISCOUNT_FIELDS = [
+    /* note は「対象外です」の1行に添える言葉。みんなドコモ割の回線数に数えられるのは
+     * ドコモの回線だけなので、LIBMO（別の会社の回線）では添えない（2026-09-08）。 */
     { wrap: "minnaWrap", name: "みんなドコモ割", note: "回線数のカウントには含まれます",
+      noteSkipGroups: ["libmo"],
       on: function (d) { return !!(d.minna2 || d.minna3); } },
     { wrap: "dSetWrap", name: "ドコモ光／home 5G セット割", on: function (d) { return !!d.set; } },
     { wrap: "dCardWrap", name: "dカードお支払割", on: function (d) { return !!(d.dcard || d.dcardGold); } },
@@ -9172,7 +9175,8 @@
       el.hidden = !ok;
       /* quiet の割引（法人プランだけのもの）は、対象外でも一覧に並べない。
        * 個人のお客様に「社員割の対象外です」と出ても意味がないため。 */
-      if (!ok && !f.quiet) offs.push(f.name + (f.note ? "（" + f.note + "）" : ""));
+      var noteOk = f.note && !(f.noteSkipGroups || []).some(function (g) { return g === plan.group; });
+      if (!ok && !f.quiet) offs.push(f.name + (noteOk ? "（" + f.note + "）" : ""));
     });
     // ポイ活の還元ポイントは、ポイ活プランのときだけ出す
     var pk = !shown || poikatsuPlan(plan.id);
@@ -15314,6 +15318,22 @@
             saveQuote("検査用" + i);
           }
           return savedList.length;
+        },
+        // ②の通話オプションのタイルに出ている文字（お客様の目に映るもの）
+        voiceTiles: function () {
+          return Array.prototype.map.call(document.querySelectorAll("#voiceTiles .tile"),
+            function (t) { return (t.innerText || "").replace(/\s*\n\s*/g, " | "); });
+        },
+        // ②のドコモメールの欄（出ているか・出ている文字）
+        mailField: function () {
+          var f = $("mailField"), t = $("mailTile");
+          return { shown: !!(f && !f.hidden),
+            text: (f && !f.hidden && t) ? (t.innerText || "").replace(/\s*\n\s*/g, " | ") : "" };
+        },
+        // 「◯◯ は □□ の対象外です」の1行
+        discountOff: function () {
+          var e = $("discountOff");
+          return e && !e.hidden ? (e.textContent || "").trim() : "";
         },
         // 見積もり画面のU15・U39のチェック欄が出ているか
         u15u39: function () {
