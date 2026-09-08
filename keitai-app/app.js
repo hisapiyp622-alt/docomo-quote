@@ -38,8 +38,17 @@
    * データを触ることになる。Firebase の「承認済みドメイン」は Google ログイン
    * などにしか効かず、店舗ID＋パスワードのログインは止められないため、
    * アプリ側で止める。社内版は別のクラウドなので対象外。 */
+  /* 製品版を開いてよい住所（配信元）。ここに無い住所で開かれたときはログインを止める。
+   * 以前は「github.io なら止める」と書いていたが、配信先の引っ越し（Cloudflare Pages）で
+   * 試用の住所（*.pages.dev）が増え、止め忘れると本番のクラウドへの入口になってしまう。
+   * そこで「許す住所だけを書く」形に変えた（2026-09-08）。localhost・127.0.0.1 は手元の確認用。
+   * ホスト名が無い（file:// で開いた）ときは従来どおり止めない。 */
+  var PROD_HOSTS = ["frontalk.curacon.co.jp", "localhost", "127.0.0.1"];
   function devHost() {
-    return !INTERNAL && /github\.io$/i.test(String((typeof location !== "undefined" && location.hostname) || ""));
+    if (INTERNAL) return false;
+    var h = String((typeof location !== "undefined" && location.hostname) || "").toLowerCase();
+    if (!h) return false;
+    return PROD_HOSTS.indexOf(h) < 0;
   }
   var NS = INTERNAL ? "dq" : "kq";
   if (INTERNAL) {
@@ -4779,6 +4788,170 @@
     });
   }
 
+  /* ---------- 引っ越し（住所の変更・社内版だけ） ----------
+   * 社内版の配信先を変えると（github.io → 新しい住所）、端末の中の保存（localStorage）は
+   * 住所ごとに別の入れ物なので、新しい住所では空から始まってしまう。
+   * クラウド（recipe-box）に無いもの — お客様名・請求内訳の読み取り・作りかけの細部 — は
+   * 端末から運ぶしかない。そこで「持ち出す」で端末の中身をファイルにし、
+   * 新しい住所で「持ち込む」で同じ鍵にそのまま書き戻す。
+   *
+   * 運ぶのは社内版の鍵（dq-*）とイエナカ社内版の鍵（ienaka-internal-*）だけ。
+   * 同じ住所に同居している製品版の開発コピー（kq-*）・デモ・試作は運ばない。
+   * 「バックアップ」とは別物: バックアップはクラウドにも書き戻すが、こちらは端末の中にだけ書く。
+   * 持ち込んだあとは開き直すので、いつもの同期（どちらが新しいか）がそのまま働く。 */
+  var MOVE_KIND = "frontalk-internal-move";
+  var MOVE_PREFIXES = ["dq-", "ienaka-internal-"];
+  var MOVED_KEY = NS + "-moved-v1";   // いつ・どこから持ち込んだか（「情報」に出す）
+  function moveKeyOk(k) {
+    return MOVE_PREFIXES.some(function (p) { return String(k).indexOf(p) === 0; });
+  }
+  function moveCollect() {
+    var keys = {};
+    var n = 0;
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || !moveKeyOk(k)) continue;
+      keys[k] = localStorage.getItem(k);
+      n++;
+    }
+    return {
+      kind: MOVE_KIND, version: 1,
+      from: location.host + location.pathname,
+      at: nowStamp(), appVersion: APP_VERSION, count: n,
+      keys: keys
+    };
+  }
+  /* 持ち出し・持ち込みの前に、中身の目安を出す（新旧の照合に使う） */
+  function moveSummary(d) {
+    var keys = (d && d.keys) || {};
+    var saved = 0, quotes = 0, ienaka = 0, staff = [];
+    Object.keys(keys).forEach(function (k) {
+      var v = keys[k];
+      if (k.indexOf(NS + "-saved-v1:") === 0) {
+        try { saved += (JSON.parse(v) || []).length; } catch (e) {}
+      } else if (k.indexOf(NS + "-state-v1:") === 0) {
+        quotes++;
+      } else if (k.indexOf("ienaka-internal-") === 0) {
+        ienaka++;
+      } else if (k === NS + "-config-v1") {
+        try { staff = (JSON.parse(v).staff || []).map(function (st) { return st.name || st.id; }); } catch (e2) {}
+      }
+    });
+    return { saved: saved, quotes: quotes, ienaka: ienaka, staff: staff, total: Object.keys(keys).length };
+  }
+  function moveSummaryText(sm) {
+    return "保存した見積もり " + sm.saved + "件・作りかけ " + sm.quotes + "人分・担当者 "
+      + (sm.staff.length ? sm.staff.join("、") : "（なし）") + "・イエナカ " + sm.ienaka + "件（全 " + sm.total + "件）";
+  }
+  function moveMsg(t, warn) {
+    var el = $("moveMsg");
+    if (!el) return;
+    el.textContent = t || "";
+    el.hidden = !t;
+    el.className = "hint" + (warn ? " backup-warn" : "");
+  }
+  function moveFileName(d) {
+    function z(n) { return ("0" + n).slice(-2); }
+    var t = new Date();
+    return "フロントーク社内版_持ち出し_" + t.getFullYear() + z(t.getMonth() + 1) + z(t.getDate())
+      + "-" + z(t.getHours()) + z(t.getMinutes()) + ".json";
+  }
+  function doMoveExport() {
+    var d = moveCollect();
+    var sm = moveSummary(d);
+    var json = JSON.stringify(d);
+    try {
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = moveFileName(d);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      moveMsg("持ち出しました（" + moveSummaryText(sm) + "）。新しい住所で「持ち込む」からこのファイルを選んでください。"
+        + "この端末の中身は消えていません。");
+      logAdd("引っ越し", "この端末のデータを持ち出しました（" + sm.total + "件）");
+    } catch (e) {
+      moveMsg("持ち出せませんでした。お使いのブラウザがファイルの保存に対応していない可能性があります。", true);
+    }
+  }
+  function importMove(d) {
+    if (!d || d.kind !== MOVE_KIND || !d.keys || typeof d.keys !== "object") {
+      moveMsg(d && d.kind === BACKUP_KIND
+        ? "これは「バックアップ」のファイルです。引っ越しの持ち込みには、「この端末のデータを持ち出す」で作ったファイルを選んでください。"
+        : "このファイルは引っ越しの持ち出しファイルではないようです。", true);
+      return;
+    }
+    var okKeys = {}, skipped = 0;
+    Object.keys(d.keys).forEach(function (k) {
+      if (moveKeyOk(k) && typeof d.keys[k] === "string") okKeys[k] = d.keys[k];
+      else skipped++;
+    });
+    var sm = moveSummary({ keys: okKeys });
+    if (!sm.total) { moveMsg("持ち込める内容が入っていません。", true); return; }
+    var msg = "旧アドレス（" + (d.from || "不明") + "）で " + (d.at || "不明") + " に持ち出したデータを、この端末に取り込みます。\n\n"
+      + moveSummaryText(sm) + "\n"
+      + (skipped ? "（対象外のもの " + skipped + "件は取り込みません）\n" : "")
+      + "\nいまこの端末にある社内版の内容は、この内容で置き換わります。クラウドには書きません。\nよろしいですか？";
+    if (!window.confirm(msg)) return;
+    /* 書き込みの途中で送信が走らないようにする。開き直したあとは通常の同期に任せる。 */
+    CLOUD.suppress = true;
+    cloudDetach();
+    var touched = {};
+    try {
+      Object.keys(okKeys).forEach(function (k) {
+        if (!(k in touched)) touched[k] = localStorage.getItem(k);
+        localStorage.setItem(k, okKeys[k]);
+      });
+      touched[MOVED_KEY] = localStorage.getItem(MOVED_KEY);
+      localStorage.setItem(MOVED_KEY, JSON.stringify({ from: d.from || "", at: d.at || "", n: sm.total, on: nowStamp() }));
+    } catch (e) {
+      Object.keys(touched).forEach(function (k) {
+        try {
+          if (touched[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, touched[k]);
+        } catch (e2) {}
+      });
+      CLOUD.suppress = false;
+      moveMsg("持ち込めませんでした（端末の保存領域がいっぱいの可能性があります）。この端末の内容は変えていません。", true);
+      return;
+    }
+    window.alert("持ち込みました。画面を読み込み直します。");
+    location.reload();
+  }
+  function initMove() {
+    var card = $("moveCard");
+    if (card) card.hidden = !INTERNAL;
+    ["staffMoveWrap", "setupMoveWrap"].forEach(function (id) {
+      var w = $(id);
+      if (w) w.hidden = !INTERNAL;
+    });
+    if (!INTERNAL) return;
+    var b = $("moveExportBtn");
+    if (b) b.addEventListener("click", doMoveExport);
+    var f = $("moveImportFile");
+    if (f) f.addEventListener("change", function () {
+      var file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        var d = null;
+        try { d = JSON.parse(String(fr.result)); } catch (e) {}
+        importMove(d);
+      };
+      fr.onerror = function () { moveMsg("ファイルを読めませんでした。", true); };
+      fr.readAsText(file);
+    });
+    /* 最初の画面（初期設定・担当者コード）からも同じファイル選択を開けるようにする。
+     * 新しい住所で最初に開いたときは、まだ何も設定していないため。 */
+    ["staffMoveBtn", "setupMoveBtn"].forEach(function (id) {
+      var lb = $(id);
+      if (lb) lb.addEventListener("click", function () { if (f) f.click(); });
+    });
+  }
+
   /* ---------- 料金表の更新（配信） ----------
    * 料金改定はこちらが data.js を更新して配る。ただし店舗のマスタが優先されるため、
    * そのままでは価格の改定が届かない。版数を比べて「更新があります」と知らせ、
@@ -7720,7 +7893,7 @@
       /* 開発用のアドレスからはログインさせない（4-28）。
        * ここを通すと、版のずれたアプリが同じ店舗のデータを書き替えてしまう。 */
       if (devHost()) {
-        err.innerHTML = "こちらは開発用のアドレスのため、ログインできません。<br>"
+        err.innerHTML = "こちらは開発用・試用のアドレスのため、ログインできません。<br>"
           + '<a href="https://frontalk.curacon.co.jp/">frontalk.curacon.co.jp</a> からお使いください。';
         err.hidden = false;
         logAdd("配信元", "開発用アドレスでのログインを止めました");
@@ -12657,6 +12830,7 @@
       "最後に同期できた時刻: " + t(CLOUD.lastOkAt),
       "端末の保存領域: " + storageUsageText() + (lsFailed() ? "（保存できていない項目あり）" : ""),
       "保存した見積もり: " + (savedList || []).length + "件",
+      "引っ越し: " + movedText(),
       "画面の大きさ: " + window.innerWidth + "×" + window.innerHeight,
       "ブラウザ: " + String(navigator.userAgent || "").slice(0, 120),
       "ネット: " + (navigator.onLine ? "つながっています" : "つながっていません"),
@@ -12666,6 +12840,12 @@
       return e.at + " [" + e.k + "] " + e.m + (e.v && e.v !== APP_VERSION ? "（版 " + e.v + "）" : "");
     });
     return lines.join("\n") + "\n" + (recent.length ? recent.join("\n") : "（記録はありません）");
+  }
+  function movedText() {
+    var m = null;
+    try { m = JSON.parse(localStorage.getItem(MOVED_KEY) || "null"); } catch (e) {}
+    if (!m) return "なし";
+    return (m.on || "") + " に " + (m.from || "旧アドレス") + " から持ち込み（" + (m.n || 0) + "件）";
   }
   function storeUid() {
     if (CLOUD.actAsUid) return CLOUD.actAsUid + "（保守・上位で表示中）";
@@ -16811,7 +16991,7 @@
     (function () {
       var el = document.getElementById("cloudWarn");
       if (!el) return;
-      el.innerHTML = "⚠ こちらは<b>開発用のアドレス</b>です。ログインはできません。<br>"
+      el.innerHTML = "⚠ こちらは<b>開発用・試用のアドレス</b>です。ログインはできません。<br>"
         + 'ご利用は <a href="https://frontalk.curacon.co.jp/" style="color:#fff">frontalk.curacon.co.jp</a>'
         + " からお願いします。";
       el.hidden = false;
@@ -16973,6 +17153,7 @@
   initIenaka();
   initWizard();
   initBackup();
+  initMove();
   initIenakaLink();
   initTileSort();
   initTplHold();
