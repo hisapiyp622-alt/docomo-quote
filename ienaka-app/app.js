@@ -1450,6 +1450,8 @@
       var incoming = JSON.parse(d.data);
       // お客様名は同期しないため、この端末で入力済みの名前を保持する
       if (incoming && !incoming.custName && state.custName) incoming.custName = state.custName;
+      // 引き継いだ担当者名は、初回の受信で前の担当者名に戻さない
+      if (incoming && handoffStaff) { incoming.staffName = handoffStaff; handoffStaff = ""; }
       state = Object.assign(defaultState(), incoming);
       migrateState(state);
       try { localStorage.setItem(quoteKey(), JSON.stringify(state)); } catch (e) {}
@@ -2252,6 +2254,8 @@
 
   /* ケータイ見積もりから移ってきたときは、店舗名・担当者名・お客様名を引き継ぐ。
    * 同一オリジンの localStorage 経由。読んだら消す（次に開いたときに残らないように）。 */
+  // ケータイ見積もりから引き継いだ担当者名（同期で戻されないように控える）
+  var handoffStaff = "";
   function takeHandoff() {
     if (!HANDOFF_KEY) return;   // デモ版は引き継がない
     var raw = null;
@@ -2265,7 +2269,11 @@
     if (!d.at || Date.now() - d.at > 10 * 60 * 1000) return;
 
     if (d.storeName) { config.storeName = d.storeName; }
-    if (d.staffName) state.staffName = d.staffName;
+    /* 引き継いだ担当者名は、同期の初回受信で前の担当者名に戻らないよう
+     * この起動のあいだだけ守る。担当者名はふだん「みんなで共有する1枚」に
+     * 入れて同期するので、常に守ると別の端末で直した名前が伝わらなくなる。
+     * ここは「引き継いだ直後の1回だけ」に限る（2026-09-08）。 */
+    if (d.staffName) { state.staffName = d.staffName; handoffStaff = d.staffName; }
     if (d.custName) state.custName = d.custName;
     saveConfig();
     save();
@@ -2290,6 +2298,17 @@
     platRate: function () { return platRate(); },
     reviseNotices: function () { return reviseNotices(); },
     version: APP_VERSION,
+    /* ケータイ見積もりから担当者名を引き継いだあと、同期の初回受信で
+     * 前の担当者名に戻らないかを見る（2026-09-08）。 */
+    handoffThenSync: function (staffName, remoteStaff) {
+      state.staffName = staffName; handoffStaff = staffName;
+      var payload = JSON.stringify(Object.assign({}, defaultState(), { staffName: remoteStaff }));
+      applyRemoteQuote({ data: payload });
+      var first = state.staffName;
+      // 2回目からは、ふつうに同期で入れ替わってよい（共有する内容のため）
+      applyRemoteQuote({ data: payload });
+      return { first: first, second: state.staffName };
+    },
     run: function (patch) {
       var keep = JSON.parse(JSON.stringify(state));
       var d = defaultState();

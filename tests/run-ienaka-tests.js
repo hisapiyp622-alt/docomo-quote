@@ -307,6 +307,23 @@ async function runOn(page, url, port) {
   }
   console.log('既定で出さない回線（auひかり・楽天ひかり）: 問題なし');
 
+  /* ---- 引き継いだ担当者名が、同期の初回受信で前の担当者名に戻らないか
+   *      （2026-09-08。お客様にお渡しする紙に違う担当者名が出ていた）---- */
+  await page.goto(`http://127.0.0.1:${port}/ienaka-app/`);
+  await page.waitForFunction(() => window.__IE_TEST__ && window.__IE_TEST__.handoffThenSync,
+    null, { timeout: 20000 });
+  const ho = await page.evaluate(() => window.__IE_TEST__.handoffThenSync('安藤', '山田'));
+  if (ho.first !== '安藤') {
+    console.error('✗ 引き継いだ担当者名が、同期の初回受信で戻ってしまいます: '
+      + JSON.stringify(ho));
+    process.exitCode = 1;
+  } else if (ho.second !== '山田') {
+    console.error('✗ 2回目以降も担当者名が同期されません（守りすぎです）: ' + JSON.stringify(ho));
+    process.exitCode = 1;
+  } else {
+    console.log('引き継いだ担当者名: 問題なし（初回は守り、2回目からは同期する）');
+  }
+
   await browser.close();
   srv.close();
 

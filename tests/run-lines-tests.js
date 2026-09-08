@@ -1658,6 +1658,28 @@ function chk(name, cond, extra) {
       .every((k) => sel[k] && sel[k].hiddenOnes.length === 0),
     JSON.stringify(Object.keys(sel).map((k) => [k, sel[k] && sel[k].hiddenOnes])));
 
+  /* 店舗ごとの機能スイッチ（契約の器の features）を「切」にした場面。
+   * 2026-09-08 まで、テスト中は必ず「入」だったため、商材を絞り込む道を
+   * 一度も通っておらず、この確認は空回りしていた。 */
+  const feat = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    const on = L.feat(null);
+    const withC = L.ieSelectOpts('ieProduct', 'hikari1g');
+    const off = L.feat({ typec: false });
+    const noC = L.ieSelectOpts('ieProduct', 'hikari1g');
+    L.feat(null);
+    return { on: on, withC: withC, off: off, noC: noC };
+  });
+  chk('㊱ テストの既定では、タイプCの機能は「入」',
+    feat.on.typec === true, JSON.stringify(feat.on));
+  chk('㊱ タイプCの機能を「切」にすると、商材の一覧からタイプCが消える',
+    feat.off.typec === false
+      && feat.withC.values.some((v) => /hikaric/.test(v))
+      && !feat.noC.values.some((v) => /hikaric/.test(v)),
+    '入: ' + JSON.stringify(feat.withC.values) + ' ／ 切: ' + JSON.stringify(feat.noC.values));
+  chk('㊱ 「切」のときも、hidden で隠すのではなく一覧から外している',
+    feat.noC.hiddenOnes.length === 0, JSON.stringify(feat.noC.hiddenOnes));
+
   /* ---- ㊲ 見積もりなしの成約にもポイントが付く（2026-09-08）----
    * 実績の件数には出るのに、ポイントだけ1点も付いていなかった。 */
   const nq = await page.evaluate(() => {
@@ -2317,6 +2339,29 @@ function chk(name, cond, extra) {
     nqCx.one === 20, '合計=' + nqCx.one + ' ' + JSON.stringify(nqCx.oneRows));
   chk('㊼ 2枚売った日は、両方の行が1件ずつ当たる（25点）',
     nqCx.two === 25, '合計=' + nqCx.two);
+
+  /* ---- ㊽ 機種名が空でも機種販売に数える（2026-09-08・店舗の判断）---- */
+  const dev = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    L.scSet('device', 'all');        // 機種販売＝「全機種」にする
+    // 機種名は空、端末代金だけ入っている（急いでいるときに起きる）
+    const noName = L.itemsRaw([{ planId: 'max', procType: 'kishu', payMethod: 'ikkatsu',
+      devicePrice: 130000 }]);
+    const withName = L.itemsRaw([{ planId: 'max', procType: 'kishu', payMethod: 'ikkatsu',
+      devicePrice: 130000, deviceName: 'テスト機種' }]);
+    // 端末購入なしの回線は、これまでどおり数えない
+    const noBuy = L.itemsRaw([{ planId: 'max', procType: 'kishu', payMethod: 'none',
+      devicePrice: 130000 }]);
+    L.scSet('device', 'off');
+    return { noName: Object.keys(noName), withName: Object.keys(withName),
+      noBuy: Object.keys(noBuy) };
+  });
+  chk('㊽ 機種名が空でも、端末代金が入っていれば「機種販売」に数える',
+    dev.noName.indexOf('device') >= 0, JSON.stringify(dev.noName));
+  chk('㊽ 機種名を入れたときも、これまでどおり数える',
+    dev.withName.indexOf('device') >= 0, JSON.stringify(dev.withName));
+  chk('㊽ 「端末購入なし」の回線は、これまでどおり数えない',
+    dev.noBuy.indexOf('device') < 0, JSON.stringify(dev.noBuy));
 
   await browser.close();
   srv.close();
