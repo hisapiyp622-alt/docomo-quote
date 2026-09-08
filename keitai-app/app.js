@@ -12672,45 +12672,76 @@
     return String(v).replace(/[，,円\s]/g, "")
       .replace(/[０-９]/g, function (z) { return String.fromCharCode(z.charCodeAt(0) - 0xFEE0); });
   }
+  /* 見出しらしい言葉（この語が1つでも入っていれば見出し行の候補） */
+  var DEV_HEAD_WORD = /(機種|端末|商品|品名|名称|本体|価格|代金|金額|頭金|残価|カエドキ|23|回払|回分|月額|型番|容量|在庫|カラー)/;
+  /* 1行分の欄が「見出し」かどうか。
+   * 数字が入っているかどうかでは見分けない（「本体価格（10%税込）」「48回払い月額」でも見出し）。
+   * 機種名より右に“数字だけの欄”が1つも無く、見出しらしい言葉があるときだけ見出しとみなす。
+   * 「iPhone 17 128GB,145200,3300」のような行は 145200 が数字だけなので必ずデータ行になる。 */
+  function devIsHeadRow(cols) {
+    for (var j = 1; j < cols.length; j++) {
+      if (/^\d+$/.test(devDigits(cols[j] || ""))) return false;
+    }
+    return cols.some(function (c) { return DEV_HEAD_WORD.test(String(c || "")); });
+  }
+  /* j列目から金額を読む。「145,200」が引用符なしで列に割れている場合はつなぎ直す。
+   * 読めたら {value, next} を、読めなければ null を返す。 */
+  function devNumAt(cols, j) {
+    var v = devDigits(cols[j] || "");
+    if (!/^\d+$/.test(v)) return null;
+    while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
+      v += devDigits(cols[j + 1]);
+      j++;
+    }
+    return { value: parseInt(v, 10), next: j };
+  }
   function parseDeviceText(text) {
     var out = [], skipped = 0;
     var head = null;   // 見出しがあれば {price, atamakin, kaedoki23} の列番号
-    String(text || "").split(/\r\n|\r|\n/).forEach(function (line, i) {
+    var headTried = false;   // 見出しらしい行を1度でも見たか（先頭に空行やタイトル行があってもよい）
+    String(text || "").split(/\r\n|\r|\n/).forEach(function (line) {
       if (!line.trim()) return;
       var cols = (line.indexOf("\t") >= 0 ? line.split("\t") : splitCsvLine(line))
         .map(function (c) { return String(c).replace(/^"|"$/g, "").trim(); });
       if (cols.length < 2) { skipped++; return; }
-      // 見出し行は読み飛ばす（どの列が何かはここで覚える）
-      if (i === 0 && !/\d/.test(cols.join("").replace(/23/g, ""))) {
-        head = {};
-        cols.forEach(function (c, j) {
-          if (j === 0) return;
-          var k23col = /(23|カエドキ|残価)/.test(c);
-          if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
-          // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
-          else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
-          else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
-          else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
-          else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
-        });
-        return;
+      // 見出し行は読み飛ばす（どの列が何かはここで覚える）。まだ1件も読んでいない間だけ探す
+      if (!headTried && !out.length) {
+        headTried = true;
+        if (devIsHeadRow(cols)) {
+          head = {};
+          cols.forEach(function (c, j) {
+            if (j === 0) return;
+            var k23col = /(23|カエドキ|残価)/.test(c);
+            if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
+            // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
+            else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
+            else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
+            else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
+            else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
+          });
+          return;
+        }
       }
       var name = cols[0];
       var price = 0, found = false;
-      if (head && head.price !== undefined && /^\d+$/.test(devDigits(cols[head.price] || ""))) {
-        price = parseInt(devDigits(cols[head.price]), 10);
-        found = true;
+      if (head && head.price !== undefined) {
+        /* 見出しで本体価格の列が分かっているときは、その列だけを見る。
+         * 空欄や「－」のときは、隣の頭金・23回分を本体価格と取り違えないよう、その行を飛ばす。 */
+        var hit = devNumAt(cols, head.price);
+        if (hit) { price = hit.value; found = true; }
       } else {
+        // 見出しで場所が分かっている列（頭金・23回分）は本体価格として拾わない
+        var used = {};
+        if (head) {
+          ["atamakin", "kaedoki23", "kaedoki23Mnp", "kaedoki23Shinki"].forEach(function (k) {
+            if (head[k] !== undefined) used[head[k]] = true;
+          });
+        }
         for (var j = 1; j < cols.length; j++) {
-          var v = devDigits(cols[j]);
-          if (!/^\d+$/.test(v)) continue;
-          /* 「145,200」のように、桁区切りのカンマで列が割れている場合をつなぎ直す。
-           * 先頭が1〜3桁で、続く列がちょうど3桁の数字なら同じ金額とみなす。 */
-          while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
-            v += devDigits(cols[j + 1]);
-            j++;
-          }
-          price = parseInt(v, 10);
+          if (used[j]) continue;
+          var hit2 = devNumAt(cols, j);
+          if (!hit2) continue;
+          price = hit2.value;
           found = true;
           break;
         }
@@ -12721,13 +12752,13 @@
       if (head) {
         ["atamakin", "kaedoki23", "kaedoki23Mnp", "kaedoki23Shinki"].forEach(function (k) {
           if (head[k] === undefined) return;
-          var v2 = devDigits(cols[head[k]] || "");
-          if (/^\d+$/.test(v2)) rec[k] = parseInt(v2, 10);
+          var hit3 = devNumAt(cols, head[k]);
+          if (hit3) rec[k] = hit3.value;
         });
       }
       out.push(rec);
     });
-    return { list: out, skipped: skipped };
+    return { list: out, skipped: skipped, head: head };
   }
   // 「a,"b,c",d」のような引用符付きCSVを1行分に分ける
   function splitCsvLine(line) {
@@ -12837,6 +12868,17 @@
     list.forEach(function (d, i) { if (hit < 0 && d.name === state.deviceName) hit = i; });
     sel.value = hit >= 0 ? String(hit) : "";
   }
+  /* 取り込んだとき、頭金・23回分の列を読めたかどうかをはっきり知らせる。
+   * 黙って捨てると、見積書の「店頭お支払い金額」が0円になっても気づけない。 */
+  function devHeadNote(head) {
+    if (!head) return "（1行目を見出しとして読めませんでした。頭金・カエドキ23回分の列は取り込んでいません）";
+    var got = [];
+    if (head.atamakin !== undefined) got.push("店頭頭金");
+    if (head.kaedoki23 !== undefined || head.kaedoki23Mnp !== undefined || head.kaedoki23Shinki !== undefined) got.push("カエドキ23回分");
+    return got.length
+      ? "（" + got.join("・") + "の列も読み取りました）"
+      : "（頭金・カエドキ23回分の列は見出しに見つかりませんでした）";
+  }
   function initDeviceMaster() {
     var file = $("devMasterFile"), pasteBtn = $("devMasterPasteBtn"), wrap = $("devMasterPasteWrap"),
         box = $("devMasterBox"), go = $("devMasterGo"), cancel = $("devMasterCancel"),
@@ -12863,6 +12905,7 @@
       renderDeviceMaster();
       say(r.list.length + "件を取り込みました。"
         + (r.skipped ? "（読み取れなかった " + r.skipped + "行は飛ばしました）" : "")
+        + devHeadNote(r.head)
         + "見積もりの機種名がプルダウンになります。");
       if (wrap) { wrap.hidden = true; box.value = ""; }
     }
@@ -15698,6 +15741,18 @@
           return JSON.parse(JSON.stringify(savedList));
         },
         load: function (id) { return loadSavedQuote(id); }
+      },
+      /* 端末マスタ（機種の一覧）の取り込みの検査用（2026-09-08） */
+      devmaster: {
+        parse: function (text) { return parseDeviceText(text); },
+        note: function (head) { return devHeadNote(head); },
+        // 実際に取り込んで、機種を選んだときに入力欄へ入る金額を見る
+        apply: function (text) {
+          var r = parseDeviceText(text);
+          MASTER.devices = r.list;
+          saveMaster();
+          return r;
+        }
       },
       /* 回線（見積もりの本数）と、成約のときに数える回線の検査用（2026-09-05） */
       lines: {
