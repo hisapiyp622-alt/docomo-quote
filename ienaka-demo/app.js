@@ -191,6 +191,26 @@
   function homeDenwaOn() {
     return !!(state.opts.homeDenwaLight || state.opts.homeDenwaBasic);
   }
+  /* 申込区分の選択肢。**出さないものは一覧そのものから外す**。
+   * option に hidden を付けても iPhone・iPad の Safari は無視するため
+   * （2026-09-06 に実機で122件の事故）。いま選んであるものは、
+   * 出さない条件でも残す（保存した見積もりが黙って変わらないように）。 */
+  var IE_APPLY_OPTS = [
+    { v: "shinki", t: "新規" },
+    { v: "tenyo", t: "転用（フレッツ光から）", notC: true },
+    { v: "jigyosha", t: "事業者変更（他社光コラボから）", notC: true },
+    { v: "kirikae", t: "転用（タイプC）" }
+  ];
+  function ieFillSelect(id, list, cur) {
+    var sel = $(id);
+    if (!sel) return cur;
+    sel.innerHTML = list.map(function (o) {
+      return '<option value="' + o.v + '">' + esc(o.t) + "</option>";
+    }).join("");
+    if (!list.some(function (o) { return o.v === cur; })) cur = list.length ? list[0].v : "";
+    sel.value = cur;
+    return cur;
+  }
   /* テレビ工事の選択肢
    * koji=ドコモ請求の工事料（分割対象）/ reg=視聴サービス登録料（手数料・分割対象外・常に一括）
    * onsite=スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外） */
@@ -975,6 +995,11 @@
     { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true, videoToggleAfter: true },
     { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"], needsVideo: true },
     { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"], needsVideo: true },
+    /* homeでんわ。セット割は homeでんわ を選んでいるときだけ出す。
+     * 2026-09-07 に足したとき、この組分けの表に入れ忘れて画面に1つも
+     * 出ていなかった（IENAKA_OPTS に足すだけでは出ない）。 */
+    { title: "homeでんわ", ids: ["homeDenwaLight", "homeDenwaBasic"] },
+    { title: "homeでんわ セット割", ids: ["homeDenwaSet"], needsHomeDenwa: true },
     { title: "そのほかのオプション", ids: ["lanCard", "lanRouter10g", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
   ];
   function ieOptById(id) {
@@ -1167,12 +1192,11 @@
     var isC = !!PRODUCTS[state.product].typec;
     if (isC && (state.applyType === "tenyo" || state.applyType === "jigyosha")) state.applyType = "kirikae";
     if (!isC && state.applyType === "kirikae") state.applyType = "shinki";
-    ["tenyo", "jigyosha"].forEach(function (v) {
-      var o = $("applyType").querySelector('option[value="' + v + '"]');
-      if (o) o.hidden = isC;
-    });
     /* 「切替」は常に出す。タイプC以外で選んだら、商材を自動でタイプCへ切り替える */
-    $("applyType").value = state.applyType || "shinki";
+    state.applyType = ieFillSelect("applyType", IE_APPLY_OPTS.filter(function (o) {
+      if (o.notC && isC) return state.applyType === o.v;
+      return true;
+    }), state.applyType || "shinki");
     $("typecKeepField").hidden = !isC;
     /* 内訳の欄（2026-09-04）。タイプCのときだけ出す。 */
     ["Tv", "Phone", "Other", "Off"].forEach(function (k) {

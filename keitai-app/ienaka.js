@@ -210,6 +210,40 @@
   function homeDenwaOn() {
     return !!(state.opts.homeDenwaLight || state.opts.homeDenwaBasic);
   }
+  /* 商材と申込区分の選択肢。**出さないものは一覧そのものから外す**。
+   * option に hidden を付けても iPhone・iPad の Safari は無視するため
+   * （2026-09-06 に実機で122件の事故）。いま選んであるものは、
+   * 出さない条件でも残す（保存した見積もりが黙って変わらないように）。 */
+  var IE_PRODUCT_OPTS = [
+    { v: "hikari1g", t: "ドコモ光 1ギガ" },
+    { v: "hikari10g", t: "ドコモ光 10ギガ" },
+    { v: "hikaric", t: "ドコモ光 1ギガ タイプC（ケーブルテレビ設備）", typec: true },
+    { v: "hikaric10g", t: "ドコモ光 10ギガ タイプC（ケーブルテレビ設備）", typec: true },
+    { v: "ahamo1g", t: "ahamo光 1ギガ" },
+    { v: "ahamo10g", t: "ahamo光 10ギガ" },
+    { v: "home5g", t: "home 5G" }
+  ];
+  var IE_APPLY_OPTS = [
+    { v: "shinki", t: "新規" },
+    { v: "tenyo", t: "転用（フレッツ光から）", notC: true },
+    { v: "jigyosha", t: "事業者変更（他社光コラボから）", notC: true },
+    { v: "kirikae", t: "転用（タイプC）", typec: true }
+  ];
+  var IE_HOUSING_OPTS = [
+    { v: "ht", t: "戸建" },
+    { v: "ms", t: "マンション" },
+    { v: "ms100", t: "マンション（100M）" }
+  ];
+  function ieFillSelect(id, list, cur) {
+    var sel = $(id);
+    if (!sel) return cur;
+    sel.innerHTML = list.map(function (o) {
+      return '<option value="' + o.v + '">' + esc(o.t) + "</option>";
+    }).join("");
+    if (!list.some(function (o) { return o.v === cur; })) cur = list.length ? list[0].v : "";
+    sel.value = cur;
+    return cur;
+  }
   /* テレビ工事の選択肢
    * koji=ドコモ請求の工事料（分割対象）/ reg=視聴サービス登録料（手数料・分割対象外・常に一括）
    * onsite=スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外） */
@@ -635,6 +669,11 @@
     { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true, videoToggleAfter: true },
     { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"], needsVideo: true },
     { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"], needsVideo: true },
+    /* homeでんわ。セット割は homeでんわ を選んでいるときだけ出す。
+     * 2026-09-07 に足したとき、この組分けの表に入れ忘れて画面に1つも
+     * 出ていなかった（IENAKA_OPTS に足すだけでは出ない）。 */
+    { title: "homeでんわ", ids: ["homeDenwaLight", "homeDenwaBasic"] },
+    { title: "homeでんわ セット割", ids: ["homeDenwaSet"], needsHomeDenwa: true },
     { title: "そのほかのオプション", ids: ["lanCard", "lanRouter10g", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
   ];
   function ieOptById(id) {
@@ -770,10 +809,12 @@
     var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec)
       && !PRODUCTS[state.product].msAny && !typecMansionOk();
     if (isCms && state.housing !== "ht") state.housing = "ht";
-    Array.prototype.forEach.call($("ieHousing").options, function (o) {
-      if (o.value !== "ht") { o.disabled = isCms; o.hidden = isCms; }
-    });
-    $("ieHousing").value = state.housing;
+    /* 戸建てだけのときは、マンションを一覧そのものから外す
+     * （disabled で選べなくはなるが、iPhone・iPad では hidden が効かず、
+     *  選べないものが見えたままになるため） */
+    state.housing = ieFillSelect("ieHousing", IE_HOUSING_OPTS.filter(function (o) {
+      return !isCms || o.v === "ht";
+    }), state.housing);
     /* 100M の設備を選んだときの案内。月額はマンションと同じ。
      * 10ギガは対応設備が要るので、組み合わせが合っていないことを知らせる。 */
     var hn = $("ieHousingNote");
@@ -906,22 +947,22 @@
      * タイプCの入り口（商材・切替・ZTVヒアリング）をすべて隠す。
      * 例: ZTVエリアの無い代理店の店舗では typec: false を書く。 */
     var typecOk = typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
-    var hOpt = $("ieProduct").querySelector('option[value="hikaric"]');
-    if (hOpt) hOpt.hidden = !typecOk;
+    state.product = ieFillSelect("ieProduct", IE_PRODUCT_OPTS.filter(function (o) {
+      return !o.typec || typecOk || state.product === o.v;
+    }), state.product);
     /* タイプC: 申込種別は「新規／転用（タイプC）」（内部値 kirikae）だけ。他の商材では出さない。
      * ケーブルテレビ設備なのでフレッツ転用・事業者変更は当たらないため。 */
     var isC = !!PRODUCTS[state.product].typec;
     if (isC && (state.applyType === "tenyo" || state.applyType === "jigyosha")) state.applyType = "kirikae";
     if (!isC && state.applyType === "kirikae") state.applyType = "shinki";
-    ["tenyo", "jigyosha"].forEach(function (v) {
-      var o = $("ieApplyType").querySelector('option[value="' + v + '"]');
-      if (o) o.hidden = isC;
-    });
+
     /* 「転用（タイプC）」は常に出す（機能スイッチが切の店舗を除く）。タイプC以外で
      * 選んだら、商材を自動でタイプCへ切り替える（受け取り側で処理）。 */
-    var kOptF = $("ieApplyType").querySelector('option[value="kirikae"]');
-    if (kOptF) kOptF.hidden = !typecOk;
-    $("ieApplyType").value = state.applyType || "shinki";
+    state.applyType = ieFillSelect("ieApplyType", IE_APPLY_OPTS.filter(function (o) {
+      if (o.notC && isC) return state.applyType === o.v;
+      if (o.typec && !typecOk) return state.applyType === o.v;
+      return true;
+    }), state.applyType || "shinki");
     $("ieTypecKeepField").hidden = !isC;
     /* 内訳の欄（2026-09-04）。タイプCのときだけ出す。 */
     ["Tv", "Phone", "Other", "Off"].forEach(function (k) {

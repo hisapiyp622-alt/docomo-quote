@@ -270,7 +270,7 @@ function chk(name, cond, extra) {
     !!find(cx.all, 'r2') && find(cx.all, 'r2').n === 1, JSON.stringify(cx.all));
   chk('⑨ 細かい行に丸ごと含まれる行は、その回線では数えない（グレーで出す）',
     !!find(cx.all, 'r1') && find(cx.all, 'r1').n === 0
-    && find(cx.all, 'r1').covered === true, JSON.stringify(find(cx.all, 'r1')));
+    && find(cx.all, 'r1').covered === 1, JSON.stringify(find(cx.all, 'r1')));
   chk('⑨ 組み合わせは、両方そろった回線だけ数える',
     !!find(cx.all, 'r3') && find(cx.all, 'r3').n === 1 && find(cx.all, 'r3').total === 100,
     JSON.stringify(find(cx.all, 'r3')));
@@ -395,7 +395,7 @@ function chk(name, cond, extra) {
   chk('⑪ 実績の項目に U39 が出る', u39.inCatalog === true);
   chk('⑪ 基本の行は、U39でない回線だけ数える（U39の回線は細かい行で数える）',
     !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 1
-    && pick(u39.rows, 'base').covered === true, JSON.stringify(u39.rows));
+    && pick(u39.rows, 'base').covered === 1, JSON.stringify(u39.rows));
   chk('⑪ 加算はチェックした回線だけ数える',
     !!pick(u39.rows, 'add') && pick(u39.rows, 'add').n === 1, JSON.stringify(pick(u39.rows, 'add')));
   chk('⑪ 合計は 105 ＋ 48 ＝153（二重に数えない）',
@@ -1176,6 +1176,31 @@ function chk(name, cond, extra) {
     more2.hd5.indexOf('ie:opt:homeDenwaBasic') >= 0, JSON.stringify(more2.hd5));
   chk('㉕ 保存を小さくしても homeでんわ の印は残る',
     !!(more2.hdSlim.opts || {}).homeDenwaLight, JSON.stringify(more2.hdSlim.opts));
+  const ieTiles = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      hikari: L.ieOptTiles('hikari1g'),
+      home5g: L.ieOptTiles('home5g'),
+      clicked: (function () {
+        L.ieOptTiles('hikari1g');
+        const ok = L.ieOptClick('homeでんわ ライト');
+        return { ok: ok, after: L.ieOptTiles('hikari1g') };
+      })()
+    };
+  });
+  chk('㉕ 光の④オプションに「homeでんわ」のタイルが実際に出ている',
+    ieTiles.hikari.some((n) => /homeでんわ ライト/.test(n))
+    && ieTiles.hikari.some((n) => /homeでんわ ベーシック/.test(n)),
+    JSON.stringify(ieTiles.hikari));
+  chk('㉕ home 5G の④オプションにも出ている',
+    ieTiles.home5g.some((n) => /homeでんわ ライト/.test(n)),
+    JSON.stringify(ieTiles.home5g));
+  chk('㉕ homeでんわ を押すまで、セット割のタイルは出ない',
+    !ieTiles.hikari.some((n) => /セット割/.test(n)), JSON.stringify(ieTiles.hikari));
+  chk('㉕ homeでんわ を押すと、セット割のタイルが出る',
+    ieTiles.clicked.ok === true
+    && ieTiles.clicked.after.some((n) => /セット割/.test(n)),
+    JSON.stringify(ieTiles.clicked));
   chk('㉕ 実績の項目に homeでんわ が2つ並ぶ',
     /ライト/.test(more2.catHd1) && /ベーシック/.test(more2.catHd2),
     more2.catHd1 + ' / ' + more2.catHd2);
@@ -1238,14 +1263,37 @@ function chk(name, cond, extra) {
     dup.u39.total === 150, String(dup.u39.total) + ' / ' + JSON.stringify(dup.u39.rows));
   chk('㉗ 数えなかった行はグレー用の印を付けて残す',
     !!row(dup.u39, 'a') && row(dup.u39, 'a').n === 0
-    && row(dup.u39, 'a').covered === true, JSON.stringify(row(dup.u39, 'a')));
+    && row(dup.u39, 'a').covered === 1, JSON.stringify(row(dup.u39, 'a')));
   chk('㉗ U39でない回線は、これまでどおり100点',
     dup.plain.total === 100, String(dup.plain.total));
   chk('㉗ U39でない回線では、細かい行に食われない',
     !!row(dup.plain, 'a') && row(dup.plain, 'a').n === 1
-    && row(dup.plain, 'a').covered === false, JSON.stringify(row(dup.plain, 'a')));
+    && row(dup.plain, 'a').covered === 0, JSON.stringify(row(dup.plain, 'a')));
   chk('㉗ 1本ずつのときは 150（U39）＋100（U39でない）＝250',
     dup.both.total === 250, String(dup.both.total) + ' / ' + JSON.stringify(dup.both.rows));
+
+  /* 食べられた回線が2本のときは covered も2。応対ごとに1と数えると、
+   * 実績の「〇件は、もっと細かい行で数えました」がずれる。 */
+  const dup2 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    L.cxSet([
+      { id: 'a', name: 'のりかえ × ポイ活MAX', pt: 100, keys: ['proc:mnp', 'plan:poikatsu_max'] },
+      { id: 'b', name: 'のりかえ × ポイ活MAX × U39', pt: 150,
+        keys: ['proc:mnp', 'plan:poikatsu_max', 'u39'] }
+    ]);
+    const base = { planId: 'poikatsu_max', procType: 'mnp', procTodo: { mnp: true },
+      planChange: true, u39: true };
+    L.fill(0, base);
+    L.fill(1, Object.assign({}, base));   // 2本とも U39
+    L.pick(0);
+    return { rows: L.cxBreak(), total: L.cxTotal() };
+  });
+  chk('㉗ 食べられた回線が2本なら covered も2',
+    (dup2.rows.filter((x) => x.id === 'a')[0] || {}).covered === 2,
+    JSON.stringify(dup2.rows));
+  chk('㉗ 2本とも細かい行で数える（150×2＝300）',
+    dup2.total === 300, String(dup2.total));
 
   /* ---- ㉘ d払い初回利用・ひかりTV（2026-09-07・店舗の指定）----
    * d払い初回利用は、店頭のお支払い方法の「d払い」とは別の印。
@@ -1409,6 +1457,250 @@ function chk(name, cond, extra) {
   chk('㉚ 画面の続きである保存（お客様B）は、これまでどおり画面の内容で記録できる',
     won.wonBUsedCurrent === true
     && won.wonBItems.indexOf('plan:poikatsu_max') >= 0, JSON.stringify(won.wonBItems));
+
+  /* ---- ㉛ アプリを開き直しても、成約の紐づけが切れない（2026-09-08）----
+   * propSrcId を画面の中だけに持っていたため、iPad がスリープから戻ると
+   * 「別の見積もりです」と言われ、店頭で最後に直した内容を残せなかった。 */
+  const re = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const it = S.save('お客様');
+    const before = S.srcId();
+    // 店頭で最後に1つ直す（保存は押さない）
+    L.fill(0, { planId: 'poikatsu_max', procType: 'mnp', procTodo: { mnp: true },
+      planChange: true });
+    L.pick(0);
+    // ここでアプリを開き直す
+    const after = S.reopen();
+    const w = S.won(it.id, true);      // 画面の内容で記録する（OK）
+    return { id: it.id, before, after, usedCurrent: w.usedCurrent,
+      items: Object.keys(w.items) };
+  });
+  chk('㉛ 開き直しても、どの保存の続きかを覚えている',
+    re.after === re.id, re.after + ' / ' + re.id);
+  chk('㉛ 開き直したあとでも、画面の内容を成約として記録できる',
+    re.usedCurrent === true && re.items.indexOf('plan:poikatsu_max') >= 0,
+    String(re.usedCurrent) + ' / ' + JSON.stringify(re.items));
+
+  /* ---- ㉜ 記録済みの見積もりを開いて、別のお客様に直したとき（2026-09-08）----
+   * 「開く」で読んだ記録済みの保存に、次のお客様の内容を書き込んでしまい、
+   * 前のお客様の成約内容がすり替わって、新しいお客様は1件も数えられなかった。 */
+  const ov = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    // お客様A: ドコモMAX・のりかえ → 保存して成約
+    L.fill(0, { planId: 'max', procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const a = S.save('お客様A');
+    S.won(a.id, false);                    // 保存したときの内容で成約
+    // 後日、お客様Aの見積もりを「開く」→ お客様B用に直す
+    S.open(a.id);
+    L.fill(0, { planId: 'poikatsu_max', procType: 'shinki', procTodo: { shinki: true },
+      planChange: true });
+    L.pick(0);
+    const nAfterOpen = S.count();
+    // 見積もり画面の「⋯→成約」を押す
+    const nAfterWon = S.recordWon();
+    const list = S.list();
+    const aItem = list.filter((x) => x.id === a.id)[0] || {};
+    const other = list.filter((x) => x.id !== a.id)[0] || null;
+    return {
+      nAfterOpen, nAfterWon,
+      aPlan: ((((aItem.wonData || aItem.data) || {}).patterns || [{}])[0] || {}).planId,
+      newMade: !!other,
+      newPlan: other ? (((other.wonData || other.data || {}).patterns || [{}])[0] || {}).planId : ''
+    };
+  });
+  chk('㉜ 記録済みを開いて直したときは、新しい1件として増える',
+    ov.nAfterWon === ov.nAfterOpen + 1, ov.nAfterOpen + ' → ' + ov.nAfterWon);
+  chk('㉜ お客様Aの成約内容が、お客様Bの内容にすり替わらない',
+    ov.aPlan === 'max', String(ov.aPlan));
+  chk('㉜ お客様Bはお客様Bの内容で数える',
+    ov.newMade === true && ov.newPlan === 'poikatsu_max',
+    String(ov.newMade) + ' / ' + String(ov.newPlan));
+
+  /* ---- ㉝ 成約を記録したあとに「保存」を押しても、2件に増えない（2026-09-08）---- */
+  const dupSave = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const n0 = S.recordWon();          // 保存せずに「⋯→成約」
+    /* そのあと「保存」を押す（名前は変えない＝ふつうの押し方）。
+     * 名前を変えて保存したときは、別の1件にするのが元からの動き。 */
+    S.save('');
+    const n1 = S.count();
+    const list = S.list();
+    return { n0, n1, result: (list[0] || {}).result, name: (list[0] || {}).name };
+  });
+  chk('㉝ 成約のあとに保存しても、同じお客様が2件にならない',
+    dupSave.n1 === dupSave.n0 && dupSave.n0 === 1,
+    dupSave.n0 + ' → ' + dupSave.n1);
+  chk('㉝ 保存し直しても、成約の印は消えない',
+    dupSave.result === 'won', String(dupSave.result));
+
+  /* ---- ㉞ id の書いていないポイントのファイルを読み込む（2026-09-08）----
+   * 以前は id が全部同じになり、2行目以降が1行目の場所に当たって
+   * お店が入れた点数の設定が黙って消えていた。 */
+  const imp2 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    /* お店に既に行がある状態（「実績の項目から一気に作る」で作った形）。
+     * ここへ id の書いていないファイルを読み込むと、全部が「差し替え」になる。
+     * 以前は差し替えのあいだ id の番号が増えず、3行とも同じ id になっていた。 */
+    L.cxSet([
+      { id: 'keep1', name: '手で足した行1', pt: 10, keys: ['proc:shinki'] },
+      { id: 'keep2', name: '手で足した行2', pt: 20, keys: ['proc:mnp'] },
+      { id: 'old1', name: '前の名前A', pt: 1, keys: ['proc:kishu'] },
+      { id: 'old2', name: '前の名前B', pt: 1, keys: ['u39'] },
+      { id: 'old3', name: '前の名前C', pt: 1, keys: ['tablet'] }
+    ]);
+    // id を書いていない3行（本部から配られたファイルを想定）
+    const res = L.cxImport([
+      { name: '新しい行A', pt: 5, keys: ['proc:kishu'] },
+      { name: '新しい行B', pt: 6, keys: ['u39'] },
+      { name: '新しい行C', pt: 7, keys: ['tablet'] }
+    ]);
+    const rows = L.cxRowsNow();
+    return { res: res, names: rows.map((r) => r.name), pts: rows.map((r) => r.pt),
+      ids: rows.map((r) => r.id), uniq: new Set(rows.map((r) => r.id)).size };
+  });
+  chk('㉞ 3行とも差し替わる（潰れない）',
+    imp2.res.updated === 3 && imp2.res.added === 0, JSON.stringify(imp2.res));
+  chk('㉞ 差し替えたあとも行が5つのまま（減らない）',
+    imp2.names.length === 5, imp2.names.length + ' / ' + JSON.stringify(imp2.names));
+  chk('㉞ 点数も3行ぶんそろう（5・6・7）',
+    [5, 6, 7].every((v) => imp2.pts.indexOf(v) >= 0), JSON.stringify(imp2.pts));
+  chk('㉞ 手で足した行が消えない',
+    imp2.names.indexOf('手で足した行1') >= 0 && imp2.names.indexOf('手で足した行2') >= 0,
+    JSON.stringify(imp2.names));
+  chk('㉞ 読み込んだ3行が全部そろう',
+    ['新しい行A', '新しい行B', '新しい行C'].every((n) => imp2.names.indexOf(n) >= 0),
+    JSON.stringify(imp2.names));
+  chk('㉞ id が重ならない',
+    imp2.uniq === imp2.ids.length, JSON.stringify(imp2.ids));
+
+  /* ---- ㉟ タイプCの光と、商材を変えたときの取りこぼし（2026-09-08）---- */
+  const tc = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      // タイプC（1ギガ・10ギガ）が、英語の内部名でなく日本語で数えられるか
+      c1: L.itemsRawIe({ enabled: true, product: 'hikaric', applyType: 'kirikae' }),
+      c10: L.itemsRawIe({ enabled: true, product: 'hikaric10g', applyType: 'kirikae' }),
+      // 商材を home 5G に変えたのに、光だけのオプション・プロバイダが残っている場合
+      moved: L.itemsRawIe({ enabled: true, product: 'home5g', h5Kubun: 'shinki',
+        provider: 'OCN インターネット', opts: { tv: true, denwa: true, homeDenwaLight: true } }),
+      // ふつうの光では、これまでどおり数える
+      normal: L.itemsRawIe({ enabled: true, product: 'hikari1g', applyType: 'shinki',
+        provider: 'OCN インターネット', opts: { tv: true } })
+    };
+  });
+  const k1 = Object.keys(tc.c1), k10 = Object.keys(tc.c10);
+  chk('㉟ タイプC（1ギガ）は「光 1ギガ」として数える（英語の内部名にしない）',
+    k1.some((k) => k.indexOf('ie:1g') === 0) && !k1.some((k) => /hikaric/.test(k)),
+    JSON.stringify(tc.c1));
+  chk('㉟ タイプC（10ギガ）は「光 10ギガ」として数える',
+    k10.some((k) => k.indexOf('ie:10g') === 0) && !k10.some((k) => /hikaric/.test(k)),
+    JSON.stringify(tc.c10));
+  const km = Object.keys(tc.moved);
+  chk('㉟ home 5G に変えたら、光だけのオプションは数えない',
+    km.indexOf('ie:opt:tv') < 0 && km.indexOf('ie:opt:denwa') < 0, JSON.stringify(km));
+  chk('㉟ home 5G でも選べる homeでんわ は、これまでどおり数える',
+    km.indexOf('ie:opt:homeDenwaLight') >= 0, JSON.stringify(km));
+  chk('㉟ home 5G ではプロバイダを数えない（欄が出ない商材のため）',
+    km.indexOf('ie:prov:ocn') < 0, JSON.stringify(km));
+  const kn = Object.keys(tc.normal);
+  chk('㉟ ふつうの光では、テレビもプロバイダもこれまでどおり数える',
+    kn.indexOf('ie:opt:tv') >= 0 && kn.indexOf('ie:prov:ocn') >= 0, JSON.stringify(kn));
+
+  /* ---- ㊱ 出さない選択肢は一覧そのものから外す（2026-09-08）----
+   * option の hidden は iPhone・iPad の Safari が無視する（2026-09-06 の事故）。
+   * 光・5Gの商材・申込区分・住居に、その書き方が残っていた。 */
+  const sel = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      // タイプCのとき、フレッツ転用・事業者変更は一覧から消える
+      applyOnC: L.ieSelectOpts('ieApplyType', 'hikaric'),
+      applyOnNormal: L.ieSelectOpts('ieApplyType', 'hikari1g'),
+      // タイプC（1ギガ）は戸建てだけ。マンションは一覧から消える
+      housingOnC: L.ieSelectOpts('ieHousing', 'hikaric'),
+      housingOnNormal: L.ieSelectOpts('ieHousing', 'hikari1g'),
+      product: L.ieSelectOpts('ieProduct', 'hikari1g')
+    };
+  });
+  chk('㊱ タイプCでは、転用・事業者変更が一覧から消える',
+    sel.applyOnC.values.indexOf('tenyo') < 0 && sel.applyOnC.values.indexOf('jigyosha') < 0,
+    JSON.stringify(sel.applyOnC.values));
+  chk('㊱ ふつうの光では、転用・事業者変更が出る',
+    sel.applyOnNormal.values.indexOf('tenyo') >= 0
+    && sel.applyOnNormal.values.indexOf('jigyosha') >= 0,
+    JSON.stringify(sel.applyOnNormal.values));
+  chk('㊱ タイプC（1ギガ）では、マンションが一覧から消える',
+    sel.housingOnC.values.indexOf('ms') < 0, JSON.stringify(sel.housingOnC.values));
+  chk('㊱ ふつうの光では、マンションが出る',
+    sel.housingOnNormal.values.indexOf('ms') >= 0,
+    JSON.stringify(sel.housingOnNormal.values));
+  chk('㊱ hidden や disabled で隠している選択肢が残っていない',
+    ['applyOnC', 'applyOnNormal', 'housingOnC', 'housingOnNormal', 'product']
+      .every((k) => sel[k] && sel[k].hiddenOnes.length === 0),
+    JSON.stringify(Object.keys(sel).map((k) => [k, sel[k] && sel[k].hiddenOnes])));
+
+  /* ---- ㊲ 見積もりなしの成約にもポイントが付く（2026-09-08）----
+   * 実績の件数には出るのに、ポイントだけ1点も付いていなかった。 */
+  const nq = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.cxSet([
+      { id: 'k', name: '機種変更', pt: 12, keys: ['proc:kishu'] },
+      { id: 'g', name: 'dカード GOLD', pt: 40, keys: ['dcard:gold'] }
+    ]);
+    // 機種変更 2件・dカード GOLD 1件を「見積もりなしの成約」で記録
+    S.addNoQuote({ 'proc:kishu': 2, 'dcard:gold': 1 });
+    const r = S.cxTotalSaved();
+    return { total: r.total, rows: r.rows };
+  });
+  chk('㊲ 見積もりなしの成約にもポイントが付く（12×2＋40＝64）',
+    nq.total === 64, String(nq.total) + ' / ' + JSON.stringify(nq.rows));
+  chk('㊲ 件数も項目ごとに数える（機種変更2件）',
+    (nq.rows.k || {}).n === 2, JSON.stringify(nq.rows.k));
+
+  /* ---- ㊳ 残りの見直し3件（2026-09-08）---- */
+  const rest = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    // dカード・でんきを「まとめて1行」にしたときの並び
+    const one = S.orderOf(['proc:kishu', 'dcard', 'denki', 'gas', 'opt:x', 'acc:y']);
+    // 「保存したときの内容のまま成約」でも、数えた回線の案内が出るか
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true }, planChange: true });
+    L.fill(1, { planId: 'max', procType: 'kishu', procTodo: { kishu: true }, planChange: true });
+    L.pick(0);
+    const it = S.save('2回線のお客様');
+    S.wonLines(it.id, [0]);          // 回線1だけ数える／保存したときの内容のまま
+    const txt = S.listText();
+    return { one: one, note: /実績に数えた回線/.test(txt), txt: txt.slice(0, 200) };
+  });
+  chk('㊳ dカード・でんきを「まとめて1行」にしても、表の最後に落ちない',
+    rest.one.indexOf('dcard') < rest.one.indexOf('opt:x')
+    && rest.one.indexOf('denki') < rest.one.indexOf('opt:x')
+    && rest.one.indexOf('dcard') < rest.one.indexOf('acc:y'),
+    JSON.stringify(rest.one));
+  chk('㊳ 「保存したときの内容のまま成約」でも、数えた回線の案内が出る',
+    rest.note === true, rest.txt);
 
   await browser.close();
   srv.close();
