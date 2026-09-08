@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.179.1";
+  var APP_VERSION = "1.180.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -707,6 +707,7 @@
     // いま保存した内容＝この応対の提案。あとで「成約」を押したらここに紐づく
     propSrcId = item.id;
     if (!propSnap) propSnap = JSON.parse(JSON.stringify(item.data));
+    persistProp();
     return item;
   }
   // 保存済みの見積もりを開く（いまの入力内容は置き換わる）
@@ -726,6 +727,7 @@
     // この応対はこの保存の続き。保存した内容を提案として控える
     propSrcId = id;
     propSnap = JSON.parse(JSON.stringify(it.data));
+    persistProp();
     return true;
   }
   function deleteSavedQuote(id) {
@@ -1066,11 +1068,31 @@
   }
   var propSnap = null;   // 提案内容の控え（store のクローン）
   var propSrcId = null;  // この応対が紐づく保存のid
+  /* この2つは端末にも残す。画面の中だけに持っていると、iPad がスリープから
+   * 戻ったりアプリを開き直したりしたときに消えてしまい、画面には同じ見積もりが
+   * 出ているのに「別の見積もりです」と言われて、店頭で最後に直した内容を
+   * 成約として記録できなかった（2026-09-08 の見直しで判明）。 */
+  function propKey(staffId) { return quoteKey(staffId) + ":prop"; }
+  function persistProp() {
+    try {
+      if (!propSrcId && !propSnap) { localStorage.removeItem(propKey()); return; }
+      lsSet(propKey(), JSON.stringify({ srcId: propSrcId, snap: propSnap }));
+    } catch (e) {}
+  }
+  function loadProp() {
+    propSnap = null; propSrcId = null;
+    try {
+      var o = JSON.parse(localStorage.getItem(propKey()) || "null");
+      if (!o) return;
+      propSrcId = o.srcId || null;
+      propSnap = o.snap || null;
+    } catch (e) {}
+  }
   function markPropOpened() {
     // 見積書を最初に開いたときだけ控える（開き直しでは上書きしない）
-    if (!propSnap) propSnap = snapStore();
+    if (!propSnap) { propSnap = snapStore(); persistProp(); }
   }
-  function resetPropTracking() { propSnap = null; propSrcId = null; }
+  function resetPropTracking() { propSnap = null; propSrcId = null; persistProp(); }
   /* 成約・見送りを記録するときの確認。担当が2名以上いる店舗では
    * 「決めた担当」を選べる（コンデザが提案を作り、担当者が成約を決める運用）。
    * 既定はログイン中の担当なので、1人で完結する運用では今までどおり。 */
@@ -1320,6 +1342,7 @@
      * 次のお客様は「入力をクリア」か保存の読み込みで区切られる */
     propSrcId = it.id;
     if (!propSnap) propSnap = JSON.parse(JSON.stringify(it.data));
+    persistProp();
     var msg = $("recOutcomeMsg");
     if (msg) {
       var byName = (config.staff.filter(function (s2) { return s2.id === it.resultStaff; })[0] || {}).name || "";
@@ -1996,17 +2019,16 @@
         if (!m.keys.every(function (k) { return !!sigs[j][k]; })) return;
         covers.push(j);
       });
-      var n = 0, covered = false;
+      var n = 0, covered = 0;
       if (!m.lines) {
-        covered = covers.length > 0;
-        n = covered ? 0 : 1;
+        if (covers.length) covered = 1; else n = 1;
       } else {
         m.lines.forEach(function (li) {
           var hidden = covers.some(function (j) {
             var m2 = ms[j];
             return !m2.lines || m2.lines.indexOf(li) >= 0;
           });
-          if (hidden) covered = true; else n++;
+          if (hidden) covered++; else n++;
         });
       }
       if (!n && !covered) return;
@@ -2467,7 +2489,7 @@
             cxAgg[x.id].n += x.n;
             cxAgg[x.id].total += x.total;
             // もっと細かい行で数えたぶん（画面にグレーで出す）
-            if (x.covered) cxAgg[x.id].covered++;
+            cxAgg[x.id].covered += (x.covered || 0);
           });
           Object.keys(wonI).forEach(function (k) {
             var n = wonI[k].n;
@@ -2889,8 +2911,11 @@
      * マスタ設定の「実績のポイント」に点数が入っているときだけ出す。
      * 何も入れていないお店では、これまでどおりの画面のまま。 */
     var cxAgg = agg.cx || {};
+    /* 0点の行も、当たっていれば出す。点数の付いた行を食べているのが
+     * 0点の行だったとき、その行が表に出ないと理由が分からないため
+     * （2026-09-08 の見直しで判明）。 */
     var cxKeys = Object.keys(cxAgg).filter(function (k) {
-      return cxAgg[k].total !== 0 || cxAgg[k].covered;
+      return cxAgg[k].total !== 0 || cxAgg[k].covered || cxAgg[k].n;
     });
     if (cxOn()) {
       cxKeys.sort(function (a2, b2) { return cxAgg[b2].total - cxAgg[a2].total; });
@@ -5197,6 +5222,8 @@
       var sid0 = activeStaff().id;
       if (!(sid0 in quoteAtLoaded)) quoteAtLoaded[sid0] = quoteAt(sid0);
     } catch (eQ) {}
+    // どの保存の続きかも読み直す（開き直しで切れないように）
+    loadProp();
     try {
       var s = JSON.parse(localStorage.getItem(quoteKey()) || "null");
       if (s && s.patterns && s.patterns.length) {
@@ -13679,10 +13706,20 @@
       applyProcType(this.value);
       // 「手続き内容」のチェックも選んだ種別に合わせる
       state.procTodo = {};
-      state.procTodo[this.value === "plan_only" ? "plan" : this.value] = true;
+      /* （未選択）のときは何も立てない。空文字のキーを入れると、
+       * 「チェックが無い」と見なされずに手続き種別への読み替えが効かなくなる。 */
+      var todoKey = this.value === "plan_only" ? "plan" : this.value;
+      if (todoKey) state.procTodo[todoKey] = true;
       document.querySelectorAll("[data-proc]").forEach(function (cb) {
         cb.checked = !!state.procTodo[cb.getAttribute("data-proc")];
       });
+      /* 手続きで出し分けているものを描き直す。手続き内容のチェック側では
+       * 呼んでいたのに、このプルダウン側で呼び忘れていた（2026-09-08）。
+       * のりかえ・新規を選んでも LIBMO が「プラン世代」に出てこなかった。 */
+      renderU15();
+      renderU39();
+      renderPlanGroupSelect();
+      renderPlanSelect();
       recalc();
     });
     $("planGroup").addEventListener("change", function () {
@@ -14939,6 +14976,15 @@
         },
         // いま画面の見積もりが、どの保存の続きか
         srcId: function () { return propSrcId; },
+        /* アプリを開き直したときと同じことをする（画面の中の覚えを捨てて、
+         * 端末に残したものから読み直す）。 */
+        reopen: function () {
+          propSrcId = null; propSnap = null;
+          loadState();          // 本物の起動と同じ道を通す
+          syncFormFromState();
+          recalc();
+          return propSrcId;
+        },
         // テンプレの枠を押したときの案内（置き換えの警告）
         tplPrompt: function (i) {
           tplSave(i, false);
@@ -15023,6 +15069,27 @@
           b.checked = !!on;
           b.dispatchEvent(new Event("change", { bubbles: true }));
           return true;
+        },
+        /* 光・5Gの④オプションに実際に出ているタイルの文字。
+         * 料金の一覧に足しただけでは画面に出ない（組分けの表に入れて初めて出る）。 */
+        ieOptTiles: function (product) {
+          if (typeof KQ_IENAKA === "undefined") return [];
+          store.ienaka.enabled = true;
+          if (product) store.ienaka.product = product;
+          KQ_IENAKA.syncForm();
+          KQ_IENAKA.render();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#ieOptList .tile .t-name"),
+            function (el) { return (el.textContent || "").trim(); });
+        },
+        // 光・5Gのタイルを実際に押す
+        ieOptClick: function (name) {
+          var els = document.querySelectorAll("#ieOptList .tile");
+          for (var i = 0; i < els.length; i++) {
+            var t = els[i].querySelector(".t-name");
+            if (t && (t.textContent || "").trim().indexOf(name) >= 0) { els[i].click(); return true; }
+          }
+          return false;
         },
         // 光・5Gの中身をそのまま渡して項目を拾う（以前の保存の形も作れる）
         itemsRawIe: function (ie) {

@@ -270,7 +270,7 @@ function chk(name, cond, extra) {
     !!find(cx.all, 'r2') && find(cx.all, 'r2').n === 1, JSON.stringify(cx.all));
   chk('⑨ 細かい行に丸ごと含まれる行は、その回線では数えない（グレーで出す）',
     !!find(cx.all, 'r1') && find(cx.all, 'r1').n === 0
-    && find(cx.all, 'r1').covered === true, JSON.stringify(find(cx.all, 'r1')));
+    && find(cx.all, 'r1').covered === 1, JSON.stringify(find(cx.all, 'r1')));
   chk('⑨ 組み合わせは、両方そろった回線だけ数える',
     !!find(cx.all, 'r3') && find(cx.all, 'r3').n === 1 && find(cx.all, 'r3').total === 100,
     JSON.stringify(find(cx.all, 'r3')));
@@ -395,7 +395,7 @@ function chk(name, cond, extra) {
   chk('⑪ 実績の項目に U39 が出る', u39.inCatalog === true);
   chk('⑪ 基本の行は、U39でない回線だけ数える（U39の回線は細かい行で数える）',
     !!pick(u39.rows, 'base') && pick(u39.rows, 'base').n === 1
-    && pick(u39.rows, 'base').covered === true, JSON.stringify(u39.rows));
+    && pick(u39.rows, 'base').covered === 1, JSON.stringify(u39.rows));
   chk('⑪ 加算はチェックした回線だけ数える',
     !!pick(u39.rows, 'add') && pick(u39.rows, 'add').n === 1, JSON.stringify(pick(u39.rows, 'add')));
   chk('⑪ 合計は 105 ＋ 48 ＝153（二重に数えない）',
@@ -1176,6 +1176,31 @@ function chk(name, cond, extra) {
     more2.hd5.indexOf('ie:opt:homeDenwaBasic') >= 0, JSON.stringify(more2.hd5));
   chk('㉕ 保存を小さくしても homeでんわ の印は残る',
     !!(more2.hdSlim.opts || {}).homeDenwaLight, JSON.stringify(more2.hdSlim.opts));
+  const ieTiles = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      hikari: L.ieOptTiles('hikari1g'),
+      home5g: L.ieOptTiles('home5g'),
+      clicked: (function () {
+        L.ieOptTiles('hikari1g');
+        const ok = L.ieOptClick('homeでんわ ライト');
+        return { ok: ok, after: L.ieOptTiles('hikari1g') };
+      })()
+    };
+  });
+  chk('㉕ 光の④オプションに「homeでんわ」のタイルが実際に出ている',
+    ieTiles.hikari.some((n) => /homeでんわ ライト/.test(n))
+    && ieTiles.hikari.some((n) => /homeでんわ ベーシック/.test(n)),
+    JSON.stringify(ieTiles.hikari));
+  chk('㉕ home 5G の④オプションにも出ている',
+    ieTiles.home5g.some((n) => /homeでんわ ライト/.test(n)),
+    JSON.stringify(ieTiles.home5g));
+  chk('㉕ homeでんわ を押すまで、セット割のタイルは出ない',
+    !ieTiles.hikari.some((n) => /セット割/.test(n)), JSON.stringify(ieTiles.hikari));
+  chk('㉕ homeでんわ を押すと、セット割のタイルが出る',
+    ieTiles.clicked.ok === true
+    && ieTiles.clicked.after.some((n) => /セット割/.test(n)),
+    JSON.stringify(ieTiles.clicked));
   chk('㉕ 実績の項目に homeでんわ が2つ並ぶ',
     /ライト/.test(more2.catHd1) && /ベーシック/.test(more2.catHd2),
     more2.catHd1 + ' / ' + more2.catHd2);
@@ -1238,14 +1263,37 @@ function chk(name, cond, extra) {
     dup.u39.total === 150, String(dup.u39.total) + ' / ' + JSON.stringify(dup.u39.rows));
   chk('㉗ 数えなかった行はグレー用の印を付けて残す',
     !!row(dup.u39, 'a') && row(dup.u39, 'a').n === 0
-    && row(dup.u39, 'a').covered === true, JSON.stringify(row(dup.u39, 'a')));
+    && row(dup.u39, 'a').covered === 1, JSON.stringify(row(dup.u39, 'a')));
   chk('㉗ U39でない回線は、これまでどおり100点',
     dup.plain.total === 100, String(dup.plain.total));
   chk('㉗ U39でない回線では、細かい行に食われない',
     !!row(dup.plain, 'a') && row(dup.plain, 'a').n === 1
-    && row(dup.plain, 'a').covered === false, JSON.stringify(row(dup.plain, 'a')));
+    && row(dup.plain, 'a').covered === 0, JSON.stringify(row(dup.plain, 'a')));
   chk('㉗ 1本ずつのときは 150（U39）＋100（U39でない）＝250',
     dup.both.total === 250, String(dup.both.total) + ' / ' + JSON.stringify(dup.both.rows));
+
+  /* 食べられた回線が2本のときは covered も2。応対ごとに1と数えると、
+   * 実績の「〇件は、もっと細かい行で数えました」がずれる。 */
+  const dup2 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    L.cxSet([
+      { id: 'a', name: 'のりかえ × ポイ活MAX', pt: 100, keys: ['proc:mnp', 'plan:poikatsu_max'] },
+      { id: 'b', name: 'のりかえ × ポイ活MAX × U39', pt: 150,
+        keys: ['proc:mnp', 'plan:poikatsu_max', 'u39'] }
+    ]);
+    const base = { planId: 'poikatsu_max', procType: 'mnp', procTodo: { mnp: true },
+      planChange: true, u39: true };
+    L.fill(0, base);
+    L.fill(1, Object.assign({}, base));   // 2本とも U39
+    L.pick(0);
+    return { rows: L.cxBreak(), total: L.cxTotal() };
+  });
+  chk('㉗ 食べられた回線が2本なら covered も2',
+    (dup2.rows.filter((x) => x.id === 'a')[0] || {}).covered === 2,
+    JSON.stringify(dup2.rows));
+  chk('㉗ 2本とも細かい行で数える（150×2＝300）',
+    dup2.total === 300, String(dup2.total));
 
   /* ---- ㉘ d払い初回利用・ひかりTV（2026-09-07・店舗の指定）----
    * d払い初回利用は、店頭のお支払い方法の「d払い」とは別の印。
@@ -1409,6 +1457,35 @@ function chk(name, cond, extra) {
   chk('㉚ 画面の続きである保存（お客様B）は、これまでどおり画面の内容で記録できる',
     won.wonBUsedCurrent === true
     && won.wonBItems.indexOf('plan:poikatsu_max') >= 0, JSON.stringify(won.wonBItems));
+
+  /* ---- ㉛ アプリを開き直しても、成約の紐づけが切れない（2026-09-08）----
+   * propSrcId を画面の中だけに持っていたため、iPad がスリープから戻ると
+   * 「別の見積もりです」と言われ、店頭で最後に直した内容を残せなかった。 */
+  const re = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'mnp', procTodo: { mnp: true }, planChange: true });
+    L.fill(1, {});
+    L.pick(0);
+    const it = S.save('お客様');
+    const before = S.srcId();
+    // 店頭で最後に1つ直す（保存は押さない）
+    L.fill(0, { planId: 'poikatsu_max', procType: 'mnp', procTodo: { mnp: true },
+      planChange: true });
+    L.pick(0);
+    // ここでアプリを開き直す
+    const after = S.reopen();
+    const w = S.won(it.id, true);      // 画面の内容で記録する（OK）
+    return { id: it.id, before, after, usedCurrent: w.usedCurrent,
+      items: Object.keys(w.items) };
+  });
+  chk('㉛ 開き直しても、どの保存の続きかを覚えている',
+    re.after === re.id, re.after + ' / ' + re.id);
+  chk('㉛ 開き直したあとでも、画面の内容を成約として記録できる',
+    re.usedCurrent === true && re.items.indexOf('plan:poikatsu_max') >= 0,
+    String(re.usedCurrent) + ' / ' + JSON.stringify(re.items));
 
   await browser.close();
   srv.close();

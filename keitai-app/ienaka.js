@@ -635,6 +635,11 @@
     { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true, videoToggleAfter: true },
     { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"], needsVideo: true },
     { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"], needsVideo: true },
+    /* homeでんわ。セット割は homeでんわ を選んでいるときだけ出す。
+     * 2026-09-07 に足したとき、この組分けの表に入れ忘れて画面に1つも
+     * 出ていなかった（IENAKA_OPTS に足すだけでは出ない）。 */
+    { title: "homeでんわ", ids: ["homeDenwaLight", "homeDenwaBasic"] },
+    { title: "homeでんわ セット割", ids: ["homeDenwaSet"], needsHomeDenwa: true },
     { title: "そのほかのオプション", ids: ["lanCard", "lanRouter10g", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
   ];
   function ieOptById(id) {
