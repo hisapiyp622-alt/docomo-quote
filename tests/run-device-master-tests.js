@@ -145,6 +145,16 @@ function chk(name, cond, extra) {
     f.list.length === 1 && f.list[0].name === 'Xperia 10 VIII' && f.list[0].price === 72600
       && f.skipped === 2, names + ' skipped=' + f.skipped);
 
+  /* ---- ⑤-2 本体価格の欄に数字以外が混じっている行 ---- */
+  const f2 = await parse([
+    '機種名,本体価格,店頭頭金,カエドキ23回分',
+    'iPhone 17 128GB,145200(税込),3300,72600',
+    'Galaxy S26,お問い合わせ,5500,60000'
+  ].join('\n'));
+  const n2 = f2.list.map((x) => x.name + ':' + x.price).join(' / ');
+  chk('⑤ 値段の欄に「(税込)」などが混じる行を、頭金の金額で取り込まない',
+    !/:3300|:5500/.test(n2), n2);
+
   /* ---- ⑥ 引用符なしの桁区切りカンマ ---- */
   const g = await parse([
     '機種名,本体価格,店頭頭金,カエドキ23回分',
