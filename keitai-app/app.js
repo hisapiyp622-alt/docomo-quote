@@ -761,7 +761,7 @@
     }).join("");
     var cat = statsCatalog();
     var nqOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device", "dcardfirst", "dpayfirst",
-      "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+      "proc:", "plan:", "dcard:", "dcard", "denki:", "denki", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function nqRank(k) {
       for (var i = 0; i < nqOrder.length; i++) if (k.indexOf(nqOrder[i]) === 0) return i;
       return nqOrder.length;
@@ -998,11 +998,15 @@
             ? '<button class="btn-sub" data-savedsend="' + it.id + '" type="button">担当へ渡す</button>' : "")
         + '<button class="btn-sub saved-del" data-saveddel="' + it.id + '" type="button">削除</button>'
         + (it.result === "won" && it.wonData
-            ? '<div class="saved-wonnote">成約した内容を記録済み（保存したときの提案内容と分けて実績に集計されます）'
-              + (it.wonLines && it.wonLines.length
-                  ? "<br>実績に数えた回線: "
-                    + it.wonLines.map(function (i) { return PAT_NAMES[i] || ("回線" + (i + 1)); }).join("・")
-                  : "")
+            ? '<div class="saved-wonnote">成約した内容を記録済み（保存したときの提案内容と分けて実績に集計されます）</div>'
+            : "")
+        /* 数えた回線の案内は、成約の内容を別に記録したかどうかに関わらず出す。
+         * 「保存したときの内容のまま成約」にしたときだけ出ておらず、
+         * 見比べ用の回線を外したかどうかを後から確かめられなかった
+         * （2026-09-08 の見直しで判明）。 */
+        + (it.result === "won" && it.wonLines && it.wonLines.length
+            ? '<div class="saved-wonnote">実績に数えた回線: '
+              + it.wonLines.map(function (i) { return PAT_NAMES[i] || ("回線" + (i + 1)); }).join("・")
               + "</div>"
             : "")
         + (it.fromStaff
@@ -1306,6 +1310,10 @@
     $("resultDlgCancel").addEventListener("click", close);
   }
   function recordOutcome(result) {
+    /* 上位・保守で店舗を開いているあいだは記録しない。
+     * 保存一覧の「成約」（setSavedResult）では止めていたのに、
+     * 見積もり画面の「⋯→成約」だけ通っていた（2026-09-08 の見直しで判明）。 */
+    if (viewOnlyStop()) return;
     if (result === "won") {
       // いま画面の内容がそのまま「成約した内容」になる（recordOutcome2 と同じ元データ）
       askWonItems(JSON.parse(JSON.stringify(store)), function (byStaff, wonAdj, lines) {
@@ -2038,10 +2046,32 @@
    * 行Bの条件が行Aにすっかり含まれていて、同じ回線で両方当たったときは、
    * その回線ではAだけ数える。数えなかった行は covered を立てて残し、
    * 画面にグレーで出す（なぜ点が下がったのか分かるように）。 */
-  function cxBreakdown(d, won, lines) {
+  /* 見積もりなしの成約（noQuote）のポイント。
+   * 中身は「チェックした項目」そのもの（key → { name, n }）で、
+   * 見積もりの形をしていないため、そのまま cxBreakdown に渡すと
+   * 条件が1つも立たず、いつまでも0点だった（2026-09-08 の見直しで判明）。
+   * 件数のぶんだけ回線があるものとして組み立て直す。 */
+  function cxSetsFromItems(map) {
+    var whole = {}, maxN = 1;
+    Object.keys(map || {}).forEach(function (k) {
+      if (cxWholeKey(k)) whole[k] = map[k].name || k;
+      maxN = Math.max(maxN, num(map[k].n) || 1);
+    });
+    var perLine = [];
+    for (var i = 0; i < maxN; i++) {
+      var set = {};
+      Object.keys(map || {}).forEach(function (k) {
+        if (cxWholeKey(k)) return;
+        if ((num(map[k].n) || 1) > i) set[k] = true;
+      });
+      perLine.push(set);
+    }
+    return { lines: perLine, whole: whole };
+  }
+  function cxBreakdown(d, won, lines, itemMap) {
     var rows = cxRows();
     if (!rows.length) return [];
-    var sets = statsKeySets(d, won, lines);
+    var sets = itemMap ? cxSetsFromItems(itemMap) : statsKeySets(d, won, lines);
     var ms = rows.map(function (r) { return cxRowMatch(r, sets); });
     var sigs = ms.map(function (m) {
       if (!m) return null;
@@ -2527,7 +2557,8 @@
             if (vk !== "_none") visitUsed[vk] = true;
           });
           /* ポイント（マスタ設定の「実績のポイント」）。成約した内容で数える。 */
-          cxBreakdown(it.wonData || it.data, true, it.wonLines).forEach(function (x) {
+          cxBreakdown(it.wonData || it.data, true, it.wonLines,
+            it.noQuote ? statsSavedItems(it, true, true) : null).forEach(function (x) {
             if (!cxAgg[x.id]) {
               cxAgg[x.id] = { name: x.name, pt: x.pt, n: 0, total: 0, covered: 0 };
             }
@@ -2816,7 +2847,7 @@
 
     /* ---- 並び順 ---- */
     var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device", "dcardfirst", "dpayfirst",
-      "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+      "proc:", "plan:", "dcard:", "dcard", "denki:", "denki", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function rank(k) {
       for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
       return order.length;
@@ -10868,7 +10899,7 @@
     var goals = MASTER.statsGoalItems || {};
     var cat = statsCatalog();
     var gOrder = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39", "highend", "kishustd", "iphone", "tablet", "shitadori:", "device", "dcardfirst", "dpayfirst",
-      "proc:", "plan:", "dcard:", "denki:", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
+      "proc:", "plan:", "dcard:", "dcard", "denki:", "denki", "gas", "ie:", "opt:", "maxAmazon", "fee:", "own:", "acc:"];
     function gRank(k) {
       for (var i = 0; i < gOrder.length; i++) if (k.indexOf(gOrder[i]) === 0) return i;
       return gOrder.length;
@@ -15021,6 +15052,65 @@
         },
         // いま画面の見積もりが、どの保存の続きか
         srcId: function () { return propSrcId; },
+        /* 見積もりなしの成約を1件作る（画面の道と同じ形の記録を入れる）。
+         * items は { キー: 件数 }。 */
+        addNoQuote: function (items) {
+          var its = {};
+          Object.keys(items || {}).forEach(function (k) { its[k] = items[k]; });
+          var now = Date.now();
+          savedList.unshift({
+            id: "q" + now.toString(36) + Math.random().toString(36).slice(2, 6),
+            name: "（見積もりなし）検査用",
+            custName: "", planName: "", monthly: 0, initial: 0,
+            savedAt: now, upAt: now,
+            noQuote: true, noQuoteItems: its,
+            result: "won", resultAt: now, resultStaff: activeStaff().id,
+            data: { active: 0, patterns: [{ visitPurposes: { buy: true } }] }
+          });
+          persistSaved(); renderSaved();
+          return savedList[0].id;
+        },
+        // 実績のポイントの合計（保存した記録から数える・実績画面と同じ道）
+        cxTotalSaved: function () {
+          var lists = {};
+          lists[activeStaff().id] = savedList;
+          var agg = statsAggregate(lists, "all", "all", function () { return true; });
+          var t = 0;
+          Object.keys(agg.cx || {}).forEach(function (k) { t += agg.cx[k].total; });
+          return { total: t, rows: agg.cx };
+        },
+        /* 実績の表の並び（rank の順）。キーを渡すと、出る順に並べ替えて返す。 */
+        orderOf: function (keys) {
+          var order = ["proc:kishu", "kaimashi", "proc:mnp", "proc:shinki", "u15", "u39",
+            "highend", "kishustd", "iphone", "tablet", "shitadori:", "device",
+            "dcardfirst", "dpayfirst",
+            "proc:", "plan:", "dcard:", "dcard", "denki:", "denki", "gas", "ie:", "opt:",
+            "maxAmazon", "fee:", "own:", "acc:"];
+          function rank(k) {
+            for (var i = 0; i < order.length; i++) if (k.indexOf(order[i]) === 0) return i;
+            return order.length;
+          }
+          return keys.slice().sort(function (a, b) { return rank(a) - rank(b); });
+        },
+        /* 「保存したときの内容のまま成約」にして、数える回線を選ぶ */
+        wonLines: function (id, lines) {
+          var oc = window.confirm;
+          window.confirm = function () { return false; };   // 保存したときの内容のまま
+          try { setSavedResult(id, "won"); } finally { window.confirm = oc; }
+          (lines || []).forEach(function () {});
+          // 数えない回線のチェックを外す
+          Array.prototype.forEach.call(
+            document.querySelectorAll("#resultDlgLineList input[data-wonline]"), function (cb) {
+              var i = +cb.getAttribute("data-wonline");
+              if (lines.indexOf(i) < 0 && cb.checked) {
+                cb.checked = false;
+                cb.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            });
+          var b = $("resultDlgOk");
+          if (b) b.click();
+          return (savedList.filter(function (x) { return x.id === id; })[0] || {}).wonLines;
+        },
         // 保存済みの見積もりを「開く」（本物の道）
         open: function (id) { return loadSavedQuote(id); },
         // 見積もり画面の「⋯→成約」を押す（保存を選ばずに記録する道）

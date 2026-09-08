@@ -1656,6 +1656,52 @@ function chk(name, cond, extra) {
       .every((k) => sel[k] && sel[k].hiddenOnes.length === 0),
     JSON.stringify(Object.keys(sel).map((k) => [k, sel[k] && sel[k].hiddenOnes])));
 
+  /* ---- ㊲ 見積もりなしの成約にもポイントが付く（2026-09-08）----
+   * 実績の件数には出るのに、ポイントだけ1点も付いていなかった。 */
+  const nq = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.cxSet([
+      { id: 'k', name: '機種変更', pt: 12, keys: ['proc:kishu'] },
+      { id: 'g', name: 'dカード GOLD', pt: 40, keys: ['dcard:gold'] }
+    ]);
+    // 機種変更 2件・dカード GOLD 1件を「見積もりなしの成約」で記録
+    S.addNoQuote({ 'proc:kishu': 2, 'dcard:gold': 1 });
+    const r = S.cxTotalSaved();
+    return { total: r.total, rows: r.rows };
+  });
+  chk('㊲ 見積もりなしの成約にもポイントが付く（12×2＋40＝64）',
+    nq.total === 64, String(nq.total) + ' / ' + JSON.stringify(nq.rows));
+  chk('㊲ 件数も項目ごとに数える（機種変更2件）',
+    (nq.rows.k || {}).n === 2, JSON.stringify(nq.rows.k));
+
+  /* ---- ㊳ 残りの見直し3件（2026-09-08）---- */
+  const rest = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    // dカード・でんきを「まとめて1行」にしたときの並び
+    const one = S.orderOf(['proc:kishu', 'dcard', 'denki', 'gas', 'opt:x', 'acc:y']);
+    // 「保存したときの内容のまま成約」でも、数えた回線の案内が出るか
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true }, planChange: true });
+    L.fill(1, { planId: 'max', procType: 'kishu', procTodo: { kishu: true }, planChange: true });
+    L.pick(0);
+    const it = S.save('2回線のお客様');
+    S.wonLines(it.id, [0]);          // 回線1だけ数える／保存したときの内容のまま
+    const txt = S.listText();
+    return { one: one, note: /実績に数えた回線/.test(txt), txt: txt.slice(0, 200) };
+  });
+  chk('㊳ dカード・でんきを「まとめて1行」にしても、表の最後に落ちない',
+    rest.one.indexOf('dcard') < rest.one.indexOf('opt:x')
+    && rest.one.indexOf('denki') < rest.one.indexOf('opt:x')
+    && rest.one.indexOf('dcard') < rest.one.indexOf('acc:y'),
+    JSON.stringify(rest.one));
+  chk('㊳ 「保存したときの内容のまま成約」でも、数えた回線の案内が出る',
+    rest.note === true, rest.txt);
+
   await browser.close();
   srv.close();
 
