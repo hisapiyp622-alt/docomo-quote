@@ -2254,6 +2254,70 @@ function chk(name, cond, extra) {
     wipe && wipe.before[0] && wipe.before[1] && !wipe.after[0] && !wipe.after[1],
     JSON.stringify(wipe));
 
+  /* ---- ㊼ 成約の確認画面の「−・＋」と、見積もりなしの成約のポイント（2026-09-08）----
+   *   #13 確認画面で「−」して消した項目が、ポイントにはそのまま残っていた
+   *   #14 見積もりなしの成約で、別々の回線の項目が1回線にまとめられ、
+   *       組み合わせの行が二重に数えられていた */
+  const adjCx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    for (let i = 0; i < 5; i++) L.fill(i, {});     // 前の検査の中身を残さない
+    L.cxSet([
+      { id: 'g1', name: 'dカード GOLD', pt: 40, keys: ['dcard:gold'] },
+      { id: 'k1', name: '機種変更', pt: 12, keys: ['proc:kishu'] }
+    ]);
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true, dcard: true },
+      todoDcard: true, todoDcardType: 'gold' });
+    L.pick(0);
+    const a = S.save('補正の検査');
+    // 確認画面で dカード GOLD を「−」して 0件にしてから記録する
+    const before = S.won(a.id, false);
+    const cxBefore = S.cxTotalSaved();
+    S.clear();
+    for (let i = 0; i < 5; i++) L.fill(i, {});
+    L.fill(0, { planId: 'max', procType: 'kishu', procTodo: { kishu: true, dcard: true },
+      todoDcard: true, todoDcardType: 'gold' });
+    L.pick(0);
+    const b = S.save('補正の検査2');
+    const after = S.wonMinus(b.id, 'dcard:gold');
+    const cxAfter = S.cxTotalSaved();
+    return { itemsBefore: Object.keys(before.items || {}), cxBefore: cxBefore.total,
+      itemsAfter: Object.keys(after.items || {}), cxAfter: cxAfter.total,
+      rows: Object.keys(cxAfter.rows) };
+  });
+  chk('㊼ そのままなら、項目もポイントも両方入る（52点）',
+    adjCx.itemsBefore.indexOf('dcard:gold') >= 0 && adjCx.cxBefore === 52,
+    JSON.stringify(adjCx.itemsBefore) + ' 合計=' + adjCx.cxBefore);
+  chk('㊼ 確認画面で「−」して消したら、実績の項目から消える',
+    adjCx.itemsAfter.indexOf('dcard:gold') < 0, JSON.stringify(adjCx.itemsAfter));
+  chk('㊼ 同じように、ポイントからも引かれる（12点になる）',
+    adjCx.cxAfter === 12, '合計=' + adjCx.cxAfter + ' 行=' + JSON.stringify(adjCx.rows));
+
+  const nqCx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    S.clear();
+    L.cxSet([
+      { id: 'a1', name: '新規 × dカード GOLD', pt: 20, keys: ['proc:shinki', 'dcard:gold'] },
+      { id: 'a2', name: '機種変更 × dカード GOLD', pt: 5, keys: ['proc:kishu', 'dcard:gold'] }
+    ]);
+    // 見積もりなしの成約: 新規1・機種変更1・dカードGOLD1（GOLDは1枚だけ）
+    S.addNoQuote({ 'proc:shinki': 1, 'proc:kishu': 1, 'dcard:gold': 1 });
+    const one = S.cxTotalSaved();
+    S.clear();
+    // dカードGOLDを2枚売った日は、両方の行が1件ずつ当たる
+    S.addNoQuote({ 'proc:shinki': 1, 'proc:kishu': 1, 'dcard:gold': 2 });
+    const two = S.cxTotalSaved();
+    return { one: one.total, oneRows: one.rows, two: two.total };
+  });
+  chk('㊼ 見積もりなしの成約で、dカード1枚を2つの組み合わせ行が取り合わない（20点）',
+    nqCx.one === 20, '合計=' + nqCx.one + ' ' + JSON.stringify(nqCx.oneRows));
+  chk('㊼ 2枚売った日は、両方の行が1件ずつ当たる（25点）',
+    nqCx.two === 25, '合計=' + nqCx.two);
+
   await browser.close();
   srv.close();
 

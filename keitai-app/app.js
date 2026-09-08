@@ -2143,10 +2143,84 @@
     }
     return { lines: perLine, whole: whole };
   }
-  function cxBreakdown(d, won, lines, itemMap) {
+  /* 成約の確認画面の「−・＋」を、回線ごとの一覧にも反映する。
+   * 「−」… その項目を持っている回線から、減らした件数ぶん取り除く
+   * 「＋」… その項目を持っていない回線に足す（足りなければ回線を1本増やす）
+   * これが無かったため、確認画面で消した項目がポイントにだけ残り、
+   * 同じ実績画面の「項目別」の表と食い違っていた（2026-09-08）。 */
+  function cxApplyAdj(sets, adj) {
+    if (!adj) return sets;
+    Object.keys(adj).forEach(function (k) {
+      var dd = num(adj[k]);
+      if (!dd) return;
+      if (cxWholeKey(k)) {                       // 商談にひとつの項目（光・5G）
+        if (dd < 0) delete sets.whole[k];
+        else if (!sets.whole[k]) sets.whole[k] = k;
+        return;
+      }
+      var i;
+      if (dd < 0) {
+        for (i = sets.lines.length - 1; i >= 0 && dd < 0; i--) {
+          if (sets.lines[i][k]) { delete sets.lines[i][k]; dd++; }
+        }
+      } else {
+        for (i = 0; i < sets.lines.length && dd > 0; i++) {
+          if (!sets.lines[i][k]) { sets.lines[i][k] = true; dd--; }
+        }
+        while (dd > 0) { var o = {}; o[k] = true; sets.lines.push(o); dd--; }
+      }
+    });
+    return sets;
+  }
+  /* 「見積もりなしの成約」は回線の内訳が分からないので、1件の項目が
+   * 2つの組み合わせ行に同時に使われないよう、点数の高い行から取り合いを決める。
+   * これが無かったため、別々の回線の項目が1回線にまとめられ、
+   * 組み合わせの行が二重に数えられていた（2026-09-08）。 */
+  function cxBreakdownFromItems(map) {
     var rows = cxRows();
     if (!rows.length) return [];
-    var sets = itemMap ? cxSetsFromItems(itemMap) : statsKeySets(d, won, lines);
+    var left = {}, exists = {};
+    Object.keys(map || {}).forEach(function (k) {
+      left[k] = Math.max(0, num(map[k].n) || 1);
+      exists[k] = true;
+    });
+    var order = rows.map(function (r, i) { return i; }).sort(function (a, b) {
+      return (num(rows[b].pt) - num(rows[a].pt)) || (a - b);
+    });
+    var got = {};
+    order.forEach(function (i) {
+      var keys = (rows[i].keys || []).filter(function (k) { return !cxWholeKey(k); });
+      var whole = (rows[i].keys || []).filter(cxWholeKey);
+      // 商談にひとつの項目（光・5G）は取り合いにしない
+      if (whole.some(function (k) { return !exists[k]; })) { got[i] = { n: 0, covered: 0 }; return; }
+      if (!keys.length) {
+        got[i] = { n: whole.length ? 1 : 0, covered: 0 };
+        return;
+      }
+      if (keys.some(function (k) { return !exists[k]; })) { got[i] = { n: 0, covered: 0 }; return; }
+      var n = Math.min.apply(null, keys.map(function (k) { return left[k] || 0; }));
+      if (n > 0) {
+        keys.forEach(function (k) { left[k] -= n; });
+        got[i] = { n: n, covered: 0 };
+      } else {
+        // 条件はそろっていたが、もっと点数の高い行に取られた
+        got[i] = { n: 0, covered: 1 };
+      }
+    });
+    var out = [];
+    rows.forEach(function (r, i) {
+      var g = got[i];
+      if (!g || (!g.n && !g.covered)) return;
+      out.push({ id: r.id, name: r.name || "（名前なし）", pt: num(r.pt),
+        n: g.n, total: num(r.pt) * g.n, covered: g.covered });
+    });
+    return out;
+  }
+  function cxBreakdown(d, won, lines, itemMap, adj) {
+    if (itemMap) return cxBreakdownFromItems(itemMap);
+    var rows = cxRows();
+    if (!rows.length) return [];
+    var sets = cxApplyAdj(statsKeySets(d, won, lines), adj);
     var ms = rows.map(function (r) { return cxRowMatch(r, sets); });
     var sigs = ms.map(function (m) {
       if (!m) return null;
@@ -2637,7 +2711,8 @@
           });
           /* ポイント（マスタ設定の「実績のポイント」）。成約した内容で数える。 */
           cxBreakdown(it.wonData || it.data, true, it.wonLines,
-            it.noQuote ? statsSavedItems(it, true, true) : null).forEach(function (x) {
+            it.noQuote ? statsSavedItems(it, true) : null,
+            it.noQuote ? null : it.wonAdj).forEach(function (x) {
             if (!cxAgg[x.id]) {
               cxAgg[x.id] = { name: x.name, pt: x.pt, n: 0, total: 0, covered: 0 };
             }
@@ -15458,6 +15533,19 @@
           return savedList.length;
         },
         count: function () { return savedList.length; },
+        /* 成約の確認画面で、ある項目を「−」で0件にしてから記録する。
+         * 画面のボタンを実際に押す（内部の値を直接いじらない）。 */
+        wonMinus: function (id, key) {
+          var old = window.confirm; window.confirm = function () { return false; };
+          try { setSavedResult(id, "won"); } finally { window.confirm = old; }
+          var row = document.querySelector('.res-item[data-resk="' + key + '"]');
+          var minus = row && row.querySelector('[data-res-d="-1"]');
+          if (minus) minus.click();
+          var b = $("resultDlgOk"); if (b) b.click();
+          var it = savedList.filter(function (x) { return x.id === id; })[0] || {};
+          return { result: it.result || "", wonAdj: it.wonAdj || null,
+            items: statsSavedItems(it, true, false) };
+        },
         // 端末に残っている「どの保存の続きか」の記録（本物の鍵で読む）
         propStored: function () {
           try { return localStorage.getItem(propKey()); } catch (e) { return null; }
