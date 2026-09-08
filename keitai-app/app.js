@@ -15137,6 +15137,24 @@
             document.querySelectorAll("#ieOptList .tile .t-name"),
             function (el) { return (el.textContent || "").trim(); });
         },
+        /* 光・5Gの選び欄に実際に並んでいる中身。
+         * 出さない選択肢は一覧そのものから外す決まり（option の hidden は
+         * iPhone・iPad の Safari が無視するため）。hidden が付いたままの
+         * ものがあれば、それも返す。 */
+        ieSelectOpts: function (id, product) {
+          if (typeof KQ_IENAKA === "undefined") return null;
+          store.ienaka.enabled = true;
+          if (product) store.ienaka.product = product;
+          KQ_IENAKA.syncForm();
+          var sel = document.getElementById(id);
+          if (!sel) return null;
+          return {
+            values: Array.prototype.map.call(sel.options, function (o) { return o.value; }),
+            hiddenOnes: Array.prototype.filter.call(sel.options, function (o) {
+              return o.hidden || o.disabled;
+            }).map(function (o) { return o.value; })
+          };
+        },
         // 光・5Gのタイルを実際に押す
         ieOptClick: function (name) {
           var els = document.querySelectorAll("#ieOptList .tile");

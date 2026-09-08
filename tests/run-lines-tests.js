@@ -1624,6 +1624,38 @@ function chk(name, cond, extra) {
   chk('㉟ ふつうの光では、テレビもプロバイダもこれまでどおり数える',
     kn.indexOf('ie:opt:tv') >= 0 && kn.indexOf('ie:prov:ocn') >= 0, JSON.stringify(kn));
 
+  /* ---- ㊱ 出さない選択肢は一覧そのものから外す（2026-09-08）----
+   * option の hidden は iPhone・iPad の Safari が無視する（2026-09-06 の事故）。
+   * 光・5Gの商材・申込区分・住居に、その書き方が残っていた。 */
+  const sel = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    return {
+      // タイプCのとき、フレッツ転用・事業者変更は一覧から消える
+      applyOnC: L.ieSelectOpts('ieApplyType', 'hikaric'),
+      applyOnNormal: L.ieSelectOpts('ieApplyType', 'hikari1g'),
+      // タイプC（1ギガ）は戸建てだけ。マンションは一覧から消える
+      housingOnC: L.ieSelectOpts('ieHousing', 'hikaric'),
+      housingOnNormal: L.ieSelectOpts('ieHousing', 'hikari1g'),
+      product: L.ieSelectOpts('ieProduct', 'hikari1g')
+    };
+  });
+  chk('㊱ タイプCでは、転用・事業者変更が一覧から消える',
+    sel.applyOnC.values.indexOf('tenyo') < 0 && sel.applyOnC.values.indexOf('jigyosha') < 0,
+    JSON.stringify(sel.applyOnC.values));
+  chk('㊱ ふつうの光では、転用・事業者変更が出る',
+    sel.applyOnNormal.values.indexOf('tenyo') >= 0
+    && sel.applyOnNormal.values.indexOf('jigyosha') >= 0,
+    JSON.stringify(sel.applyOnNormal.values));
+  chk('㊱ タイプC（1ギガ）では、マンションが一覧から消える',
+    sel.housingOnC.values.indexOf('ms') < 0, JSON.stringify(sel.housingOnC.values));
+  chk('㊱ ふつうの光では、マンションが出る',
+    sel.housingOnNormal.values.indexOf('ms') >= 0,
+    JSON.stringify(sel.housingOnNormal.values));
+  chk('㊱ hidden や disabled で隠している選択肢が残っていない',
+    ['applyOnC', 'applyOnNormal', 'housingOnC', 'housingOnNormal', 'product']
+      .every((k) => sel[k] && sel[k].hiddenOnes.length === 0),
+    JSON.stringify(Object.keys(sel).map((k) => [k, sel[k] && sel[k].hiddenOnes])));
+
   await browser.close();
   srv.close();
 
