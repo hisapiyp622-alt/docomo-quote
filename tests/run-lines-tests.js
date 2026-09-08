@@ -1550,6 +1550,47 @@ function chk(name, cond, extra) {
   chk('㉝ 保存し直しても、成約の印は消えない',
     dupSave.result === 'won', String(dupSave.result));
 
+  /* ---- ㉞ id の書いていないポイントのファイルを読み込む（2026-09-08）----
+   * 以前は id が全部同じになり、2行目以降が1行目の場所に当たって
+   * お店が入れた点数の設定が黙って消えていた。 */
+  const imp2 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    /* お店に既に行がある状態（「実績の項目から一気に作る」で作った形）。
+     * ここへ id の書いていないファイルを読み込むと、全部が「差し替え」になる。
+     * 以前は差し替えのあいだ id の番号が増えず、3行とも同じ id になっていた。 */
+    L.cxSet([
+      { id: 'keep1', name: '手で足した行1', pt: 10, keys: ['proc:shinki'] },
+      { id: 'keep2', name: '手で足した行2', pt: 20, keys: ['proc:mnp'] },
+      { id: 'old1', name: '前の名前A', pt: 1, keys: ['proc:kishu'] },
+      { id: 'old2', name: '前の名前B', pt: 1, keys: ['u39'] },
+      { id: 'old3', name: '前の名前C', pt: 1, keys: ['tablet'] }
+    ]);
+    // id を書いていない3行（本部から配られたファイルを想定）
+    const res = L.cxImport([
+      { name: '新しい行A', pt: 5, keys: ['proc:kishu'] },
+      { name: '新しい行B', pt: 6, keys: ['u39'] },
+      { name: '新しい行C', pt: 7, keys: ['tablet'] }
+    ]);
+    const rows = L.cxRowsNow();
+    return { res: res, names: rows.map((r) => r.name), pts: rows.map((r) => r.pt),
+      ids: rows.map((r) => r.id), uniq: new Set(rows.map((r) => r.id)).size };
+  });
+  chk('㉞ 3行とも差し替わる（潰れない）',
+    imp2.res.updated === 3 && imp2.res.added === 0, JSON.stringify(imp2.res));
+  chk('㉞ 差し替えたあとも行が5つのまま（減らない）',
+    imp2.names.length === 5, imp2.names.length + ' / ' + JSON.stringify(imp2.names));
+  chk('㉞ 点数も3行ぶんそろう（5・6・7）',
+    [5, 6, 7].every((v) => imp2.pts.indexOf(v) >= 0), JSON.stringify(imp2.pts));
+  chk('㉞ 手で足した行が消えない',
+    imp2.names.indexOf('手で足した行1') >= 0 && imp2.names.indexOf('手で足した行2') >= 0,
+    JSON.stringify(imp2.names));
+  chk('㉞ 読み込んだ3行が全部そろう',
+    ['新しい行A', '新しい行B', '新しい行C'].every((n) => imp2.names.indexOf(n) >= 0),
+    JSON.stringify(imp2.names));
+  chk('㉞ id が重ならない',
+    imp2.uniq === imp2.ids.length, JSON.stringify(imp2.ids));
+
   await browser.close();
   srv.close();
 

@@ -1928,11 +1928,18 @@
     var rows = cxRows();
     function sig(r) { return ((r.keys || []).slice().sort()).join("|"); }
     var res = { added: 0, updated: 0, skipped: 0 };
+    /* id を持たない行に付ける番号。読み込んだ行の数で必ず増やす。
+     * 以前は res.added（足した行の数）を使っていたため、差し替えばかりが続くと
+     * 番号が増えず、同じミリ秒に作られた行が全部同じ id になっていた。
+     * さらに id を先に照合していたので、2行目以降が1行目の場所に当たり、
+     * お店が入れた点数の設定が黙って消えていた（2026-09-08 の見直しで判明）。 */
+    var seq = 0;
     list.forEach(function (r) {
       if (!r || typeof r !== "object") { res.skipped++; return; }
       var keys = Array.isArray(r.keys) ? r.keys.filter(function (k) { return typeof k === "string"; }) : [];
+      var hadId = !!(r.id && String(r.id).trim());
       var row = {
-        id: String(r.id || ("cx" + Date.now().toString(36) + res.added)).slice(0, 40),
+        id: String(hadId ? r.id : ("cx" + Date.now().toString(36) + (seq++))).slice(0, 40),
         name: String(r.name || "").slice(0, 40),
         pt: Math.max(0, Math.round(num(r.pt))),
         keys: keys
@@ -1940,7 +1947,9 @@
       if (!row.name && !row.keys.length) { res.skipped++; return; }
       var at = -1;
       for (var i = 0; i < rows.length; i++) {
-        if (rows[i].id === row.id || (keys.length && sig(rows[i]) === sig(row))) { at = i; break; }
+        // id で照合するのは、ファイルに id が書いてあるときだけ
+        if (hadId && rows[i].id === row.id) { at = i; break; }
+        if (keys.length && sig(rows[i]) === sig(row)) { at = i; break; }
       }
       if (at >= 0) { rows[at] = row; res.updated++; } else { rows.push(row); res.added++; }
     });
@@ -15121,6 +15130,8 @@
         itemsRawIe: function (ie) {
           return statsDataItems({ active: 0, patterns: [{}], ienaka: ie }, false, null);
         },
+        // いまのポイントの行（そのまま）
+        cxRowsNow: function () { return JSON.parse(JSON.stringify(cxRows())); },
         // 実績のポイントの並び（idの順）
         cxOrder: function () { return cxRows().map(function (r) { return r.id; }); },
         /* 並べ替えのボタンを実際に押す（画面の▲▼と同じ道を通す） */
