@@ -2821,6 +2821,26 @@ function chk(name, cond, extra) {
     contract.same.blocked === true && /停止/.test(contract.same.title),
     JSON.stringify(contract.same));
 
+  /* ---- 63 店舗を切り替えて入り直すと、保存とテンプレが戻ってくる（2026-09-08）----
+   * 同期は「自分が書いたもの（この端末のID）は読み飛ばす」作り。
+   * 店舗を切り替えると端末の中は空になるのに、このIDが同じままだと
+   * 元の店舗に入り直しても保存が戻らず、そこで1件保存すると
+   * クラウドの見積もりまで置き換わって消えていた */
+  const sw = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    const a = L.switchStore('shopA');       // はじめて（切り替えではない）
+    const b = L.switchStore('shopB');       // 店舗が変わった
+    const c = L.switchStore('shopB');       // 同じ店舗（切り替えではない）
+    const d = L.switchStore('shopA');       // 元の店舗へ戻る
+    return { a: a, b: b, c: c, d: d };
+  });
+  chk('63 店舗が変わったら、この端末のIDを新しくする',
+    sw.b.skipsOwn === false, JSON.stringify(sw.b));
+  chk('63 元の店舗へ戻るときも、新しくする',
+    sw.d.skipsOwn === false, JSON.stringify(sw.d));
+  chk('63 同じ店舗のままなら、IDは変えない（余計な受け取り直しをしない）',
+    sw.c.skipsOwn === true, JSON.stringify(sw.c));
+
   await browser.close();
   srv.close();
 

@@ -7053,6 +7053,14 @@
     try { localStorage.setItem(STORE_UID_KEY, uid); } catch (e) {}
     if (!prev || prev === uid) return;
     CLOUD.suppress = true; // 片付けの途中の内容をクラウドへ送らない
+    /* 端末の中を空にしたので、この画面は「新しい端末」として受け取り直す。
+     * 同期は「自分が書いたものは読み飛ばす」（clientId が同じなら無視）作りで、
+     * この番号はページを開いたときに1回しか作られない。番号を新しくしないと、
+     * 元の店舗に入り直したときに、自分がさっき書いた保存・テンプレートを
+     * 読み飛ばして「保存はまだありません」のままになり、
+     * そこで1件保存するとクラウドの中身まで置き換わって消えていた（2026-09-08）。 */
+    CLOUD.clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    CLOUD_SENT = {};   // 「同じ内容だから送らない」の控えも、前の店舗のものを持ち込まない
     try {
       wipeStoreLocal();
       loadConfig();
@@ -16453,6 +16461,16 @@
           contractInfo = obj ? { uid: "test", status: "active", features: obj } : null;
           applyFeaturesUi();
           return { typec: !!window.KQ_FEAT("typec") };
+        },
+        /* 店舗を切り替えて入り直したとき、クラウドから受け取り直せるか。
+         * 同期は「自分が書いたもの（clientId が同じ）は読み飛ばす」作りなので、
+         * 端末の中を空にしたあとは、この番号を新しくしないと戻ってこない。 */
+        switchStore: function (uid) {
+          var before = CLOUD.clientId;
+          switchStoreIfNeeded(uid);
+          return { before: before, after: CLOUD.clientId,
+            // 「自分が書いたもの」として読み飛ばされないか
+            skipsOwn: before === CLOUD.clientId };
         },
         /* 別の店舗の契約の控えが端末に残っているときに、いまの店舗を
          * 止めてしまわないか（上位・保守が停止中の店舗を見たあと）。 */
