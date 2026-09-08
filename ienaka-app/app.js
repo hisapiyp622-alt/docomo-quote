@@ -1059,6 +1059,15 @@
   function ieOptById(id) {
     return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
   }
+  /* いまの商材で「実際に選ばれている」オプションか。
+   * 商材を変えても state.opts の選択は残る（元の商材に戻したときのため）ので、
+   * 表に出す・紙に刷るときは必ずこちらを通す。通さないと、home 5G・タイプCに
+   * 変えたあとも前の商材のご案内が残る（2026-09-08）。 */
+  function optOn(id) {
+    var od = ieOptById(id);
+    if (!od || od.for.indexOf(state.product) < 0) return false;
+    return !!state.opts[id];
+  }
   function toggleIeOpt(id) {
     var od = ieOptById(id);
     if (!od) return;
@@ -1893,10 +1902,10 @@
       && ROUTER10G_QR[provider()]) {
       keys.push(ROUTER10G_QR[provider()]);
     }
-    /* スカパーが絡む受付では、申込フォームのQRを出す */
-    var opts = state.opts || {};
-    var skySvc = !!(opts.skyp && (opts.vsSkyBase || opts.vsSkyBasic || opts.vsSelect5 || opts.vsSelect10));
-    var skyKoji = !!(opts.tv && state.product !== "home5g" && state.applyType === "shinki"
+    /* スカパーが絡む受付では、申込フォームのQRを出す。
+     * いまの商材で選べないオプションは、前の商材の選択が残っていても数えない */
+    var skySvc = !!(optOn("skyp") && (optOn("vsSkyBase") || optOn("vsSkyBasic") || optOn("vsSelect5") || optOn("vsSelect10")));
+    var skyKoji = !!(optOn("tv") && state.product !== "home5g" && state.applyType === "shinki"
       && (state.tvKoji || "sky").indexOf("sky") === 0);
     if (skySvc || skyKoji) keys.push("skyperForm");
     return keys.map(function (k) {

@@ -2518,6 +2518,39 @@ function chk(name, cond, extra) {
   chk('52 「この回線をクリア」でも消える',
     zip.afterOne.v === '' && zip.afterOne.t === '', JSON.stringify(zip.afterOne));
 
+  /* ---- 53 商材を変えたあと、前の商材のQR・ご案内が引き継ぎシートに残らない（2026-09-08）----
+   * 画面のチェック欄は商材ごとに出し分けているのに、選択そのものは残るため、
+   * home 5G・タイプCに変えても「スカパー申込フォーム」のQRが紙に刷られていた */
+  const qr = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    // ドコモ光1ギガで、映像サービス＋スカパー！基本料を選ぶ
+    S.ieOn('hikari1g', { applyType: 'shinki',
+      opts: { skyp: true, vsSkyBase: true } });
+    const a = S.staffText();
+    S.ieOn('home5g');
+    const b = S.staffText();
+    S.ieOn('hikaric');
+    const c = S.staffText();
+    S.ieOn('hikari1g');
+    const d = S.staffText();
+    return { hikari: a, home5g: b, typec: c, back: d };
+  });
+  chk('53 ドコモ光1ギガ＋スカパーのときは、申込フォームのQRが出る',
+    /スカパー申込フォーム/.test(qr.hikari),
+    qr.hikari.split('\n').filter((l) => /スカパー/.test(l)).join(' / ') || '（出ていません）');
+  chk('53 home 5G に変えたら、スカパーのQRが消える',
+    !/スカパー申込フォーム/.test(qr.home5g),
+    qr.home5g.split('\n').filter((l) => /スカパー/.test(l)).join(' / '));
+  chk('53 タイプC に変えても、スカパーのQRが消える',
+    !/スカパー申込フォーム/.test(qr.typec),
+    qr.typec.split('\n').filter((l) => /スカパー/.test(l)).join(' / '));
+  chk('53 もとの商材に戻したら、また出る（選択を消してはいない）',
+    /スカパー申込フォーム/.test(qr.back),
+    qr.back.split('\n').filter((l) => /スカパー/.test(l)).join(' / ') || '（出ていません）');
+
   await browser.close();
   srv.close();
 

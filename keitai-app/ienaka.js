@@ -687,6 +687,15 @@
   function ieOptById(id) {
     return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
   }
+  /* いまの商材で「実際に選ばれている」オプションか。
+   * 商材を変えても state.opts の選択は残る（元の商材に戻したときのため）ので、
+   * 表に出す・紙に刷るときは必ずこちらを通す。通さないと、home 5G・タイプCに
+   * 変えたあとも前の商材のご案内が残る（2026-09-08）。 */
+  function optOn(id) {
+    var od = ieOptById(id);
+    if (!od || od.for.indexOf(state.product) < 0) return false;
+    return !!state.opts[id];
+  }
   function toggleIeOpt(id) {
     var od = ieOptById(id);
     if (!od) return;
@@ -2294,6 +2303,8 @@
     isHikari: isHikari,
     // プロバイダを選べる商材か（ahamo光・タイプC・home 5G は選べない）
     hasProvider: hasProvider,
+    // いまの商材で実際に選ばれているオプションか（商材を変えると false になる）
+    optOn: optOn,
     // 表に出してよいプロバイダ（選べない商材のときは空）
     provider: provider,
     sheetHtml: sheetHtml,

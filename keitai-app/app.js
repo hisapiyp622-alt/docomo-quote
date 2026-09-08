@@ -10441,9 +10441,11 @@
         /* スカパーが絡む受付では、申込フォームのQRを出す。
          * 絡む＝スカパー工事のテレビオプション（新規のみ工事が発生）か、
          * 映像サービスでスカパー系の内訳を選んでいるとき。 */
-        var opts = ie.opts || {};
-        var skySvc = !!(opts.skyp && (opts.vsSkyBase || opts.vsSkyBasic || opts.vsSelect5 || opts.vsSelect10));
-        var skyKoji = !!(opts.tv && ie.product !== "home5g" && ie.applyType === "shinki"
+        /* いまの商材で選べないオプションは、前の商材の選択が残っていても数えない
+         * （home 5G・タイプCに変えたあともQRが残っていた・2026-09-08） */
+        var oOn = function (id) { return KQ_IENAKA.optOn(id); };
+        var skySvc = !!(oOn("skyp") && (oOn("vsSkyBase") || oOn("vsSkyBasic") || oOn("vsSelect5") || oOn("vsSelect10")));
+        var skyKoji = !!(oOn("tv") && ie.product !== "home5g" && ie.applyType === "shinki"
           && (ie.tvKoji || "sky").indexOf("sky") === 0);
         if (skySvc || skyKoji) keys.push("skyperForm");
       }
