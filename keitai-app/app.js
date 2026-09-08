@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.181.1";
+  var APP_VERSION = "1.182.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -12178,7 +12178,7 @@
   var TOUR_STEPS = [
     { t: "使い方をかんたんにご案内します。見積もり画面は、①から⑨を上から入れていくだけです。月々のお支払いがその場で出ます。ご家族の複数台は、回線1〜回線5に分けて入れてください。" },
     { t: "できあがったら「見積書」タブへ。印刷やPDF保存ができ、文字サイズも大・中・小から選べます。見積書を開いた時点の内容が「ご提案」として自動で控えられます（操作は不要です）。" },
-    { t: "応対が終わったら、画面下の帯の右にある「⋯」から「成約」か「見送り」を1回押すだけで実績に入ります。次のお客様の前には「入力をクリア」をお忘れなく。" },
+    { t: "応対が終わったら、画面下の帯の右にある「⋯」から「成約」か「見送り」を1回押すだけで実績に入ります。次のお客様の前には「全回線をクリア」をお忘れなく（作り直したい回線が1本だけなら「この回線をクリア」です）。" },
     { t: "「保存」タブの<b>「実績を見る」</b>から、担当別・項目別に提案と成約が見られ、CSVで保存もできます。どの項目を数えるかは、マスタ設定の「実績で追う項目」で選べます（マスタ設定は担当者コードの画面から開きます）。" },
     { t: "わからなくなったら、ヘッダーの「情報」からこの案内をもう一度見られます。それでは、よい接客を。" }
   ];
@@ -14789,7 +14789,8 @@
     /* 次のお客様の応対として仕切り直すので、回線1〜5をまとめて消す。
      * 1回線しか使っていないときは今までどおり黙って消し、
      * ほかの回線にも入力があるときだけ、消してよいか確かめる。 */
-    /* 入力をクリアは、回線のバー（上）と操作の並び（下）の両方に置いてある。 */
+    /* 「全回線をクリア」と「この回線をクリア」は、回線のバー（上）と
+     * 操作の並び（下）の両方に置いてある（1.182.0 で2つに分けた）。 */
     function clearQuoteAll() {
       var others = [];
       store.patterns.forEach(function (pt, i) {
@@ -14821,8 +14822,35 @@
       syncFormFromState();
       recalc();
     }
+    /* いま開いている回線1本だけを消す。お客様は同じままなので、
+     * 光・5G（store.ienaka）と「お客様の区切り」（store.gen）、
+     * どの保存の続きかのひも付け（propTracking）には触らない。
+     * 触ると別のお客様と見なされ、成約が別の1件として数えられてしまう。
+     * 回線1には、この商談の「ご来店の目的」も入っているので、
+     * 消す前にそのことを伝える（黙って実績の目的が消えないように）。 */
+    function clearPatternOne() {
+      var i = store.active | 0;
+      var cur = Object.assign(defaultState(), store.patterns[i] || {});
+      var used = isPatternUsed(cur) || cur.planId || cur.procType;
+      var vp = i === 0 && (Object.keys(cur.visitPurposes || {}).some(function (k) { return cur.visitPurposes[k]; }) || cur.kaimashi);
+      if (used && !window.confirm(
+            "回線" + (i + 1) + " の入力を消します。よろしいですか？\n"
+            + "（ほかの回線と、光・5Gはそのまま残ります）"
+            + (vp ? "\n※ この商談の「ご来店の目的」も回線1に入っているため、一緒に消えます。" : ""))) return;
+      var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
+      store.patterns[i] = defaultState();
+      state = store.patterns[i];
+      state.shopName = keep.shopName;
+      state.staffName = keep.staffName;
+      state.shopTel = keep.shopTel;
+      renderPatternTabs();
+      syncFormFromState();
+      recalc();
+    }
     $("clearQuote").addEventListener("click", clearQuoteAll);
     $("clearQuoteTop").addEventListener("click", clearQuoteAll);
+    $("clearPattern").addEventListener("click", clearPatternOne);
+    $("clearPatternTop").addEventListener("click", clearPatternOne);
 
     // マスタ編集
     $("masterBody").addEventListener("input", function (e) {
@@ -15224,6 +15252,19 @@
           saveState();
         },
         pick: function (i) { switchPattern(i); },
+        // 画面のボタンを実際に押す（「この回線をクリア」「全回線をクリア」）
+        clearOne: function (top) { var b = $(top ? "clearPatternTop" : "clearPattern"); if (b) b.click(); },
+        clearAll: function (top) { var b = $(top ? "clearQuoteTop" : "clearQuote"); if (b) b.click(); },
+        // 引き継ぎタブに出ている回線の切り替えボタンの文字
+        staffTabs: function () {
+          return Array.prototype.map.call(document.querySelectorAll("#tab-staff .pat"),
+            function (b) { return (b.textContent || "").trim(); });
+        },
+        // いまどの回線が選ばれているか（見出しのボタンの見た目で見る）
+        activeTabOf: function (tab) {
+          var b = document.querySelector("#tab-" + tab + " .pat.active");
+          return b ? (b.textContent || "").trim() : "";
+        },
         used: function () { return usedLinesOf(store, true); },
         // 成約として数える回線を指定したときに、実績に出る項目
         items: function (lines) {

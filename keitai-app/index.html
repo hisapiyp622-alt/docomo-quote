@@ -58,8 +58,9 @@
       <button class="pat" data-pat="3" type="button">回線4</button>
       <button class="pat" data-pat="4" type="button">回線5</button>
       <button class="btn-sub" id="copyPattern" type="button">現在の内容を次の回線へコピー</button>
-      <button class="btn-sub" id="clearQuoteTop" type="button">入力をクリア</button>
-      <p class="pat-note">回線1〜5は<strong>1商談の中の別の番号</strong>です。ご家族の複数台は分けて入れてください。見比べていただくために作った案も、ここに入れて構いません（<strong>成約のときに、どの回線を実績に数えるか選べます</strong>）。</p>
+      <button class="btn-sub" id="clearPatternTop" type="button">この回線をクリア</button>
+      <button class="btn-sub" id="clearQuoteTop" type="button">全回線をクリア</button>
+      <p class="pat-note">回線1〜5は<strong>1商談の中の別の番号</strong>です。ご家族の複数台は分けて入れてください。見比べていただくために作った案も、ここに入れて構いません（<strong>成約のときに、どの回線を実績に数えるか選べます</strong>）。<br><strong>「この回線をクリア」</strong>はいま開いている回線だけを消します（ほかの回線と光・5Gは残ります）。<strong>「全回線をクリア」</strong>は回線1〜5と光・5Gをまとめて消して、次のお客様の応対に移ります。</p>
     </div>
 
     <div class="pattern-bar">
@@ -475,7 +476,8 @@
     <div class="actions">
       <button class="btn-main" id="toSheet" type="button">見積書を表示する</button>
       <button class="btn-sub" id="quickSaveBtn" type="button">この見積もりを保存</button>
-      <button class="btn-sub" id="clearQuote" type="button">入力をクリア</button>
+      <button class="btn-sub" id="clearPattern" type="button">この回線をクリア</button>
+      <button class="btn-sub" id="clearQuote" type="button">全回線をクリア</button>
     </div>
     <p class="hint quick-save-msg" id="quickSaveMsg" hidden></p>
   </section>
@@ -798,6 +800,14 @@
 
   <!-- ============ 引き継ぎシートタブ ============ -->
   <section id="tab-staff" class="tab-page">
+    <div class="pattern-bar no-print">
+      <span class="lbl">お手続きする番号：</span>
+      <button class="pat" data-pat="0" type="button">回線1</button>
+      <button class="pat" data-pat="1" type="button">回線2</button>
+      <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="pat" data-pat="3" type="button">回線4</button>
+      <button class="pat" data-pat="4" type="button">回線5</button>
+    </div>
     <div class="sheet" id="staffSheetBody"><!-- JSで生成 --></div>
     <div class="actions no-print">
       <button class="btn-main" id="printStaffBtn" type="button">印刷／PDF保存</button>

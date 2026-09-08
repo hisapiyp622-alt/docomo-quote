@@ -1731,6 +1731,80 @@ function chk(name, cond, extra) {
     JSON.stringify(vp.rows));
   chk('㊴ 合計の行が出る', vp.rows.some((r) => r[0] === '合計'), JSON.stringify(vp.rows));
 
+  /* ---- ㊵ クリアを「この回線」と「全回線」に分ける／引き継ぎタブの回線切り替え
+   *      （2026-09-08・店舗からの要望）----
+   *   ・「入力をクリア」が全回線をまとめて消すものしか無く、
+   *     見比べ用に作った1本だけを作り直したいときに、ほかの回線まで消えていた
+   *   ・引き継ぎシートは回線ごとの内容なのに、回線の切り替えが
+   *     見積もり・見積書のタブにしか無かった
+   *   実際に画面のボタンを押して確かめる（内部の関数を直接呼ばない）。 */
+  page.removeAllListeners('dialog');
+  page.on('dialog', (d) => d.accept());
+  const clr = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    const val = (id) => { const e = document.getElementById(id); return e ? e.value : '(欄なし)'; };
+    const out = {};
+    out.staffTabs = L.staffTabs();
+    // 回線1・回線2に中身を入れて、回線1を開く
+    L.fill(0, { planId: 'max', procType: 'kishu', custName: 'あんどう' });
+    L.fill(1, { planId: 'mini', procType: 'shinki', custName: 'いとう' });
+    L.pick(0);
+    L.clearOne(true);                 // 回線のバーの「この回線をクリア」
+    out.afterOne1 = val('planId');
+    L.pick(1);
+    out.afterOne2 = val('planId');
+    out.afterOne2Cust = val('custName');
+    // 下の並びの「この回線をクリア」でも同じこと（いま開いているのは回線2）
+    L.clearOne(false);
+    out.afterOneBottom2 = val('planId');
+    // 全回線をクリア
+    L.fill(0, { planId: 'max', procType: 'kishu' });
+    L.fill(1, { planId: 'mini', procType: 'shinki' });
+    L.pick(0);
+    L.clearAll(false);
+    L.pick(1); out.afterAll2 = val('planId');
+    L.pick(0); out.afterAll1 = val('planId');
+    return out;
+  });
+  chk('㊵ 引き継ぎタブに回線1〜5の切り替えボタンが出る',
+    clr.staffTabs.length === 5 && clr.staffTabs[0] === '回線1' && clr.staffTabs[4] === '回線5',
+    JSON.stringify(clr.staffTabs));
+  chk('㊵ 「この回線をクリア」で、開いている回線だけが消える',
+    clr.afterOne1 === '', '回線1のプラン=' + clr.afterOne1);
+  chk('㊵ 「この回線をクリア」で、ほかの回線は残る',
+    clr.afterOne2 === 'mini' && clr.afterOne2Cust === 'いとう',
+    '回線2のプラン=' + clr.afterOne2 + ' 名前=' + clr.afterOne2Cust);
+  chk('㊵ 下の並びの「この回線をクリア」も同じように効く',
+    clr.afterOneBottom2 === '', '回線2のプラン=' + clr.afterOneBottom2);
+  chk('㊵ 「全回線をクリア」は回線1も回線2も消す',
+    clr.afterAll1 === '' && clr.afterAll2 === '',
+    '回線1=' + clr.afterAll1 + ' 回線2=' + clr.afterAll2);
+
+  // 引き継ぎタブで回線を切り替えると、シートの中身も切り替わる
+  const stf = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    L.fill(0, { planId: 'max', procType: 'kishu' });
+    L.fill(1, { planId: 'mini', procType: 'shinki' });
+    L.pick(0);
+    document.querySelector('.tab[data-tab="staff"]').click();
+    const body = () => (document.getElementById('staffSheetBody').innerText || '');
+    const t1 = body(); const a1 = L.activeTabOf('staff');
+    const b2 = document.querySelector('#tab-staff .pat[data-pat="1"]');
+    if (!b2) { document.querySelector('.tab[data-tab="quote"]').click();
+      return { t1: t1, t2: '', a1: a1, a2: '', missing: true }; }
+    b2.click();
+    const t2 = body(); const a2 = L.activeTabOf('staff');
+    document.querySelector('.tab[data-tab="quote"]').click();
+    return { t1, t2, a1, a2 };
+  });
+  chk('㊵ 引き継ぎタブの回線ボタンで、選ばれている回線が変わる',
+    stf.a1 === '回線1' && stf.a2 === '回線2', stf.a1 + ' → ' + stf.a2);
+  chk('㊵ 引き継ぎシートの中身が、切り替えた回線のものに変わる',
+    stf.t1.indexOf('ドコモ MAX') >= 0 && stf.t2.indexOf('ドコモ mini') >= 0
+      && stf.t1 !== stf.t2,
+    '回線1に「ドコモ MAX」=' + (stf.t1.indexOf('ドコモ MAX') >= 0)
+      + ' / 回線2に「ドコモ mini」=' + (stf.t2.indexOf('ドコモ mini') >= 0));
+
   await browser.close();
   srv.close();
 
