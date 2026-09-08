@@ -8673,6 +8673,21 @@
         st.jimuFee = jimu;
       }
     }
+    /* ポイ活プランの還元ポイントは料金表で決まる。古いままだと
+     * 実質のご負担額を実際より安く出してしまう。 */
+    var poi = poikatsuDefaultPt(st.planId);
+    if (poi > 0 && num(st.pointPoikatsu) !== poi) {
+      out.push("ポイ活の還元 " + num(st.pointPoikatsu) + "pt → " + poi + "pt");
+      st.pointPoikatsu = poi;
+    }
+    /* 料金表の改定で段階（データ量）が減っていたら、残っている段階に寄せる。
+     * 黙って別の段階の金額を出さない。 */
+    var pl2 = planById(st.planId);
+    if (pl2 && pl2.tiers && pl2.tiers.length && num(st.tierIdx) >= pl2.tiers.length) {
+      var to = pl2.tiers.length - 1;
+      out.push("データ量の段階「" + (pl2.tiers[to].label || "") + "」に寄せました");
+      st.tierIdx = to;
+    }
     return out;
   }
   // 受付が終わっているオプション・初期費用・キャンペーンの選択を外し、外した名前を返す
@@ -9009,7 +9024,10 @@
       sel.innerHTML = plan.tiers.map(function (t, i) {
         return '<option value="' + i + '">' + esc(t.label) + "（" + yen(t.price) + "）</option>";
       }).join("");
-      if (state.tierIdx >= plan.tiers.length) state.tierIdx = 0;
+      /* 料金表の改定で段階が減ったときは、いちばん安い段階（0）ではなく
+       * 残っているいちばん上の段階に寄せる。金額の計算（calcFor）は
+       * tiers.length-1 に寄せているので、0に落とすと画面と見積書が食い違う（2026-09-08）。 */
+      if (state.tierIdx >= plan.tiers.length) state.tierIdx = plan.tiers.length - 1;
       sel.value = String(state.tierIdx);
     } else {
       f.hidden = true;
@@ -15649,7 +15667,7 @@
       tplSave: function (i) { templates[i] = { name: "検査用", state: tplSnapshot() }; persistTemplates(); },
       // テンプレートに保存された中身（お客様だけの数字・文字が入っていないかを見る）
       tplStored: function (i) { return templates[i] ? JSON.parse(JSON.stringify(templates[i].state)) : null; },
-      tplApply: function (i) { tplApply(i, false); },
+      tplApply: function (i) { tplMsg(""); tplApply(i, false); },
       // テンプレートを当てはめたときに出る知らせの文
       tplNote: function () { var e = $("tplMsg"); return e ? (e.textContent || "").trim() : ""; },
       /* 保存まわりの検査（製品化レビュー 5-3） */

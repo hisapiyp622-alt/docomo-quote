@@ -171,6 +171,45 @@ function chk(name, cond, extra) {
   chk('③ お客様の見積書に、古い150,000円が出ない',
     price.sheet.indexOf('150,000') < 0, price.sheet.split('\n').filter((l) => /150,000/.test(l)).join(' / '));
 
+  /* ---- ④ ポイ活の還元ポイントと、データ量の段階も、いまの料金表に合わせ直す ---- */
+  const poi = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m0 = T.std.get();
+    const pk = m0.plans.filter((p) => (p.poikatsuPt || 0) > 0)[0];
+    const many = m0.plans.filter((p) => (p.tiers || []).length >= 4)[0];
+    const manyGrp = many.group || 'current';
+    L.clearAll(); L.pick(0);
+    L.fill(0, { planGroup: pk.group || 'current', planId: pk.id, pointPoikatsu: pk.poikatsuPt });
+    L.pick(0);
+    T.tplSave(2);
+    L.clearAll(); L.pick(0);
+    L.fill(0, { planGroup: manyGrp, planId: many.id, tierIdx: many.tiers.length - 1 });
+    L.pick(0);
+    T.tplSave(3);
+    // 料金表の改定: ポイ活の還元を減らし、段階を1つに減らす
+    const m = T.std.get();
+    m.plans.filter((p) => p.id === pk.id)[0].poikatsuPt = Math.floor(pk.poikatsuPt / 2);
+    m.plans.filter((p) => p.id === many.id)[0].tiers = many.tiers.slice(0, 2);
+    T.std.set(m);
+    L.clearAll(); L.pick(0);
+    T.tplApply(2);
+    const a = { pt: L.state(0).pointPoikatsu, note: T.tplNote() };
+    L.clearAll(); L.pick(0);
+    T.tplApply(3);
+    const b = { tier: L.state(0).tierIdx, note: T.tplNote(), sheet: T.saved.sheetText(),
+      tierLabel: (document.getElementById('tierIdx') || {}).value };
+    return { want: Math.floor(pk.poikatsuPt / 2), a: a, b: b };
+  });
+  chk('④ ポイ活の還元ポイントが、いまの料金表の値になる',
+    poi.a.pt === poi.want, poi.a.pt + ' / 正しくは ' + poi.want);
+  chk('④ 還元ポイントを直したことが、画面の知らせに出る',
+    /ポイ活の還元/.test(poi.a.note), poi.a.note);
+  chk('④ 減った段階に置いたままにせず、残っているいちばん上の段階に寄せる',
+    poi.b.tier === 1, String(poi.b.tier) + '（0だと、いちばん安い段階に落ちています）');
+  chk('④ 段階を寄せたことが、画面の知らせに出る',
+    /段階/.test(poi.b.note), poi.b.note);
+
   await browser.close();
   srv.close();
 
