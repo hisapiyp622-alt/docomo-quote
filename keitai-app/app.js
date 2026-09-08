@@ -4769,7 +4769,10 @@
       var todo = (st && st.procTodo) || {};
       var pt = st && st.procType;
       if (todo.mnp || todo.shinki || pt === "mnp" || pt === "shinki") return true;
-      if (st && st.planGroup === "libmo") return true;
+      /* すでに LIBMO の**プランを選んである**見積もりでは残す（保存を開いたときに
+       * 金額が変わらないように）。世代だけ LIBMO でプラン未選択のときに残すと、
+       * 手続きを機種変更へ変えても LIBMO が選べたままになっていた（2026-09-08）。 */
+      if (st && st.planGroup === "libmo" && st.planId) return true;
       return (MASTER.plans || []).some(function (pl) {
         return pl.group === "libmo" && pl.id === (st && st.planId);
       });
@@ -8956,7 +8959,11 @@
         return stdPick(o, state.options[o.id] || state.optionKubun[o.id]);
       });
       var accItems = accInCategory(cat);
-      if (!items.length && !accItems.length) return;
+      /* 「その他」には実績の印のタイル（下取り・dカード／d払い初回利用）を置いている。
+       * 中身が0件でも見出しと枠を必ず出す。ここで抜けていたため、その他の
+       * オプションが全部受付終了になると印のタイルが画面から消えていた
+       * （2026-09-08）。ほかのカテゴリは、これまでどおり空なら出さない。 */
+      if (!items.length && !accItems.length && cat !== "その他") return;
       h += '<div class="opt-cat">' + esc(cat) + "</div>";
       var bonusFree = maxBonusFree(state, currentPlan().id);
       var bonusTarget = maxBonusPlan(currentPlan().id);
@@ -8999,9 +9006,9 @@
       }).join("") + accItems.map(accTileHtml).join("")
         + (cat === "その他" ? statMarkTiles() : "") + "</div>";
     });
-    // 「その他」が1つも無い店舗でも、実績の印は出す
-    if (optCategories().indexOf("その他") < 0
-        || !MASTER.options.some(function (o) { return (o.category || "その他") === "その他"; })) {
+    /* 「その他」というカテゴリ自体が並びから外されている店舗でも、実績の印は出す
+     * （上の繰り返しで必ず1回出るようになったので、二重にならないよう条件はこれだけ） */
+    if (optCategories().indexOf("その他") < 0) {
       h += '<div class="opt-cat">その他</div><div class="tile-grid">'
         + statMarkTiles() + "</div>";
     }
@@ -12879,10 +12886,10 @@
   function switchPattern(i) {
     store.active = i;
     state = store.patterns[i];
-    if (!state.jimuFee && autoFeeProc(state.procType) && !state.planId) {
-      state.jimuFee = jimuFeeFor(state.procType);
-      state.atamakin = MASTER.fees.atamakin_default;
-    }
+    /* ここで事務手数料・頭金を入れ直してはいけない（2026-09-08）。
+     * 手で 0円 にした事務手数料が 4,950円 に戻り、頭金も勝手に入っていた。
+     * 手続き種別を選んだ時点で applyProcType が入れており、
+     * 起動直後のぶんも別で入れているので、切り替えのたびの入れ直しは要らない。 */
     syncFormFromState();
     recalc();
   }
@@ -13118,11 +13125,14 @@
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
   }
   /* タイルがどの入れ物へ移れるか。data-opt=④のカテゴリ内、
-   * data-acsel=④のカテゴリ内と⑥、data-fee=⑦の中だけ */
+   * data-acc=④のカテゴリ内と⑥、data-fee=⑦の中だけ
+   * （2026-09-08 まで data-acsel を見ていたが、それはタイルの中の
+   *   プルダウンに付く印で、タイル自体には付かない。そのため⑥の
+   *   アクセサリのタイルが「並べ替え」で掴めなかった） */
   function arrTileAllowed(tile, grid) {
     if (tile.hasAttribute("data-statmark")) return false;   // 実績の印は並べ替えない
     if (tile.hasAttribute("data-opt")) return !!grid.closest("#optionList");
-    if (tile.hasAttribute("data-acsel")) return !!(grid.closest("#optionList") || grid.closest("#accTileList"));
+    if (tile.hasAttribute("data-acc")) return !!(grid.closest("#optionList") || grid.closest("#accTileList"));
     if (tile.hasAttribute("data-fee")) return !!grid.closest("#feeItemList");
     return false;
   }
@@ -13194,13 +13204,13 @@
         if (!grid || !grid.classList.contains("tile-grid")) return;
         grid.querySelectorAll(".tile").forEach(function (t) {
           var oid = t.getAttribute("data-opt");
-          var aid = t.getAttribute("data-acsel");
+          var aid = t.getAttribute("data-acc");
           if (oid && optById[oid]) { optById[oid].category = cat; optSeq.push(optById[oid]); }
           if (aid && accById[aid]) { accById[aid].category = cat; accSeq.push(accById[aid]); }
         });
       });
-      document.querySelectorAll("#accTileList .tile[data-acsel]").forEach(function (t) {
-        var a = accById[t.getAttribute("data-acsel")];
+      document.querySelectorAll("#accTileList .tile[data-acc]").forEach(function (t) {
+        var a = accById[t.getAttribute("data-acc")];
         if (a) { a.category = ""; accSeq.push(a); }
       });
       document.querySelectorAll("#feeItemList .tile[data-fee]").forEach(function (t) {
@@ -13246,7 +13256,7 @@
       var tile = t.closest("#tab-quote .tile");
       var card = t.closest("#tab-quote .card");
       if (cat) { kind = "cat"; el = cat; }
-      else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acsel") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
+      else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acc") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
       else if (card && /\bc[1-9]\b/.test(card.className)) { kind = "card"; el = card; }
       if (!el) return;
       arrCancelHold();
@@ -15020,6 +15030,20 @@
       handleListEvent(t, "input");
     });
     $("masterBody").addEventListener("change", function (e) {
+      /* 選択式オプションの「金額欄」を、選択肢に無い額にしたまま指を離したとき。
+       * 案内文は「一番上の金額に合わせます」と言っているのに合わせていなかったため、
+       * ④のタイルのプルダウンの表示と、実際に計算される額が食い違っていた
+       * （2026-09-08）。入力中は邪魔しないよう、確定した時点で合わせる。 */
+      var opi = e.target.getAttribute && e.target.getAttribute("data-op-price");
+      if (opi !== null && opi !== undefined) {
+        var oo = (MASTER.options || [])[+opi];
+        if (oo && oo.priceChoices && oo.priceChoices.length
+            && oo.priceChoices.indexOf(num(oo.price)) < 0) {
+          normalizeChoices(oo);
+          markEdited(); renderMasterTab(); renderOptionList(); recalc();
+          return;
+        }
+      }
       if (handlePlanEvent(e.target, "change")) return;
       if (handleCxEvent(e.target, "change")) return;
       if (handleStatsCfgEvent(e.target, "change")) return;
@@ -15653,6 +15677,45 @@
         // 本物の読み込み（実績で追う項目の自動有効化まで通る）
         cxImport: function (rows) { return cxImport(rows); },
         cxCatalog: function () { return cxCatalog(); },
+        // ④オプションの「その他」に出ているタイルの文字（実績の印を含む）
+        otherTiles: function () {
+          renderOptionList();
+          var cats = Array.prototype.slice.call(document.querySelectorAll("#optionList .opt-cat"));
+          var el = cats.filter(function (c) { return (c.textContent || "").trim() === "その他"; })[0];
+          if (!el) return null;
+          var grid = el.nextElementSibling;
+          return grid ? Array.prototype.map.call(grid.querySelectorAll(".tile .t-name"),
+            function (e) { return (e.textContent || "").trim(); }) : [];
+        },
+        // ⑥アクセサリのタイルが「並べ替え」で掴めるか（実際の判定を通す）
+        accDraggable: function () {
+          renderAccessoryTiles();
+          var t = document.querySelector("#accTileList .tile");
+          var g = t && t.closest(".tile-grid");
+          return !!(t && g && arrTileAllowed(t, g));
+        },
+        // 「プラン世代」の一覧に実際に並んでいる中身
+        planGroups: function () {
+          renderPlanGroupSelect();
+          var sel = $("planGroup");
+          return sel ? Array.prototype.map.call(sel.options, function (o) { return o.value; }) : [];
+        },
+        // ⑦事務手数料と店頭頭金の、いまの入力欄の値
+        fees: function () { return { jimu: $("jimuFee").value, atama: $("atamakin").value }; },
+        // 選択式オプションの金額欄を直して、指を離したときと同じことをする
+        setOptPrice: function (id, v) {
+          renderMasterTab();
+          var idx = -1;
+          (MASTER.options || []).forEach(function (o, i) { if (o.id === id) idx = i; });
+          if (idx < 0) return null;
+          var inp = document.querySelector('[data-op-price="' + idx + '"]');
+          if (!inp) return null;
+          MASTER.options[idx].price = v;
+          inp.value = v;
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
+          var o2 = MASTER.options[idx];
+          return { price: o2.price, choices: (o2.priceChoices || []).slice() };
+        },
         /* マスタ設定の「実績で追う項目」に出ているチェックの文字（画面から読む）。
          * 設定の値ではなく、実際に押せる欄があるかを見る。 */
         scFlags: function () {

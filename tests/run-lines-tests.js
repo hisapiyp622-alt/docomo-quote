@@ -2137,6 +2137,111 @@ function chk(name, cond, extra) {
     delName.some((t) => /削除された商材/.test(t)) && !delName.some((t) => /=op_9999999999999/.test(t)),
     JSON.stringify(delName));
 
+  /* ---- ㊺ 画面の動き（2026-09-08）----
+   *   #33 プラン世代をLIBMOにしたまま手続きを機種変更に変えると、LIBMOが選べたまま
+   *   #37 回線を切り替えて戻ると、手で入れた事務手数料0円が4,950円に戻る
+   *   #38 ⑥アクセサリのタイルが「並べ替え」で掴めない
+   *   #40 選択式オプションの金額欄を選択肢に無い額にすると、表示と計算額が食い違う
+   *   #41 「その他」が全部受付終了になると、実績の印のタイルが画面から消える */
+  const grp = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const pt = document.getElementById('procType');
+    const setProc = (v) => { pt.value = v; pt.dispatchEvent(new Event('change', { bubbles: true })); };
+    setProc('mnp');
+    const onMnp = S.planGroups();
+    // 世代だけ LIBMO にして（プランは選ばない）、手続きを機種変更へ
+    const gsel = document.getElementById('planGroup');
+    gsel.value = 'libmo'; gsel.dispatchEvent(new Event('change', { bubbles: true }));
+    setProc('kishu');
+    const afterKishu = S.planGroups();
+    // LIBMO のプランを選んである見積もりでは残る
+    setProc('mnp');
+    gsel.value = 'libmo'; gsel.dispatchEvent(new Event('change', { bubbles: true }));
+    const psel = document.getElementById('planId');
+    const libmo = Array.prototype.filter.call(psel.options, (o) => /libmo/.test(o.value))[0];
+    if (libmo) { psel.value = libmo.value; psel.dispatchEvent(new Event('change', { bubbles: true })); }
+    setProc('kishu');
+    const withPlan = S.planGroups();
+    setProc('kishu');
+    return { onMnp, afterKishu, withPlan };
+  });
+  chk('㊺ のりかえ（MNP）のときは LIBMO が選べる',
+    grp.onMnp.indexOf('libmo') >= 0, JSON.stringify(grp.onMnp));
+  chk('㊺ プラン未選択のまま機種変更に変えると、LIBMO は一覧から消える',
+    grp.afterKishu.indexOf('libmo') < 0, JSON.stringify(grp.afterKishu));
+  chk('㊺ LIBMO のプランを選んである見積もりでは、機種変更にしても残る（金額を変えない）',
+    grp.withPlan.indexOf('libmo') >= 0, JSON.stringify(grp.withPlan));
+
+  const fee = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const L = T.lines;
+    L.fill(0, {}); L.fill(1, {});
+    L.pick(0);
+    const pt = document.getElementById('procType');
+    pt.value = 'shinki'; pt.dispatchEvent(new Event('change', { bubbles: true }));
+    const auto = S.fees();
+    // 手で 0円 にする（SIMのみで手数料を取らないご案内）
+    const j = document.getElementById('jimuFee');
+    j.value = '0'; j.dispatchEvent(new Event('input', { bubbles: true }));
+    const byHand = S.fees();
+    L.pick(1); L.pick(0);          // 回線を切り替えて戻る
+    const back = S.fees();
+    return { auto, byHand, back };
+  });
+  chk('㊺ 新規を選ぶと事務手数料が自動で入る（今までどおり）',
+    Number(fee.auto.jimu) > 0, JSON.stringify(fee.auto));
+  chk('㊺ 回線を切り替えて戻っても、手で入れた0円が戻らない',
+    Number(fee.back.jimu) === 0 && fee.back.jimu === fee.byHand.jimu,
+    JSON.stringify(fee.byHand) + ' → ' + JSON.stringify(fee.back));
+
+  const tiles = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const m = T.std.get();
+    const before = S.otherTiles();
+    // 「その他」のオプションを全部 受付終了 にする
+    (m.options || []).forEach((o) => {
+      if ((o.category || 'その他') === 'その他') o.retiredFrom = '2020-01-01';
+    });
+    T.std.set(m);
+    const after = S.otherTiles();
+    (m.options || []).forEach((o) => { delete o.retiredFrom; });
+    // 出荷の料金表にはアクセサリが1件も入っていないので、検査用に1つ足す
+    m.accessories = (m.accessories || []).concat(
+      [{ id: 'acc_kensa', name: '検査用アクセサリ', price: 3300 }]);
+    T.std.set(m);
+    const drag = S.accDraggable();
+    m.accessories = (m.accessories || []).filter((a) => a.id !== 'acc_kensa');
+    T.std.set(m);
+    return { before, after, drag: drag };
+  });
+  chk('㊺ 「その他」が全部受付終了でも、実績の印のタイルが残る',
+    tiles.after && tiles.after.some((t) => /下取り/.test(t))
+      && tiles.after.some((t) => /dカード初回利用/.test(t)),
+    JSON.stringify(tiles.after));
+  chk('㊺ 実績の印のタイルが二重に出ない',
+    tiles.before && tiles.before.filter((t) => /dカード初回利用/.test(t)).length === 1,
+    JSON.stringify(tiles.before));
+  chk('㊺ ⑥アクセサリのタイルが「並べ替え」で掴める（案内どおり）',
+    tiles.drag === true, String(tiles.drag));
+
+  const opx = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.lines;
+    const m = T.std.get();
+    const o = (m.options || [])[0];
+    o.priceChoices = [550, 1100]; o.price = 550;
+    T.std.set(m);
+    // 選択肢に無い額を入れて、指を離す
+    const r = S.setOptPrice(o.id, 9999);
+    return r;
+  });
+  chk('㊺ 選択式オプションの金額欄に選択肢に無い額を入れたら、一番上の金額に合わせる',
+    opx && opx.choices.indexOf(opx.price) >= 0,
+    JSON.stringify(opx));
+
   await browser.close();
   srv.close();
 
