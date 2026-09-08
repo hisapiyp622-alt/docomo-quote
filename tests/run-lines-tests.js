@@ -2765,6 +2765,41 @@ function chk(name, cond, extra) {
     '確定前: ' + stats.before + '  /  確定後: ' + stats.after);
   chk('59 確定そのものは行われている',
     stats.settled === true && stats.snaps.length > 0, JSON.stringify(stats.snaps));
+  /* ---- 60 確定した月がある「全期間」で、分析用CSVに入らないことを必ず知らせる（2026-09-08）---- */
+  const flat = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const withSnap = T.stats.flatNote();      // ここまでの ⑤⑨ で月が確定済み
+    return { withSnap: withSnap, snaps: Object.keys(T.stats.snaps()) };
+  });
+  chk('60 確定した月があるときは、分析用CSVに入らないことを知らせる',
+    /確定済み/.test(flat.withSnap) && /入りません/.test(flat.withSnap),
+    flat.withSnap || '（案内なし）' + JSON.stringify(flat.snaps));
+
+  /* ---- 61 実績の「印刷」の中身（2026-09-08）----
+   * ・画面だけの案内とボタンを紙に刷らない
+   * ・たたんである「日別」を開いてから刷る（見出しだけの空振りにしない） */
+  const pr = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    // 日別の表が出る状態（当月の応対がある）にしてから印刷する
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', visitPurposes: { buy: true } });
+    L.pick(0);
+    const data = { active: 0, patterns: [L.state(0)] };
+    T.stats.setLists({ s1: [{ id: 'now1', savedAt: Date.now(), name: '当月', result: 'won',
+      data: JSON.parse(JSON.stringify(data)), wonData: JSON.parse(JSON.stringify(data)) }] });
+    // 日別の表は「全期間」では出ない（当月を選ぶ）
+    const now = new Date();
+    const cur = now.getFullYear() + '/' + ('0' + (now.getMonth() + 1)).slice(-2);
+    T.stats.view(cur, 'all');
+    const r = T.stats.printText();
+    return r;
+  });
+  chk('61 印刷のとき「日別」が開いている',
+    pr.daysOpen === true, '日別 open=' + pr.daysOpen);
+  chk('61 画面だけの案内・ボタンには no-print が付いている',
+    pr.noPrint.length > 0, JSON.stringify(pr.noPrint));
+
   chk('59 確定してもポイントの案内が変わらない',
     stats.ptBefore === stats.ptAfter,
     '確定前: ' + stats.ptBefore + ' / 確定後: ' + stats.ptAfter);

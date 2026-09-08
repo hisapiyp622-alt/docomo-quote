@@ -210,6 +210,37 @@ function chk(name, cond, extra) {
   chk('④ 段階を寄せたことが、画面の知らせに出る',
     /段階/.test(poi.b.note), poi.b.note);
 
+  /* ---- ⑤ 作りかけの見積もりが、テンプレの1タップで確認なしに消えない（2026-09-08）---- */
+  const guard = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const asked = [];
+    const realConfirm = window.confirm;
+    // 空の回線に当てはめるとき（ふだんの使い方）
+    L.clearAll(); L.pick(0);
+    window.confirm = function (m) { asked.push(m); return true; };
+    T.tplApply(0);
+    const onEmpty = asked.slice();
+    // 入力のある回線に当てはめるとき
+    asked.length = 0;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', deviceName: '作りかけ' });
+    L.pick(0);
+    window.confirm = function (m) { asked.push(m); return false; };   // 「いいえ」を押す
+    T.tplApply(0);
+    const kept = L.state(0).deviceName;
+    const askedOnUsed = asked.slice();
+    window.confirm = realConfirm;
+    return { onEmpty: onEmpty, askedOnUsed: askedOnUsed, kept: kept };
+  });
+  chk('⑤ 空の回線では、これまでどおり確認なしで当てはまる',
+    guard.onEmpty.length === 0, JSON.stringify(guard.onEmpty));
+  chk('⑤ 入力のある回線では、置き換える前に一度たしかめる',
+    guard.askedOnUsed.length === 1 && /すでに入力があります/.test(guard.askedOnUsed[0]),
+    JSON.stringify(guard.askedOnUsed));
+  chk('⑤ 「いいえ」を押したら、作りかけの見積もりが残る',
+    guard.kept === '作りかけ', '機種名=' + guard.kept);
+
   await browser.close();
   srv.close();
 

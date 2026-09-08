@@ -3133,7 +3133,7 @@
     if (viewAll && !statsUnlocked && !statsCfg().openAll
         && !adminLockEnabled() && !lockEnabled() && !cloudOn()
         && activeStaffList().length > 1) {
-      h += '<div class="stats-undone"><b style="color:var(--red)">いまは全担当の実績が全員に見えています。</b>'
+      h += '<div class="stats-undone no-print"><b style="color:var(--red)">いまは全担当の実績が全員に見えています。</b>'
         + "店舗ログインもマスタ設定のパスワードも設定していないため、担当者ごとに仕切れない状態です。"
         + "担当者ごとに分けたいときは、マスタ設定で「マスタ設定のパスワード」を設定してください。"
         + "全員で見る運用のままでよいときは、マスタ設定の「実績で追う項目」で「全担当の実績を全員に公開する」にチェックを入れると、このお知らせは出なくなります。"
@@ -3143,7 +3143,7 @@
     /* ---- 結果が未記録の応対 ---- */
     var myUndone = (!settled && staffAgg[sFil]) ? staffAgg[sFil].undone : 0;
     if (sFil !== "all" && myUndone > 0) {
-      h += '<div class="stats-undone">結果が未記録の応対が <b>' + myUndone + "件</b>あります。"
+      h += '<div class="stats-undone no-print">結果が未記録の応対が <b>' + myUndone + "件</b>あります。"
         + '<button type="button" class="btn-sub" id="statsUndoneBtn">保存タブで記録する</button></div>';
     }
 
@@ -3579,6 +3579,13 @@
           + "画面の数字と「CSVで保存」はご覧いただけます。"
         : "この期間には、書き出せる明細がありません。");
       return;
+    }
+    /* 確定した月は1件ずつの明細を端末から消しているので、このCSVには入れられない。
+     * 画面と「CSVで保存」には入っているため、黙って渡すと数が食い違う（2026-09-08）。 */
+    var snapMs = Object.keys(statsSnapshots()).sort();
+    if (mFil === "all" && snapMs.length) {
+      savedNote("確定済みの " + snapMs.join("・") + " ぶんは、1件ずつの明細が残っていないため"
+        + "この「分析用CSV」には入りません。画面の数字と「CSVで保存」には入っています。");
     }
     var lines = ["日付,曜日,担当,来店目的,種別,項目,件数"];
     rows.forEach(function (r) { lines.push(r.map(csvCell).join(",")); });
@@ -8694,6 +8701,14 @@
         : "テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください");
       return;
     }
+    /* 作りかけの見積もりが、1タップで確認なしに消えないようにする。
+     * 空の回線に当てはめるふだんの使い方では、これまでどおり1タップのまま
+     * （「この回線をクリア」と同じ確かめ方にそろえた・2026-09-08）。 */
+    var curPt = Object.assign(defaultState(), store.patterns[store.active] || {});
+    if ((isPatternUsed(curPt) || curPt.planId || curPt.procType)
+        && !window.confirm("回線" + ((store.active | 0) + 1) + " にはすでに入力があります。\n"
+          + "テンプレート「" + t.name + "」の内容に置き換えます。よろしいですか？\n"
+          + "（お客様名・メモ・ご来店の目的・請求の読み取りはそのまま残ります）")) return;
     /* いま応対中のお客様の内容は、テンプレートで上書きしない。
      * 前に保存したテンプレートには焼き付いたままのものがあるので、
      * 保存のときだけでなく当てはめるときにも必ず取り除く（2026-09-08）。 */
@@ -15131,14 +15146,33 @@
       });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
       $("statsCsvFlat").addEventListener("click", downloadStatsFlatCsv);
+      /* たたんである「日別」は、閉じたままだと見出しだけが刷られて中身の表が出ない。
+       * 印刷の前に開き、終わったら元の状態に戻す（2026-09-08）。 */
+      var daysWasOpen = null;
+      function openDaysForPrint() {
+        var d = document.querySelector("#statsBody .stats-days");
+        if (!d) return;
+        daysWasOpen = d.open;
+        d.open = true;
+      }
+      function restoreDays() {
+        var d = document.querySelector("#statsBody .stats-days");
+        if (d && daysWasOpen !== null) d.open = daysWasOpen;
+        daysWasOpen = null;
+      }
       $("statsPrint").addEventListener("click", function () {
         document.body.classList.add("print-stats");
+        openDaysForPrint();
         window.print();
-        setTimeout(function () { document.body.classList.remove("print-stats"); }, 800);
+        setTimeout(function () {
+          document.body.classList.remove("print-stats");
+          restoreDays();
+        }, 800);
       });
       window.addEventListener("afterprint", function () {
         document.body.classList.remove("print-stats");
         document.body.classList.remove("print-morning");
+        restoreDays();
       });
       // 朝礼サマリ: 目標と進捗・担当別だけをA4に出す（管理者）
       $("statsMorning").addEventListener("click", function () {
@@ -16117,6 +16151,30 @@
         // 月を確定（自動締め）する
         settle: function () { return statsAutoSettle(statsLists); },
         snaps: function () { return JSON.parse(JSON.stringify(statsSnapshots())); },
+        // 「分析用CSV」を押したときに画面に出る案内
+        flatNote: function () {
+          var e = $("savedMsg");
+          if (e) e.textContent = "";
+          var b = $("statsCsvFlat");
+          if (b) b.click();
+          return e ? (e.textContent || "").trim() : "";
+        },
+        // 「印刷」を押したときに紙へ出る文字（画面だけのものが混ざっていないか）
+        printText: function () {
+          var b = $("statsPrint");
+          var real = window.print; window.print = function () {};
+          try { if (b) b.click(); } finally { window.print = real; }
+          var d = document.querySelector("#statsBody .stats-days");
+          var body = $("statsBody");
+          var noPrint = Array.prototype.map.call(
+            document.querySelectorAll("#statsBody .no-print"),
+            function (x) { return (x.textContent || "").slice(0, 30); });
+          var out = { daysOpen: d ? !!d.open : null, noPrint: noPrint,
+            text: body ? body.innerText : "" };
+          document.body.classList.remove("print-stats");
+          window.dispatchEvent(new Event("afterprint"));
+          return out;
+        },
         // 早見表の数え違いの直し（＋−）を入れる
         setAdj: function (sid, day, key, bag) {
           var m = MASTER;
