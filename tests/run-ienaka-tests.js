@@ -324,6 +324,35 @@ async function runOn(page, url, port) {
     console.log('引き継いだ担当者名: 問題なし（初回は守り、2回目からは同期する）');
   }
 
+  /* ---- 商材を ahamo光／タイプC に変えたあと、前の商材で選んだプロバイダの
+   *      ご案内が『開通までの流れ』に残っていないか（2026-09-08）---- */
+  const flow = await page.evaluate(() => {
+    const T = window.__IE_TEST__;
+    const base = { enabled: true, applyType: 'shinki', provider: '@nifty', visitSupport: true };
+    return {
+      nifty: T.flowText(Object.assign({}, base, { product: 'hikari1g' })),
+      ahamo: T.flowText(Object.assign({}, base, { product: 'ahamo1g' })),
+      typec: T.flowText(Object.assign({}, base, { product: 'hikaric' })),
+      home5g: T.flowText(Object.assign({}, base, { product: 'home5g' }))
+    };
+  });
+  const flowBad = [];
+  if (!/訪問設定サポート/.test(flow.nifty) || !/訪問サポートの日程/.test(flow.nifty)) {
+    flowBad.push('ドコモ光1ギガ＋@nifty のときに訪問設定サポートの案内が出ていません');
+  }
+  ['ahamo', 'typec', 'home5g'].forEach((k) => {
+    if (/@nifty/.test(flow[k])) {
+      flowBad.push(k + ' に @nifty の案内が残っています: '
+        + (flow[k].split('\n').filter((l) => /@nifty/.test(l))[0] || ''));
+    }
+  });
+  if (flowBad.length) {
+    console.error('開通までの流れに、前の商材のご案内が残っています:\n  ✗ ' + flowBad.join('\n  ✗ '));
+    process.exitCode = 1;
+  } else {
+    console.log('商材を切り替えたときの開通までの流れ: 問題なし');
+  }
+
   await browser.close();
   srv.close();
 

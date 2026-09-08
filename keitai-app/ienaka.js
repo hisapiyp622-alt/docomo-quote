@@ -123,7 +123,7 @@
    * 取り扱いの無い回数を選べてしまうと、店頭で存在しない支払い方法を
    * 案内することになるため。取り扱いが分からないプロバイダは全部出す。 */
   function router10gPays() {
-    var d = ROUTER10G[state.provider];
+    var d = ROUTER10G[provider()];
     return (d && d.pays) || ROUTER10G_DEFAULT_PAYS;
   }
   function renderRouter10gPays(sel) {
@@ -138,7 +138,7 @@
     sel.innerHTML = h;
   }
   var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
-  function router10gDefault() { return ROUTER10G[state.provider] || ROUTER10G_DEFAULT; }
+  function router10gDefault() { return ROUTER10G[provider()] || ROUTER10G_DEFAULT; }
   /* プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す。
    * 手で直した金額は、そのプロバイダの中で入力しているあいだは残る。 */
   function applyRouter10gDefault() {
@@ -152,6 +152,14 @@
   var HOUSING_LABEL = { ht: "戸建", ms: "マンション", ms100: "マンション100M" };
   function hKey() { return state.housing === "ms100" ? "ms" : state.housing; }
   function isHikari() { return state.product !== "home5g"; }
+  /* この商材でプロバイダを選べるか。ahamo光は一体型、タイプC・home 5G は
+   * ケーブルテレビ／ドコモの設備なので、プロバイダの欄そのものが出ない。
+   * 商材を変えたあとも state.provider に前の商材の値が残るため、
+   * 「表に出す・流れに書く」ときは必ずこちらを通す（2026-09-08）。 */
+  function hasProvider() {
+    return isHikari() && !PRODUCTS[state.product].noPtype;
+  }
+  function provider() { return hasProvider() ? (state.provider || "") : ""; }
   /* 月額オプション（チェック式・金額は見積もりごとに編集可）
    * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
   var IENAKA_OPTS = [
@@ -679,6 +687,15 @@
   function ieOptById(id) {
     return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
   }
+  /* いまの商材で「実際に選ばれている」オプションか。
+   * 商材を変えても state.opts の選択は残る（元の商材に戻したときのため）ので、
+   * 表に出す・紙に刷るときは必ずこちらを通す。通さないと、home 5G・タイプCに
+   * 変えたあとも前の商材のご案内が残る（2026-09-08）。 */
+  function optOn(id) {
+    var od = ieOptById(id);
+    if (!od || od.for.indexOf(state.product) < 0) return false;
+    return !!state.opts[id];
+  }
   function toggleIeOpt(id) {
     var od = ieOptById(id);
     if (!od) return;
@@ -1039,11 +1056,11 @@
     if (r10gOn) {
       var rp10 = num(state.router10gPrice);
       var nSp = router10gSplitN();
-      r10gHint.innerHTML = (state.provider === "@nifty"
+      r10gHint.innerHTML = (provider() === "@nifty"
         ? "@nifty の優待価格（バッファロー WSR6500BE6P-10G）。<strong>税込20,064円</strong>"
           + "（ページの「18,240円」は税抜）。ニフティで購入する場合、ドコモの"
           + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
-        : state.provider === "GMOとくとくBB"
+        : provider() === "GMOとくとくBB"
         ? "GMOとくとくBB の分割購入。<strong>月額190円（税込）×36回＝総額6,840円</strong>。"
         : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
         + (nSp > 0 && rp10 > 0
@@ -1770,7 +1787,7 @@
       step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
       step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc", "7〜10日後");
       // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
-      if (state.provider === "@nifty" && state.visitSupport) {
+      if (provider() === "@nifty" && state.visitSupport) {
         step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
       }
       /* 工事の前にルーターを手元にそろえておく工程。
@@ -1832,7 +1849,7 @@
       }
       step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc", "数日〜1週間後");
       // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
-      if (state.provider === "@nifty" && state.visitSupport) {
+      if (provider() === "@nifty" && state.visitSupport) {
         step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
       }
       // レンタルがあるときは、切替日の前にルーターを受け取っておく工程を入れる
@@ -1847,7 +1864,7 @@
     }
     /* レンタルルーターの到着案内は、新規・転用・事業者変更とも
      * 「ルーターのお受け取り」の工程として流れに入れたので、注記は無し */
-    if (isHikari() && state.provider === "@nifty") {
+    if (provider() === "@nifty") {
       if (state.visitSupport) {
         // 訪問設定サポートを希望した場合は、設定の工程に「訪問が来る」ことを書く
         noteTo("ルーターなど", "@niftyの訪問設定サポートのスタッフがご自宅へ伺い、"
@@ -2284,6 +2301,24 @@
       return state.routerRental === "nashi" ? "nashi" : "ari";
     },
     isHikari: isHikari,
+    // プロバイダを選べる商材か（ahamo光・タイプC・home 5G は選べない）
+    hasProvider: hasProvider,
+    /* 10ギガでお買い上げいただく無線ルーター。買っていないときは空を返す。
+     * これまでは申込ページのQRでしか出ていなかったので、QRの無いプロバイダ
+     * （GMOとくとくBB・andline）だと引き継ぎシートに1行も出なかった（2026-09-08）。 */
+    router10gText: function () {
+      if (!canBuy10gRouter() || !state.router10g || !(num(state.router10gPrice) > 0)) return "";
+      var n = router10gSplitN();
+      var t = n > 0
+        ? yen(Math.floor(num(state.router10gPrice) / n)) + "/月 × " + n + "回（総額 "
+          + yen(num(state.router10gPrice)) + "）"
+        : yen(num(state.router10gPrice)) + "（一括・初期費用）";
+      return t;
+    },
+    // いまの商材で実際に選ばれているオプションか（商材を変えると false になる）
+    optOn: optOn,
+    // 表に出してよいプロバイダ（選べない商材のときは空）
+    provider: provider,
     sheetHtml: sheetHtml,
     flowSheetHtml: flowSheetHtml,
     // ヒアリングした現在の回線（未ヒアリングなら空）。引き継ぎシートと奪還比較の入口

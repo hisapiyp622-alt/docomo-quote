@@ -2363,6 +2363,509 @@ function chk(name, cond, extra) {
   chk('㊽ 「端末購入なし」の回線は、これまでどおり数えない',
     dev.noBuy.indexOf('device') < 0, JSON.stringify(dev.noBuy));
 
+  /* ---- ㊾ 引き継ぎシートのドコモメール・プロバイダ（2026-09-08）----
+   * ・ドコモメールが使えないプラン（LIBMO・データプラス・キッズケータイ）で
+   *   「プランに標準で込み」と印字すると、店頭でご案内を誤る
+   * ・ahamo光はプロバイダ一体型、タイプC・home 5G はプロバイダを選べない。
+   *   前の商材で選んだプロバイダが引き継ぎシートに残ってはいけない */
+  const staff = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    const out = {};
+    const GRP = { libmo_nattoku: 'libmo', libmo_gogo: 'libmo' };
+    ['max', 'ahamo', 'libmo_nattoku', 'dataplus', 'kids'].forEach((pid) => {
+      L.clearAll();
+      L.pick(0);
+      L.fill(0, { procType: 'kishu', planGroup: GRP[pid] || 'current', planId: pid });
+      L.pick(0);
+      out[pid] = S.staffText();
+      out[pid + ':plan'] = L.state(0).planId;
+    });
+    // 光: 1ギガ＋@nifty のあと、ahamo光に変えたときのプロバイダ行
+    L.clearAll(); L.pick(0);
+    S.ieOn('hikari1g', { provider: '@nifty', providerType: 'shinki' });
+    out.hikari1g = S.staffText();
+    S.ieOn('ahamo1g');
+    out.ahamo1g = S.staffText();
+    S.ieOn('hikaric');
+    out.hikaric = S.staffText();
+    return out;
+  });
+  chk('㊾ MAXでは「プランに標準で込み」と出る（これまでどおり）',
+    /ドコモメール/.test(staff.max) && /標準で込み/.test(staff.max),
+    staff.max.split('\n').filter((l) => /メール/.test(l)).join(' / '));
+  chk('㊾ ahamoではメールの行が出る（有料オプション）',
+    /ドコモメール/.test(staff.ahamo), staff.ahamo.split('\n').filter((l) => /メール/.test(l)).join(' / '));
+  ['libmo_nattoku', 'dataplus', 'kids'].forEach((pid) => {
+    // プランが実際に選ばれていることを先に確かめる（未選択だと素通りしてしまう）
+    chk('㊾ ' + pid + ' のプランが選ばれている', staff[pid + ':plan'] === pid, staff[pid + ':plan']);
+    chk('㊾ ' + pid + ' では「プランに標準で込み」と印字しない',
+      !/標準で込み/.test(staff[pid]),
+      staff[pid].split('\n').filter((l) => /メール|込み/.test(l)).join(' / '));
+  });
+  chk('㊾ ドコモ光1ギガでは、選んだプロバイダが出る',
+    /プロバイダ/.test(staff.hikari1g) && /@nifty/.test(staff.hikari1g),
+    staff.hikari1g.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
+  chk('㊾ ahamo光ではプロバイダの行を出さない',
+    !/プロバイダ/.test(staff.ahamo1g),
+    staff.ahamo1g.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
+  chk('㊾ タイプCでもプロバイダの行を出さない',
+    !/プロバイダ/.test(staff.hikaric),
+    staff.hikaric.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
+
+  /* ---- ㊿ 電卓（2026-09-08）----
+   * 店頭でお客様の前で使う電卓なので、押した手ごたえと答えが正しく見えること */
+  const calc = await page.evaluate(() => {
+    const C = window.__KQ_TEST__.calc;
+    return {
+      dot: C.press('. '),
+      dot2: C.press('1 . '),
+      dot3: C.press('1 . 5'),
+      div0: C.press('1 0 / 0 ='),
+      div0next: (() => { C.press('1 0 / 0 ='); const k = window.__KQ_TEST__.calc; return k.press('5'); })(),
+      pctMinus: C.press('1 0 0 0 - 1 0 pct ='),
+      pctPlus: C.press('1 0 0 0 + 1 0 pct ='),
+      pctTimes: C.press('1 0 0 0 * 1 0 pct ='),
+      pctAlone: C.press('5 0 pct'),
+      plain: C.press('1 2 3 4 + 1 =')
+    };
+  });
+  chk('㊿ 「.」を押すと画面に出る（押せたことが分かる）',
+    calc.dot.out === '0.', JSON.stringify(calc.dot));
+  chk('㊿ 「1 .」も画面に出る', calc.dot2.out === '1.', JSON.stringify(calc.dot2));
+  chk('㊿ 小数の続きも打てる', calc.dot3.out === '1.5', JSON.stringify(calc.dot3));
+  chk('㊿ 0で割ったら「NaN」ではなく「エラー」と出る',
+    calc.div0.out === 'エラー', JSON.stringify(calc.div0));
+  chk('㊿ エラーのあとに数字を押すと、そこから続けられる',
+    calc.div0next.out === '5', JSON.stringify(calc.div0next));
+  chk('㊿ 1000 − 10％ ＝ 900（引く前の金額に対する割合）',
+    calc.pctMinus.out === '900', JSON.stringify(calc.pctMinus));
+  chk('㊿ 1000 ＋ 10％ ＝ 1,100', calc.pctPlus.out === '1,100', JSON.stringify(calc.pctPlus));
+  chk('㊿ 1000 × 10％ ＝ 100', calc.pctTimes.out === '100', JSON.stringify(calc.pctTimes));
+  chk('㊿ 50％ とだけ押したら 0.5', calc.pctAlone.out === '0.5', JSON.stringify(calc.pctAlone));
+  chk('㊿ ふつうの足し算はこれまでどおり', calc.plain.out === '1,235', JSON.stringify(calc.plain));
+
+  /* ---- 51 早見表で直した数え違いが、分析用CSVにも入る（2026-09-08）----
+   * 同じ画面から出した2つのCSVで成約の数が食い違わないこと */
+  const csvOut = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const m = T.std.get();
+    const me = m.staff && m.staff[0] ? m.staff[0].id : 's1';
+    const day = (() => { const d = new Date();
+      return d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2); })();
+    m.statsAdjDay = {}; m.statsAdjDay[me] = {};
+    m.statsAdjDay[me][day] = { 'proc:kishu': { prop: 0, won: 1 } };
+    T.std.set(m);
+    const rows = T.csv.flatAdj('all', 'all');
+    // 実際に落ちるCSVの中身も読む（店舗責任者が開く文字そのもの）
+    const st = document.querySelector('[data-tab="saved"]');
+    if (st) st.click();
+    const open = document.getElementById('statsOpen');
+    if (open) open.click();
+    const mf = document.getElementById('statsMonth');
+    if (mf) { mf.value = 'all'; mf.dispatchEvent(new Event('change')); }
+    const files = T.csv.download();
+    return { rows: rows, day: day, table: files.table, flat: files.flat };
+  });
+  chk('51 早見表で直した数え違いが、分析用CSVの行として出る',
+    csvOut.rows.length === 1 && csvOut.rows[0][4] === '成約' && csvOut.rows[0][6] === 1,
+    JSON.stringify(csvOut.rows));
+  chk('51 手修正の行は「（手修正）」と分かるようにしてある',
+    csvOut.rows.length === 1 && csvOut.rows[0][3] === '（手修正）',
+    JSON.stringify(csvOut.rows));
+  chk('51 手修正の項目名が、早見表と同じ言い方で出る',
+    csvOut.rows.length === 1 && /機種変更/.test(String(csvOut.rows[0][5])),
+    JSON.stringify(csvOut.rows));
+  chk('51 実際に落ちる分析用CSVの中に、手修正の行が入っている',
+    /（手修正）/.test(csvOut.flat) && /成約,機種変更,1/.test(csvOut.flat),
+    (csvOut.flat || '（空）').split('\r\n').filter((l) => /手修正/.test(l)).join(' / ')
+      || '手修正の行なし（行数' + String(csvOut.flat || '').split('\r\n').length + '）');
+
+  /* ---- 52 郵便番号のエリア判定が、入力のクリアで消える（2026-09-08）----
+   * この欄は画面だけのもので見積もりに入らないため、消し忘れると
+   * 次のお客様の画面に前の方の郵便番号と判定が出たままになる */
+  const zip = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    function put() {
+      const inp = document.getElementById('gasAreaZip');
+      inp.value = '5300001';
+      inp.dispatchEvent(new Event('input'));
+      const out = document.getElementById('gasAreaResult');
+      return { v: inp.value, t: (out.innerText || '').slice(0, 40) };
+    }
+    function now() {
+      const inp = document.getElementById('gasAreaZip');
+      const out = document.getElementById('gasAreaResult');
+      return { v: inp.value, t: (out.innerText || '').trim() };
+    }
+    L.clearAll(); L.pick(0);
+    const before = put();
+    L.clearAll();
+    const afterAll = now();
+    const before2 = put();
+    L.fill(0, { procType: 'kishu' });
+    L.pick(0);
+    L.clearOne();
+    const afterOne = now();
+    return { before: before, afterAll: afterAll, before2: before2, afterOne: afterOne };
+  });
+  chk('52 郵便番号を入れると、エリアの判定が出る',
+    /大阪市/.test(zip.before.t), JSON.stringify(zip.before));
+  chk('52 「全回線をクリア」で、郵便番号と判定が消える',
+    zip.afterAll.v === '' && zip.afterAll.t === '', JSON.stringify(zip.afterAll));
+  chk('52 「この回線をクリア」でも消える',
+    zip.afterOne.v === '' && zip.afterOne.t === '', JSON.stringify(zip.afterOne));
+
+  /* ---- 53 商材を変えたあと、前の商材のQR・ご案内が引き継ぎシートに残らない（2026-09-08）----
+   * 画面のチェック欄は商材ごとに出し分けているのに、選択そのものは残るため、
+   * home 5G・タイプCに変えても「スカパー申込フォーム」のQRが紙に刷られていた */
+  const qr = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    // ドコモ光1ギガで、映像サービス＋スカパー！基本料を選ぶ
+    S.ieOn('hikari1g', { applyType: 'shinki',
+      opts: { skyp: true, vsSkyBase: true } });
+    const a = S.staffText();
+    S.ieOn('home5g');
+    const b = S.staffText();
+    S.ieOn('hikaric');
+    const c = S.staffText();
+    S.ieOn('hikari1g');
+    const d = S.staffText();
+    return { hikari: a, home5g: b, typec: c, back: d };
+  });
+  chk('53 ドコモ光1ギガ＋スカパーのときは、申込フォームのQRが出る',
+    /スカパー申込フォーム/.test(qr.hikari),
+    qr.hikari.split('\n').filter((l) => /スカパー/.test(l)).join(' / ') || '（出ていません）');
+  chk('53 home 5G に変えたら、スカパーのQRが消える',
+    !/スカパー申込フォーム/.test(qr.home5g),
+    qr.home5g.split('\n').filter((l) => /スカパー/.test(l)).join(' / '));
+  chk('53 タイプC に変えても、スカパーのQRが消える',
+    !/スカパー申込フォーム/.test(qr.typec),
+    qr.typec.split('\n').filter((l) => /スカパー/.test(l)).join(' / '));
+  chk('53 もとの商材に戻したら、また出る（選択を消してはいない）',
+    /スカパー申込フォーム/.test(qr.back),
+    qr.back.split('\n').filter((l) => /スカパー/.test(l)).join(' / ') || '（出ていません）');
+
+  /* ---- 54 引き継ぎシートのガスの書き方（2026-09-08）----
+   * ・割引を4つ選ぶと画面は「最大3つ・9%までのため 12% から減額」と断るのに、
+   *   シートは「合計 9%」とだけ出て、並んだ割引率の足し算と合わなかった
+   * ・区分（スタンダード／エコジョーズ）を選び忘れても、シートには何も出なかった */
+  const gas = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'smart',
+      todoGasDiscount: { yukabath: true, solar: true, battery: true, kaitori: true } });
+    L.pick(0);
+    const many = S.staffText();
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'smart', todoGasDiscount: { solar: true } });
+    L.pick(0);
+    const few = S.staffText();
+    // 区分が要るメニュー（あっためトク）で、区分を選ばない
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'attame', todoGasEco: '' });
+    L.pick(0);
+    const noEco = S.staffText();
+    L.clearAll(); L.pick(0);
+    L.fill(0, { todoGas: true, todoGasType: 'attame', todoGasEco: 'eco' });
+    L.pick(0);
+    const withEco = S.staffText();
+    return { many: many, few: few, noEco: noEco, withEco: withEco };
+  });
+  chk('54 割引を4つ選んだとき、シートにも「減額」の断りが出る',
+    /減額/.test(gas.many),
+    gas.many.split('\n').filter((l) => /割引|合計/.test(l)).join(' / '));
+  chk('54 上限に当たっていないときは、余計な断りを出さない',
+    !/減額/.test(gas.few),
+    gas.few.split('\n').filter((l) => /割引|合計/.test(l)).join(' / '));
+  chk('54 ガスの区分を選び忘れたら、シートに「未選択」と出る',
+    /区分/.test(gas.noEco) && /未選択/.test(gas.noEco),
+    gas.noEco.split('\n').filter((l) => /ガス/.test(l)).join(' / '));
+  chk('54 区分を選んであるときは、プラン名に続けて出る（余計な行は出さない）',
+    /エコジョーズプラン/.test(gas.withEco) && !/ガス　区分/.test(gas.withEco),
+    gas.withEco.split('\n').filter((l) => /ガス/.test(l)).join(' / '));
+
+  /* ---- 55 5分通話無料が込みのプランで「旧」を選んでも0円（2026-09-08）----
+   * はじめてスマホ・U15はじめてスマホで「旧」を選ぶと、
+   * プランに込みのはずの5分通話無料が 770円 としてお客様の見積書に足されていた */
+  const voice = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    const m = T.std.get();
+    const inc = m.plans.filter((p) => p.includes5min).map((p) => p.id);
+    const out = { inc: inc, rows: {} };
+    const grpOf = {};
+    m.plans.forEach((p) => { grpOf[p.id] = p.group || 'current'; });
+    inc.forEach((pid) => {
+      ['v5', 'v5l'].forEach((vid) => {
+        L.clearAll(); L.pick(0);
+        L.fill(0, { procType: 'kishu', planGroup: grpOf[pid], planId: pid, voice: vid });
+        L.pick(0);
+        const t = S.sheetText();
+        out.rows[pid + '/' + vid] = { plan: L.state(0).planId, voice: L.state(0).voice,
+          line: (t.match(/5分通話無料[^\n]{0,40}/) || [''])[0] };
+      });
+    });
+    // 込みではないプランでは、これまでどおり料金が出る
+    const other = m.plans.filter((p) => !p.includes5min && p.group === 'current')[0];
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: other.id, voice: 'v5' });
+    L.pick(0);
+    out.other = { id: other.id, line: (S.sheetText().match(/5分通話無料[^\n]{0,40}/) || [''])[0] };
+    return out;
+  });
+  chk('55 5分通話無料が込みのプランがマスタにある',
+    voice.inc.length > 0, JSON.stringify(voice.inc));
+  Object.keys(voice.rows).forEach((k) => {
+    const r = voice.rows[k];
+    if (!r.plan) { chk('55 ' + k + ' のプランが選ばれている', false, '（未選択）'); return; }
+    chk('55 ' + k + ' の通話オプションが0円で出る',
+      /オプション(（旧）)?（プランに標準込み）0円/.test(r.line) && !/770円|880円/.test(r.line),
+      '選ばれた通話オプション=' + r.voice + ' 行=' + (r.line || '（行が出ていません）'));
+  });
+  chk('55 込みではないプランでは、これまでどおり料金が出る',
+    /880円|770円/.test(voice.other.line), voice.other.id + ': ' + voice.other.line);
+
+  /* ---- 56 プランを変えて戻したとき、通話オプションが化けない（2026-09-08）----
+   * ドコモ mini では「旧」を選べないので「新」に入れ替わるが、
+   * 元のプランに戻したとき「旧」に戻らず、黙って月額が110円上がっていた */
+  const swap = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', voice: 'v5l' });
+    L.pick(0);
+    const start = { voice: L.state(0).voice, line: (S.sheetText().match(/5分通話無料[^\n]{0,30}/) || [''])[0] };
+    const toMini = T.saved.pickPlan('current', 'mini');
+    const back = T.saved.pickPlan('current', 'max');
+    return { start: start, toMini: toMini, back: back,
+      line: (S.sheetText().match(/5分通話無料[^\n]{0,30}/) || [''])[0] };
+  });
+  chk('56 はじめに「旧」を選んである', swap.start.voice === 'v5l', JSON.stringify(swap.start));
+  chk('56 ドコモ mini では「新」に入れ替わる', swap.toMini.voice === 'v5', JSON.stringify(swap.toMini));
+  chk('56 入れ替えたことを画面で知らせる',
+    /選べないため/.test(swap.toMini.hint), swap.toMini.hint || '（知らせなし）');
+  chk('56 元のプランに戻したら「旧」に戻る', swap.back.voice === 'v5l', JSON.stringify(swap.back));
+  chk('56 戻したことも画面で知らせる',
+    /戻しました/.test(swap.back.hint), swap.back.hint || '（知らせなし）');
+  chk('56 お客様の見積書も、もとの770円に戻っている',
+    /770円/.test(swap.line) && !/880円/.test(swap.line), swap.line);
+
+  /* ---- 57 10ギガでお買い上げの無線ルーターが、必ず引き継ぎシートに出る（2026-09-08）----
+   * これまでは申込ページのQRでしか出ていなかったので、QRの無いプロバイダ
+   * （GMOとくとくBB・andline）だとシートに1行も出ず、登録の担当者が気づけなかった */
+  const r10 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    const out = {};
+    ['@nifty', 'GMOとくとくBB', 'andline'].forEach((pv) => {
+      L.clearAll(); L.pick(0);
+      S.ieOn('hikari10g', { provider: pv, providerType: 'shinki',
+        router10g: true, router10gPrice: 20064, router10gPay: 'b48' });
+      out[pv] = S.staffText();
+    });
+    // 買っていないときは出さない
+    L.clearAll(); L.pick(0);
+    S.ieOn('hikari10g', { provider: '@nifty', router10g: false, router10gPrice: 0 });
+    out.none = S.staffText();
+    return out;
+  });
+  ['@nifty', 'GMOとくとくBB', 'andline'].forEach((pv) => {
+    chk('57 ' + pv + ' でも、10ギガのルーター購入がシートに出る',
+      /無線ルーター（10ギガ・お買い上げ）/.test(r10[pv]) && /20,064/.test(r10[pv]),
+      r10[pv].split('\n').filter((l) => /ルーター/.test(l)).join(' / ') || '（1行も出ていません）');
+  });
+  chk('57 買っていないときは、余計な行を出さない',
+    !/無線ルーター（10ギガ・お買い上げ）/.test(r10.none),
+    r10.none.split('\n').filter((l) => /ルーター/.test(l)).join(' / '));
+
+  /* ---- 58 0円のアクセサリを「分割」にしても、意味のない期間の区切りを出さない（2026-09-08）---- */
+  const acc0 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max',
+      accessories: [{ name: 'おまけケース', price: 0, pay: 'b24' }] });
+    L.pick(0);
+    const zero = S.sheetText();
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max',
+      accessories: [{ name: 'ケース', price: 4800, pay: 'b24' }] });
+    L.pick(0);
+    const paid = S.sheetText();
+    return { zero: zero, paid: paid };
+  });
+  chk('58 0円のアクセサリでは、〜24か月目／25か月目以降の区切りを出さない',
+    !/25か月目以降/.test(acc0.zero),
+    acc0.zero.split('\n').filter((l) => /か月目/.test(l)).join(' / '));
+  chk('58 0円でも、品名は見積書に残る',
+    /おまけケース/.test(acc0.zero), '（品名が消えています）');
+  chk('58 金額のあるアクセサリでは、これまでどおり区切りが出る',
+    /25か月目以降/.test(acc0.paid),
+    acc0.paid.split('\n').filter((l) => /か月目/.test(l)).join(' / '));
+
+  /* ---- 59 実績の「全期間」で、確定（自動締め）した月が二重に数えられない（2026-09-08）----
+   * 月を確定すると、その月の数字は確定データに残る。ところが「全期間」では
+   * 生の保存からも同じ月を数えていたため、確定した月ぶんが2倍になっていた。
+   * ・ほかの担当者の保存は消えないので、その人のぶんがまるごと二重
+   * ・早見表の＋−の手修正も二重
+   * ・ポイントは逆に、確定すると静かに消えていた */
+  const stats = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    // 3か月前の日付（先々月以前なので自動で確定される）
+    const d = new Date();
+    d.setMonth(d.getMonth() - 3);
+    const old3 = d.getTime();
+    const dayKey = d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2)
+      + '/' + ('0' + d.getDate()).slice(-2);
+    // 成約1件ぶんの中身（機種変更）を作る
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', visitPurposes: { buy: true } });
+    L.pick(0);
+    const data = { active: 0, patterns: [L.state(0)] };
+    T.stats.addStaff('s2', '担当2');
+    function item(id, sid) {
+      return { id: id, savedAt: old3, name: 'テスト' + id, result: 'won',
+        data: JSON.parse(JSON.stringify(data)), wonData: JSON.parse(JSON.stringify(data)) };
+    }
+    const lists = { s1: [item('a1')], s2: [item('b1')] };
+    T.stats.setLists(lists);
+    // 手修正も1件入れる
+    T.stats.setAdj('s1', dayKey, 'proc:kishu', { prop: 0, won: 1 });
+    const before = T.stats.view('all', 'all');
+    const settled = T.stats.settle();
+    // 確定しても、店舗の保存（ほかの担当ぶん）は残ったまま
+    const after = T.stats.view('all', 'all');
+    function kishu(t) {
+      const m = t.match(/機種変更[^\n]{0,40}/);
+      return m ? m[0] : '（行なし）';
+    }
+    // ポイントの案内文（確定しても静かに消えないか）
+    function pt(t) {
+      const m = t.match(/ポイントの付く成約がまだありません/);
+      return m ? 'なし' : 'あり';
+    }
+    return { before: kishu(before), after: kishu(after), settled: settled,
+      snaps: Object.keys(T.stats.snaps()), ptBefore: pt(before), ptAfter: pt(after) };
+  });
+  chk('59 確定する前後で、全期間の成約数が変わらない',
+    stats.before === stats.after,
+    '確定前: ' + stats.before + '  /  確定後: ' + stats.after);
+  chk('59 確定そのものは行われている',
+    stats.settled === true && stats.snaps.length > 0, JSON.stringify(stats.snaps));
+  /* ---- 60 確定した月がある「全期間」で、分析用CSVに入らないことを必ず知らせる（2026-09-08）---- */
+  const flat = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const withSnap = T.stats.flatNote();      // ここまでの ⑤⑨ で月が確定済み
+    return { withSnap: withSnap, snaps: Object.keys(T.stats.snaps()) };
+  });
+  chk('60 確定した月があるときは、分析用CSVに入らないことを知らせる',
+    /確定済み/.test(flat.withSnap) && /入りません/.test(flat.withSnap),
+    flat.withSnap || '（案内なし）' + JSON.stringify(flat.snaps));
+
+  /* ---- 61 実績の「印刷」の中身（2026-09-08）----
+   * ・画面だけの案内とボタンを紙に刷らない
+   * ・たたんである「日別」を開いてから刷る（見出しだけの空振りにしない） */
+  const pr = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    // 日別の表が出る状態（当月の応対がある）にしてから印刷する
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', visitPurposes: { buy: true } });
+    L.pick(0);
+    const data = { active: 0, patterns: [L.state(0)] };
+    T.stats.setLists({ s1: [{ id: 'now1', savedAt: Date.now(), name: '当月', result: 'won',
+      data: JSON.parse(JSON.stringify(data)), wonData: JSON.parse(JSON.stringify(data)) }] });
+    // 日別の表は「全期間」では出ない（当月を選ぶ）
+    const now = new Date();
+    const cur = now.getFullYear() + '/' + ('0' + (now.getMonth() + 1)).slice(-2);
+    T.stats.view(cur, 'all');
+    const r = T.stats.printText();
+    return r;
+  });
+  chk('61 印刷のとき「日別」が開いている',
+    pr.daysOpen === true, '日別 open=' + pr.daysOpen);
+  chk('61 画面だけの案内・ボタンには no-print が付いている',
+    pr.noPrint.length > 0, JSON.stringify(pr.noPrint));
+
+  chk('59 確定してもポイントの案内が変わらない',
+    stats.ptBefore === stats.ptAfter,
+    '確定前: ' + stats.ptBefore + ' / 確定後: ' + stats.ptAfter);
+
+  /* ---- 62 別の店舗の契約の控えで、いまの店舗を止めない（2026-09-08）----
+   * 上位（代理店・エリア）や保守が「停止中」の店舗を見ると、その控えが端末に残る。
+   * そのあと契約が正常な店舗を開いても「ご利用が停止されています」と出続けていた */
+  const contract = await page.evaluate(() => {
+    const S = window.__KQ_TEST__.lines;
+    return {
+      other: S.contractOther('shopA', 'shopB', 'suspended'),
+      same: S.contractOther('shopA', 'shopA', 'suspended')
+    };
+  });
+  chk('62 別の店舗の「停止中」で、いまの店舗を止めない',
+    contract.other.blocked === false,
+    '止まっています: ' + contract.other.title);
+  chk('62 その店舗自身が停止中のときは、これまでどおり止める',
+    contract.same.blocked === true && /停止/.test(contract.same.title),
+    JSON.stringify(contract.same));
+
+  /* ---- 63 店舗を切り替えて入り直すと、保存とテンプレが戻ってくる（2026-09-08）----
+   * 同期は「自分が書いたもの（この端末のID）は読み飛ばす」作り。
+   * 店舗を切り替えると端末の中は空になるのに、このIDが同じままだと
+   * 元の店舗に入り直しても保存が戻らず、そこで1件保存すると
+   * クラウドの見積もりまで置き換わって消えていた */
+  const sw = await page.evaluate(() => {
+    const L = window.__KQ_TEST__.lines;
+    const a = L.switchStore('shopA');       // はじめて（切り替えではない）
+    const b = L.switchStore('shopB');       // 店舗が変わった
+    const c = L.switchStore('shopB');       // 同じ店舗（切り替えではない）
+    const d = L.switchStore('shopA');       // 元の店舗へ戻る
+    return { a: a, b: b, c: c, d: d };
+  });
+  chk('63 店舗が変わったら、この端末のIDを新しくする',
+    sw.b.skipsOwn === false, JSON.stringify(sw.b));
+  chk('63 元の店舗へ戻るときも、新しくする',
+    sw.d.skipsOwn === false, JSON.stringify(sw.d));
+  chk('63 同じ店舗のままなら、IDは変えない（余計な受け取り直しをしない）',
+    sw.c.skipsOwn === true, JSON.stringify(sw.c));
+
+  /* ---- 64 並べ替えモードで、長押ししたものがそのまま掴める（2026-09-08）----
+   * ⑥アクセサリのタイルを長押ししたときに、タイルではなくカードごと動くと
+   * ①〜⑨の並びが振り直されてしまう。実際の長押し（pointerdown）を通して見る */
+  const grab = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    m.accessories = [{ id: 'acX', name: 'テストケース', price: 3300 }];
+    T.std.set(m);
+    return {
+      acc: L.arrGrab('#accTileList .tile'),
+      opt: L.arrGrab('#optionList .tile'),
+      fee: L.arrGrab('#feeItemList .tile'),
+      card: L.arrGrab('#tab-quote .card.c6 h2')
+    };
+  });
+  chk('64 ⑥アクセサリのタイルは、タイルとして掴める（カードごと動かない）',
+    grab.acc.found && grab.acc.kind === 'tile', JSON.stringify(grab.acc));
+  chk('64 ④オプションのタイルも、タイルとして掴める',
+    grab.opt.found && grab.opt.kind === 'tile', JSON.stringify(grab.opt));
+  chk('64 ⑦初期費用のタイルも、タイルとして掴める',
+    grab.fee.found && grab.fee.kind === 'tile', JSON.stringify(grab.fee));
+  chk('64 カードの見出しを長押しすれば、これまでどおりカードが掴める',
+    grab.card.found && grab.card.kind === 'card', JSON.stringify(grab.card));
+
   await browser.close();
   srv.close();
 

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.183.0";
+  var APP_VERSION = "1.184.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -536,6 +536,14 @@
       }).join("　");
     }
     out.innerHTML = h + '<span class="hint" style="display:block">郵便番号の上3桁での目安です。番地単位の除外があるため、最終のエリア判定はお申込み時の受付で確認されます。入力した郵便番号は保存されません。</span>';
+  }
+
+  /* 郵便番号の欄と判定結果を消す。この欄は画面だけのもので見積もりには入らないため、
+   * 入力をクリアしても消えず、次のお客様に前の方の判定が出たままになっていた（2026-09-08）。 */
+  function clearGasArea() {
+    var inp = $("gasAreaZip"), out = $("gasAreaResult");
+    if (inp) inp.value = "";
+    if (out) out.innerHTML = "";
   }
 
   /* 中身が何も入っていない回線かどうか（保存を小さくするために使う）。
@@ -2411,13 +2419,14 @@
     return a ? { prop: num(a.prop), won: num(a.won), lost: num(a.lost) } : { prop: 0, won: 0, lost: 0 };
   }
   // 表示中の期間・担当ぶんの項目補正を合計する（"all" は全部を足す）
-  function statsAdjItemSum(sid, month) {
+  function statsAdjItemSum(sid, month, skipMonths) {
     var per = MASTER.statsAdjItem || {};
     var out = {};
     Object.keys(per).forEach(function (s2) {
       if (sid !== "all" && s2 !== sid) return;
       Object.keys(per[s2] || {}).forEach(function (m) {
         if (month !== "all" && m !== month) return;
+        if (skipMonths && skipMonths[m]) return;   // 確定した月は確定データ側で数える
         var o = per[s2][m] || {};
         Object.keys(o).forEach(function (k) {
           if (!out[k]) out[k] = { prop: 0, won: 0 };
@@ -2599,7 +2608,7 @@
     return (((MASTER.statsAdjDay || {})[sid] || {})[day]) || {};
   }
   // その期間の項目補正（担当者の当日ぶん＋管理者の月ぶん）を合算する
-  function statsAdjItemTotal(sid, month) {
+  function statsAdjItemTotal(sid, month, skipMonths) {
     var out = {};
     function add(o) {
       Object.keys(o || {}).forEach(function (k) {
@@ -2615,11 +2624,12 @@
       Object.keys(perDay[s2] || {}).forEach(function (day) {
         if (month === "today") { if (day !== todayKey) return; }
         else if (month !== "all" && day.slice(0, 7) !== month) return;
+        if (skipMonths && skipMonths[day.slice(0, 7)]) return;   // 確定した月は確定データ側で数える
         add(perDay[s2][day]);
       });
     });
     // 月ぶんの手修正は「本日」には入れない（日付が分からないため）
-    if (month !== "today") add(statsAdjItemSum(sid, month));
+    if (month !== "today") add(statsAdjItemSum(sid, month, skipMonths));
     return out;
   }
 
@@ -2649,7 +2659,10 @@
   /* ---------- 実績の集計 ----------
    * 提案・応対・未記録は「応対した担当」、成約は「成約を決めた担当」で数える。
    * 画面の描画と、月次の確定（スナップショット）で同じものを使う。 */
-  function statsAggregate(lists, mFil, sFil, mineOnlyFn) {
+  /* 「全期間」のとき、確定（自動締め）した月を生の保存から数えない。
+   * 確定した月は確定データ（スナップショット）を足すので、
+   * 生の保存が残っている担当のぶん・手修正のぶんが二重になっていた（2026-09-08）。 */
+  function statsAggregate(lists, mFil, sFil, mineOnlyFn, skipMonths) {
     var items = {};      // 項目キー -> {name, prop, won, byVisit}
     var visitUsed = {};  // 使われた来店目的
     var vpAgg = {};      // 来店目的 -> {prop, won}
@@ -2668,7 +2681,10 @@
       if (!items[k]) items[k] = { name: name, prop: 0, won: 0, byVisit: {} };
       return items[k];
     }
-    function inPeriod(it) { return statsInPeriod(it.savedAt, mFil); }
+    function inPeriod(it) {
+      if (!statsInPeriod(it.savedAt, mFil)) return false;
+      return !(skipMonths && skipMonths[statsMonthOf(it.savedAt)]);
+    }
 
     Object.keys(lists).forEach(function (sid) {
       (lists[sid] || []).filter(inPeriod).forEach(function (it) {
@@ -2743,7 +2759,7 @@
 
     /* 手修正を足す（0件で表に出ていない項目も、修正が入っていれば行を出す） */
     var catalog = statsCatalog();
-    var itemAdj = statsAdjItemTotal(sFil, mFil);
+    var itemAdj = statsAdjItemTotal(sFil, mFil, skipMonths);
     Object.keys(itemAdj).forEach(function (k) {
       var b = bagItem(k, catalog[k] || k);
       b.prop = Math.max(0, b.prop + itemAdj[k].prop);
@@ -2797,6 +2813,16 @@
       Object.keys(a.byDay).forEach(function (d) {
         st.days[d] = [a.byDay[d].prop, a.byDay[d].won, a.byDay[d].dow, a.byDay[d].items || {}];
       });
+      /* 実績のポイントも確定データに残す。残さないと、月が確定した時点で
+       * ポイントが「全期間」から静かに消え、「ポイントの付く成約が
+       * まだありません」と誤って出ていた（2026-09-08）。 */
+      st.cx = {};
+      Object.keys(a.cx || {}).forEach(function (k) {
+        var c = a.cx[k];
+        if (!c.n && !c.total && !c.covered) return;
+        names["cx:" + k] = c.name;
+        st.cx[k] = [c.pt, c.n, c.total, c.covered || 0];
+      });
       if (st.prop || st.won || Object.keys(st.items).length) staff[s.id] = st;
     });
     return { at: Date.now(), names: names, staff: staff };
@@ -2804,6 +2830,16 @@
 
   // 2つの集計を足し合わせる（「全期間」で、生の保存と確定データを合わせるのに使う）
   function statsMergeAgg(a, b) {
+    if (b.cx) {
+      if (!a.cx) a.cx = {};
+      Object.keys(b.cx).forEach(function (k) {
+        var y = b.cx[k];
+        if (!a.cx[k]) a.cx[k] = { name: y.name, pt: y.pt, n: 0, total: 0, covered: 0 };
+        a.cx[k].n += y.n;
+        a.cx[k].total += y.total;
+        a.cx[k].covered += (y.covered || 0);
+      });
+    }
     Object.keys(b.items).forEach(function (k) {
       var x = b.items[k];
       if (!a.items[k]) a.items[k] = { name: x.name, prop: 0, won: 0, byVisit: {} };
@@ -2845,7 +2881,7 @@
 
   // 確定データを、画面が使う形（statsAggregate と同じ形）に戻す
   function statsFromSnapshot(snap, sFil) {
-    var items = {}, visitUsed = {}, vpAgg = {}, byDay = {}, staffAgg = {}, cross = {};
+    var items = {}, visitUsed = {}, vpAgg = {}, byDay = {}, staffAgg = {}, cross = {}, cx = {};
     config.staff.forEach(function (s) { staffAgg[s.id] = { prop: 0, won: 0, undone: 0 }; cross[s.id] = {}; });
     Object.keys(snap.staff || {}).forEach(function (sid) {
       if (sFil !== "all" && sid !== sFil) return;
@@ -2879,13 +2915,29 @@
         });
       });
     });
+    Object.keys(snap.staff || {}).forEach(function (sid) {
+      if (sFil !== "all" && sid !== sFil) return;
+      var cxs = (snap.staff[sid] || {}).cx || {};   // 1.183.0 までの確定にはポイントが無い
+      Object.keys(cxs).forEach(function (k) {
+        var v = cxs[k];
+        if (!cx[k]) cx[k] = { name: (snap.names || {})["cx:" + k] || k, pt: v[0], n: 0, total: 0, covered: 0 };
+        cx[k].n += v[1];
+        cx[k].total += v[2];
+        cx[k].covered += (v[3] || 0);
+      });
+    });
     return { items: items, visitUsed: visitUsed, vpAgg: vpAgg,
-      byDay: byDay, staffAgg: staffAgg, cross: cross };
+      byDay: byDay, staffAgg: staffAgg, cross: cross, cx: cx };
   }
 
   /* 先々月以前で、保存が残っているのに確定していない月を確定する。
    * 数字を作れなかった（読めなかった）ときは何もしない。 */
   function statsAutoSettle(lists) {
+    /* 上位（代理店・エリア）・保守が「見ているだけ」のときは、
+     * その店舗の料金マスタに確定データを書き込まない。書き込むと、
+     * 店舗の保存は消えないまま確定データだけが増え、実績が二重になる。
+     * 保存を片付ける statsPurgeSettled と同じ扱いにそろえる（2026-09-08）。 */
+    if (storeViewOnly()) return false;
     if (cloudOn() && !statsCloudOk) return false;   // 全担当ぶんを読めていない
     var snaps = MASTER.statsSnapshot || (MASTER.statsSnapshot = {});
     var limit = monthShift(statsMonthOf(Date.now()), -2);
@@ -3004,8 +3056,10 @@
     if (settled) {
       agg = statsFromSnapshot(settled, sFil);
     } else {
-      agg = statsAggregate(lists, mFil, sFil, mineOnly);
-      // 「全期間」では、確定済みの月ぶんも足す（保存を消したぶんが欠けないように）
+      /* 「全期間」では、確定済みの月は確定データを足す（保存を消したぶんが欠けないように）。
+       * 生の保存・手修正のほうからは、その月を外して二重に数えないようにする。 */
+      var skipM = (mFil === "all") ? snaps : null;
+      agg = statsAggregate(lists, mFil, sFil, mineOnly, skipM);
       if (mFil === "all") {
         Object.keys(snaps).forEach(function (m) {
           statsMergeAgg(agg, statsFromSnapshot(snaps[m], sFil));
@@ -3079,7 +3133,7 @@
     if (viewAll && !statsUnlocked && !statsCfg().openAll
         && !adminLockEnabled() && !lockEnabled() && !cloudOn()
         && activeStaffList().length > 1) {
-      h += '<div class="stats-undone"><b style="color:var(--red)">いまは全担当の実績が全員に見えています。</b>'
+      h += '<div class="stats-undone no-print"><b style="color:var(--red)">いまは全担当の実績が全員に見えています。</b>'
         + "店舗ログインもマスタ設定のパスワードも設定していないため、担当者ごとに仕切れない状態です。"
         + "担当者ごとに分けたいときは、マスタ設定で「マスタ設定のパスワード」を設定してください。"
         + "全員で見る運用のままでよいときは、マスタ設定の「実績で追う項目」で「全担当の実績を全員に公開する」にチェックを入れると、このお知らせは出なくなります。"
@@ -3089,7 +3143,7 @@
     /* ---- 結果が未記録の応対 ---- */
     var myUndone = (!settled && staffAgg[sFil]) ? staffAgg[sFil].undone : 0;
     if (sFil !== "all" && myUndone > 0) {
-      h += '<div class="stats-undone">結果が未記録の応対が <b>' + myUndone + "件</b>あります。"
+      h += '<div class="stats-undone no-print">結果が未記録の応対が <b>' + myUndone + "件</b>あります。"
         + '<button type="button" class="btn-sub" id="statsUndoneBtn">保存タブで記録する</button></div>';
     }
 
@@ -3170,9 +3224,9 @@
       cxKeys.forEach(function (k) { cxSum += cxAgg[k].total; });
       h += '<h3>' + esc(statsPeriodLabel(mFil)) + "のポイント"
         + (sFil === "all" ? "（全員）" : "（" + esc(sName) + "）") + "</h3>";
-      if (settled) {
-        h += '<p class="hint">確定済みの月は、ポイントを出せません'
-          + "（確定した時点の数字にはポイントが入っていないため）。</p>";
+      if (settled && !cxKeys.length) {
+        h += '<p class="hint">この月を確定したときのアプリには、ポイントの記録がありませんでした'
+          + "（1.184.0 より前に確定した月）。</p>";
       } else if (!cxKeys.length) {
         h += '<p class="hint">この期間は、ポイントの付く成約がまだありません。</p>';
       } else {
@@ -3459,6 +3513,49 @@
     });
     return rows;
   }
+  /* 早見表で数え違いを直した「手修正」を、分析用CSVにも行として出す。
+   * 出さないと、同じ画面から出した2つのCSVで成約の数が食い違う（2026-09-08）。
+   * 1件ずつの明細には混ぜず、来店目的を「（手修正）」として区別できるようにする。 */
+  function statsAdjFlatRows(sFil, mFil) {
+    var rows = [];
+    var catalog = statsCatalog();
+    function put(day, sid, kind, key, n) {
+      if (!n) return;
+      var dt = day ? new Date(day.replace(/\//g, "/") + " 00:00:00") : null;
+      rows.push([day || "", (dt && !isNaN(dt)) ? CSV_DOW[dt.getDay()] : "",
+        staffName(sid) || sid, "（手修正）", kind, catalog[key] || key, n]);
+    }
+    var perDay = MASTER.statsAdjDay || {};
+    var todayKey = adjTodayKey();
+    Object.keys(perDay).forEach(function (sid) {
+      if (sFil !== "all" && sid !== sFil) return;
+      Object.keys(perDay[sid] || {}).forEach(function (day) {
+        if (mFil === "today") { if (day !== todayKey) return; }
+        else if (mFil !== "all" && day.slice(0, 7) !== mFil) return;
+        var bag = perDay[sid][day] || {};
+        Object.keys(bag).forEach(function (k) {
+          put(day, sid, "提案", k, num(bag[k].prop));
+          put(day, sid, "成約", k, num(bag[k].won));
+        });
+      });
+    });
+    // 月ぶんの手修正は日付が分からないので、日付は空のまま月だけ分かるようにする
+    if (mFil !== "today") {
+      var perMon = MASTER.statsAdjItem || {};
+      Object.keys(perMon).forEach(function (sid) {
+        if (sFil !== "all" && sid !== sFil) return;
+        Object.keys(perMon[sid] || {}).forEach(function (m) {
+          if (mFil !== "all" && m !== mFil) return;
+          var bag2 = perMon[sid][m] || {};
+          Object.keys(bag2).forEach(function (k) {
+            put(m, sid, "提案", k, num(bag2[k].prop));
+            put(m, sid, "成約", k, num(bag2[k].won));
+          });
+        });
+      });
+    }
+    return rows;
+  }
   function downloadStatsFlatCsv() {
     var L = statsLast;
     if (!L) return;
@@ -3469,6 +3566,9 @@
     var rows = statsFlatRows(statsLists, mFil, sFil, function (it, sid) {
       return viewAll || sid === me || resStaffOf(it, sid) === me;
     });
+    // 早見表で直した数え違い（手修正）も行として足す。画面・2つのCSVで数を揃える
+    var adjRows = statsAdjFlatRows(sFil, mFil);
+    rows = rows.concat(adjRows);
     /* 確定済みの月は、1件ずつの明細（生の保存）を端末から消して数字だけ残している。
      * その月を選んで押すと、見出しだけのCSVが黙って落ちてきていた（2026-09-08）。
      * 何も言わずに空のファイルを渡さず、その旨を画面に出す。 */
@@ -3480,6 +3580,13 @@
         : "この期間には、書き出せる明細がありません。");
       return;
     }
+    /* 確定した月は1件ずつの明細を端末から消しているので、このCSVには入れられない。
+     * 画面と「CSVで保存」には入っているため、黙って渡すと数が食い違う（2026-09-08）。 */
+    var snapMs = Object.keys(statsSnapshots()).sort();
+    if (mFil === "all" && snapMs.length) {
+      savedNote("確定済みの " + snapMs.join("・") + " ぶんは、1件ずつの明細が残っていないため"
+        + "この「分析用CSV」には入りません。画面の数字と「CSVで保存」には入っています。");
+    }
     var lines = ["日付,曜日,担当,来店目的,種別,項目,件数"];
     rows.forEach(function (r) { lines.push(r.map(csvCell).join(",")); });
     var csv = "\uFEFF" + lines.join("\r\n");
@@ -3489,7 +3596,9 @@
     csvDownload(csv, fname);
   }
   // Blobを作ってダウンロードさせる（2つのCSVで同じ処理を使う）
+  var csvLast = {};   // 最後に落としたCSVの中身（検査用。ファイル名→本文）
   function csvDownload(csv, fname) {
+    csvLast[/分析用/.test(fname) ? "flat" : "table"] = csv;
     try {
       var blob = new Blob([csv], { type: "text/csv" });
       var url = URL.createObjectURL(blob);
@@ -5479,7 +5588,10 @@
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false, kosodate: false,
       bizMembers: false, shain: false,
-      voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
+      voice: "none", voiceChange: false,
+      /* このプランでは選べないために入れ替えた通話オプションのid。
+       * 元のプランに戻したら、選び直さなくても戻す（2026-09-08）。 */
+      voiceSwapped: "", planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
@@ -5881,6 +5993,16 @@
   function loadContractCache() {
     try { contractInfo = JSON.parse(localStorage.getItem(CONTRACT_KEY) || "null"); } catch (e) { contractInfo = null; }
   }
+  /* いま見ている店舗の契約かどうか。上位（代理店・エリア）や保守が
+   * 停止中の別店舗を見たあと、その控えが端末に残ってしまい、
+   * 契約が正常な店舗にも「ご利用が停止されています」と出続けていた（2026-09-08）。
+   * 別の店舗の控えは使わない（読めるまでは止めない）。 */
+  function contractCurrent() {
+    if (!contractInfo) return null;
+    var now = (typeof effectiveUid === "function") ? effectiveUid() : null;
+    if (now && contractInfo.uid && contractInfo.uid !== now) return null;
+    return contractInfo;
+  }
   function saveContractCache() {
     try {
       if (contractInfo) localStorage.setItem(CONTRACT_KEY, JSON.stringify(contractInfo));
@@ -5891,7 +6013,8 @@
   function fetchContract() {
     if (INTERNAL) return Promise.resolve(false);   // 社内版に契約の器は無い
     if (!cloudOn()) return Promise.resolve(false);
-    var uid = CLOUD.user.uid;
+    // 誰の契約を読んだのかを残す。上位・保守が別の店舗を見ているときは、その店舗のid
+    var uid = effectiveUid();
     return contractsDoc().get().then(function (snap) {
       if (!snap.exists) {
         contractInfo = null;
@@ -5914,13 +6037,15 @@
   /* 店舗ごとの機能スイッチ。書いていない機能は「あり」。
    * 社内版・器の無い店舗・お試し中も、書かれていない限り全部あり。 */
   function featOn(key) {
-    var f = contractInfo && contractInfo.features;
+    var c0 = contractCurrent();
+    var f = c0 && c0.features;
     return !f || f[key] !== false;
   }
   window.KQ_FEAT = featOn;   // 光・5Gタブ（ienaka.js）からも同じ判定を使う
   /* 機能スイッチの値そのもの（一覧や名前の置き換えなど、真偽以外の設定用） */
   window.KQ_FEATVAL = function (key) {
-    var f = contractInfo && contractInfo.features;
+    var c1 = contractCurrent();
+    var f = c1 && c1.features;
     return f ? f[key] : undefined;
   };
   /* スイッチが切り替わったら、出し分けのある画面を描き直す */
@@ -5929,7 +6054,7 @@
   }
   /* 使えない状態か。"" = 使える ／ "trialEnded"=お試し終了 ／ "suspended"=停止 */
   function contractBlocked() {
-    var c = contractInfo;
+    var c = contractCurrent();
     if (!c) return "";
     if (c.status === "suspended") return "suspended";
     if (c.status === "trial" && c.trialEndsAt && Date.now() > c.trialEndsAt) return "trialEnded";
@@ -5943,7 +6068,7 @@
     var bar = $("trialBar"), ov = $("contractOverlay");
     if (!bar || !ov) return;
     var blocked = contractBlocked();
-    var c = contractInfo;
+    var c = contractCurrent();
     var showBar = !!(c && c.status === "trial" && c.trialEndsAt && !blocked);
     bar.hidden = !showBar;
     if (showBar) {
@@ -6727,6 +6852,7 @@
     store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
     // 次のお客様なので、前の応対（どの保存の続きか）とは切り離す
     resetPropTracking();
+    clearGasArea();   // 郵便番号のエリア判定も、前のお客様のものを残さない
     for (var i = 0; i < PAT_MAX; i++) {
       store.patterns[i] = defaultState();
       store.patterns[i].shopName = shop;
@@ -6927,6 +7053,14 @@
     try { localStorage.setItem(STORE_UID_KEY, uid); } catch (e) {}
     if (!prev || prev === uid) return;
     CLOUD.suppress = true; // 片付けの途中の内容をクラウドへ送らない
+    /* 端末の中を空にしたので、この画面は「新しい端末」として受け取り直す。
+     * 同期は「自分が書いたものは読み飛ばす」（clientId が同じなら無視）作りで、
+     * この番号はページを開いたときに1回しか作られない。番号を新しくしないと、
+     * 元の店舗に入り直したときに、自分がさっき書いた保存・テンプレートを
+     * 読み飛ばして「保存はまだありません」のままになり、
+     * そこで1件保存するとクラウドの中身まで置き換わって消えていた（2026-09-08）。 */
+    CLOUD.clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    CLOUD_SENT = {};   // 「同じ内容だから送らない」の控えも、前の店舗のものを持ち込まない
     try {
       wipeStoreLocal();
       loadConfig();
@@ -7807,10 +7941,23 @@
     var picked = state.todoGasDiscount || {};
     return gasDiscountList().filter(function (d) { return picked[d.id]; });
   }
-  function gasDiscountRate() {
+  function gasDiscountRaw() {
     var r = 0;
     gasDiscountPicked().forEach(function (d) { r += d.rate; });
+    return r;
+  }
+  function gasDiscountRate() {
+    var r = gasDiscountRaw();
     return GAS_DISC_CAPPED[state.todoGasType] ? Math.min(r, 9) : r;
+  }
+  /* 「最大3つ・9%まで」の上限に当たっているか。
+   * 当たっているときは、並んでいる割引率の足し算と合計が合わなくなるので、
+   * 画面と引き継ぎシートの両方に同じ断り書きを出す（2026-09-08）。 */
+  function gasDiscountOver() {
+    if (!GAS_DISC_CAPPED[state.todoGasType]) return "";
+    var picks = gasDiscountPicked(), raw = gasDiscountRaw();
+    if (picks.length <= 3 && raw <= 9) return "";
+    return "最大3つ・9%までのため " + raw + "% から減額";
   }
   // 手続き内容のチェックから手続き種別を決める（複数選択時の優先順）
   var PROC_ORDER = [["mnp", "mnp"], ["shinki", "shinki"], ["kishu", "kishu"], ["plan", "plan_only"]];
@@ -7972,7 +8119,10 @@
   function voicePriceFor(plan, vo) {
     var p = vo.price;
     if (plan.voiceOverrides && plan.voiceOverrides[vo.id] != null) p = plan.voiceOverrides[vo.id];
-    if (plan.includes5min && vo.id === "v5") p = 0;
+    /* 5分通話無料が込みのプランでは、新・旧どちらの5分通話無料を選んでも0円。
+     * 旧（v5l）を見ていなかったため、はじめてスマホ・U15はじめてスマホで
+     * 「旧」を選ぶと 770円 がお客様の見積書に足されていた（2026-09-08）。 */
+    if (plan.includes5min && voiceTileKey(vo.id) === "v5") p = 0;
     return p;
   }
 
@@ -8031,7 +8181,7 @@
       dKosodateVoice = Math.min(voiceOff, voicePrice);
       voicePrice -= dKosodateVoice;
     }
-    var voiceNote = (plan.includes5min && vo.id === "v5") ? "（プランに標準込み）" : "";
+    var voiceNote = (plan.includes5min && voiceTileKey(vo.id) === "v5") ? "（プランに標準込み）" : "";
 
     // オプション・サービス（すべて月額・金額選択対応）
     var optRows = [], optTotal = 0, bonusRows = [];
@@ -8251,7 +8401,12 @@
       } else {
         var an = parseInt(a.pay.slice(1), 10);
         var am = Math.floor(ap / an);
-        accMonthlyRows.push({ name: a.name || "アクセサリ", monthly: am, months: an });
+        /* 1か月あたり0円になる（＝価格0円など）ものは、月額の行にしない。
+         * 行にすると、中身が同じ「〜24か月目 / 25か月目以降」という
+         * 意味のない期間の区切りがお客様の見積書に出てしまう（2026-09-08）。
+         * 端数はこれまでどおり初月に足すので、金額は変わらない。 */
+        if (am > 0) accMonthlyRows.push({ name: a.name || "アクセサリ", monthly: am, months: an });
+        else accOnceRows.push({ name: a.name || "アクセサリ", amount: 0 });
         accFirstExtra += ap - am * an;
       }
     });
@@ -8261,7 +8416,9 @@
       if (/^b\d+$/.test(pay)) {
         var an2 = parseInt(pay.slice(1), 10);
         var am2 = Math.floor(a.price / an2);
-        accMonthlyRows.push({ svc: "ac:" + a.id, name: a.name, monthly: am2, months: an2 });
+        // 上と同じ理由（1か月あたり0円のものは期間の区切りを作らない）
+        if (am2 > 0) accMonthlyRows.push({ svc: "ac:" + a.id, name: a.name, monthly: am2, months: an2 });
+        else accOnceRows.push({ svc: "ac:" + a.id, name: a.name, amount: 0 });
         accFirstExtra += a.price - am2 * an2;
       } else {
         accOnceRows.push({ svc: "ac:" + a.id, name: a.name, amount: a.price });
@@ -8536,10 +8693,25 @@
     var ssb = $("saveStoreTplBtn");
     if (ssb) ssb.textContent = tplStoreSaveMode ? "保存先の店舗共通ボタンをタップ（ここを押すとキャンセル）" : "現在の内容を店舗共通に保存";
   }
+  /* テンプレートに入れない項目（そのお客様だけの数字・文字）。
+   * お客様名と同じ理由で、次のお客様の見積書に前のお客様の内容が出ないようにする。
+   * 店舗共通テンプレは店内で共有されるので、メモが混ざらないようにも要る（2026-09-08）。
+   *   currentInst / currentInstMonths … 現在の分割支払金（請求内訳の読み取りから入る）
+   *   quoteMemo                        … 見積書のメモ
+   *   todoOther                        … 引き継ぎシートの特記事項
+   *   visitPurposes / kaimashi         … ご来店の目的（1商談に1つ・回線1が持つ）
+   *   shitadori                        … 下取り
+   *   usePoint / usePointAmount        … ポイントのご利用額
+   *   mnpBenefitType / mnpBenefitAmt   … MNP特典としてご案内した額
+   *   curBill                          … 請求内訳の読み取り（端末内のみ）
+   */
+  var TPL_CUST_KEYS = ["custName", "shopName", "staffName", "shopTel", "curBill",
+    "currentInst", "currentInstMonths", "quoteMemo", "todoOther",
+    "visitPurposes", "kaimashi", "shitadori",
+    "usePoint", "usePointAmount", "mnpBenefitType", "mnpBenefitAmt"];
   function tplSnapshot() {
     var snap = JSON.parse(JSON.stringify(state));
-    delete snap.custName; delete snap.shopName; delete snap.staffName; delete snap.shopTel;
-    delete snap.curBill;  // 請求内訳の読み取りは端末内のみ（テンプレにも入れない）
+    TPL_CUST_KEYS.forEach(function (k) { delete snap[k]; });
     return snap;
   }
   function tplApply(i, isStore) {
@@ -8550,10 +8722,25 @@
         : "テンプレ" + (i + 1) + "は未設定です。「現在の内容をテンプレに保存」から登録してください");
       return;
     }
-    var keep = { custName: state.custName, shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel, curBill: state.curBill || null };
+    /* 作りかけの見積もりが、1タップで確認なしに消えないようにする。
+     * 空の回線に当てはめるふだんの使い方では、これまでどおり1タップのまま
+     * （「この回線をクリア」と同じ確かめ方にそろえた・2026-09-08）。 */
+    var curPt = Object.assign(defaultState(), store.patterns[store.active] || {});
+    if ((isPatternUsed(curPt) || curPt.planId || curPt.procType)
+        && !window.confirm("回線" + ((store.active | 0) + 1) + " にはすでに入力があります。\n"
+          + "テンプレート「" + t.name + "」の内容に置き換えます。よろしいですか？\n"
+          + "（お客様名・メモ・ご来店の目的・請求の読み取りはそのまま残ります）")) return;
+    /* いま応対中のお客様の内容は、テンプレートで上書きしない。
+     * 前に保存したテンプレートには焼き付いたままのものがあるので、
+     * 保存のときだけでなく当てはめるときにも必ず取り除く（2026-09-08）。 */
+    var keep = {};
+    TPL_CUST_KEYS.forEach(function (k) { keep[k] = state[k]; });
+    keep.curBill = state.curBill || null;
     store.patterns[store.active] = Object.assign(defaultState(), JSON.parse(JSON.stringify(t.state)), keep);
     migratePattern(store.patterns[store.active]);
     state = store.patterns[store.active];
+    // 保存した当時の金額のままにならないよう、いまの料金表・端末マスタに合わせ直す
+    var refreshed = tplRefreshPrices(state);
     /* テンプレートに入っていた「受付が終わったもの」は外す（製品化レビュー 4-11）。
      * 外さないと、終わった割引が満額のままお客様の見積書に載ってしまう。
      * 外したものは必ず名前で知らせる（黙って減らさない）。
@@ -8561,11 +8748,64 @@
     var dropped = tplDropEnded(state);
     syncFormFromState();
     recalc();
+    var notes = [];
     if (dropped.length) {
-      tplMsg("このテンプレートの「" + dropped.join("」「")
+      notes.push("このテンプレートの「" + dropped.join("」「")
         + "」は、ドコモの受付が終わっているため外しました"
         + "（継続でお使いのお客様のぶんは「受付が終わったものも出す」から選べます）");
     }
+    if (refreshed.length) {
+      notes.push("テンプレートに保存されていた金額が今と違ったので、いまの金額に直しました（"
+        + refreshed.join("／") + "）");
+    }
+    if (notes.length) tplMsg(notes.join(" "));
+  }
+  /* テンプレートを当てはめたとき、保存した当時の金額のままになっているものを
+   * いまの料金表・端末マスタの金額に直す。直したものは必ず名前で知らせる。
+   * （保存した見積もりは当時の金額のままでよいが、テンプレートは
+   *   これから作る見積もりのひな型なので、古い金額を出してはいけない・2026-09-08） */
+  function tplRefreshPrices(st) {
+    var out = [];
+    var dev = devByName(st.deviceName);
+    if (dev) {
+      if (num(dev.price) !== num(st.devicePrice)) {
+        out.push("機種代金 " + yen(num(st.devicePrice)) + " → " + yen(num(dev.price)));
+        st.devicePrice = num(dev.price);
+      }
+      var k23 = devKaedoki23(dev, st.procType);
+      if (k23 !== null && num(k23) !== num(st.kaedoki23)) {
+        out.push("カエドキ23回分 " + yen(num(st.kaedoki23)) + " → " + yen(num(k23)));
+        st.kaedoki23 = num(k23);
+      }
+      var atm = (typeof dev.atamakin === "number") ? num(dev.atamakin) : null;
+      if (atm !== null && atm !== num(st.atamakin)) {
+        out.push("店頭頭金 " + yen(num(st.atamakin)) + " → " + yen(atm));
+        st.atamakin = atm;
+      }
+    }
+    if (st.procType) {
+      var jimu = autoFeeProc(st.procType) ? num(jimuFeeFor(st.procType)) : 0;
+      if (jimu !== num(st.jimuFee)) {
+        out.push("契約事務手数料 " + yen(num(st.jimuFee)) + " → " + yen(jimu));
+        st.jimuFee = jimu;
+      }
+    }
+    /* ポイ活プランの還元ポイントは料金表で決まる。古いままだと
+     * 実質のご負担額を実際より安く出してしまう。 */
+    var poi = poikatsuDefaultPt(st.planId);
+    if (poi > 0 && num(st.pointPoikatsu) !== poi) {
+      out.push("ポイ活の還元 " + num(st.pointPoikatsu) + "pt → " + poi + "pt");
+      st.pointPoikatsu = poi;
+    }
+    /* 料金表の改定で段階（データ量）が減っていたら、残っている段階に寄せる。
+     * 黙って別の段階の金額を出さない。 */
+    var pl2 = planById(st.planId);
+    if (pl2 && pl2.tiers && pl2.tiers.length && num(st.tierIdx) >= pl2.tiers.length) {
+      var to = pl2.tiers.length - 1;
+      out.push("データ量の段階「" + (pl2.tiers[to].label || "") + "」に寄せました");
+      st.tierIdx = to;
+    }
+    return out;
   }
   // 受付が終わっているオプション・初期費用・キャンペーンの選択を外し、外した名前を返す
   function tplDropEnded(st) {
@@ -8901,7 +9141,10 @@
       sel.innerHTML = plan.tiers.map(function (t, i) {
         return '<option value="' + i + '">' + esc(t.label) + "（" + yen(t.price) + "）</option>";
       }).join("");
-      if (state.tierIdx >= plan.tiers.length) state.tierIdx = 0;
+      /* 料金表の改定で段階が減ったときは、いちばん安い段階（0）ではなく
+       * 残っているいちばん上の段階に寄せる。金額の計算（calcFor）は
+       * tiers.length-1 に寄せているので、0に落とすと画面と見積書が食い違う（2026-09-08）。 */
+      if (state.tierIdx >= plan.tiers.length) state.tierIdx = plan.tiers.length - 1;
       sel.value = String(state.tierIdx);
     } else {
       f.hidden = true;
@@ -8981,8 +9224,30 @@
     /* このプランで選べないもの（hideOnPlans）は選択肢に出さない。
      * 選択中だった場合は標準版（留守電・キャッチホン無料つき）へ戻す */
     var cur = MASTER.voiceOptions.filter(function (v) { return v.id === state.voice; })[0];
+    var swapMsg = "";
     if (cur && voiceHiddenOn(plan, cur)) {
+      /* 元のプランに戻したときに戻せるよう、入れ替える前のものを覚えておく。
+       * 覚えていないと、ドコモ mini を一度選んで戻すだけで「旧」が「新」に化け、
+       * 何の知らせもないままお客様の月額が上がっていた（2026-09-08）。 */
+      state.voiceSwapped = cur.id;
       state.voice = VOICE_FALLBACK[cur.id] || "none";
+      var nv = MASTER.voiceOptions.filter(function (v) { return v.id === state.voice; })[0];
+      swapMsg = "このプランでは「" + cur.name + "」を選べないため、「"
+        + (nv ? nv.name : "通話オプションなし") + "」に変えました。";
+    } else if (state.voiceSwapped) {
+      var back = MASTER.voiceOptions.filter(function (v) { return v.id === state.voiceSwapped; })[0];
+      if (!back) {
+        state.voiceSwapped = "";
+      } else if (!voiceHiddenOn(plan, back)) {
+        /* また選べるプランに戻ってきた。入れ替えたままなら元に戻す。
+         * そのあと手で選び直していたら触らない（どちらの場合も覚えは捨てる）。
+         * まだ選べないプランのあいだは覚えたままにしておく（描き直しで消さない）。 */
+        if (state.voice === (VOICE_FALLBACK[back.id] || "none")) {
+          state.voice = back.id;
+          swapMsg = "「" + back.name + "」に戻しました。";
+        }
+        state.voiceSwapped = "";
+      }
     }
     var curKey = voiceTileKey(state.voice);
     $("voiceTiles").innerHTML = voiceTiles(plan).map(function (t) {
@@ -9011,10 +9276,12 @@
     var hint = $("voiceHint");
     if (hint) {
       var hasEra = voiceTiles(plan).some(function (t) { return t.items.length > 1; });
-      hint.textContent = hasEra
+      var base = hasEra
         ? "「新」は留守番電話・キャッチホンが無料で付きます。「旧」はそれ以前からのご契約で、留守番電話・キャッチホンは別料金です。"
         : "";
-      hint.hidden = !hasEra;
+      // 勝手に入れ替えたときは、必ずその旨を出す（黙って月額を変えない）
+      hint.textContent = swapMsg ? (swapMsg + base) : base;
+      hint.hidden = !hint.textContent;
     }
   }
   /* ドコモメールが「有料オプション」になるプラン。ここに無いプランは
@@ -9022,6 +9289,14 @@
    * 対象を増減するときは、この一覧を直すだけでよい。 */
   var MAIL_PAID_PLANS = ["mini", "ahamo", "ahamo_poikatsu", "irumo"];
   function mailPaidPlan() { return MAIL_PAID_PLANS.indexOf(currentPlan().id) >= 0; }
+  /* ドコモメール（@docomo.ne.jp）そのものが使えないプラン。
+   * ここに書いたプランでは、引き継ぎシートに「プランに標準で込み」と
+   * 印字しない（使えないのに込みと書くと、店頭でご案内を誤る・2026-09-08）。 */
+  var MAIL_NA_PLANS = ["libmo_nattoku", "libmo_gogo", "dataplus", "kids"];
+  function mailNaPlan(st) {
+    var id = (st ? (planById(st.planId) || {}) : currentPlan()).id;
+    return MAIL_NA_PLANS.indexOf(id) >= 0;
+  }
   function mailOptDef() {
     return MASTER.options.filter(function (o) {
       return o.id === "docomomail" || (o.name || "").indexOf("ドコモメール") >= 0;
@@ -10220,12 +10495,10 @@
         + (picked[d.id] ? " checked" : "") + "> " + esc(d.name) + " " + d.rate + "%</label>";
     });
     var picks = gasDiscountPicked();
-    var raw = 0;
-    picks.forEach(function (d) { raw += d.rate; });
-    var over = capped && (picks.length > 3 || raw > 9);
+    var over = gasDiscountOver();
     if (picks.length) {
       h += '<span class="sub-note">計 ' + gasDiscountRate() + "%"
-        + (over ? "（最大3つ・9%までのため " + raw + "% から減額）" : "") + "　値引きの上限は4,400円/月</span>";
+        + (over ? "（" + over + "）" : "") + "　値引きの上限は4,400円/月</span>";
     } else if (capped) {
       h += '<span class="sub-note">割引対象は最大3つ・9%まで</span>';
     }
@@ -10298,9 +10571,11 @@
         /* スカパーが絡む受付では、申込フォームのQRを出す。
          * 絡む＝スカパー工事のテレビオプション（新規のみ工事が発生）か、
          * 映像サービスでスカパー系の内訳を選んでいるとき。 */
-        var opts = ie.opts || {};
-        var skySvc = !!(opts.skyp && (opts.vsSkyBase || opts.vsSkyBasic || opts.vsSelect5 || opts.vsSelect10));
-        var skyKoji = !!(opts.tv && ie.product !== "home5g" && ie.applyType === "shinki"
+        /* いまの商材で選べないオプションは、前の商材の選択が残っていても数えない
+         * （home 5G・タイプCに変えたあともQRが残っていた・2026-09-08） */
+        var oOn = function (id) { return KQ_IENAKA.optOn(id); };
+        var skySvc = !!(oOn("skyp") && (oOn("vsSkyBase") || oOn("vsSkyBasic") || oOn("vsSelect5") || oOn("vsSelect10")));
+        var skyKoji = !!(oOn("tv") && ie.product !== "home5g" && ie.applyType === "shinki"
           && (ie.tvKoji || "sky").indexOf("sky") === 0);
         if (skySvc || skyKoji) keys.push("skyperForm");
       }
@@ -10401,7 +10676,7 @@
     var mailKbSheet = mailDefSheet
       ? (state.optionKubun[mailDefSheet.id] || (state.options[mailDefSheet.id] ? "new" : ""))
       : "";
-    h += row("ドコモメール", !mailPaidPlan()
+    if (!mailNaPlan(state)) h += row("ドコモメール", !mailPaidPlan()
       ? "プランに標準で込み"
       : mailKbSheet === "off"
         ? '<b style="color:var(--red)">廃止</b>'
@@ -10559,15 +10834,26 @@
         var gname = state.todoGasType
           ? (GAS_TYPE[state.todoGasType] ? GAS_AREA + " " + GAS_TYPE[state.todoGasType] : GAS_AREA)
           : "";
-        if (gname && state.todoGasEco && gasEcoNeeded()) {
-          gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
+        /* 区分（スタンダード／エコジョーズ）が要るメニューなのに選ばれていないときは、
+         * 黙って消さずに「未選択」と出す。単位料金が変わるため、
+         * 登録の担当者が気づけないと違う料金でお申し込みになる（2026-09-08）。 */
+        var gEcoMissing = false;
+        if (gname && gasEcoNeeded()) {
+          if (state.todoGasEco) gname += "・" + GAS_ECO_LABEL[state.todoGasEco];
+          else gEcoMissing = true;
         }
         h += row("ガス　プラン", gname ? "<b>" + esc(gname) + "</b>" : "<b>未選択</b>");
+        if (gEcoMissing) {
+          h += row("ガス　区分", '<b style="color:var(--red)">未選択</b>'
+            + "　※ スタンダードプランかエコジョーズプランかで単位料金が変わります");
+        }
         var gd2 = gasDiscountPicked();
         if (gd2.length) {
           h += row("ガス　割引オプション", "<b>" + gd2.map(function (d) {
             return esc(d.name) + " " + d.rate + "%";
-          }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%（上限4,400円/月）");
+          }).join("　／　") + "</b>　合計 " + gasDiscountRate() + "%"
+            + (gasDiscountOver() ? "（" + esc(gasDiscountOver()) + "）" : "")
+            + "（上限4,400円/月）");
         }
         var gc = energyPicked("gas");
         if (gc) {
@@ -10613,7 +10899,9 @@
       /* プロバイダは、選ばれていないときも行を出す。
        * 選ばないとルーター申込・フォローコールのQRが出ないため、
        * 出ていない理由がその場で分かるようにする（店頭の指摘・2026-08-11）。 */
-      if (KQ_IENAKA.isHikari() && !isTypec(store.ienaka)) {
+      /* ahamo光はプロバイダ一体型、タイプC・home 5G はケーブルテレビ／ドコモの設備。
+       * これらは欄そのものが出ないので、前の商材で選んだプロバイダを印字しない */
+      if (KQ_IENAKA.hasProvider()) {
         h += row("プロバイダ", store.ienaka.provider
           ? esc(store.ienaka.provider) + "（" + (store.ienaka.providerType === "keizoku" ? "継続" : "新規") + "）"
           : '<b style="color:var(--red)">未選択</b>　※ 申込ページのQRは、プロバイダを選ぶと出ます');
@@ -10631,6 +10919,10 @@
         }
         h += row("ルーターレンタル", rrText);
       }
+      /* 10ギガでお買い上げの無線ルーター。申込ページのQRが無いプロバイダ
+       * （GMOとくとくBB・andline）でも、必ず1行として出す（2026-09-08）。 */
+      var r10gT = KQ_IENAKA.router10gText();
+      if (r10gT) h += row("無線ルーター（10ギガ・お買い上げ）", "<b>" + esc(r10gT) + "</b>");
     } else if (state.todoHikari) {
       // 手続き内容で光にチェックはあるが、「光・5G」の入力がまだ無いとき
       h += row("お申し込み", '<b style="color:var(--red)">光申し込み</b>　※「光・5G」の入力はありません');
@@ -12009,7 +12301,7 @@
    * 見積もりの金額とはつながっていない（数字を書き戻すことはしない）。
    * iPadのホーム画面起動（PWA）ではブラウザの電卓が使えないため、
    * アプリの中に用意しておく。 */
-  var CALC = { cur: "0", prev: null, op: null, fresh: true };
+  var CALC = { cur: "0", prev: null, op: null, fresh: true, err: false };
   function calcFmt(n) {
     if (!isFinite(n)) return "エラー";
     // 小数は最大4桁まで（円の計算で丸めすぎないように）
@@ -12019,13 +12311,22 @@
     var p2 = s2.split(".");
     return Number(p2[0]).toLocaleString("ja-JP") + "." + p2[1];
   }
+  /* 画面に出す文字。打っている途中は打ったとおりに出す
+   * （「.」を押しても画面が変わらないと、押せたかどうか分からないため・2026-09-08）。 */
+  function calcShown() {
+    if (CALC.err) return "エラー";
+    var n = parseFloat(CALC.cur);
+    if (isNaN(n)) return "エラー";
+    var m = CALC.fresh ? null : /^(-?)(\d*)(\.\d*)?$/.exec(CALC.cur);
+    if (m) return m[1] + Number(m[2] || "0").toLocaleString("ja-JP") + (m[3] || "");
+    return calcFmt(n);
+  }
   function calcRender() {
     var o = $("calcOut"), e = $("calcExpr");
     if (!o || !e) return;
-    var n = parseFloat(CALC.cur);
-    o.textContent = isNaN(n) ? CALC.cur : calcFmt(n);
+    o.textContent = calcShown();
     var sign = { "+": "＋", "-": "−", "*": "×", "/": "÷" };
-    e.textContent = CALC.op ? calcFmt(CALC.prev) + " " + sign[CALC.op] : "";
+    e.textContent = (CALC.op && !CALC.err) ? calcFmt(CALC.prev) + " " + sign[CALC.op] : "";
   }
   function calcApply() {
     var a = num(CALC.prev), b = parseFloat(CALC.cur);
@@ -12037,7 +12338,13 @@
     else if (CALC.op === "/") r = b === 0 ? NaN : a / b;
     return r;
   }
+  // 0で割ったときなど、答えが出せなかったときは「エラー」を出していったん白紙に戻す
+  function calcSetErr() {
+    CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.fresh = true; CALC.err = true;
+  }
   function calcKey(k) {
+    // エラーのあとは、どのキーを押しても白紙から始める
+    if (CALC.err) { CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.fresh = true; CALC.err = false; }
     if (/^[0-9]$/.test(k)) {
       CALC.cur = (CALC.fresh || CALC.cur === "0") ? k : CALC.cur + k;
       CALC.fresh = false;
@@ -12050,16 +12357,30 @@
       if (!CALC.fresh && CALC.cur.length > 1) CALC.cur = CALC.cur.slice(0, -1);
       else { CALC.cur = "0"; CALC.fresh = true; }
     } else if (k === "pct") {
-      CALC.cur = String(parseFloat(CALC.cur) / 100);
+      /* 「1000 − 10 ％」は、1000 の 10%（＝100円）を引いて 900円。
+       * 足す・引くのときは「引く前の金額に対する割合」、
+       * 掛ける・割るとひとりで押したときは、そのまま100分の1にする
+       * （店頭の電卓と同じ動き・2026-09-08）。 */
+      var pb = parseFloat(CALC.cur);
+      if (isNaN(pb)) pb = 0;
+      CALC.cur = String((CALC.op === "+" || CALC.op === "-")
+        ? num(CALC.prev) * pb / 100
+        : pb / 100);
       CALC.fresh = true;
     } else if (k === "+" || k === "-" || k === "*" || k === "/") {
-      if (CALC.op !== null && !CALC.fresh) CALC.cur = String(calcApply());
+      if (CALC.op !== null && !CALC.fresh) {
+        var r1 = calcApply();
+        if (!isFinite(r1)) { calcSetErr(); calcRender(); return; }
+        CALC.cur = String(r1);
+      }
       CALC.prev = parseFloat(CALC.cur);
       CALC.op = k;
       CALC.fresh = true;
     } else if (k === "=") {
       if (CALC.op !== null) {
-        CALC.cur = String(calcApply());
+        var r2 = calcApply();
+        if (!isFinite(r2)) { calcSetErr(); calcRender(); return; }
+        CALC.cur = String(r2);
         CALC.prev = null; CALC.op = null; CALC.fresh = true;
       }
     }
@@ -12067,6 +12388,7 @@
   }
   // 表示中の数字に掛ける・割る（税込・税抜の計算）
   function calcTimes(v) {
+    if (CALC.err) { CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.err = false; }
     var n = parseFloat(CALC.cur);
     if (isNaN(n)) return;
     CALC.cur = String(Math.round(n * v * 10000) / 10000);
@@ -12672,62 +12994,139 @@
     return String(v).replace(/[，,円\s]/g, "")
       .replace(/[０-９]/g, function (z) { return String.fromCharCode(z.charCodeAt(0) - 0xFEE0); });
   }
+  /* 見出しらしい言葉（この語が1つでも入っていれば見出し行の候補） */
+  var DEV_HEAD_WORD = /(機種|端末|商品|品名|名称|本体|価格|代金|金額|頭金|残価|カエドキ|23|回払|回分|月額|型番|容量|在庫|カラー)/;
+  /* 1行分の欄が「見出し」かどうか。
+   * 数字が入っているかどうかでは見分けない（「本体価格（10%税込）」「48回払い月額」でも見出し）。
+   * 機種名より右に“数字だけの欄”が1つも無く、見出しらしい言葉があるときだけ見出しとみなす。
+   * 「iPhone 17 128GB,145200,3300」のような行は 145200 が数字だけなので必ずデータ行になる。 */
+  function devIsHeadRow(cols) {
+    for (var j = 1; j < cols.length; j++) {
+      if (/^\d+$/.test(devDigits(cols[j] || ""))) return false;
+    }
+    return cols.some(function (c) { return DEV_HEAD_WORD.test(String(c || "")); });
+  }
+  /* j列目から金額を読む。「145,200」が引用符なしで列に割れている場合はつなぎ直す。
+   * 読めたら {value, next} を、読めなければ null を返す。 */
+  function devNumAt(cols, j, joinOk) {
+    var v = devDigits(cols[j] || "");
+    if (!/^\d+$/.test(v)) return null;
+    /* 桁区切りのカンマで割れているときは、続く3桁の欄を最後までつなぐ。
+     * 「145」「200」→ 145200。途中で止めると、在庫数と金額の頭をつないだ
+     * 12,145円 のような“ありそうに見える”間違った金額を作ってしまう。 */
+    if (joinOk && /^\d{1,3}$/.test(v)) {
+      while (j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
+        v += devDigits(cols[j + 1]);
+        j++;
+      }
+    }
+    return { value: parseInt(v, 10), next: j };
+  }
+  /* 端末の本体価格として、ありえる上限。これを超える金額になったときは
+   * 読み方を間違えている（在庫数などを金額の頭につないでしまった）とみなす。 */
+  var DEV_PRICE_MAX = 1000000;
+  // j列目が「桁区切りで割れた金額の頭」に見えるか（1〜3桁のあとに3桁が続く）
+  function devSplitLooks(cols, j) {
+    return /^\d{1,3}$/.test(devDigits(cols[j] || ""))
+      && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1] || ""));
+  }
+  /* 機種名の右が、まるごと1つの金額（桁区切りで割れたもの）に見えるか。
+   * 「iPhone 17 128GB,145,200」→ true（145,200円）
+   * 「iPhone 17 128GB,12,145,200」→ false（在庫の12が余る）
+   * これが言えるときだけ、見出しの無い一覧でつなぎ直す（2026-09-08）。 */
+  function devTailIsOneNumber(cols) {
+    if (cols.length < 3) return false;
+    if (!/^\d{1,3}$/.test(devDigits(cols[1] || ""))) return false;
+    for (var j = 2; j < cols.length; j++) {
+      if (!/^\d{3}$/.test(devDigits(cols[j] || ""))) return false;
+    }
+    return true;
+  }
   function parseDeviceText(text) {
-    var out = [], skipped = 0;
+    var out = [], skipped = 0, ambiguous = 0;
     var head = null;   // 見出しがあれば {price, atamakin, kaedoki23} の列番号
-    String(text || "").split(/\r\n|\r|\n/).forEach(function (line, i) {
+    // まず全部の行を欄に分ける（列の数を数えてから読むため）
+    var rows = [];
+    String(text || "").split(/\r\n|\r|\n/).forEach(function (line) {
       if (!line.trim()) return;
       var cols = (line.indexOf("\t") >= 0 ? line.split("\t") : splitCsvLine(line))
         .map(function (c) { return String(c).replace(/^"|"$/g, "").trim(); });
       if (cols.length < 2) { skipped++; return; }
-      // 見出し行は読み飛ばす（どの列が何かはここで覚える）
-      if (i === 0 && !/\d/.test(cols.join("").replace(/23/g, ""))) {
-        head = {};
-        cols.forEach(function (c, j) {
-          if (j === 0) return;
-          var k23col = /(23|カエドキ|残価)/.test(c);
-          if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
-          // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
-          else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
-          else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
-          else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
-          else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
-        });
-        return;
-      }
+      rows.push(cols);
+    });
+    // 見出し行は読み飛ばす（どの列が何かはここで覚える）。先頭に空行やタイトル行があってもよい
+    if (rows.length && devIsHeadRow(rows[0])) {
+      head = {};
+      rows.shift().forEach(function (c, j) {
+        if (j === 0) return;
+        var k23col = /(23|カエドキ|残価)/.test(c);
+        if (head.atamakin === undefined && /頭金/.test(c)) head.atamakin = j;
+        // 「MNP残価」「新規23回分」のように手続きが書いてある列は、その手続きの金額として読む
+        else if (head.kaedoki23Mnp === undefined && k23col && /(MNP|ＭＮＰ|のりかえ|乗り換え|乗換)/i.test(c)) head.kaedoki23Mnp = j;
+        else if (head.kaedoki23Shinki === undefined && k23col && /新規/.test(c)) head.kaedoki23Shinki = j;
+        else if (head.kaedoki23 === undefined && k23col) head.kaedoki23 = j;
+        else if (head.price === undefined && /(本体|価格|代金|機種代|金額)/.test(c)) head.price = j;
+        head.cols = j + 1;
+      });
+    }
+    /* 「145,200」が引用符なしで列に割れているかどうかは、
+     * その行の欄の数が“ふつうの行”より多いかどうかで見分ける。
+     * 見出しがあれば見出しの欄の数、無ければいちばん多い欄の数を「ふつう」とする。
+     * これをしないと、在庫数の列（例: 12）と金額の頭（145）をつないで
+     * 12,145円 という、どこにも存在しない金額を作ってしまう（2026-09-08）。 */
+    var baseCols = head ? head.cols : 0;
+
+    rows.forEach(function (cols) {
+      /* 見出しがあるときは、欄の数が見出しより多い行だけつなぎ直す。
+       * 見出しが無いときは、機種名の右がまるごと1つの金額に見える行
+       * （つなぎ直すと最後の欄まで使い切る）だけつなぐ。
+       * 「iPhone 17 128GB,145,200」は 145,200円 として読めるが、
+       * 「iPhone 17 128GB,12,145,200」は在庫12が余るので読まない。 */
+      var joinOk = head ? (cols.length > baseCols) : devTailIsOneNumber(cols);
       var name = cols[0];
-      var price = 0, found = false;
-      if (head && head.price !== undefined && /^\d+$/.test(devDigits(cols[head.price] || ""))) {
-        price = parseInt(devDigits(cols[head.price]), 10);
-        found = true;
+      var price = 0, found = false, amb = false;
+      if (head && head.price !== undefined) {
+        /* 見出しで本体価格の列が分かっているときは、その列だけを見る。
+         * 空欄や「－」のときは、隣の頭金・23回分を本体価格と取り違えないよう、その行を飛ばす。 */
+        var hit = devNumAt(cols, head.price, joinOk);
+        if (hit) { price = hit.value; found = true; }
       } else {
+        // 見出しで場所が分かっている列（頭金・23回分）は本体価格として拾わない
+        var used = {};
+        if (head) {
+          ["atamakin", "kaedoki23", "kaedoki23Mnp", "kaedoki23Shinki"].forEach(function (k) {
+            if (head[k] !== undefined) used[head[k]] = true;
+          });
+        }
         for (var j = 1; j < cols.length; j++) {
-          var v = devDigits(cols[j]);
-          if (!/^\d+$/.test(v)) continue;
-          /* 「145,200」のように、桁区切りのカンマで列が割れている場合をつなぎ直す。
-           * 先頭が1〜3桁で、続く列がちょうど3桁の数字なら同じ金額とみなす。 */
-          while (/^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
-            v += devDigits(cols[j + 1]);
-            j++;
-          }
-          price = parseInt(v, 10);
+          if (used[j]) continue;
+          var hit2 = devNumAt(cols, j, joinOk);
+          if (!hit2) continue;
+          /* つなぎ直せば金額になりそうなのに、割れているとは言い切れない行。
+           * どちらの金額か決められないので、勝手に決めずに飛ばして知らせる。 */
+          if (!joinOk && devSplitLooks(cols, j)) { amb = true; break; }
+          /* つないだ結果が端末の値段としてありえない額になったときも、
+           * 在庫数などを金額の頭につないでしまっている。決めずに飛ばす。 */
+          if (hit2.next > j && hit2.value > DEV_PRICE_MAX) { amb = true; break; }
+          price = hit2.value;
           found = true;
           break;
         }
       }
+      if (amb) { skipped++; ambiguous++; return; }
       if (!name || !found) { skipped++; return; }
       if (name.length > 60) name = name.slice(0, 60);
       var rec = { name: name, price: price };
       if (head) {
         ["atamakin", "kaedoki23", "kaedoki23Mnp", "kaedoki23Shinki"].forEach(function (k) {
           if (head[k] === undefined) return;
-          var v2 = devDigits(cols[head[k]] || "");
-          if (/^\d+$/.test(v2)) rec[k] = parseInt(v2, 10);
+          var hit3 = devNumAt(cols, head[k], joinOk);
+          if (hit3) rec[k] = hit3.value;
         });
       }
       out.push(rec);
     });
-    return { list: out, skipped: skipped };
+    return { list: out, skipped: skipped, ambiguous: ambiguous, head: head };
   }
   // 「a,"b,c",d」のような引用符付きCSVを1行分に分ける
   function splitCsvLine(line) {
@@ -12837,6 +13236,17 @@
     list.forEach(function (d, i) { if (hit < 0 && d.name === state.deviceName) hit = i; });
     sel.value = hit >= 0 ? String(hit) : "";
   }
+  /* 取り込んだとき、頭金・23回分の列を読めたかどうかをはっきり知らせる。
+   * 黙って捨てると、見積書の「店頭お支払い金額」が0円になっても気づけない。 */
+  function devHeadNote(head) {
+    if (!head) return "（1行目を見出しとして読めませんでした。頭金・カエドキ23回分の列は取り込んでいません）";
+    var got = [];
+    if (head.atamakin !== undefined) got.push("店頭頭金");
+    if (head.kaedoki23 !== undefined || head.kaedoki23Mnp !== undefined || head.kaedoki23Shinki !== undefined) got.push("カエドキ23回分");
+    return got.length
+      ? "（" + got.join("・") + "の列も読み取りました）"
+      : "（頭金・カエドキ23回分の列は見出しに見つかりませんでした）";
+  }
   function initDeviceMaster() {
     var file = $("devMasterFile"), pasteBtn = $("devMasterPasteBtn"), wrap = $("devMasterPasteWrap"),
         box = $("devMasterBox"), go = $("devMasterGo"), cancel = $("devMasterCancel"),
@@ -12863,6 +13273,12 @@
       renderDeviceMaster();
       say(r.list.length + "件を取り込みました。"
         + (r.skipped ? "（読み取れなかった " + r.skipped + "行は飛ばしました）" : "")
+        + (r.ambiguous
+            ? "そのうち " + r.ambiguous + "行は、金額が桁区切りのカンマで列に割れているのか"
+              + "在庫数などの別の数字なのか決められませんでした。"
+              + "1行目に見出し（機種名,本体価格,…）を付けるか、"
+              + '金額を "145,200" のように引用符で囲んでもう一度お試しください。'
+            : "")
         + "見積もりの機種名がプルダウンになります。");
       if (wrap) { wrap.hidden = true; box.value = ""; }
     }
@@ -12970,8 +13386,12 @@
         /* 頭金・23回分の総額は、その機種の条件として入れ直す。
          * 端末マスタが空のときは既定に戻す（前に選んだ機種の頭金が
          * そのまま残ると、別の機種の金額として出てしまうため）。 */
+        /* 頭金の初期値を入れるのは新規契約・機種変更だけ（autoAtamaProc）。
+         * MNPはSIMのみ・頭金なしのご案内が多いので基本なし（2026-07-30 安藤さん）。
+         * ここだけ事務手数料の判定（autoFeeProc・MNPを含む）を使っていたため、
+         * MNPで機種を選ぶと店頭でお支払いいただく額が勝手に増えていた（2026-09-08）。 */
         state.atamakin = (typeof d.atamakin === "number") ? num(d.atamakin)
-          : (autoFeeProc(state.procType) ? num(MASTER.fees.atamakin_default) : 0);
+          : (autoAtamaProc(state.procType) ? num(MASTER.fees.atamakin_default) : 0);
         $("atamakin").value = state.atamakin || "";
         var k23 = devKaedoki23(d, state.procType);
         state.kaedoki23 = (k23 === null) ? 0 : k23;
@@ -13289,6 +13709,9 @@
       }
     }, true);
   });
+  /* 長押しで何がつかまれたか（検査用）。並べ替えモードのときだけ書き込まれる */
+  var ARR_LAST = { kind: "", cls: "" };
+  function ARR_TEST_LAST() { return { kind: ARR_LAST.kind, cls: ARR_LAST.cls }; }
   function arrCancelHold() { if (ARR.timer) { clearTimeout(ARR.timer); ARR.timer = null; } }
   function arrBegin(kind, el, x, y) {
     var r = el.getBoundingClientRect();
@@ -13438,6 +13861,7 @@
       if (cat) { kind = "cat"; el = cat; }
       else if (tile && (tile.hasAttribute("data-opt") || tile.hasAttribute("data-acc") || tile.hasAttribute("data-fee"))) { kind = "tile"; el = tile; }
       else if (card && /\bc[1-9]\b/.test(card.className)) { kind = "card"; el = card; }
+      ARR_LAST = { kind: kind, cls: el ? (el.className || "") : "" };   // 検査用
       if (!el) return;
       arrCancelHold();
       var x = e.clientX, y = e.clientY;
@@ -14321,6 +14745,7 @@
       var key = e.target.getAttribute && e.target.getAttribute("data-voice-era");
       if (!key) return;
       state.voice = e.target.value;
+      state.voiceSwapped = "";
       renderVoiceSelect();
       recalc();
     });
@@ -14328,6 +14753,7 @@
       var key = t.getAttribute("data-voice");
       if (voiceTileKey(state.voice) === key) return; // 同じタイルの押し直しでは新旧を変えない
       var sel = t.querySelector("select[data-voice-era]");
+      state.voiceSwapped = "";
       if (sel) {
         state.voice = sel.value;
       } else {
@@ -14766,14 +15192,33 @@
       });
       $("statsCsv").addEventListener("click", downloadStatsCsv);
       $("statsCsvFlat").addEventListener("click", downloadStatsFlatCsv);
+      /* たたんである「日別」は、閉じたままだと見出しだけが刷られて中身の表が出ない。
+       * 印刷の前に開き、終わったら元の状態に戻す（2026-09-08）。 */
+      var daysWasOpen = null;
+      function openDaysForPrint() {
+        var d = document.querySelector("#statsBody .stats-days");
+        if (!d) return;
+        daysWasOpen = d.open;
+        d.open = true;
+      }
+      function restoreDays() {
+        var d = document.querySelector("#statsBody .stats-days");
+        if (d && daysWasOpen !== null) d.open = daysWasOpen;
+        daysWasOpen = null;
+      }
       $("statsPrint").addEventListener("click", function () {
         document.body.classList.add("print-stats");
+        openDaysForPrint();
         window.print();
-        setTimeout(function () { document.body.classList.remove("print-stats"); }, 800);
+        setTimeout(function () {
+          document.body.classList.remove("print-stats");
+          restoreDays();
+        }, 800);
       });
       window.addEventListener("afterprint", function () {
         document.body.classList.remove("print-stats");
         document.body.classList.remove("print-morning");
+        restoreDays();
       });
       // 朝礼サマリ: 目標と進捗・担当別だけをA4に出す（管理者）
       $("statsMorning").addEventListener("click", function () {
@@ -15135,6 +15580,7 @@
        * 継続のお客様のために開いたまま次の接客に入ると、
        * 受付が終わったものを新規のお客様にご案内してしまう。 */
       showEnded = false;
+      clearGasArea();   // 郵便番号のエリア判定も、前のお客様のものを残さない
       var keep = { shopName: state.shopName, staffName: state.staffName, shopTel: state.shopTel };
       store.gen = (store.gen | 0) + 1;  // お客様の区切り（前のお客様の読み取りを他端末で付け直さない）
       store.patterns = newPatterns();
@@ -15147,7 +15593,7 @@
       state.staffName = keep.staffName;
       state.shopTel = keep.shopTel;
       state.jimuFee = autoFeeProc(state.procType) ? jimuFeeFor(state.procType) : 0;
-      state.atamakin = autoFeeProc(state.procType) ? MASTER.fees.atamakin_default : 0;
+      state.atamakin = autoAtamaProc(state.procType) ? MASTER.fees.atamakin_default : 0;
       renderPatternTabs();
       syncFormFromState();
       recalc();
@@ -15173,6 +15619,7 @@
       state.shopName = keep.shopName;
       state.staffName = keep.staffName;
       state.shopTel = keep.shopTel;
+      clearGasArea();   // 郵便番号のエリア判定も、この回線の入力と一緒に消す
       renderPatternTabs();
       syncFormFromState();
       recalc();
@@ -15422,6 +15869,11 @@
         renderMailOpt(); recalc();
       },
       tplSave: function (i) { templates[i] = { name: "検査用", state: tplSnapshot() }; persistTemplates(); },
+      // テンプレートに保存された中身（お客様だけの数字・文字が入っていないかを見る）
+      tplStored: function (i) { return templates[i] ? JSON.parse(JSON.stringify(templates[i].state)) : null; },
+      tplApply: function (i) { tplMsg(""); tplApply(i, false); },
+      // テンプレートを当てはめたときに出る知らせの文
+      tplNote: function () { var e = $("tplMsg"); return e ? (e.textContent || "").trim() : ""; },
       /* 保存まわりの検査（製品化レビュー 5-3） */
       saved: {
         // 名前を付けずに保存したときの初期値
@@ -15635,10 +16087,11 @@
             .filter(function (t) { return /[①-⑨]/.test(t); });
         },
         // 光・5Gを「見積もりに含める」状態にする（3枚組の紙を作れるようにする）
-        ieOn: function (product) {
+        ieOn: function (product, patch) {
           if (typeof KQ_IENAKA === "undefined") return false;
           store.ienaka.enabled = true;
           store.ienaka.product = product || "hikari1g";
+          Object.keys(patch || {}).forEach(function (k) { store.ienaka[k] = patch[k]; });
           KQ_IENAKA.syncForm(); KQ_IENAKA.render();
           recalc();
           return ienakaOn();
@@ -15657,6 +16110,22 @@
         sheetText: function () {
           renderSheet();
           var e = $("tab-sheet");
+          return e ? e.innerText : "";
+        },
+        /* 料金プランを画面のプルダウンで選び直す（お客様の前でする操作と同じ）。
+         * 通話オプションの入れ替え・戻しを見るために使う。 */
+        pickPlan: function (group, planId) {
+          var g = $("planGroup");
+          if (g && group) { g.value = group; g.dispatchEvent(new Event("change")); }
+          var sel = $("planId");
+          if (sel) { sel.value = planId; sel.dispatchEvent(new Event("change")); }
+          var hint = $("voiceHint");
+          return { voice: state.voice, hint: hint && !hint.hidden ? (hint.textContent || "") : "" };
+        },
+        // 引き継ぎシートの本文（担当者の目に映る文字）
+        staffText: function () {
+          renderStaffSheet();
+          var e = $("staffSheetBody");
           return e ? e.innerText : "";
         },
         // 「◯◯ は □□ の対象外です」の1行
@@ -15699,6 +16168,102 @@
         },
         load: function (id) { return loadSavedQuote(id); }
       },
+      /* 実績（成約の集計）の検査用（2026-09-08）。画面に出る文字をそのまま読む */
+      stats: {
+        // 保存の一覧を差し替えて、実績の画面を作り直す
+        setLists: function (lists) {
+          statsLists = JSON.parse(JSON.stringify(lists));
+          renderStats(false);
+          var e = $("statsBody");
+          return e ? e.innerText : "";
+        },
+        // 期間・担当を選び直して、画面に出る文字を読む
+        view: function (month, staff) {
+          var m = $("statsMonth"), st = $("statsStaff");
+          if (m) m.value = month;
+          if (st && staff) st.value = staff;
+          renderStats(false);
+          var e = $("statsBody");
+          return e ? e.innerText : "";
+        },
+        // 検査用に担当者を登録する（実績は登録された担当のぶんだけ集計するため）
+        addStaff: function (id, name) {
+          if (!config.staff.some(function (s2) { return s2.id === id; })) {
+            config.staff.push({ id: id, name: name || id, code: "" });
+            saveConfig();
+          }
+          return config.staff.map(function (s2) { return s2.id; });
+        },
+        // 月を確定（自動締め）する
+        settle: function () { return statsAutoSettle(statsLists); },
+        snaps: function () { return JSON.parse(JSON.stringify(statsSnapshots())); },
+        // 「分析用CSV」を押したときに画面に出る案内
+        flatNote: function () {
+          var e = $("savedMsg");
+          if (e) e.textContent = "";
+          var b = $("statsCsvFlat");
+          if (b) b.click();
+          return e ? (e.textContent || "").trim() : "";
+        },
+        // 「印刷」を押したときに紙へ出る文字（画面だけのものが混ざっていないか）
+        printText: function () {
+          var b = $("statsPrint");
+          var real = window.print; window.print = function () {};
+          try { if (b) b.click(); } finally { window.print = real; }
+          var d = document.querySelector("#statsBody .stats-days");
+          var body = $("statsBody");
+          var noPrint = Array.prototype.map.call(
+            document.querySelectorAll("#statsBody .no-print"),
+            function (x) { return (x.textContent || "").slice(0, 30); });
+          var out = { daysOpen: d ? !!d.open : null, noPrint: noPrint,
+            text: body ? body.innerText : "" };
+          document.body.classList.remove("print-stats");
+          window.dispatchEvent(new Event("afterprint"));
+          return out;
+        },
+        // 早見表の数え違いの直し（＋−）を入れる
+        setAdj: function (sid, day, key, bag) {
+          var m = MASTER;
+          if (!m.statsAdjDay) m.statsAdjDay = {};
+          if (!m.statsAdjDay[sid]) m.statsAdjDay[sid] = {};
+          if (!m.statsAdjDay[sid][day]) m.statsAdjDay[sid][day] = {};
+          m.statsAdjDay[sid][day][key] = bag;
+          saveMaster();
+        }
+      },
+      /* 電卓の検査用（2026-09-08）。お客様・担当者の目に映る文字を返す */
+      calc: {
+        press: function (keys) {
+          calcKey("clear");
+          String(keys).split(" ").filter(Boolean).forEach(function (k) { calcKey(k); });
+          var o = $("calcOut"), e = $("calcExpr");
+          return { out: o ? (o.textContent || "") : "", expr: e ? (e.textContent || "") : "" };
+        }
+      },
+      /* 実績のCSVの検査用（2026-09-08）。落とす直前の文字をそのまま返す */
+      csv: {
+        flatAdj: function (sFil, mFil) { return statsAdjFlatRows(sFil, mFil); },
+        // 実際に落ちるCSVの中身（店舗責任者が開く文字そのもの）
+        download: function () {
+          csvLast = {};
+          var a = $("statsCsv"), b = $("statsCsvFlat");
+          if (a) a.click();
+          if (b) b.click();
+          return { table: csvLast.table || "", flat: csvLast.flat || "" };
+        }
+      },
+      /* 端末マスタ（機種の一覧）の取り込みの検査用（2026-09-08） */
+      devmaster: {
+        parse: function (text) { return parseDeviceText(text); },
+        note: function (head) { return devHeadNote(head); },
+        // 実際に取り込んで、機種を選んだときに入力欄へ入る金額を見る
+        apply: function (text) {
+          var r = parseDeviceText(text);
+          MASTER.devices = r.list;
+          saveMaster();
+          return r;
+        }
+      },
       /* 回線（見積もりの本数）と、成約のときに数える回線の検査用（2026-09-05） */
       lines: {
         max: function () { return PAT_MAX; },
@@ -15714,6 +16279,8 @@
           saveState();
         },
         pick: function (i) { switchPattern(i); },
+        // i番目の回線の中身を読む
+        state: function (i) { return JSON.parse(JSON.stringify(store.patterns[i])); },
         // 画面のボタンを実際に押す（「この回線をクリア」「全回線をクリア」）
         clearOne: function (top) { var b = $(top ? "clearPatternTop" : "clearPattern"); if (b) b.click(); },
         clearAll: function (top) { var b = $(top ? "clearQuoteTop" : "clearQuote"); if (b) b.click(); },
@@ -15920,6 +16487,31 @@
           applyFeaturesUi();
           return { typec: !!window.KQ_FEAT("typec") };
         },
+        /* 店舗を切り替えて入り直したとき、クラウドから受け取り直せるか。
+         * 同期は「自分が書いたもの（clientId が同じ）は読み飛ばす」作りなので、
+         * 端末の中を空にしたあとは、この番号を新しくしないと戻ってこない。 */
+        switchStore: function (uid) {
+          var before = CLOUD.clientId;
+          switchStoreIfNeeded(uid);
+          return { before: before, after: CLOUD.clientId,
+            // 「自分が書いたもの」として読み飛ばされないか
+            skipsOwn: before === CLOUD.clientId };
+        },
+        /* 別の店舗の契約の控えが端末に残っているときに、いまの店舗を
+         * 止めてしまわないか（上位・保守が停止中の店舗を見たあと）。 */
+        contractOther: function (cacheUid, nowUid, status) {
+          var realUser = CLOUD.user, realAct = CLOUD.actAsUid;
+          contractInfo = { uid: cacheUid, status: status || "suspended", trialEndsAt: 0, fetchedAt: 1 };
+          CLOUD.user = { uid: nowUid };
+          CLOUD.actAsUid = null;
+          renderContract();
+          var ov = $("contractOverlay"), t = $("contractTitle");
+          var out = { blocked: !!(ov && !ov.hidden), title: t ? (t.textContent || "") : "" };
+          contractInfo = null;
+          CLOUD.user = realUser; CLOUD.actAsUid = realAct;
+          renderContract();
+          return out;
+        },
         // ④オプションの「その他」に出ているタイルの文字（実績の印を含む）
         otherTiles: function () {
           renderOptionList();
@@ -15929,6 +16521,21 @@
           var grid = el.nextElementSibling;
           return grid ? Array.prototype.map.call(grid.querySelectorAll(".tile .t-name"),
             function (e) { return (e.textContent || "").trim(); }) : [];
+        },
+        /* 並べ替えモードで、実際にその場所を長押ししたとき何がつかまれるか。
+         * 画面の pointerdown をそのまま通して、つかまれた要素を返す。 */
+        arrGrab: function (sel) {
+          enterArrange();
+          renderAccessoryTiles(); renderOptionList(); renderFeeItemList();
+          var t = document.querySelector(sel);
+          if (!t) { exitArrange(); return { found: false }; }
+          var r = t.getBoundingClientRect();
+          var ev = new PointerEvent("pointerdown", { bubbles: true, cancelable: true,
+            pointerType: "touch", clientX: r.left + 5, clientY: r.top + 5, button: 0 });
+          t.dispatchEvent(ev);
+          var got = ARR_TEST_LAST();
+          exitArrange();
+          return { found: true, kind: got.kind, cls: got.cls };
         },
         // ⑥アクセサリのタイルが「並べ替え」で掴めるか（実際の判定を通す）
         accDraggable: function () {
@@ -16216,7 +16823,8 @@
   loadState();
   if (!state.jimuFee && autoFeeProc(state.procType) && !localStorage.getItem(quoteKey())) {
     state.jimuFee = jimuFeeFor(state.procType);
-    state.atamakin = MASTER.fees.atamakin_default;
+    // 頭金の初期値は新規契約・機種変更だけ（MNPは基本なし・2026-07-30 安藤さん）
+    if (autoAtamaProc(state.procType)) state.atamakin = MASTER.fees.atamakin_default;
   }
   /* 成約・見送りは「⋯」を押したときだけ出す。
    * お客様に画面を見せながら操作するため、常時「成約」「見送り」の文字が
