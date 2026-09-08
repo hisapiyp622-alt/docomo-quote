@@ -3459,6 +3459,49 @@
     });
     return rows;
   }
+  /* 早見表で数え違いを直した「手修正」を、分析用CSVにも行として出す。
+   * 出さないと、同じ画面から出した2つのCSVで成約の数が食い違う（2026-09-08）。
+   * 1件ずつの明細には混ぜず、来店目的を「（手修正）」として区別できるようにする。 */
+  function statsAdjFlatRows(sFil, mFil) {
+    var rows = [];
+    var catalog = statsCatalog();
+    function put(day, sid, kind, key, n) {
+      if (!n) return;
+      var dt = day ? new Date(day.replace(/\//g, "/") + " 00:00:00") : null;
+      rows.push([day || "", (dt && !isNaN(dt)) ? CSV_DOW[dt.getDay()] : "",
+        staffName(sid) || sid, "（手修正）", kind, catalog[key] || key, n]);
+    }
+    var perDay = MASTER.statsAdjDay || {};
+    var todayKey = adjTodayKey();
+    Object.keys(perDay).forEach(function (sid) {
+      if (sFil !== "all" && sid !== sFil) return;
+      Object.keys(perDay[sid] || {}).forEach(function (day) {
+        if (mFil === "today") { if (day !== todayKey) return; }
+        else if (mFil !== "all" && day.slice(0, 7) !== mFil) return;
+        var bag = perDay[sid][day] || {};
+        Object.keys(bag).forEach(function (k) {
+          put(day, sid, "提案", k, num(bag[k].prop));
+          put(day, sid, "成約", k, num(bag[k].won));
+        });
+      });
+    });
+    // 月ぶんの手修正は日付が分からないので、日付は空のまま月だけ分かるようにする
+    if (mFil !== "today") {
+      var perMon = MASTER.statsAdjItem || {};
+      Object.keys(perMon).forEach(function (sid) {
+        if (sFil !== "all" && sid !== sFil) return;
+        Object.keys(perMon[sid] || {}).forEach(function (m) {
+          if (mFil !== "all" && m !== mFil) return;
+          var bag2 = perMon[sid][m] || {};
+          Object.keys(bag2).forEach(function (k) {
+            put(m, sid, "提案", k, num(bag2[k].prop));
+            put(m, sid, "成約", k, num(bag2[k].won));
+          });
+        });
+      });
+    }
+    return rows;
+  }
   function downloadStatsFlatCsv() {
     var L = statsLast;
     if (!L) return;
@@ -3469,6 +3512,9 @@
     var rows = statsFlatRows(statsLists, mFil, sFil, function (it, sid) {
       return viewAll || sid === me || resStaffOf(it, sid) === me;
     });
+    // 早見表で直した数え違い（手修正）も行として足す。画面・2つのCSVで数を揃える
+    var adjRows = statsAdjFlatRows(sFil, mFil);
+    rows = rows.concat(adjRows);
     /* 確定済みの月は、1件ずつの明細（生の保存）を端末から消して数字だけ残している。
      * その月を選んで押すと、見出しだけのCSVが黙って落ちてきていた（2026-09-08）。
      * 何も言わずに空のファイルを渡さず、その旨を画面に出す。 */
@@ -3489,7 +3535,9 @@
     csvDownload(csv, fname);
   }
   // Blobを作ってダウンロードさせる（2つのCSVで同じ処理を使う）
+  var csvLast = {};   // 最後に落としたCSVの中身（検査用。ファイル名→本文）
   function csvDownload(csv, fname) {
+    csvLast[/分析用/.test(fname) ? "flat" : "table"] = csv;
     try {
       var blob = new Blob([csv], { type: "text/csv" });
       var url = URL.createObjectURL(blob);
@@ -12079,7 +12127,7 @@
    * 見積もりの金額とはつながっていない（数字を書き戻すことはしない）。
    * iPadのホーム画面起動（PWA）ではブラウザの電卓が使えないため、
    * アプリの中に用意しておく。 */
-  var CALC = { cur: "0", prev: null, op: null, fresh: true };
+  var CALC = { cur: "0", prev: null, op: null, fresh: true, err: false };
   function calcFmt(n) {
     if (!isFinite(n)) return "エラー";
     // 小数は最大4桁まで（円の計算で丸めすぎないように）
@@ -12089,13 +12137,22 @@
     var p2 = s2.split(".");
     return Number(p2[0]).toLocaleString("ja-JP") + "." + p2[1];
   }
+  /* 画面に出す文字。打っている途中は打ったとおりに出す
+   * （「.」を押しても画面が変わらないと、押せたかどうか分からないため・2026-09-08）。 */
+  function calcShown() {
+    if (CALC.err) return "エラー";
+    var n = parseFloat(CALC.cur);
+    if (isNaN(n)) return "エラー";
+    var m = CALC.fresh ? null : /^(-?)(\d*)(\.\d*)?$/.exec(CALC.cur);
+    if (m) return m[1] + Number(m[2] || "0").toLocaleString("ja-JP") + (m[3] || "");
+    return calcFmt(n);
+  }
   function calcRender() {
     var o = $("calcOut"), e = $("calcExpr");
     if (!o || !e) return;
-    var n = parseFloat(CALC.cur);
-    o.textContent = isNaN(n) ? CALC.cur : calcFmt(n);
+    o.textContent = calcShown();
     var sign = { "+": "＋", "-": "−", "*": "×", "/": "÷" };
-    e.textContent = CALC.op ? calcFmt(CALC.prev) + " " + sign[CALC.op] : "";
+    e.textContent = (CALC.op && !CALC.err) ? calcFmt(CALC.prev) + " " + sign[CALC.op] : "";
   }
   function calcApply() {
     var a = num(CALC.prev), b = parseFloat(CALC.cur);
@@ -12107,7 +12164,13 @@
     else if (CALC.op === "/") r = b === 0 ? NaN : a / b;
     return r;
   }
+  // 0で割ったときなど、答えが出せなかったときは「エラー」を出していったん白紙に戻す
+  function calcSetErr() {
+    CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.fresh = true; CALC.err = true;
+  }
   function calcKey(k) {
+    // エラーのあとは、どのキーを押しても白紙から始める
+    if (CALC.err) { CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.fresh = true; CALC.err = false; }
     if (/^[0-9]$/.test(k)) {
       CALC.cur = (CALC.fresh || CALC.cur === "0") ? k : CALC.cur + k;
       CALC.fresh = false;
@@ -12120,16 +12183,30 @@
       if (!CALC.fresh && CALC.cur.length > 1) CALC.cur = CALC.cur.slice(0, -1);
       else { CALC.cur = "0"; CALC.fresh = true; }
     } else if (k === "pct") {
-      CALC.cur = String(parseFloat(CALC.cur) / 100);
+      /* 「1000 − 10 ％」は、1000 の 10%（＝100円）を引いて 900円。
+       * 足す・引くのときは「引く前の金額に対する割合」、
+       * 掛ける・割るとひとりで押したときは、そのまま100分の1にする
+       * （店頭の電卓と同じ動き・2026-09-08）。 */
+      var pb = parseFloat(CALC.cur);
+      if (isNaN(pb)) pb = 0;
+      CALC.cur = String((CALC.op === "+" || CALC.op === "-")
+        ? num(CALC.prev) * pb / 100
+        : pb / 100);
       CALC.fresh = true;
     } else if (k === "+" || k === "-" || k === "*" || k === "/") {
-      if (CALC.op !== null && !CALC.fresh) CALC.cur = String(calcApply());
+      if (CALC.op !== null && !CALC.fresh) {
+        var r1 = calcApply();
+        if (!isFinite(r1)) { calcSetErr(); calcRender(); return; }
+        CALC.cur = String(r1);
+      }
       CALC.prev = parseFloat(CALC.cur);
       CALC.op = k;
       CALC.fresh = true;
     } else if (k === "=") {
       if (CALC.op !== null) {
-        CALC.cur = String(calcApply());
+        var r2 = calcApply();
+        if (!isFinite(r2)) { calcSetErr(); calcRender(); return; }
+        CALC.cur = String(r2);
         CALC.prev = null; CALC.op = null; CALC.fresh = true;
       }
     }
@@ -12137,6 +12214,7 @@
   }
   // 表示中の数字に掛ける・割る（税込・税抜の計算）
   function calcTimes(v) {
+    if (CALC.err) { CALC.cur = "0"; CALC.prev = null; CALC.op = null; CALC.err = false; }
     var n = parseFloat(CALC.cur);
     if (isNaN(n)) return;
     CALC.cur = String(Math.round(n * v * 10000) / 10000);
@@ -15823,6 +15901,27 @@
           return JSON.parse(JSON.stringify(savedList));
         },
         load: function (id) { return loadSavedQuote(id); }
+      },
+      /* 電卓の検査用（2026-09-08）。お客様・担当者の目に映る文字を返す */
+      calc: {
+        press: function (keys) {
+          calcKey("clear");
+          String(keys).split(" ").filter(Boolean).forEach(function (k) { calcKey(k); });
+          var o = $("calcOut"), e = $("calcExpr");
+          return { out: o ? (o.textContent || "") : "", expr: e ? (e.textContent || "") : "" };
+        }
+      },
+      /* 実績のCSVの検査用（2026-09-08）。落とす直前の文字をそのまま返す */
+      csv: {
+        flatAdj: function (sFil, mFil) { return statsAdjFlatRows(sFil, mFil); },
+        // 実際に落ちるCSVの中身（店舗責任者が開く文字そのもの）
+        download: function () {
+          csvLast = {};
+          var a = $("statsCsv"), b = $("statsCsvFlat");
+          if (a) a.click();
+          if (b) b.click();
+          return { table: csvLast.table || "", flat: csvLast.flat || "" };
+        }
       },
       /* 端末マスタ（機種の一覧）の取り込みの検査用（2026-09-08） */
       devmaster: {

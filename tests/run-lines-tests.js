@@ -2414,6 +2414,74 @@ function chk(name, cond, extra) {
     !/プロバイダ/.test(staff.hikaric),
     staff.hikaric.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
 
+  /* ---- ㊿ 電卓（2026-09-08）----
+   * 店頭でお客様の前で使う電卓なので、押した手ごたえと答えが正しく見えること */
+  const calc = await page.evaluate(() => {
+    const C = window.__KQ_TEST__.calc;
+    return {
+      dot: C.press('. '),
+      dot2: C.press('1 . '),
+      dot3: C.press('1 . 5'),
+      div0: C.press('1 0 / 0 ='),
+      div0next: (() => { C.press('1 0 / 0 ='); const k = window.__KQ_TEST__.calc; return k.press('5'); })(),
+      pctMinus: C.press('1 0 0 0 - 1 0 pct ='),
+      pctPlus: C.press('1 0 0 0 + 1 0 pct ='),
+      pctTimes: C.press('1 0 0 0 * 1 0 pct ='),
+      pctAlone: C.press('5 0 pct'),
+      plain: C.press('1 2 3 4 + 1 =')
+    };
+  });
+  chk('㊿ 「.」を押すと画面に出る（押せたことが分かる）',
+    calc.dot.out === '0.', JSON.stringify(calc.dot));
+  chk('㊿ 「1 .」も画面に出る', calc.dot2.out === '1.', JSON.stringify(calc.dot2));
+  chk('㊿ 小数の続きも打てる', calc.dot3.out === '1.5', JSON.stringify(calc.dot3));
+  chk('㊿ 0で割ったら「NaN」ではなく「エラー」と出る',
+    calc.div0.out === 'エラー', JSON.stringify(calc.div0));
+  chk('㊿ エラーのあとに数字を押すと、そこから続けられる',
+    calc.div0next.out === '5', JSON.stringify(calc.div0next));
+  chk('㊿ 1000 − 10％ ＝ 900（引く前の金額に対する割合）',
+    calc.pctMinus.out === '900', JSON.stringify(calc.pctMinus));
+  chk('㊿ 1000 ＋ 10％ ＝ 1,100', calc.pctPlus.out === '1,100', JSON.stringify(calc.pctPlus));
+  chk('㊿ 1000 × 10％ ＝ 100', calc.pctTimes.out === '100', JSON.stringify(calc.pctTimes));
+  chk('㊿ 50％ とだけ押したら 0.5', calc.pctAlone.out === '0.5', JSON.stringify(calc.pctAlone));
+  chk('㊿ ふつうの足し算はこれまでどおり', calc.plain.out === '1,235', JSON.stringify(calc.plain));
+
+  /* ---- 51 早見表で直した数え違いが、分析用CSVにも入る（2026-09-08）----
+   * 同じ画面から出した2つのCSVで成約の数が食い違わないこと */
+  const csvOut = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const m = T.std.get();
+    const me = m.staff && m.staff[0] ? m.staff[0].id : 's1';
+    const day = (() => { const d = new Date();
+      return d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2); })();
+    m.statsAdjDay = {}; m.statsAdjDay[me] = {};
+    m.statsAdjDay[me][day] = { 'proc:kishu': { prop: 0, won: 1 } };
+    T.std.set(m);
+    const rows = T.csv.flatAdj('all', 'all');
+    // 実際に落ちるCSVの中身も読む（店舗責任者が開く文字そのもの）
+    const st = document.querySelector('[data-tab="saved"]');
+    if (st) st.click();
+    const open = document.getElementById('statsOpen');
+    if (open) open.click();
+    const mf = document.getElementById('statsMonth');
+    if (mf) { mf.value = 'all'; mf.dispatchEvent(new Event('change')); }
+    const files = T.csv.download();
+    return { rows: rows, day: day, table: files.table, flat: files.flat };
+  });
+  chk('51 早見表で直した数え違いが、分析用CSVの行として出る',
+    csvOut.rows.length === 1 && csvOut.rows[0][4] === '成約' && csvOut.rows[0][6] === 1,
+    JSON.stringify(csvOut.rows));
+  chk('51 手修正の行は「（手修正）」と分かるようにしてある',
+    csvOut.rows.length === 1 && csvOut.rows[0][3] === '（手修正）',
+    JSON.stringify(csvOut.rows));
+  chk('51 手修正の項目名が、早見表と同じ言い方で出る',
+    csvOut.rows.length === 1 && /機種変更/.test(String(csvOut.rows[0][5])),
+    JSON.stringify(csvOut.rows));
+  chk('51 実際に落ちる分析用CSVの中に、手修正の行が入っている',
+    /（手修正）/.test(csvOut.flat) && /成約,機種変更,1/.test(csvOut.flat),
+    (csvOut.flat || '（空）').split('\r\n').filter((l) => /手修正/.test(l)).join(' / ')
+      || '手修正の行なし（行数' + String(csvOut.flat || '').split('\r\n').length + '）');
+
   await browser.close();
   srv.close();
 
