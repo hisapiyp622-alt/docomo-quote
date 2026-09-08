@@ -8042,7 +8042,10 @@
   function voicePriceFor(plan, vo) {
     var p = vo.price;
     if (plan.voiceOverrides && plan.voiceOverrides[vo.id] != null) p = plan.voiceOverrides[vo.id];
-    if (plan.includes5min && vo.id === "v5") p = 0;
+    /* 5分通話無料が込みのプランでは、新・旧どちらの5分通話無料を選んでも0円。
+     * 旧（v5l）を見ていなかったため、はじめてスマホ・U15はじめてスマホで
+     * 「旧」を選ぶと 770円 がお客様の見積書に足されていた（2026-09-08）。 */
+    if (plan.includes5min && voiceTileKey(vo.id) === "v5") p = 0;
     return p;
   }
 
@@ -8101,7 +8104,7 @@
       dKosodateVoice = Math.min(voiceOff, voicePrice);
       voicePrice -= dKosodateVoice;
     }
-    var voiceNote = (plan.includes5min && vo.id === "v5") ? "（プランに標準込み）" : "";
+    var voiceNote = (plan.includes5min && voiceTileKey(vo.id) === "v5") ? "（プランに標準込み）" : "";
 
     // オプション・サービス（すべて月額・金額選択対応）
     var optRows = [], optTotal = 0, bonusRows = [];

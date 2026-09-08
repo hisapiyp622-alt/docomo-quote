@@ -2592,6 +2592,48 @@ function chk(name, cond, extra) {
     /エコジョーズプラン/.test(gas.withEco) && !/ガス　区分/.test(gas.withEco),
     gas.withEco.split('\n').filter((l) => /ガス/.test(l)).join(' / '));
 
+  /* ---- 55 5分通話無料が込みのプランで「旧」を選んでも0円（2026-09-08）----
+   * はじめてスマホ・U15はじめてスマホで「旧」を選ぶと、
+   * プランに込みのはずの5分通話無料が 770円 としてお客様の見積書に足されていた */
+  const voice = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    const m = T.std.get();
+    const inc = m.plans.filter((p) => p.includes5min).map((p) => p.id);
+    const out = { inc: inc, rows: {} };
+    const grpOf = {};
+    m.plans.forEach((p) => { grpOf[p.id] = p.group || 'current'; });
+    inc.forEach((pid) => {
+      ['v5', 'v5l'].forEach((vid) => {
+        L.clearAll(); L.pick(0);
+        L.fill(0, { procType: 'kishu', planGroup: grpOf[pid], planId: pid, voice: vid });
+        L.pick(0);
+        const t = S.sheetText();
+        out.rows[pid + '/' + vid] = { plan: L.state(0).planId, voice: L.state(0).voice,
+          line: (t.match(/5分通話無料[^\n]{0,40}/) || [''])[0] };
+      });
+    });
+    // 込みではないプランでは、これまでどおり料金が出る
+    const other = m.plans.filter((p) => !p.includes5min && p.group === 'current')[0];
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: other.id, voice: 'v5' });
+    L.pick(0);
+    out.other = { id: other.id, line: (S.sheetText().match(/5分通話無料[^\n]{0,40}/) || [''])[0] };
+    return out;
+  });
+  chk('55 5分通話無料が込みのプランがマスタにある',
+    voice.inc.length > 0, JSON.stringify(voice.inc));
+  Object.keys(voice.rows).forEach((k) => {
+    const r = voice.rows[k];
+    if (!r.plan) { chk('55 ' + k + ' のプランが選ばれている', false, '（未選択）'); return; }
+    chk('55 ' + k + ' の通話オプションが0円で出る',
+      /オプション(（旧）)?（プランに標準込み）0円/.test(r.line) && !/770円|880円/.test(r.line),
+      '選ばれた通話オプション=' + r.voice + ' 行=' + (r.line || '（行が出ていません）'));
+  });
+  chk('55 込みではないプランでは、これまでどおり料金が出る',
+    /880円|770円/.test(voice.other.line), voice.other.id + ': ' + voice.other.line);
+
   await browser.close();
   srv.close();
 
