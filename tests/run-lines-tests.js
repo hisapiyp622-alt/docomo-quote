@@ -2043,6 +2043,100 @@ function chk(name, cond, extra) {
   chk('㊸ かわりに「プラン変更」と日本語で出る',
     /プラン変更/.test(ls), JSON.stringify(ls).slice(0, 250));
 
+  /* ---- ㊹ 実績の項目・一覧まわり（2026-09-08）----
+   *   #10 「（再掲）機種スタンダード」だけ外すチェックが無い
+   *   #12 dカードの種類・でんきのメニュー未選択の行が、項目一覧に無い
+   *   #15 ポイントの控えを読み込むと、同じ id の行が2つできる
+   *   #17 追っていない項目の目標が、内部の英数字のまま残って消せない
+   *   #18 料金表から消えた商材が、実績に内部の英数字で出る
+   *   #19 ポイント表の読み込みで、店舗独自サービスなどが数える側に戻らない */
+  const catX = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    const c = L.statsCatalog();
+    return {
+      flags: L.scFlags(),
+      hasDcardX: !!c['dcard:x'], hasDenkiX: !!c['denki:x'],
+      dcardXName: c['dcard:x'] || '', denkiXName: c['denki:x'] || ''
+    };
+  });
+  chk('㊹ 「（再掲）機種スタンダード」を外すチェックが、設定の画面にある',
+    catX.flags.indexOf('kishuStd') >= 0, JSON.stringify(catX.flags));
+  chk('㊹ dカード・でんきの「未選択」も項目一覧に出る（目標・配点を設定できる）',
+    catX.hasDcardX && catX.hasDenkiX,
+    catX.dcardXName + ' / ' + catX.denkiXName);
+
+  /* 前のほうに「条件だけ同じ行」があると、id で探す前にそちらを差し替えてしまい、
+   * 同じ id の行が2つ残っていた。そうなると実績のポイント表が
+   * 「件数×点数≠小計」になる（同じ行が2回数えられる）。 */
+  const impDup = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const S = T.saved;
+    L.cxSet([
+      { id: 'aaa', name: '前の行（条件が同じ）', pt: 10, keys: ['proc:shinki'] },
+      { id: 'bbb', name: 'あとの行', pt: 20, keys: ['proc:kishu'] }
+    ]);
+    // ファイルの行は id が bbb。条件は前の行（aaa）と同じ
+    L.cxImport([{ id: 'bbb', name: '読み込んだ行', pt: 30, keys: ['proc:shinki'] }]);
+    const rows = L.cxRowsNow();
+    const ids = rows.map((r) => r.id);
+    // 実際に成約させて、ポイントの表が「件数×点数＝小計」になっているかも見る
+    S.clear();
+    L.fill(0, { planId: 'max', procType: 'shinki', procTodo: { shinki: true } });
+    L.pick(0);
+    const a = S.save('ポイントの検査');
+    S.won(a.id, false);
+    const cx = S.cxTotalSaved();
+    const bad = Object.keys(cx.rows).filter((k) => cx.rows[k].total !== cx.rows[k].pt * cx.rows[k].n);
+    return { ids: ids, dup: ids.length !== new Set(ids).size,
+      total: cx.total, bad: bad, rows: Object.keys(cx.rows).map((k) => k + ':' + JSON.stringify(cx.rows[k])) };
+  });
+  chk('㊹ ポイントの控えを読み込んでも、同じ id の行が2つできない',
+    impDup.dup === false, JSON.stringify(impDup.ids));
+  chk('㊹ ポイントの表が「件数×点数＝小計」になっている',
+    impDup.bad.length === 0, JSON.stringify(impDup.rows));
+
+  const ownBack = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    const m = T.std.get();
+    // 数える側から外してある項目を、ポイントの条件に使って読み込む
+    const opt = m.options.filter((o) => !!L.statsCatalog()['opt:' + o.id])[0];
+    L.optSkipUi(opt.id, false);
+    const before = !!L.statsCatalog()['opt:' + opt.id];
+    L.cxImport([{ id: 'z1', name: '検査', pt: 5, keys: ['opt:' + opt.id] }]);
+    return { before: before, after: !!L.statsCatalog()['opt:' + opt.id] };
+  });
+  chk('㊹ ポイントの条件に使った項目は、読み込みで数える側に戻る',
+    ownBack.before === false && ownBack.after === true, ownBack.before + ' → ' + ownBack.after);
+
+  const goalOrphan = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const L = T.lines;
+    // 一覧に無いキーに目標を入れる（＝「実績で追う項目」から外したあとの状態）
+    L.setGoal('opt:kensa_nai_koumoku', 3);
+    const labels = L.goalLabels();
+    const rows = L.goalRows();
+    L.setGoal('opt:kensa_nai_koumoku', 0);
+    return { labels: labels.filter((t) => /kensa_nai_koumoku/.test(t)), rows: rows };
+  });
+  chk('㊹ 追っていない項目の目標にも、マスタ設定に欄が出る（消せる）',
+    goalOrphan.labels.length === 1 && /いまは追っていない項目/.test(goalOrphan.labels[0]),
+    JSON.stringify(goalOrphan.labels));
+
+  const delName = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    // 料金表に無いオプションを付けた保存を作り、実績に出る名前を見る
+    const items = T.lines.itemsRaw([{ options: { op_9999999999999: true },
+      optionKubun: { op_9999999999999: 'new' }, planId: 'max', procType: 'kishu' }]);
+    return Object.keys(items).map((k) => k + '=' + items[k].name);
+  });
+  chk('㊹ 料金表から消えた商材でも、実績に内部の英数字を出さない',
+    delName.some((t) => /削除された商材/.test(t)) && !delName.some((t) => /=op_9999999999999/.test(t)),
+    JSON.stringify(delName));
+
   await browser.close();
   srv.close();
 

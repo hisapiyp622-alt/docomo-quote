@@ -1618,6 +1618,15 @@
   function statsIsIPhone(pt) { return /iphone/i.test(String((pt && pt.deviceName) || "")); }
   // 下取りの区分（実績だけに使う印）
   var SHITADORI_NAMES = { target: "下取り（指定機種）", other: "下取り（指定外機種）" };
+  /* 料金表から消えた商材の名前。過去の成約はそのまま数える（消すと実績が減る）が、
+   * 名前が分からないときに内部の英数字（op_1784460515071）をそのまま出していたため、
+   * お店が何のことか分からなかった（2026-09-08）。行そのものは id ごとに分けたままで、
+   * 見出しだけ日本語にし、見分けが付くよう末尾4文字を添える。 */
+  function statsDefName(def, id) {
+    if (def && def.name) return def.name;
+    var t = String(id || "");
+    return "（削除された商材" + (t.length > 4 ? " …" + t.slice(-4) : "") + "）";
+  }
   /* U15のプラン。新規・MNPでこれを選んでいたら「（再掲）U15」に数える */
   var U15_PLANS = { u15_debut: true, u15: true };
   /* 実績のキーからプランのidを取り出す（"plan:mini:t1" → "mini"） */
@@ -1893,11 +1902,11 @@
       if (def && def.own) out["own:o:" + id] = "独自: " + def.name;
       else if (kb2 === "exist") {
         // 既存（もともとご加入のものをドコモ経由へ）は新規と分けて数える
-        out["opt:" + id + ":exist"] = "オプション: " + (def ? def.name : id) + "（既存）";
+        out["opt:" + id + ":exist"] = "オプション: " + statsDefName(def, id) + "（既存）";
       } else {
         /* 既存の区分がある商材（Amazonプライム）は、どちらの行か分かるように
          * 新規にも区分を付ける。区分の無い商材はこれまでどおり名前だけ。 */
-        out["opt:" + id] = "オプション: " + (def ? def.name : id)
+        out["opt:" + id] = "オプション: " + statsDefName(def, id)
           + (optHasExist(def) ? "（新規）" : "");
       }
     });
@@ -1919,7 +1928,7 @@
       Object.keys(pt.accSel || {}).forEach(function (id) {
         if (!pt.accSel[id]) return;
         var def = MASTER.accessories.filter(function (o) { return o.id === id; })[0];
-        out["acc:" + id] = "アクセサリ: " + (def ? def.name : id);
+        out["acc:" + id] = "アクセサリ: " + statsDefName(def, id);
       });
     }
     return out;
@@ -2018,11 +2027,16 @@
         keys: keys
       };
       if (!row.name && !row.keys.length) { res.skipped++; return; }
+      /* 突き合わせは二段。まず**全行を id で**探し、見つからなければ条件で探す。
+       * 1つの繰り返しで両方を見ていたため、前のほうに条件の一致する行があると
+       * そちらを差し替えてしまい、同じ id の行が2つ残っていた。そうなると
+       * 実績のポイント表が「件数×点数≠小計」になる（2026-09-08）。 */
       var at = -1;
-      for (var i = 0; i < rows.length; i++) {
-        // id で照合するのは、ファイルに id が書いてあるときだけ
-        if (hadId && rows[i].id === row.id) { at = i; break; }
-        if (keys.length && sig(rows[i]) === sig(row)) { at = i; break; }
+      if (hadId) {
+        for (var i = 0; i < rows.length; i++) if (rows[i].id === row.id) { at = i; break; }
+      }
+      if (at < 0 && keys.length) {
+        for (var j = 0; j < rows.length; j++) if (sig(rows[j]) === sig(row)) { at = j; break; }
       }
       if (at >= 0) { rows[at] = row; res.updated++; } else { rows.push(row); res.added++; }
     });
@@ -2040,6 +2054,12 @@
         if (k.indexOf("denki:") === 0 && sc.denki !== "type") sc.denki = "type";
         if (k === "gas" && sc.gas === "off") sc.gas = "one";
         if (k.indexOf("opt:") === 0) delete sc.optSkip[k.slice(4).replace(/:exist$/, "")];
+        /* 店舗独自サービス・独自商材・商材・アクセサリも同じように数える側へ戻す。
+         * ここに書いていなかったため、条件に使ってもその行がずっと0点だった。 */
+        if (k.indexOf("own:o:") === 0) delete sc.optSkip[k.slice(6)];
+        if (k.indexOf("own:f:") === 0) delete sc.feeSkip[k.slice(6)];
+        if (k.indexOf("fee:") === 0) delete sc.feeSkip[k.slice(4)];
+        if (k.indexOf("acc:") === 0) sc.accs = true;
         if (k === "highend" || k.indexOf("highend:") === 0) sc.highend = true;
         if (k === "kishustd" || k.indexOf("kishustd:") === 0) sc.kishuStd = true;
         if (k === "ie:prov:ocn") sc.ocn = true;
@@ -2380,11 +2400,15 @@
     else if (cfg.dcard === "type") {
       var dcN = { normal: "dカード", goldu: "dカード GOLD U", gold: "dカード GOLD", platinum: "dカード PLATINUM" };
       Object.keys(dcN).forEach(function (k) { out["dcard:" + k] = dcN[k]; });
+      /* 種類を選ばずに申し込んだ回線は "dcard:x" で数える（statsPatternItems）。
+       * 一覧にも出しておかないと、目標・ポイントの条件・手修正のどれもできない。 */
+      out["dcard:x"] = "dカード（種別未選択）";
     }
     if (cfg.denki === "one") out["denki"] = "ドコモでんき";
     else if (cfg.denki === "type") {
       out["denki:basic"] = "でんき Basic";
       out["denki:green"] = "でんき Green";
+      out["denki:x"] = "でんき（メニュー未選択）";
     }
     if (cfg.gas !== "off") out["gas"] = "ドコモガス";
     if (cfg.hikari) {
@@ -3239,7 +3263,7 @@
           var g = num(goals[k]);
           var w = (items[k] && items[k].won) || 0;
           var est = passed ? Math.round(w * daysIn / passed) : 0;
-          h += "<tr><td>" + esc(catalog[k] || k) + "</td><td>" + g + "</td><td>" + w + "</td>"
+          h += "<tr><td>" + esc(catalog[k] || (k + "（いまは追っていない項目）")) + "</td><td>" + g + "</td><td>" + w + "</td>"
             + '<td class="' + (w >= g ? "ok-cell" : "warn-cell") + '">' + Math.max(0, g - w) + "</td>"
             + "<td>" + (isCur ? est : w) + "</td></tr>";
         });
@@ -10965,6 +10989,10 @@
       + (sc.u39 ? " checked" : "") + "> （再掲）U39（新規・のりかえのとき）</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="highendSplit"'
       + (sc.highendSplit ? " checked" : "") + "> ハイエンドを Android と iPhone に分ける</label>";
+    /* 「（再掲）機種スタンダード」だけチェックが無く、いちど数え始めると
+     * 外せなかった（2026-09-08）。ほかの再掲と同じ形で出す。 */
+    h += '<label class="check"><input type="checkbox" data-sc-flag="kishuStd"'
+      + (sc.kishuStd ? " checked" : "") + "> （再掲）機種スタンダード</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="iphone"'
       + (sc.iphone ? " checked" : "") + "> （再掲）iPhone</label>";
     h += '<label class="check"><input type="checkbox" data-sc-flag="dcardFirst"'
@@ -11032,14 +11060,27 @@
     h += '<p class="hint">項目ごとの<strong>月の成約目標</strong>を入れると、実績に「目標と進捗」の表が出ます'
       + '（残りの件数と、いまのペースでの着地見込み）。空欄の項目は出ません。</p>';
     h += '<div class="goal-grid">';
-    Object.keys(cat).sort(function (a2, b2) {
-      return (gRank(a2) - gRank(b2)) || (cat[a2] < cat[b2] ? -1 : 1);
+    /* 「実績で追う項目」から外した項目に目標が残っていると、実績には
+     * 内部の英数字（opt:smart_hosho）のまま出るのに、この画面には欄が無く
+     * 消せなかった（2026-09-08）。一覧に無いキーも欄を出して片づけられるようにする。 */
+    var goalKeys = Object.keys(cat);
+    var orphan = Object.keys(goals).filter(function (k) {
+      return num(goals[k]) > 0 && !cat[k];
+    });
+    goalKeys.concat(orphan).sort(function (a2, b2) {
+      return (gRank(a2) - gRank(b2)) || ((cat[a2] || a2) < (cat[b2] || b2) ? -1 : 1);
     }).forEach(function (k) {
-      h += '<label class="goal-item"><span>' + esc(cat[k]) + "</span>"
+      h += '<label class="goal-item"><span>' + esc(cat[k] || (k + "（いまは追っていない項目）")) + "</span>"
         + '<input type="number" min="0" data-sc-goal="' + esc(k) + '" value="'
         + (num(goals[k]) || "") + '" placeholder="－"></label>';
     });
-    h += "</div></div>";
+    h += "</div>";
+    if (orphan.length) {
+      h += '<p class="hint">末尾の<strong>「いまは追っていない項目」</strong>は、'
+        + '「実績で追う項目」でチェックを外したあとも目標が残っているものです。'
+        + '空欄にすると実績の表からも消えます。</p>';
+    }
+    h += "</div>";
     h += "</div>";
     return h;
   }
@@ -15612,6 +15653,38 @@
         // 本物の読み込み（実績で追う項目の自動有効化まで通る）
         cxImport: function (rows) { return cxImport(rows); },
         cxCatalog: function () { return cxCatalog(); },
+        /* マスタ設定の「実績で追う項目」に出ているチェックの文字（画面から読む）。
+         * 設定の値ではなく、実際に押せる欄があるかを見る。 */
+        scFlags: function () {
+          renderMasterTab();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#masterBody [data-sc-flag]"),
+            function (e) { return e.getAttribute("data-sc-flag"); });
+        },
+        // 「実績の目標」に出ている欄の見出し
+        goalLabels: function () {
+          renderMasterTab();
+          return Array.prototype.map.call(
+            document.querySelectorAll("#masterBody .goal-item span"),
+            function (e) { return (e.textContent || "").trim(); });
+        },
+        // 目標を直に入れる（マスタ設定の欄と同じところへ書く）
+        setGoal: function (k, n) {
+          if (!MASTER.statsGoalItems) MASTER.statsGoalItems = {};
+          MASTER.statsGoalItems[k] = n; markEdited();
+        },
+        // 実績の表に出ている「目標と進捗」の項目名
+        goalRows: function () {
+          renderStats(true);
+          var body = $("statsBody");
+          var heads = Array.prototype.filter.call(body.querySelectorAll("h3"),
+            function (el) { return /目標と進捗/.test(el.textContent); });
+          if (!heads.length) return [];
+          var tbl = heads[0].nextElementSibling && heads[0].nextElementSibling.querySelector("table");
+          if (!tbl) return [];
+          return Array.prototype.map.call(tbl.querySelectorAll("tr td:first-child"),
+            function (e) { return (e.textContent || "").trim(); });
+        },
         statsCatalog: function () { return statsCatalog(); },
         cxBreak: function (lines) {
           return cxBreakdown(JSON.parse(JSON.stringify(store)), true, lines);
