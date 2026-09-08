@@ -2363,6 +2363,57 @@ function chk(name, cond, extra) {
   chk('㊽ 「端末購入なし」の回線は、これまでどおり数えない',
     dev.noBuy.indexOf('device') < 0, JSON.stringify(dev.noBuy));
 
+  /* ---- ㊾ 引き継ぎシートのドコモメール・プロバイダ（2026-09-08）----
+   * ・ドコモメールが使えないプラン（LIBMO・データプラス・キッズケータイ）で
+   *   「プランに標準で込み」と印字すると、店頭でご案内を誤る
+   * ・ahamo光はプロバイダ一体型、タイプC・home 5G はプロバイダを選べない。
+   *   前の商材で選んだプロバイダが引き継ぎシートに残ってはいけない */
+  const staff = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    const out = {};
+    const GRP = { libmo_nattoku: 'libmo', libmo_gogo: 'libmo' };
+    ['max', 'ahamo', 'libmo_nattoku', 'dataplus', 'kids'].forEach((pid) => {
+      L.clearAll();
+      L.pick(0);
+      L.fill(0, { procType: 'kishu', planGroup: GRP[pid] || 'current', planId: pid });
+      L.pick(0);
+      out[pid] = S.staffText();
+      out[pid + ':plan'] = L.state(0).planId;
+    });
+    // 光: 1ギガ＋@nifty のあと、ahamo光に変えたときのプロバイダ行
+    L.clearAll(); L.pick(0);
+    S.ieOn('hikari1g', { provider: '@nifty', providerType: 'shinki' });
+    out.hikari1g = S.staffText();
+    S.ieOn('ahamo1g');
+    out.ahamo1g = S.staffText();
+    S.ieOn('hikaric');
+    out.hikaric = S.staffText();
+    return out;
+  });
+  chk('㊾ MAXでは「プランに標準で込み」と出る（これまでどおり）',
+    /ドコモメール/.test(staff.max) && /標準で込み/.test(staff.max),
+    staff.max.split('\n').filter((l) => /メール/.test(l)).join(' / '));
+  chk('㊾ ahamoではメールの行が出る（有料オプション）',
+    /ドコモメール/.test(staff.ahamo), staff.ahamo.split('\n').filter((l) => /メール/.test(l)).join(' / '));
+  ['libmo_nattoku', 'dataplus', 'kids'].forEach((pid) => {
+    // プランが実際に選ばれていることを先に確かめる（未選択だと素通りしてしまう）
+    chk('㊾ ' + pid + ' のプランが選ばれている', staff[pid + ':plan'] === pid, staff[pid + ':plan']);
+    chk('㊾ ' + pid + ' では「プランに標準で込み」と印字しない',
+      !/標準で込み/.test(staff[pid]),
+      staff[pid].split('\n').filter((l) => /メール|込み/.test(l)).join(' / '));
+  });
+  chk('㊾ ドコモ光1ギガでは、選んだプロバイダが出る',
+    /プロバイダ/.test(staff.hikari1g) && /@nifty/.test(staff.hikari1g),
+    staff.hikari1g.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
+  chk('㊾ ahamo光ではプロバイダの行を出さない',
+    !/プロバイダ/.test(staff.ahamo1g),
+    staff.ahamo1g.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
+  chk('㊾ タイプCでもプロバイダの行を出さない',
+    !/プロバイダ/.test(staff.hikaric),
+    staff.hikaric.split('\n').filter((l) => /プロバイダ/.test(l)).join(' / '));
+
   await browser.close();
   srv.close();
 

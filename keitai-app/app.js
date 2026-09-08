@@ -15753,10 +15753,11 @@
             .filter(function (t) { return /[①-⑨]/.test(t); });
         },
         // 光・5Gを「見積もりに含める」状態にする（3枚組の紙を作れるようにする）
-        ieOn: function (product) {
+        ieOn: function (product, patch) {
           if (typeof KQ_IENAKA === "undefined") return false;
           store.ienaka.enabled = true;
           store.ienaka.product = product || "hikari1g";
+          Object.keys(patch || {}).forEach(function (k) { store.ienaka[k] = patch[k]; });
           KQ_IENAKA.syncForm(); KQ_IENAKA.render();
           recalc();
           return ienakaOn();
