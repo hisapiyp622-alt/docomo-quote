@@ -5535,7 +5535,10 @@
       procType: "", planGroup: "current", planId: "", tierIdx: 0,
       minna: "0", dSet: false, dCard: "none", dDenki: false, choki: "none", hearty: false, kosodate: false,
       bizMembers: false, shain: false,
-      voice: "none", voiceChange: false, planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
+      voice: "none", voiceChange: false,
+      /* このプランでは選べないために入れ替えた通話オプションのid。
+       * 元のプランに戻したら、選び直さなくても戻す（2026-09-08）。 */
+      voiceSwapped: "", planChange: false, netSvc: {}, netSvcOff: {}, netSvcKubun: {},
       options: {}, optionPrices: {}, feeItems: {},
       optionKubun: {},    // オプションの区分 {id: "new"|"keep"|"off"} ※offは廃止（料金には含めない）
       campaigns: {}, campaignAmounts: {},
@@ -9132,8 +9135,30 @@
     /* このプランで選べないもの（hideOnPlans）は選択肢に出さない。
      * 選択中だった場合は標準版（留守電・キャッチホン無料つき）へ戻す */
     var cur = MASTER.voiceOptions.filter(function (v) { return v.id === state.voice; })[0];
+    var swapMsg = "";
     if (cur && voiceHiddenOn(plan, cur)) {
+      /* 元のプランに戻したときに戻せるよう、入れ替える前のものを覚えておく。
+       * 覚えていないと、ドコモ mini を一度選んで戻すだけで「旧」が「新」に化け、
+       * 何の知らせもないままお客様の月額が上がっていた（2026-09-08）。 */
+      state.voiceSwapped = cur.id;
       state.voice = VOICE_FALLBACK[cur.id] || "none";
+      var nv = MASTER.voiceOptions.filter(function (v) { return v.id === state.voice; })[0];
+      swapMsg = "このプランでは「" + cur.name + "」を選べないため、「"
+        + (nv ? nv.name : "通話オプションなし") + "」に変えました。";
+    } else if (state.voiceSwapped) {
+      var back = MASTER.voiceOptions.filter(function (v) { return v.id === state.voiceSwapped; })[0];
+      if (!back) {
+        state.voiceSwapped = "";
+      } else if (!voiceHiddenOn(plan, back)) {
+        /* また選べるプランに戻ってきた。入れ替えたままなら元に戻す。
+         * そのあと手で選び直していたら触らない（どちらの場合も覚えは捨てる）。
+         * まだ選べないプランのあいだは覚えたままにしておく（描き直しで消さない）。 */
+        if (state.voice === (VOICE_FALLBACK[back.id] || "none")) {
+          state.voice = back.id;
+          swapMsg = "「" + back.name + "」に戻しました。";
+        }
+        state.voiceSwapped = "";
+      }
     }
     var curKey = voiceTileKey(state.voice);
     $("voiceTiles").innerHTML = voiceTiles(plan).map(function (t) {
@@ -9162,10 +9187,12 @@
     var hint = $("voiceHint");
     if (hint) {
       var hasEra = voiceTiles(plan).some(function (t) { return t.items.length > 1; });
-      hint.textContent = hasEra
+      var base = hasEra
         ? "「新」は留守番電話・キャッチホンが無料で付きます。「旧」はそれ以前からのご契約で、留守番電話・キャッチホンは別料金です。"
         : "";
-      hint.hidden = !hasEra;
+      // 勝手に入れ替えたときは、必ずその旨を出す（黙って月額を変えない）
+      hint.textContent = swapMsg ? (swapMsg + base) : base;
+      hint.hidden = !hint.textContent;
     }
   }
   /* ドコモメールが「有料オプション」になるプラン。ここに無いプランは
@@ -14600,6 +14627,7 @@
       var key = e.target.getAttribute && e.target.getAttribute("data-voice-era");
       if (!key) return;
       state.voice = e.target.value;
+      state.voiceSwapped = "";
       renderVoiceSelect();
       recalc();
     });
@@ -14607,6 +14635,7 @@
       var key = t.getAttribute("data-voice");
       if (voiceTileKey(state.voice) === key) return; // 同じタイルの押し直しでは新旧を変えない
       var sel = t.querySelector("select[data-voice-era]");
+      state.voiceSwapped = "";
       if (sel) {
         state.voice = sel.value;
       } else {
@@ -15945,6 +15974,16 @@
           renderSheet();
           var e = $("tab-sheet");
           return e ? e.innerText : "";
+        },
+        /* 料金プランを画面のプルダウンで選び直す（お客様の前でする操作と同じ）。
+         * 通話オプションの入れ替え・戻しを見るために使う。 */
+        pickPlan: function (group, planId) {
+          var g = $("planGroup");
+          if (g && group) { g.value = group; g.dispatchEvent(new Event("change")); }
+          var sel = $("planId");
+          if (sel) { sel.value = planId; sel.dispatchEvent(new Event("change")); }
+          var hint = $("voiceHint");
+          return { voice: state.voice, hint: hint && !hint.hidden ? (hint.textContent || "") : "" };
         },
         // 引き継ぎシートの本文（担当者の目に映る文字）
         staffText: function () {

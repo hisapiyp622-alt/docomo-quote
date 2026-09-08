@@ -2634,6 +2634,32 @@ function chk(name, cond, extra) {
   chk('55 込みではないプランでは、これまでどおり料金が出る',
     /880円|770円/.test(voice.other.line), voice.other.id + ': ' + voice.other.line);
 
+  /* ---- 56 プランを変えて戻したとき、通話オプションが化けない（2026-09-08）----
+   * ドコモ mini では「旧」を選べないので「新」に入れ替わるが、
+   * 元のプランに戻したとき「旧」に戻らず、黙って月額が110円上がっていた */
+  const swap = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max', voice: 'v5l' });
+    L.pick(0);
+    const start = { voice: L.state(0).voice, line: (S.sheetText().match(/5分通話無料[^\n]{0,30}/) || [''])[0] };
+    const toMini = T.saved.pickPlan('current', 'mini');
+    const back = T.saved.pickPlan('current', 'max');
+    return { start: start, toMini: toMini, back: back,
+      line: (S.sheetText().match(/5分通話無料[^\n]{0,30}/) || [''])[0] };
+  });
+  chk('56 はじめに「旧」を選んである', swap.start.voice === 'v5l', JSON.stringify(swap.start));
+  chk('56 ドコモ mini では「新」に入れ替わる', swap.toMini.voice === 'v5', JSON.stringify(swap.toMini));
+  chk('56 入れ替えたことを画面で知らせる',
+    /選べないため/.test(swap.toMini.hint), swap.toMini.hint || '（知らせなし）');
+  chk('56 元のプランに戻したら「旧」に戻る', swap.back.voice === 'v5l', JSON.stringify(swap.back));
+  chk('56 戻したことも画面で知らせる',
+    /戻しました/.test(swap.back.hint), swap.back.hint || '（知らせなし）');
+  chk('56 お客様の見積書も、もとの770円に戻っている',
+    /770円/.test(swap.line) && !/880円/.test(swap.line), swap.line);
+
   await browser.close();
   srv.close();
 
