@@ -13011,16 +13011,36 @@
   function devNumAt(cols, j, joinOk) {
     var v = devDigits(cols[j] || "");
     if (!/^\d+$/.test(v)) return null;
-    while (joinOk && /^\d{1,3}$/.test(v) && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
-      v += devDigits(cols[j + 1]);
-      j++;
+    /* 桁区切りのカンマで割れているときは、続く3桁の欄を最後までつなぐ。
+     * 「145」「200」→ 145200。途中で止めると、在庫数と金額の頭をつないだ
+     * 12,145円 のような“ありそうに見える”間違った金額を作ってしまう。 */
+    if (joinOk && /^\d{1,3}$/.test(v)) {
+      while (j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1]))) {
+        v += devDigits(cols[j + 1]);
+        j++;
+      }
     }
     return { value: parseInt(v, 10), next: j };
   }
+  /* 端末の本体価格として、ありえる上限。これを超える金額になったときは
+   * 読み方を間違えている（在庫数などを金額の頭につないでしまった）とみなす。 */
+  var DEV_PRICE_MAX = 1000000;
   // j列目が「桁区切りで割れた金額の頭」に見えるか（1〜3桁のあとに3桁が続く）
   function devSplitLooks(cols, j) {
     return /^\d{1,3}$/.test(devDigits(cols[j] || ""))
       && j + 1 < cols.length && /^\d{3}$/.test(devDigits(cols[j + 1] || ""));
+  }
+  /* 機種名の右が、まるごと1つの金額（桁区切りで割れたもの）に見えるか。
+   * 「iPhone 17 128GB,145,200」→ true（145,200円）
+   * 「iPhone 17 128GB,12,145,200」→ false（在庫の12が余る）
+   * これが言えるときだけ、見出しの無い一覧でつなぎ直す（2026-09-08）。 */
+  function devTailIsOneNumber(cols) {
+    if (cols.length < 3) return false;
+    if (!/^\d{1,3}$/.test(devDigits(cols[1] || ""))) return false;
+    for (var j = 2; j < cols.length; j++) {
+      if (!/^\d{3}$/.test(devDigits(cols[j] || ""))) return false;
+    }
+    return true;
   }
   function parseDeviceText(text) {
     var out = [], skipped = 0, ambiguous = 0;
@@ -13054,17 +13074,15 @@
      * 見出しがあれば見出しの欄の数、無ければいちばん多い欄の数を「ふつう」とする。
      * これをしないと、在庫数の列（例: 12）と金額の頭（145）をつないで
      * 12,145円 という、どこにも存在しない金額を作ってしまう（2026-09-08）。 */
-    var baseCols = head ? head.cols : (function () {
-      var cnt = {}, best = 0, bestN = 0;
-      rows.forEach(function (c) { cnt[c.length] = (cnt[c.length] || 0) + 1; });
-      Object.keys(cnt).forEach(function (k) {
-        if (cnt[k] > bestN || (cnt[k] === bestN && +k > best)) { best = +k; bestN = cnt[k]; }
-      });
-      return best;
-    })();
+    var baseCols = head ? head.cols : 0;
 
     rows.forEach(function (cols) {
-      var joinOk = cols.length > baseCols;
+      /* 見出しがあるときは、欄の数が見出しより多い行だけつなぎ直す。
+       * 見出しが無いときは、機種名の右がまるごと1つの金額に見える行
+       * （つなぎ直すと最後の欄まで使い切る）だけつなぐ。
+       * 「iPhone 17 128GB,145,200」は 145,200円 として読めるが、
+       * 「iPhone 17 128GB,12,145,200」は在庫12が余るので読まない。 */
+      var joinOk = head ? (cols.length > baseCols) : devTailIsOneNumber(cols);
       var name = cols[0];
       var price = 0, found = false, amb = false;
       if (head && head.price !== undefined) {
@@ -13084,9 +13102,12 @@
           if (used[j]) continue;
           var hit2 = devNumAt(cols, j, joinOk);
           if (!hit2) continue;
-          /* つなぎ直せば金額になりそうなのに、欄の数からは割れているとは言えない行。
+          /* つなぎ直せば金額になりそうなのに、割れているとは言い切れない行。
            * どちらの金額か決められないので、勝手に決めずに飛ばして知らせる。 */
           if (!joinOk && devSplitLooks(cols, j)) { amb = true; break; }
+          /* つないだ結果が端末の値段としてありえない額になったときも、
+           * 在庫数などを金額の頭につないでしまっている。決めずに飛ばす。 */
+          if (hit2.next > j && hit2.value > DEV_PRICE_MAX) { amb = true; break; }
           price = hit2.value;
           found = true;
           break;
