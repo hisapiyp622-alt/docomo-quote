@@ -8327,7 +8327,12 @@
       } else {
         var an = parseInt(a.pay.slice(1), 10);
         var am = Math.floor(ap / an);
-        accMonthlyRows.push({ name: a.name || "アクセサリ", monthly: am, months: an });
+        /* 1か月あたり0円になる（＝価格0円など）ものは、月額の行にしない。
+         * 行にすると、中身が同じ「〜24か月目 / 25か月目以降」という
+         * 意味のない期間の区切りがお客様の見積書に出てしまう（2026-09-08）。
+         * 端数はこれまでどおり初月に足すので、金額は変わらない。 */
+        if (am > 0) accMonthlyRows.push({ name: a.name || "アクセサリ", monthly: am, months: an });
+        else accOnceRows.push({ name: a.name || "アクセサリ", amount: 0 });
         accFirstExtra += ap - am * an;
       }
     });
@@ -8337,7 +8342,9 @@
       if (/^b\d+$/.test(pay)) {
         var an2 = parseInt(pay.slice(1), 10);
         var am2 = Math.floor(a.price / an2);
-        accMonthlyRows.push({ svc: "ac:" + a.id, name: a.name, monthly: am2, months: an2 });
+        // 上と同じ理由（1か月あたり0円のものは期間の区切りを作らない）
+        if (am2 > 0) accMonthlyRows.push({ svc: "ac:" + a.id, name: a.name, monthly: am2, months: an2 });
+        else accOnceRows.push({ svc: "ac:" + a.id, name: a.name, amount: 0 });
         accFirstExtra += a.price - am2 * an2;
       } else {
         accOnceRows.push({ svc: "ac:" + a.id, name: a.name, amount: a.price });

@@ -2689,6 +2689,32 @@ function chk(name, cond, extra) {
     !/無線ルーター（10ギガ・お買い上げ）/.test(r10.none),
     r10.none.split('\n').filter((l) => /ルーター/.test(l)).join(' / '));
 
+  /* ---- 58 0円のアクセサリを「分割」にしても、意味のない期間の区切りを出さない（2026-09-08）---- */
+  const acc0 = await page.evaluate(() => {
+    const T = window.__KQ_TEST__;
+    const S = T.saved;
+    const L = T.lines;
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max',
+      accessories: [{ name: 'おまけケース', price: 0, pay: 'b24' }] });
+    L.pick(0);
+    const zero = S.sheetText();
+    L.clearAll(); L.pick(0);
+    L.fill(0, { procType: 'kishu', planGroup: 'current', planId: 'max',
+      accessories: [{ name: 'ケース', price: 4800, pay: 'b24' }] });
+    L.pick(0);
+    const paid = S.sheetText();
+    return { zero: zero, paid: paid };
+  });
+  chk('58 0円のアクセサリでは、〜24か月目／25か月目以降の区切りを出さない',
+    !/25か月目以降/.test(acc0.zero),
+    acc0.zero.split('\n').filter((l) => /か月目/.test(l)).join(' / '));
+  chk('58 0円でも、品名は見積書に残る',
+    /おまけケース/.test(acc0.zero), '（品名が消えています）');
+  chk('58 金額のあるアクセサリでは、これまでどおり区切りが出る',
+    /25か月目以降/.test(acc0.paid),
+    acc0.paid.split('\n').filter((l) => /か月目/.test(l)).join(' / '));
+
   await browser.close();
   srv.close();
 
