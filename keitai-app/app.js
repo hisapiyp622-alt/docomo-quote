@@ -4807,17 +4807,6 @@
     if (MOVE_SKIP.indexOf(String(k)) >= 0) return false;
     return MOVE_PREFIXES.some(function (p) { return String(k).indexOf(p) === 0; });
   }
-  /* 端末の中で最後に入力があった時刻（見積もり・料金表・テンプレートの控えの時刻の最大） */
-  function moveNewestAt(keys) {
-    var mx = 0;
-    Object.keys(keys).forEach(function (k) {
-      if (k.indexOf(NS + "-quote-at:") === 0 || k === NS + "-store-at" || k.indexOf(NS + "-tpl-at:") === 0) {
-        var v = num(keys[k]);
-        if (v > mx) mx = v;
-      }
-    });
-    return mx;
-  }
   function moveLocalKeys() {
     var keys = {};
     for (var i = 0; i < localStorage.length; i++) {
@@ -4868,7 +4857,8 @@
   function moveFileName(d) {
     function z(n) { return ("0" + n).slice(-2); }
     var t = new Date();
-    return "フロントーク社内版_持ち出し_" + t.getFullYear() + z(t.getMonth() + 1) + z(t.getDate())
+    /* 英数字だけの名前にする。日本語の名前は、機種によって「download」などに置き換えられることがある */
+    return "frontalk-naibu-move_" + t.getFullYear() + z(t.getMonth() + 1) + z(t.getDate())
       + "-" + z(t.getHours()) + z(t.getMinutes()) + ".json";
   }
   function moveSyncNote() {
@@ -4953,18 +4943,17 @@
     }
     var sm = moveSummary({ keys: okKeys });
     if (!sm.total) { moveMsg("持ち込める内容が入っていません。", true); return; }
+    /* いまこの端末にある中身も数えて見せる。新しい住所ですでに使い始めた端末（保存や作りかけがある）に
+     * 持ち込むと、それが旧の内容で置き換わる。時刻で判定すると、開いただけの端末でも
+     * 「使われている」と出てしまう（開くたびに時刻が更新されるため）ので、件数で見せて判断してもらう。 */
+    var here = moveSummary({ keys: moveLocalKeys() });
+    var hereUsed = here.saved > 0 || here.quotes > 0;
     var msg = "旧アドレス（" + (d.from || "不明") + "）で " + (d.at || "不明") + " に持ち出したデータを、この端末に取り込みます。\n\n"
-      + moveSummaryText(sm) + "\n"
-      + "\nいまこの端末にある社内版の内容は、この内容で置き換わります。クラウドには書きません。\nよろしいですか？";
+      + "持ち込む内容: " + moveSummaryText(sm) + "\n"
+      + "いまこの端末: " + (here.total ? moveSummaryText(here) : "（社内版のデータはまだありません）") + "\n"
+      + (hereUsed ? "\n※ この端末にはすでに保存や作りかけがあります（クラウドから届いたぶんも含みます）。持ち込むと、それは旧アドレスの内容で置き換わります。\n" : "")
+      + "\nクラウドには書きません。よろしいですか？";
     if (!window.confirm(msg)) return;
-    /* この端末で（新しい住所で）すでに入力があるなら、それが旧の内容で消えることをはっきり伝える */
-    var localAt = moveNewestAt(moveLocalKeys()), fileAt = moveNewestAt(okKeys);
-    if (localAt && localAt > fileAt + 60000) {
-      var dl = new Date(localAt);
-      if (!window.confirm("この端末は、この住所ですでに使われているようです（最後の入力: "
-        + (dl.getMonth() + 1) + "/" + dl.getDate() + " " + ("0" + dl.getHours()).slice(-2) + ":" + ("0" + dl.getMinutes()).slice(-2) + "）。\n"
-        + "持ち込むと、その入力は旧アドレスの内容で置き換わります。\n\n本当に続けますか？")) return;
-    }
     /* 書き込みの途中で送信が走らないようにする。開き直したあとは通常の同期に任せる。 */
     CLOUD.suppress = true;
     cloudDetach();
