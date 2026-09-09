@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.15.1-demo";
+  var APP_VERSION = "2.16.0-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -18,9 +18,9 @@
    * 同じ名前を使うと、実際の店舗で使った内容が別の店舗やデモ版に出てしまう。 */
   var KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-v1" : "ienaka-internal-v1")
     : DEMO ? "ienaka-demo-v1" : "ienaka-app-v1";
-  /* ケータイ見積もりとの引き渡し（店舗名・担当者名・お客様名）。
+  /* ケータイ見積もりとの引き渡し（店舗名・担当者名）。
    * 社内版どうし・製品版どうしでだけやり取りする。デモ版は相手がいないので
-   * 受け取らない（実際のお客様名を拾ってしまわないように）。
+   * 受け取らない。
    * 店舗の札つき（阪南以外）も、同居する阪南のケータイ見積もりの内容を
    * 拾ってしまわないよう受け取らない。 */
   var HANDOFF_KEY = DEMO ? "" : INTERNAL ? (STORE_TAG ? "" : "dq-handoff-v1") : "kq-handoff-v1";
@@ -267,7 +267,7 @@
       /* dカード還元を月額から差し引くか。既定は差し引かない（もらえるポイントとして案内）。
        * ケータイ見積もり側の⑧「ポイントの扱い」と同じ考え方に揃えた（製品化レビュー 4-7）。 */
       dcardApply: false, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
-      dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
+      dpoint: 20000, staffName: "", quoteMemo: "",
       visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
       /* その内訳（2026-09-04 店舗の要望）。テレビ・お電話の額を分けて出せるようにする。
@@ -315,6 +315,9 @@
   /* 古い形の保存データを、いまの形へ引き継ぐ。
    * 起動時と端末間同期の両方から呼ぶこと。 */
   function migrateState(st) {
+    /* 光・home 5G側ではお客様の氏名を預からない。以前の版で入力・保存された
+     * 氏名も、起動時と端末間同期の受信時に取り除く。 */
+    delete st.custName;
     /* ahamo光のルーターレンタルを1ギガと10ギガで分けた（2026-07-30）。
      * 10ギガは月額550円のため、以前の見積もりを新しい項目へ移す。 */
     if (st.product === "ahamo10g" && st.opts && st.opts.ahamoRouter && !st.opts.ahamoRouter10g) {
@@ -1367,7 +1370,6 @@
             + yen(Math.floor(rp10s / router10gSplitN())) + "/月</strong>（総額 " + yen(rp10s) + "）"
           : "");
     }
-    $("custName").value = state.custName;
     $("staffName").value = state.staffName || "";
     $("quoteMemo").value = state.quoteMemo;
     // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
@@ -1396,7 +1398,7 @@
    * Firebaseが設定されている場合のみ有効。未設定なら端末内保存のみで動作する。
    * データは stores/{店舗アカウントのuid} 配下に保存し、
    * セキュリティルールで他店からは読み書きできないようにしている（firestore.rules）。
-   * お客様名は個人情報のためクラウドへ送信しない。 */
+   * お客様の氏名はこのアプリでは扱わない。 */
   var CLOUD = {
     enabled: false, user: null, db: null, auth: null,
     suppress: false, cfgTimer: null, quoteTimer: null,
@@ -1467,11 +1469,11 @@
         .then(cloudOk, cloudNg);
     }, 800);
   }
-  // 送信用の見積もりデータ。お客様名（個人情報）はクラウドへ送らない
+  // 送信用の見積もりデータ。古い保存に残った氏名もクラウドへ送らない
   function quotePayload() {
     try {
       var s = JSON.parse(JSON.stringify(state));
-      s.custName = "";
+      delete s.custName;
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
@@ -1514,8 +1516,6 @@
     CLOUD.suppress = true;
     try {
       var incoming = JSON.parse(d.data);
-      // お客様名は同期しないため、この端末で入力済みの名前を保持する
-      if (incoming && !incoming.custName && state.custName) incoming.custName = state.custName;
       // 引き継いだ担当者名は、初回の受信で前の担当者名に戻さない
       if (incoming && handoffStaff) { incoming.staffName = handoffStaff; handoffStaff = ""; }
       state = Object.assign(defaultState(), incoming);
@@ -1741,8 +1741,6 @@
     h += '<div class="sheet-meta"><span>' + (config.storeName ? esc(config.storeName) + "　" : "")
       + "作成日: " + dateStr + "</span><span>"
       + (staffLabel() ? "担当: " + esc(staffLabel()) : "") + "</span></div>";
-    if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
-
     var seg0 = r.segs[0], segLast = r.segs[r.segs.length - 1];
     h += '<div class="big-monthly">';
     // 通常時のお支払い目安: 最初の期間と最後の期間を1枠にまとめて表示
@@ -1997,8 +1995,6 @@
     h += '<div class="sheet-meta"><span>' + (config.storeName ? esc(config.storeName) + "　" : "")
       + "作成日: " + dateStr + "</span><span>"
       + (staffLabel() ? "受付担当: " + esc(staffLabel()) : "") + "</span></div>";
-    if (state.custName) h += '<div class="cust">' + esc(state.custName) + "</div>";
-
     /* ヒアリングした現在の回線。登録スタッフが乗り換え元を把握できるように上に置く */
     var curH = curHearingText();
     if (curH) {
@@ -2256,7 +2252,6 @@
   $("kojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
   $("dpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
   $("onecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
-  $("custName").addEventListener("input", function () { state.custName = this.value; recalc(); });
   /* 店舗設定・担当者名 */
   $("staffName").addEventListener("input", function () { state.staffName = this.value; recalc(); });
   $("storeName").addEventListener("input", function () {
@@ -2335,7 +2330,7 @@
     state = defaultState(); applyDefaults(); syncForm(); recalc();
   });
 
-  /* ケータイ見積もりから移ってきたときは、店舗名・担当者名・お客様名を引き継ぐ。
+  /* ケータイ見積もりから移ってきたときは、店舗名・担当者名を引き継ぐ。
    * 同一オリジンの localStorage 経由。読んだら消す（次に開いたときに残らないように）。 */
   // ケータイ見積もりから引き継いだ担当者名（同期で戻されないように控える）
   var handoffStaff = "";
@@ -2357,7 +2352,6 @@
      * 入れて同期するので、常に守ると別の端末で直した名前が伝わらなくなる。
      * ここは「引き継いだ直後の1回だけ」に限る（2026-09-08）。 */
     if (d.staffName) { state.staffName = d.staffName; handoffStaff = d.staffName; }
-    if (d.custName) state.custName = d.custName;
     saveConfig();
     save();
   }

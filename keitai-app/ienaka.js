@@ -281,7 +281,7 @@
       /* dカード還元を月額から差し引くか。既定は差し引かない（もらえるポイントとして案内）。
        * ケータイ見積もり側の⑧「ポイントの扱い」と同じ考え方に揃えた（製品化レビュー 4-7）。 */
       dcardApply: false, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
-      dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
+      dpoint: 20000, staffName: "", quoteMemo: "",
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
       /* その内訳（2026-09-04 店舗の要望）。テレビ・お電話の額を分けて出せるようにする。
        * どれかを入れたら、合計は内訳から計算する（上の1行は使わない）。
@@ -1369,7 +1369,7 @@
 
 
   /* ---------- 光の見積書（単体の1枚） ----------
-   * 単体版（ienaka-app）の見積書と同じ内容。表題・お客様名・発行元・注意書きは
+   * 単体版（ienaka-app）の見積書と同じ内容。表題・発行元・注意書きは
    * ケータイ側が付けるので、ここでは中身だけを返す。
    * セット割はケータイ側で実際に引いている金額を受け取る。 */
   /* ---------- 現在お使いの回線（ヒアリング） ----------
@@ -2284,6 +2284,8 @@
     defaultState: defaultState,
     attach: function (st, cb) {
       state = st;
+      // 以前の版で光側に残った氏名は、光・home 5Gでは引き継がない
+      if (state) delete state.custName;
       onChange = cb || function () {};
     },
     bind: bind,
