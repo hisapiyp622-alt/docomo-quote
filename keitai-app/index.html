@@ -46,6 +46,10 @@
   ⚠ この端末に保存できませんでした。端末の空き容量（ストレージ）を確認してください。いま入力した内容は端末に残らない可能性があります。
 </div>
 
+<!-- 引っ越しの持ち込み用のファイル選択（社内版だけ）。最初の画面（初期設定・担当者コード・門）からも押すので、
+     隠れたカードの中ではなく、ここに置く（app.js の initMove） -->
+<input type="file" id="moveImportFile" accept="application/json,.json" hidden>
+
 <main>
   <!-- ============ 見積もりタブ ============ -->
   <section id="tab-quote" class="tab-page active no-print">
@@ -1002,6 +1006,37 @@
         個人情報を持ち出さないようにしています。含める場合は、ファイルの保管場所にご注意ください。</p>
       <p class="hint" id="backupMsg" hidden></p>
     </div>
+    <!-- 引っ越し（住所の変更）。社内版だけに出る（app.js の initMove）。製品版は住所が変わらないので使わない -->
+    <div class="card" data-mroom="store" id="moveCard" hidden>
+      <h2>引っ越し（住所の変更）</h2>
+      <p class="hint">社内版の住所（アドレス）が変わるときに使います。<strong>古い住所で「持ち出す」</strong>→ ファイルが保存される →
+        <strong>新しい住所で「持ち込む」</strong>の順です。保存した見積もり・お客様名・作りかけの見積もり・担当者・料金表・
+        イエナカ（社内版）の、<strong>この端末の中身をそのまま運びます</strong>。クラウドには書きません。
+        ファイルにはお客様名と担当者コードが入ります。持ち込みの確認が済んだら削除してください。
+        持ち出しても、この端末の中身は消えません。</p>
+      <div class="actions">
+        <button class="btn-sub" id="moveExportBtn" type="button">この端末のデータを持ち出す</button>
+        <button class="btn-sub" id="moveCopyBtn" type="button" hidden>文字としてコピー</button>
+        <label class="btn-sub file-btn" for="moveImportFile">新しい住所で持ち込む</label>
+      </div>
+      <p class="hint" id="moveMsg" hidden></p>
+      <details class="hint">
+        <summary>全端末の持ち込みが終わったら（旧アドレスを閉じる）</summary>
+        <p class="hint">新しい住所で開いたこの画面から押すと、旧アドレスで開いている全端末に「引っ越し済み」が伝わり、
+          旧アドレスからの保存・同期が止まります（端末の中身は消えません）。<strong>全端末の持ち込みと照合が終わってから</strong>押してください。
+          間違えて押したときは「印を消す」で戻せます。</p>
+        <div class="actions">
+          <button class="btn-sub" id="moveCloseBtn" type="button">旧アドレスを閉じる（引っ越し済みを知らせる）</button>
+          <button class="btn-sub" id="moveReopenBtn" type="button">印を消す（旧アドレスの同期を戻す）</button>
+        </div>
+      </details>
+      <details class="hint">
+        <summary>ファイルの保存・選択ができない端末のとき（貼り付けて持ち込む）</summary>
+        <p class="hint">旧アドレスで「持ち出す」のあとに出る「文字としてコピー」を押し、その内容をここに貼り付けてください。</p>
+        <textarea id="movePasteText" rows="3" style="width:100%;box-sizing:border-box" placeholder="ここに貼り付け"></textarea>
+        <div class="actions"><button class="btn-sub" id="movePasteBtn" type="button">貼り付けた内容を持ち込む</button></div>
+      </details>
+    </div>
     <div id="masterBody"><!-- JSで生成 --></div>
   </section>
 
@@ -1029,6 +1064,19 @@
     <p class="login-lead" id="contractContact"></p>
     <p class="login-err" id="contractRecheckMsg" hidden></p>
     <button class="btn-main" id="contractRecheck" type="button">ご契約状態を再確認</button>
+  </div>
+</div>
+
+<!-- 社内版・はじめて開く端末の門（app.js の showFreshGate）。クラウドの設定を受け取れるまで中へ入れない -->
+<div class="login-overlay no-print" id="freshOverlay" hidden>
+  <div class="login-box">
+    <h2>はじめて開く端末です</h2>
+    <p class="login-lead">この端末では、まだ店舗の設定（担当者・料金表）を受け取っていません。<br>
+      <span class="login-note">通信できる場所で開き直すか、しばらくお待ちください。受け取れると自動で進みます。<br>
+      何も入力しないでください（入力すると、その内容が店内の全端末に配られることがあります）。</span></p>
+    <p class="login-err" id="freshMsg" hidden></p>
+    <button class="btn-main" id="freshRetry" type="button">もう一度確認する</button>
+    <p class="login-lead"><button type="button" class="link-btn" id="freshMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
   </div>
 </div>
 
@@ -1100,6 +1148,8 @@
       <button class="btn-main" id="setupNext" type="button">次へ</button>
     </div>
     <p class="login-lead" id="setupSkipWrap"><button type="button" class="link-btn" id="setupSkip">あとで設定する</button></p>
+    <!-- 社内版だけ: 旧アドレスで持ち出したファイルをここから取り込める（app.js の initMove） -->
+    <p class="login-lead" id="setupMoveWrap" hidden><button type="button" class="link-btn" id="setupMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
   </div>
 </div>
 
@@ -1123,6 +1173,8 @@
     </div>
     <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">マスタ設定を開く（料金・担当者の登録）</button><br>
       <span class="login-note">店舗IDとパスワードが必要です。</span></p>
+    <!-- 社内版だけ: 旧アドレスで持ち出したファイルをここから取り込める（app.js の initMove） -->
+    <p class="login-lead" id="staffMoveWrap" hidden><button type="button" class="link-btn" id="staffMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
   </form>
 </div>
 

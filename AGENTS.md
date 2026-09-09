@@ -84,6 +84,35 @@
   **書き換え漏れは本番でだけ404になる**ので、`keitai-app/index.html` や `ienaka-app/` の
   相対パスを触ったら `node tests/run-product-layout-test.js` で確認する（CI にも入っている）
 
+## 配信先の引っ越し（2026-09-08〜・Cloudflare Pages へ）
+
+配信先を GitHub Pages から Cloudflare Pages に移し、元ファイル（このリポジトリ）を非公開にする作業を進めている。
+手順書・進み具合は非公開リポジトリ `docomo-quote-internal` の `migration/`。**ここには住所・名前・合鍵を書かない。**
+
+| 配信単位 | 中身を作る道具 | 配信のしかた |
+|---|---|---|
+| 製品版（`frontalk.curacon.co.jp`） | `node tools/build-product.js` | CI の `deploy` ジョブ（`.github/workflows/ci.yml`）が、main のテストが**全部通ったあとだけ** Cloudflare へ配る |
+| 社内版（阪南・常盤東） | `node tools/build-internal-dist.js`（**許可リスト方式**。要るファイルだけ） | 同上（別プロジェクト） |
+| 旧・社内版の住所（github.io） | `node tools/build-oldsite-stub.js --old-path /docomo-quote/ [出力先]`（**新しい住所は入れない**。店内で伝える） | 「引っ越しました」の案内と、片付け用の sw.js を全入口に置く |
+
+- 配信物には `404.html`・`_headers`・`version.json` が入る（`tools/lib/dist-extras.js`）。
+  **Cloudflare Pages は `404.html` が無いと、無い住所にトップページを返す**（壊れが隠れる）ので必ず入れる。
+  `_headers` に **Cache-Control は書かない**（既定の「毎回確かめる」が最良）。
+- 配ったものは `node tools/check-live.js <住所> [--internal|--oldsite] [--expect <版>] [--commit <sha>]` で機械確認する
+  （版・控え一覧・存在しない住所が404・道具や設計文書が読めない・転送・見出し）。
+- 製品版は**許す住所の一覧**（`keitai-app/app.js` の `PROD_HOSTS`）以外で開くとログインを止める。
+  `*.pages.dev` の試用の住所から本番のクラウドに入れないため。**独自ドメインを変えるときは、
+  先に新しい名前を一覧に足した版を配ってから DNS を変える**（逆だと全店がログアウトされる）。
+- 社内版だけの「引っ越し（住所の変更）」（マスタ設定 → バックアップの下）: 端末の中身（`dq-*`・`ienaka-internal-*`・
+  `ienaka-hannan-*`）を**持ち出し → 持ち込み**で運ぶ。クラウドには書かない。製品版の開発コピー（`kq-*`）は運ばない。
+  全端末が移ったら「旧アドレスを閉じる」で、クラウドの書類に `movedFrom`（閉じた旧住所の名前）を書き、その住所の端末の同期を止める。
+  **社内版の新しい住所はクラウドにも旧住所の案内ページにも書かない**（社内版のクラウドの書類はログイン無しで誰でも読める）。
+- **はじめて開く空の端末**は、クラウドの設定を受け取るまで中へ入れない（社内版の門）。イエナカ単体も、
+  控え（fromCache）由来の「何も無い」では送らない。空の端末が圏外で開かれて白紙を全端末に配る事故を防ぐため
+  （`tests/run-fresh-tests.js`）。
+- `sh tools/release.sh --ship`（配信用 main へ直接 push）は**廃止**。引っ越しの間は `--pr`（配信用リポジトリの枝に入れて PR → マージ）。
+  引っ越し後は CI の `deploy` に任せる。
+
 ## どのAIアシスタントで作業しても同じになるように
 
 このアプリは、**クロコ（Claude Code）でもコーデックス（Codex）でも作業できる**ようにしてあります。
@@ -108,7 +137,8 @@
 
 | やること | 要るもの |
 |---|---|
-| 配信（`sh tools/release.sh --ship`） | 配信用リポジトリ `frontalk` への書き込み権限 |
+| 配信（引っ越しの間: `sh tools/release.sh --pr`） | 配信用リポジトリ `frontalk` への書き込み権限（枝に push → PR） |
+| 配信（引っ越し後: CI の `deploy`） | GitHub の Environment「production」の秘密（Cloudflare の合鍵と社内版の名前。**リポジトリにもチャットにも入れない**。Environment の枝制限は Private では Pro 以上でしか効かない） |
 | 店舗の開通（`tools/provision-store.js`） | Firebase のサービスアカウント鍵（**リポジトリには絶対に入れない**） |
 
 ### これまでにやらかしたこと（同じ失敗を繰り返さないために）
@@ -153,21 +183,27 @@
    `node tests/run-lines-tests.js`（回線5本・成約のときに数える回線・電卓・実績のCSV）・
    `node tests/run-device-master-tests.js`（端末マスタの取り込み。頭金・23回分を捨てていないか）・
    `node tests/run-template-tests.js`（テンプレに前のお客様の内容・古い金額が残らないか）・
+   `node tests/run-fresh-tests.js`（空の端末が本番を白紙にしないか・引っ越し済みの合図）・
+   `node tests/run-move-tests.js`（引っ越しの持ち出し・持ち込み）・
    `node tools/build-agents.js --check`（CLAUDE.md と AGENTS.md がズレていないか）・
-   `node tests/run-product-layout-test.js`・Playwright で動作確認
+   `node tests/run-product-layout-test.js`・`node tests/run-internal-layout-test.js`（社内版の配信物の入れ忘れ・入れすぎ）・
+   `node tests/run-oldsite-stub-test.js`（旧住所の案内ページ）・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、
    `tools/provision-store.js` を触ったときは `sh tools/test-provision.sh` も）
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す
 3. **`node tools/build-internal.js` を実行**してルートを再生成する（社内版のキャッシュ名も追従する）
 4. `node tools/release-check.js`（版の一致・キャッシュ名・生成物の鮮度。CIでも見ています）
 5. コミット → `git rebase --onto origin/main HEAD~N` → force-with-lease で push → PR作成 → squashマージ
-6. 配信（frontalk へ反映して版のタグを打つ）:
-   ```
-   sh tools/release.sh          # テスト＋決まりの確認＋出荷用を作る（配信はしない）
-   sh tools/release.sh --ship   # 配信用リポジトリへ反映し、git tag v<版> を打つ
-   ```
+6. 配信:
+   - 引っ越しの間（配信元がまだ GitHub Pages のとき）:
+     ```
+     sh tools/release.sh          # テスト＋決まりの確認＋出荷用を作る（配信はしない）
+     sh tools/release.sh --pr     # 配信用リポジトリの枝 release/v<版> に入れて push し、git tag v<版> を打つ
+     ```
+     そのあと frontalk で PR → CI → マージ（マージで公開される）。**配信用の main へ直接 push しない。**
+   - 引っ越し後: main へのマージで CI の `deploy` が Cloudflare へ配る（手作業なし）
 7. 公開されるまで確認してから完了報告する
-   （`curl -s https://frontalk.curacon.co.jp/app.js | grep -m1 APP_VERSION`）
+   （`node tools/check-live.js https://frontalk.curacon.co.jp --expect <版>`）
 
 **配った版を戻したいとき**は、タグから出荷用を作り直して配信用リポジトリへ入れ直します。
 手順は非公開リポジトリ `docomo-quote-internal` の `OPERATIONS.md`。

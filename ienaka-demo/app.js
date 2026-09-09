@@ -1,7 +1,7 @@
 /* イエナカ見積もり — ドコモ光・home 5G 見積もりアプリ（単体版） */
 (function () {
   "use strict";
-  var APP_VERSION = "2.15.0-demo";
+  var APP_VERSION = "2.15.1-demo";
   /* このアプリがどの立場で開かれているかの印。中身はどれも同じで、
    * ログインの有無と保存領域だけが違う。
    *   INTERNAL … 社内版（/ienaka/）。ログイン無し・端末間同期あり
@@ -291,6 +291,13 @@
    * 担当者名は見積もり本体（state.staffName）に入れて一緒に保存・同期する。 */
   var CFG_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-config-v1" : "ienaka-internal-config-v1")
     : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
+  /* クラウドの本物（控えでない内容）を一度でも受け取ったことがある端末の印。
+   * 「開いたときに端末に保存があったか」で見分けると、起動のたびに自動保存が走るので
+   * 圏外のまま2回目に開いた空の端末が「保存のある端末」扱いになり、白紙を送ってしまう
+   * （第2の反証で再現）。受け取った事実を端末に残して見分ける。
+   * 引っ越しの持ち出し・持ち込みの対象（ienaka-internal-*）なので、旧端末の印は新端末に引き継がれる。 */
+  var SEEN_CLOUD_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-seen-cloud-v1" : "ienaka-internal-seen-cloud-v1")
+    : DEMO ? "ienaka-demo-seen-cloud-v1" : "ienaka-app-seen-cloud-v1";
   function defaultConfig() { return { storeName: "" }; }
   var config = defaultConfig();
   var oldCfg = null; // 担当者分離時代の設定（見積もりの引き継ぎにだけ使う）
@@ -1394,9 +1401,35 @@
     enabled: false, user: null, db: null, auth: null,
     suppress: false, cfgTimer: null, quoteTimer: null,
     unsubStore: null, unsubQuote: null,
+    seenCloud: false,      // クラウドの内容（控えでない本物）をこのページで受け取ったか（端末の印は SEEN_CLOUD_KEY）
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
-  function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
+  function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db && !CLOUD.movedAway; }
+  /* 引っ越し済みの合図（社内版）。ケータイ社内版の「旧アドレスを閉じる」が店舗の書類に
+   * movedFrom（閉じた旧住所のホスト名）を書く。その住所で開いた端末は受け取った時点で同期を止める。
+   * 端末の中身は消さない。新しい住所はクラウドに書かない（誰でも読める書類のため）。 */
+  function movedAwayCheck(d) {
+    var from = d && typeof d.movedFrom === "string" ? d.movedFrom : "";
+    if (!from) return false;
+    var me = String(location.hostname || "").toLowerCase();
+    if (!me || from.toLowerCase().split(",").indexOf(me) < 0) return false;
+    if (CLOUD.movedAway) return true;
+    CLOUD.movedAway = true;
+    if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
+    if (CLOUD.unsubQuote) { CLOUD.unsubQuote(); CLOUD.unsubQuote = null; }
+    cloudStatus("引っ越し済み", "err");
+    var el = $("movedWarn");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "movedWarn";
+      el.className = "storage-warn no-print";
+      var hd = document.querySelector("header");
+      if (hd && hd.parentNode) hd.parentNode.insertBefore(el, hd.nextSibling); else document.body.insertBefore(el, document.body.firstChild);
+    }
+    el.textContent = "⚠ 社内版は新しい住所に引っ越しました。この住所では保存・同期はできません。新しい住所は店内の案内（担当の方）でご確認ください。（版 " + APP_VERSION + "）";
+    el.hidden = false;
+    return true;
+  }
   function cloudStatus(msg, cls) {
     var el = $("cloudStatus");
     if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
@@ -1424,6 +1457,7 @@
   }
   function pushConfig() {
     if (!cloudOn() || CLOUD.suppress) return;
+    if (freshOffline()) { cloudStatus("同期:オフライン（はじめての端末は通信できる場所で開いてください）", "err"); return; }
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     cloudStatus("同期中…", "");
     CLOUD.cfgTimer = setTimeout(function () {
@@ -1441,8 +1475,23 @@
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
+  /* 「クラウドの本物を一度も受け取ったことがない端末」か。この状態で送ると、
+   * 通信が戻った瞬間に白紙が全端末へ配られるので、受け取れるまで送らない。
+   * 一度でも受け取った端末（いつもの iPad が圏外なだけ）は、これまでどおり送る。 */
+  function seenCloudEver() {
+    if (CLOUD.seenCloud) return true;
+    try { return localStorage.getItem(SEEN_CLOUD_KEY) === "1"; } catch (e) { return false; }
+  }
+  function markSeenCloud() {
+    CLOUD.seenCloud = true;
+    try { localStorage.setItem(SEEN_CLOUD_KEY, "1"); } catch (e) {}
+  }
+  function freshOffline() {
+    return CLOUD.enabled && !seenCloudEver();
+  }
   function pushQuote() {
     if (!cloudOn() || CLOUD.suppress) return;
+    if (freshOffline()) { cloudStatus("同期:オフライン（はじめての端末は通信できる場所で開いてください）", "err"); return; }
     if (CLOUD.quoteTimer) clearTimeout(CLOUD.quoteTimer);
     cloudStatus("同期中…", "");
     CLOUD.quoteTimer = setTimeout(function () {
@@ -1482,7 +1531,17 @@
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
     CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
-      if (!d) { pushConfig(); return; } // 初回ログイン → この端末の設定を初期値として保存
+      if (!d) {
+        /* 「クラウドに何も無い」は、初めて使う店舗のときだけ本当。
+         * 通信できていないときも同じ形で届く（端末内の控え由来）。そのときに送ると、
+         * 空の端末の白紙がクラウドに載り、店内の全端末に配られてしまう
+         * （ケータイ側 watchStore と同じ守り。2026-09-08 配信先の引っ越しに備えて） */
+        if (snap.metadata && snap.metadata.fromCache) { cloudStatus("同期:オフライン", "err"); return; }
+        markSeenCloud();
+        pushConfig(); return; // 初回ログイン → この端末の設定を初期値として保存
+      }
+      markSeenCloud();
+      if (INTERNAL && movedAwayCheck(d)) return;
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
       applyRemoteConfig(d);
       cloudOk();
@@ -1493,7 +1552,14 @@
     if (CLOUD.unsubQuote) return; // 共通の1枚なので、購読は一度張ればよい
     CLOUD.unsubQuote = quoteDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
-      if (!d) { pushQuote(); return; }
+      if (!d) {
+        /* 通信できていないときの「何も無い」では送らない（上の watchStore と同じ理由）。
+         * 共有の見積もりは1枚しか無いので、ここで白紙を送ると全端末の作りかけが消える。 */
+        if (snap.metadata && snap.metadata.fromCache) { cloudStatus("同期:オフライン", "err"); return; }
+        markSeenCloud();
+        pushQuote(); return;
+      }
+      markSeenCloud();
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
       if (CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
       applyRemoteQuote(d);

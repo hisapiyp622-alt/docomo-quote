@@ -13,6 +13,9 @@
  *   /ienaka-app/     → 製品版イエナカ単体
  *   /demo/           → 営業用デモ（ログイン不要）
  *   /CNAME           → 独自ドメイン名（GitHub Pages がこれを読む）
+ *   /404.html        → 無い住所を開いたときのページ（Cloudflare Pages で必須。無いとトップが返る）
+ *   /_headers        → Cloudflare Pages の見出しの設定（GitHub Pages は無視する）
+ *   /version.json    → 配ったものが原本のどのコミットか（tools/check-live.js が照合する）
  *
  * ── 入れないもの ──────────────────────────────
  *   社内版・tools・tests・dakkan-app・ienaka-tiles
@@ -24,6 +27,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { writeExtras } = require("./lib/dist-extras");
 
 const ROOT = path.resolve(__dirname, "..");
 /* イエナカ単体版の同梱（既定は入れない・2026-08-20 販売方針）。
@@ -129,6 +133,15 @@ fs.writeFileSync(path.join(OUT, "CNAME"), DOMAIN + "\n");
 /* GitHub Pages の下ごしらえ（Jekyll）を通さない印。
  * 出荷物はそのまま配るファイルばかりで、加工されると困ることしかない。 */
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
+
+/* 5b) 無い住所のページ・見出し・版の印（tools/lib/dist-extras.js）。
+ * Cloudflare Pages は 404.html が無いと、無い住所にトップページを返す。
+ * そうなると参照の書き間違いが 404 にならず、壊れているのに気づけない。 */
+writeExtras(OUT, {
+  title: "フロントーク", homeHref: "/",
+  swPaths: ["/sw.js"].concat(WITH_IENAKA ? ["/ienaka-app/sw.js"] : []),
+  extra: { kind: "product" }
+});
 
 // 6) 配信用リポジトリの説明
 fs.writeFileSync(path.join(OUT, "README.md"), `# フロントーク（配信用）

@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.184.0";
+  var APP_VERSION = "1.185.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -38,8 +38,17 @@
    * データを触ることになる。Firebase の「承認済みドメイン」は Google ログイン
    * などにしか効かず、店舗ID＋パスワードのログインは止められないため、
    * アプリ側で止める。社内版は別のクラウドなので対象外。 */
+  /* 製品版を開いてよい住所（配信元）。ここに無い住所で開かれたときはログインを止める。
+   * 以前は「github.io なら止める」と書いていたが、配信先の引っ越し（Cloudflare Pages）で
+   * 試用の住所（*.pages.dev）が増え、止め忘れると本番のクラウドへの入口になってしまう。
+   * そこで「許す住所だけを書く」形に変えた（2026-09-08）。localhost・127.0.0.1 は手元の確認用。
+   * ホスト名が無い（file:// で開いた）ときは従来どおり止めない。 */
+  var PROD_HOSTS = ["frontalk.curacon.co.jp", "localhost", "127.0.0.1"];
   function devHost() {
-    return !INTERNAL && /github\.io$/i.test(String((typeof location !== "undefined" && location.hostname) || ""));
+    if (INTERNAL) return false;
+    var h = String((typeof location !== "undefined" && location.hostname) || "").toLowerCase();
+    if (!h) return false;
+    return PROD_HOSTS.indexOf(h) < 0;
   }
   var NS = INTERNAL ? "dq" : "kq";
   if (INTERNAL) {
@@ -4779,6 +4788,276 @@
     });
   }
 
+  /* ---------- 引っ越し（住所の変更・社内版だけ） ----------
+   * 社内版の配信先を変えると（github.io → 新しい住所）、端末の中の保存（localStorage）は
+   * 住所ごとに別の入れ物なので、新しい住所では空から始まってしまう。
+   * クラウド（recipe-box）に無いもの — お客様名・請求内訳の読み取り・作りかけの細部 — は
+   * 端末から運ぶしかない。そこで「持ち出す」で端末の中身をファイルにし、
+   * 新しい住所で「持ち込む」で同じ鍵にそのまま書き戻す。
+   *
+   * 運ぶのは社内版の鍵（dq-*）とイエナカ社内版の鍵（ienaka-internal-*）だけ。
+   * 同じ住所に同居している製品版の開発コピー（kq-*）・デモ・試作は運ばない。
+   * 「バックアップ」とは別物: バックアップはクラウドにも書き戻すが、こちらは端末の中にだけ書く。
+   * 持ち込んだあとは開き直すので、いつもの同期（どちらが新しいか）がそのまま働く。 */
+  var MOVE_KIND = "frontalk-internal-move";
+  var MOVE_PREFIXES = ["dq-", "ienaka-internal-", "ienaka-hannan-"];   // ienaka-hannan- は 2026-08-14 より前の保存名
+  var MOVED_KEY = NS + "-moved-v1";   // いつ・どこから持ち込んだか（「情報」に出す）
+  var MOVE_SKIP = [NS + "-handoff-v1", NS + "-moved-out-v1"];   // 一時的な引き渡し・旧端末だけの印は運ばない
+  function moveKeyOk(k) {
+    if (MOVE_SKIP.indexOf(String(k)) >= 0) return false;
+    return MOVE_PREFIXES.some(function (p) { return String(k).indexOf(p) === 0; });
+  }
+  function moveLocalKeys() {
+    var keys = {};
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && moveKeyOk(k)) keys[k] = localStorage.getItem(k);
+    }
+    return keys;
+  }
+  function moveCollect() {
+    var keys = moveLocalKeys();
+    return {
+      kind: MOVE_KIND, version: 1,
+      note: "店舗の実データ（お客様名・担当者コードを含む）。共有しない・持ち込みの確認が済んだら削除する",
+      from: location.host + location.pathname,
+      at: nowStamp(), appVersion: APP_VERSION, count: Object.keys(keys).length,
+      keys: keys
+    };
+  }
+  /* 持ち出し・持ち込みの前に、中身の目安を出す（新旧の照合に使う） */
+  function moveSummary(d) {
+    var keys = (d && d.keys) || {};
+    var saved = 0, quotes = 0, ienaka = 0, staff = [];
+    Object.keys(keys).forEach(function (k) {
+      var v = keys[k];
+      if (k.indexOf(NS + "-saved-v1:") === 0) {
+        try { saved += (JSON.parse(v) || []).length; } catch (e) {}
+      } else if (k.indexOf(NS + "-state-v1:") === 0) {
+        /* 開いただけの端末にも空の作りかけが保存される。中身のあるものだけ数える
+         * （そうしないと、まだ使っていない新端末にも「すでに作りかけがあります」と出る） */
+        try {
+          var stv = JSON.parse(v);
+          var pts = (stv && stv.patterns) || [];
+          if (pts.some(function (pt) { return pt && (String(pt.custName || "").trim() || pt.planId || pt.procType || num(pt.devicePrice) > 0); })
+            || (stv && stv.ienaka && stv.ienaka.enabled)) quotes++;
+        } catch (e2) {}
+      } else if (k.indexOf("ienaka-internal-") === 0) {
+        ienaka++;
+      } else if (k === NS + "-config-v1") {
+        try { staff = (JSON.parse(v).staff || []).map(function (st) { return st.name || st.id; }); } catch (e2) {}
+      }
+    });
+    return { saved: saved, quotes: quotes, ienaka: ienaka, staff: staff, total: Object.keys(keys).length };
+  }
+  function moveSummaryText(sm) {
+    return "保存した見積もり " + sm.saved + "件・作りかけ " + sm.quotes + "人分・担当者 "
+      + (sm.staff.length ? sm.staff.join("、") : "（なし）") + "・イエナカ " + sm.ienaka + "件（全 " + sm.total + "件）";
+  }
+  function moveMsg(t, warn) {
+    var el = $("moveMsg");
+    if (!el) return;
+    el.textContent = t || "";
+    el.hidden = !t;
+    el.className = "hint" + (warn ? " backup-warn" : "");
+  }
+  function moveFileName(d) {
+    function z(n) { return ("0" + n).slice(-2); }
+    var t = new Date();
+    /* 英数字だけの名前にする。日本語の名前は、機種によって「download」などに置き換えられることがある */
+    return "frontalk-naibu-move_" + t.getFullYear() + z(t.getMonth() + 1) + z(t.getDate())
+      + "-" + z(t.getHours()) + z(t.getMinutes()) + ".json";
+  }
+  function moveSyncNote() {
+    if (!cloudOn()) return "";
+    var st = $("syncStatus");
+    var t = st ? String(st.textContent || "") : "";
+    if (/同期✓/.test(t)) return "";
+    return "※ 同期が済んでいません（" + (t || "表示なし") + "）。通信できる場所で「同期✓」になってから持ち出し直すと確実です。";
+  }
+  var moveLastJson = "";
+  function moveDone(sm, how) {
+    moveMsg("持ち出しました（" + moveSummaryText(sm) + "）。" + how
+      + " 新しい住所で「持ち込む」からこのファイルを選んでください。この端末の中身は消えていません。" + moveSyncNote(),
+      !!moveSyncNote());
+    logAdd("引っ越し", "この端末のデータを持ち出しました（" + sm.total + "件）");
+    /* 旧住所で持ち出したら、次に開いたときから「持ち出し済み」の帯を出す。新旧のアイコンの名前・見た目が同じで、
+     * 移行の途中にスタッフがどちらを開いているか分からなくなるため（同期は止めない）。 */
+    if (atOldHost()) { try { localStorage.setItem(MOVED_OUT_KEY, nowStamp()); } catch (e) {} }
+  }
+  function showMovedOutNote() {
+    if (!INTERNAL) return;
+    var at = "";
+    try { at = localStorage.getItem(MOVED_OUT_KEY) || ""; } catch (e) {}
+    if (!at) return;
+    var el = $("cloudWarn");
+    if (!el || !el.hidden) return;
+    el.innerHTML = "⚠ この端末は " + esc(at) + " に<b>持ち出し済み</b>です。新しい住所のアイコンからお使いください。"
+      + "こちらで入力したお客様名は新しい住所に残りません。";
+    el.hidden = false;
+  }
+  function moveDownload(json, name) {
+    var blob = new Blob([json], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function doMoveExport() {
+    var d = moveCollect();
+    var sm = moveSummary(d);
+    var json = JSON.stringify(d);
+    var name = moveFileName(d);
+    moveLastJson = json;
+    var cp = $("moveCopyBtn");
+    if (cp) cp.hidden = false;
+    /* iPad・iPhone の「ホーム画面に追加」したアプリでは、ファイルのダウンロードが
+     * 動かないことがある。共有シート（「ファイルに保存」が選べる）が使えるならそちらを先に。 */
+    var file = null;
+    try { file = new File([json], name, { type: "application/json" }); } catch (eF) {}
+    if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: name }).then(function () {
+        moveDone(sm, "共有先（「ファイルに保存」など）に保存してください。");
+      }, function (err) {
+        if (err && err.name === "AbortError") { moveMsg("持ち出しを取り消しました。", false); return; }
+        try { moveDownload(json, name); moveDone(sm, "ファイル（" + name + "）を保存しました。"); }
+        catch (e2) { moveMsg("持ち出せませんでした。下の「文字としてコピー」をお使いください。", true); }
+      });
+      return;
+    }
+    try {
+      moveDownload(json, name);
+      moveDone(sm, "ファイル（" + name + "）を保存しました。");
+    } catch (e) {
+      moveMsg("持ち出せませんでした。下の「文字としてコピー」をお使いください。", true);
+    }
+  }
+  function doMoveCopy() {
+    var json = moveLastJson || JSON.stringify(moveCollect());
+    var done = function () { moveMsg("コピーしました。新しい住所の「貼り付けて持ち込む」に貼り付けてください。"); };
+    var fail = function () { moveMsg("コピーできませんでした。「持ち出す」でファイルとして保存してください。", true); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(done, fail);
+    else fail();
+  }
+  function importMove(d) {
+    if (!d || d.kind !== MOVE_KIND || !d.keys || typeof d.keys !== "object") {
+      moveMsg(d && d.kind === BACKUP_KIND
+        ? "これは「バックアップ」のファイルです。引っ越しの持ち込みには、「この端末のデータを持ち出す」で作ったファイルを選んでください。"
+        : "このファイルは引っ越しの持ち出しファイルではないようです。", true);
+      return;
+    }
+    var okKeys = {}, bad = [];
+    Object.keys(d.keys).forEach(function (k) {
+      if (moveKeyOk(k) && typeof d.keys[k] === "string") okKeys[k] = d.keys[k];
+      else if (MOVE_SKIP.indexOf(k) >= 0) return;   // 一時的な引き渡し・旧端末だけの印は黙って捨てる
+      else bad.push(k);
+    });
+    /* 対象外の鍵（製品版の kq-*・デモ・ログイン情報など）が混ざったファイルは、
+     * 「持ち出す」が作ったものではないので取り込まない */
+    if (bad.length) {
+      moveMsg("このファイルには対象外の内容（" + bad.slice(0, 3).join("、") + (bad.length > 3 ? " ほか" : "") + "）が入っているため、取り込めません。"
+        + "「この端末のデータを持ち出す」で作ったファイルを選んでください。", true);
+      return;
+    }
+    var sm = moveSummary({ keys: okKeys });
+    if (!sm.total) { moveMsg("持ち込める内容が入っていません。", true); return; }
+    /* いまこの端末にある中身も数えて見せる。新しい住所ですでに使い始めた端末（保存や作りかけがある）に
+     * 持ち込むと、それが旧の内容で置き換わる。時刻で判定すると、開いただけの端末でも
+     * 「使われている」と出てしまう（開くたびに時刻が更新されるため）ので、件数で見せて判断してもらう。 */
+    var here = moveSummary({ keys: moveLocalKeys() });
+    var hereUsed = here.saved > 0 || here.quotes > 0;
+    var msg = "旧アドレス（" + (d.from || "不明") + "）で " + (d.at || "不明") + " に持ち出したデータを、この端末に取り込みます。\n\n"
+      + "持ち込む内容: " + moveSummaryText(sm) + "\n"
+      + "いまこの端末: " + (here.total ? moveSummaryText(here) : "（社内版のデータはまだありません）") + "\n"
+      + (hereUsed ? "\n※ この端末にはすでに保存や作りかけがあります（クラウドから届いたぶんも含みます）。持ち込むと、それは旧アドレスの内容で置き換わります。\n" : "")
+      + "\nクラウドには書きません。よろしいですか？";
+    if (!window.confirm(msg)) return;
+    /* 書き込みの途中で送信が走らないようにする。開き直したあとは通常の同期に任せる。 */
+    CLOUD.suppress = true;
+    cloudDetach();
+    var touched = {};
+    try {
+      /* いまある社内版の鍵をいったん消してから書く（途中で止まった前回の持ち込みが残っていても、
+       * 「サイトデータを削除」せずにもう一度持ち込めば正しい状態になる） */
+      Object.keys(moveLocalKeys()).forEach(function (k) {
+        touched[k] = localStorage.getItem(k);
+        localStorage.removeItem(k);
+      });
+      Object.keys(okKeys).forEach(function (k) {
+        if (!(k in touched)) touched[k] = localStorage.getItem(k);
+        localStorage.setItem(k, okKeys[k]);
+      });
+      // 読み戻して、書けた数が合っているか確かめる
+      var wrote = 0;
+      Object.keys(okKeys).forEach(function (k) { if (localStorage.getItem(k) === okKeys[k]) wrote++; });
+      if (wrote !== sm.total) throw new Error("書き戻しの照合に失敗: " + wrote + "/" + sm.total);
+      touched[MOVED_KEY] = localStorage.getItem(MOVED_KEY);
+      localStorage.setItem(MOVED_KEY, JSON.stringify({ from: d.from || "", at: d.at || "", n: sm.total, on: nowStamp() }));
+    } catch (e) {
+      Object.keys(touched).forEach(function (k) {
+        try {
+          if (touched[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, touched[k]);
+        } catch (e2) {}
+      });
+      CLOUD.suppress = false;
+      moveMsg("持ち込めませんでした（端末の保存領域がいっぱいの可能性があります）。この端末の内容は変えていません。", true);
+      return;
+    }
+    window.alert("持ち込みました。画面を読み込み直します。");
+    location.reload();
+  }
+  function initMove() {
+    var card = $("moveCard");
+    if (card) card.hidden = !INTERNAL;
+    ["staffMoveWrap", "setupMoveWrap"].forEach(function (id) {
+      var w = $(id);
+      if (w) w.hidden = !INTERNAL;
+    });
+    if (!INTERNAL) return;
+    var b = $("moveExportBtn");
+    if (b) b.addEventListener("click", doMoveExport);
+    var f = $("moveImportFile");
+    if (f) f.addEventListener("change", function () {
+      var file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        var d = null;
+        try { d = JSON.parse(String(fr.result)); } catch (e) {}
+        importMove(d);
+      };
+      fr.onerror = function () { moveMsg("ファイルを読めませんでした。", true); };
+      fr.readAsText(file);
+    });
+    var cp = $("moveCopyBtn");
+    if (cp) cp.addEventListener("click", doMoveCopy);
+    var cl = $("moveCloseBtn");
+    if (cl) cl.addEventListener("click", function () { moveCloseOld(false); });
+    var un = $("moveReopenBtn");
+    if (un) un.addEventListener("click", function () { moveCloseOld(true); });
+    // ファイルの保存・選択ができない端末向け: 文字を貼り付けて持ち込む
+    var pb = $("movePasteBtn");
+    if (pb) pb.addEventListener("click", function () {
+      var ta = $("movePasteText");
+      var raw = ta ? String(ta.value || "").trim() : "";
+      if (!raw) { moveMsg("貼り付け欄が空です。旧アドレスで「文字としてコピー」した内容を貼り付けてください。", true); return; }
+      var d = null;
+      try { d = JSON.parse(raw); } catch (e) {}
+      importMove(d);
+    });
+    /* 最初の画面（初期設定・担当者コード）からも同じファイル選択を開けるようにする。
+     * 新しい住所で最初に開いたときは、まだ何も設定していないため。 */
+    ["staffMoveBtn", "setupMoveBtn"].forEach(function (id) {
+      var lb = $(id);
+      if (lb) lb.addEventListener("click", function () { if (f) f.click(); });
+    });
+  }
+
   /* ---------- 料金表の更新（配信） ----------
    * 料金改定はこちらが data.js を更新して配る。ただし店舗のマスタが優先されるため、
    * そのままでは価格の改定が届かない。版数を比べて「更新があります」と知らせ、
@@ -5859,7 +6138,7 @@
     tplStoreTimer: null, unsubTplStore: null,
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
-  function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db; }
+  function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db && !CLOUD.movedAway; }
   function syncStatus(msg, cls) {
     var el = $("syncStatus");
     if (el) { el.textContent = msg || ""; el.className = "sync-status" + (cls ? " " + cls : ""); }
@@ -6128,8 +6407,20 @@
     CLOUD[key] = setTimeout(fn, ms);
     return CLOUD[key];
   }
+  /* 社内版: 店舗の書類（担当者・料金表）は、サーバーから一度受け取るまで送らない。
+   * 圏外で開いた旧住所の端末が担当者を選ぶと担当者一覧の送信が予約され、通信が戻った瞬間に
+   * 「引っ越し済み」の合図より先に届いてしまう（第2の反証で再現）。受け取ったときに合図が
+   * あれば送らず、無ければ保留していたぶん（pendingStore）をその場で送る。 */
+  function storeHold() {
+    if (!INTERNAL || CLOUD.storeSynced) return false;
+    CLOUD.pendingStore = true;
+    markStoreAt();
+    syncStatus("同期:オフライン", "err");
+    return true;
+  }
   function pushConfig() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeHold()) return;
     markStoreAt();   // 送る前に閉じても、次に開いたときに送り直せるように
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     syncStatus("同期中…", "");
@@ -6177,6 +6468,7 @@
   }
   function pushStoreMeta() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (INTERNAL && !CLOUD.storeSynced) return;   // 受け取る前は版の記録も書かない
     /* 上位・保守で店舗を開いているときは書かない。
      * その端末のアプリの版を、店舗が使っている版として記録してしまうため。 */
     if (superActing()) return;
@@ -6195,6 +6487,7 @@
   // 料金マスタ（店舗で共通）の送信
   function markMasterEdit() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeHold()) return;
     markStoreAt();
     if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
     syncStatus("同期中…", "");
@@ -6644,6 +6937,7 @@
     var firstStore = true;
     CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
+      if (!(snap.metadata && snap.metadata.fromCache)) CLOUD.storeSynced = true;   // 本物を受け取った
       if (!d) {
         /* 「クラウドに何も無い」は、初めてログインした店舗のときだけ本当。
          * 通信できていないときも同じ形で届く（端末内の控え由来）ので、
@@ -6656,12 +6950,23 @@
       /* 通信できないうちに直した店舗情報・料金マスタが、クラウドの古い内容で
        * 消されないようにする。端末の方が新しいときは取り込まずに送り直す
        * （製品化レビュー 4-19）。 */
+      if (INTERNAL && firstStore && movedAwayCheck(d)) { firstStore = false; CLOUD.pendingStore = false; return; }
       if (firstStore && num(CLOUD.storeAtLoaded) > num(d.updatedAtMs)) {
         firstStore = false;
         pushConfig(); markMasterEdit();
         return;
       }
+      /* 圏外のあいだ保留していた担当者・料金表（storeHold）は、本物を受け取ったこの時点で送る
+       * （最初のお知らせが控えだったときは firstStore がもう消えているので、ここで見る） */
+      if (INTERNAL && CLOUD.pendingStore && !(snap.metadata && snap.metadata.fromCache)) {
+        firstStore = false;
+        if (movedAwayCheck(d)) { CLOUD.pendingStore = false; return; }
+        CLOUD.pendingStore = false;
+        pushConfig(); markMasterEdit();
+        return;
+      }
       firstStore = false;
+      if (INTERNAL && movedAwayCheck(d)) return;
       /* 版の記録（4-12）だけが変わったお知らせでは、店舗情報・料金マスタを
        * 当て直さない。当て直すと、マスタ設定を開いている端末の画面が
        * 作り直されてしまうため。 */
@@ -6670,7 +6975,112 @@
       CLOUD.storeSigSeen = sigNow;
       applyRemoteStore(d);
       cloudOk();
+      if (freshGateOpen) { showFreshGate(false); afterStoreLogin(); }
     }, function () { syncStatus("同期:接続エラー", "err"); });
+  }
+  /* ---------- 引っ越し済みの合図（社内版） ----------
+   * 新しい住所から「旧アドレスを閉じる」を押すと、クラウドの店舗の書類に
+   * movedFrom（閉じた旧住所のホスト名）が書かれる。その住所で開いた端末はこれを受け取った時点で
+   * 同期を止め、案内を出す。旧住所の端末が圏外で古いアプリのまま起動し、あとから
+   * つながっても、ここで止まるので古い内容を書き込まない。
+   * 端末の中身は消さない（「持ち出す」はそのまま使える）。
+   * ★ 新しい住所はクラウドに書かない。社内版のクラウドの書類はログイン無しで誰でも読めるため、
+   *   書くと住所が知られる。閉じる側（旧住所）の名前はもともと公開されているので書いてよい。 */
+  var INTERNAL_OLD_HOSTS = (typeof window !== "undefined" && window.KEITAI_OLD_HOSTS) || ["hisapiyp622-alt.github.io"];   // 社内版の旧住所（引っ越し前の配信元。テストでは差し替える）
+  function atOldHost() { return INTERNAL_OLD_HOSTS.indexOf(String(location.hostname || "").toLowerCase()) >= 0; }
+  var MOVED_OUT_KEY = NS + "-moved-out-v1";   // この端末（旧住所）から持ち出し済みの印（新旧のアイコンの見分けに）
+  function movedAwayCheck(d) {
+    var from = d && typeof d.movedFrom === "string" ? d.movedFrom : "";
+    if (!from) return false;
+    var me = String(location.hostname || "").toLowerCase();
+    if (!me || from.toLowerCase().split(",").indexOf(me) < 0) return false;
+    if (CLOUD.movedAway) return true;
+    CLOUD.movedAway = true;
+    cloudDetach();
+    syncStatus("引っ越し済み", "err");
+    logAdd("引っ越し", "クラウドに「この住所は閉じた」の合図がありました。この住所からの同期を止めました");
+    var el = $("cloudWarn");
+    if (el) {
+      el.innerHTML = "⚠ 社内版は<b>新しい住所に引っ越しました</b>。この住所では保存・同期はできません。<br>"
+        + "新しい住所は店内の案内（担当の方）でご確認ください。"
+        + "この端末の内容を運ぶには、マスタ設定 → 引っ越し → 「持ち出す」。";
+      el.hidden = false;
+    }
+    return true;
+  }
+  /* 新しい住所から、旧住所の全端末に「引っ越し済み」を知らせる（3つの置き場すべてに書く）。
+   * 取り消しは同じボタンで（movedFrom を空にする）。 */
+  function moveCloseOld(undo) {
+    if (!cloudOn()) { moveMsg("クラウドにつながっていないため、いまは行えません。", true); return; }
+    var oldHosts = INTERNAL_OLD_HOSTS.join(",");
+    if (!undo && INTERNAL_OLD_HOSTS.indexOf(String(location.hostname || "").toLowerCase()) >= 0) {
+      moveMsg("旧アドレス（" + location.hostname + "）からは行えません。新しい住所で開いた画面から押してください。", true);
+      return;
+    }
+    var msg = undo
+      ? "クラウドの「引っ越し済み」の印を消します。旧アドレスの端末は、また同期するようになります。よろしいですか？"
+      : "旧アドレス（" + oldHosts + "）で開いている全端末に「引っ越し済み」を知らせます。\n\n"
+        + "旧アドレスの端末は、次に通信したときから保存・同期ができなくなります（端末の中身は消えません）。\n"
+        + "全端末の持ち込みが終わってから押してください。よろしいですか？";
+    if (!window.confirm(msg)) return;
+    var docs = [CLOUD.db.collection("settings").doc("docomoQuoteStore"),
+      CLOUD.db.collection("settings").doc("ienakaInternalStore"),
+      CLOUD.db.collection("settings").doc("ienakaStore_tokiwahigashi")];
+    var payload = { movedFrom: undo ? "" : oldHosts, movedAt: undo ? "" : nowStamp() };
+    /* 3つの書類に順番に書く。途中で失敗したら、書けた分を空に戻して「半分だけ閉じた」状態を残さない */
+    var done = [];
+    docs.reduce(function (p, ref) {
+      return p.then(function () { return ref.set(payload, { merge: true }).then(function () { done.push(ref); }); });
+    }, Promise.resolve()).then(function () {
+      moveMsg(undo ? "「引っ越し済み」の印を消しました。" : "旧アドレス（" + oldHosts + "）の全端末に「引っ越し済み」を知らせました。");
+      logAdd("引っ越し", undo ? "引っ越し済みの印を消しました" : "引っ越し済みの印を付けました（" + oldHosts + "）");
+    }, function (e) {
+      var back = { movedFrom: "", movedAt: "" };
+      Promise.all(done.map(function (ref) { return ref.set(back, { merge: true }).catch(function () {}); })).then(function () {
+        moveMsg("書き込めませんでした（" + String((e && e.message) || e) + "）。書けた分は戻しました。通信できる場所でもう一度押してください。", true);
+      });
+    });
+  }
+
+  /* ---------- はじめて開く端末の門（社内版） ----------
+   * この住所で一度も店舗の設定を受け取っていない端末（config の保存が無い）。
+   * 通信できるまで待つか、旧アドレスで持ち出したファイルを持ち込む。 */
+  var freshGateOpen = false;
+  function freshDevice() {
+    try { return localStorage.getItem(CFG_KEY) == null; } catch (e) { return false; }
+  }
+  function showFreshGate(show) {
+    var el = $("freshOverlay");
+    if (!el) { if (show) afterStoreLogin(); return; }
+    freshGateOpen = !!show;
+    el.hidden = !show;
+    if (show) {
+      syncStatus("同期:オフライン", "err");
+      logAdd("起動", "はじめて開く端末で、クラウドの設定を受け取れませんでした（門で待機）");
+      bootDone();
+    }
+  }
+  function initFreshGate() {
+    var b = $("freshRetry");
+    if (b) b.addEventListener("click", function () {
+      if (!cloudOn()) return;
+      var msg = $("freshMsg");
+      if (msg) { msg.textContent = "確認しています…"; msg.hidden = false; }
+      storeDoc().get().then(function (snap) {
+        var d = snap.exists ? snap.data() : null;
+        if (d && !(snap.metadata && snap.metadata.fromCache)) {
+          applyRemoteStore(d);
+          showFreshGate(false);
+          afterStoreLogin();
+          return;
+        }
+        if (msg) msg.textContent = "まだ受け取れていません。通信できる場所でしばらくお待ちください。";
+      }, function () {
+        if (msg) msg.textContent = "まだ受け取れていません。通信できる場所でしばらくお待ちください。";
+      });
+    });
+    var mv = $("freshMoveBtn");
+    if (mv) mv.addEventListener("click", function () { var f = $("moveImportFile"); if (f) f.click(); });
   }
   /* この端末の見積もりに中身があるか。空のままの端末が
    * 「こちらの方が新しい」と主張して、ほかの端末の内容を消さないようにする。 */
@@ -7661,9 +8071,19 @@
         watchStoreTemplates();
         storeDoc().get().then(function (snap) {
           var dIc = snap.exists ? snap.data() : null;
+          /* 「この住所は閉じた」の合図があれば、担当者に入る前に止める（入ってしまうと、
+           * 合図のお知らせより先に作りかけの送信が走る隙がある） */
+          if (!(snap.metadata && snap.metadata.fromCache)) CLOUD.storeSynced = true;
+          if (dIc && !(snap.metadata && snap.metadata.fromCache) && movedAwayCheck(dIc)) { bootDone(); return; }
           if (dIc) applyRemoteStore(dIc);
+          /* はじめて開く端末で、クラウドの中身を受け取れていない（圏外・控えだけ）ときは
+           * 中へ入れない。入れると初期設定の画面が出て、店名や担当者を入れた瞬間に
+           * その1人だけの担当者一覧がクラウドへ送られ、通信が戻ったときに店内の全端末へ
+           * 配られてしまう（2026-09-08 配信先の引っ越しの反証で見つかった穴） */
+          if (!dIc && freshDevice() && snap.metadata && snap.metadata.fromCache) { showFreshGate(true); return; }
           afterStoreLogin();
         }, function () {
+          if (freshDevice()) { showFreshGate(true); return; }
           afterStoreLogin(); // 取得できなくても端末内の内容で続行する
         });
       } else {
@@ -7720,7 +8140,7 @@
       /* 開発用のアドレスからはログインさせない（4-28）。
        * ここを通すと、版のずれたアプリが同じ店舗のデータを書き替えてしまう。 */
       if (devHost()) {
-        err.innerHTML = "こちらは開発用のアドレスのため、ログインできません。<br>"
+        err.innerHTML = "こちらは開発用・試用のアドレスのため、ログインできません。<br>"
           + '<a href="https://frontalk.curacon.co.jp/">frontalk.curacon.co.jp</a> からお使いください。';
         err.hidden = false;
         logAdd("配信元", "開発用アドレスでのログインを止めました");
@@ -12657,6 +13077,7 @@
       "最後に同期できた時刻: " + t(CLOUD.lastOkAt),
       "端末の保存領域: " + storageUsageText() + (lsFailed() ? "（保存できていない項目あり）" : ""),
       "保存した見積もり: " + (savedList || []).length + "件",
+      "引っ越し: " + movedText(),
       "画面の大きさ: " + window.innerWidth + "×" + window.innerHeight,
       "ブラウザ: " + String(navigator.userAgent || "").slice(0, 120),
       "ネット: " + (navigator.onLine ? "つながっています" : "つながっていません"),
@@ -12666,6 +13087,12 @@
       return e.at + " [" + e.k + "] " + e.m + (e.v && e.v !== APP_VERSION ? "（版 " + e.v + "）" : "");
     });
     return lines.join("\n") + "\n" + (recent.length ? recent.join("\n") : "（記録はありません）");
+  }
+  function movedText() {
+    var m = null;
+    try { m = JSON.parse(localStorage.getItem(MOVED_KEY) || "null"); } catch (e) {}
+    if (!m) return "なし";
+    return (m.on || "") + " に " + (m.from || "旧アドレス") + " から持ち込み（" + (m.n || 0) + "件）";
   }
   function storeUid() {
     if (CLOUD.actAsUid) return CLOUD.actAsUid + "（保守・上位で表示中）";
@@ -16807,11 +17234,12 @@
    * 版がずれた2つのアプリが同じ店舗のデータを触る事故が起きうる。
    * こちらのアドレスで開かれたときは、正しいアドレスへ案内する。
    * 社内版（阪南・常盤東）は別のクラウドなので、この案内は出さない。 */
+  showMovedOutNote();
   if (devHost()) {
     (function () {
       var el = document.getElementById("cloudWarn");
       if (!el) return;
-      el.innerHTML = "⚠ こちらは<b>開発用のアドレス</b>です。ログインはできません。<br>"
+      el.innerHTML = "⚠ こちらは<b>開発用・試用のアドレス</b>です。ログインはできません。<br>"
         + 'ご利用は <a href="https://frontalk.curacon.co.jp/" style="color:#fff">frontalk.curacon.co.jp</a>'
         + " からお願いします。";
       el.hidden = false;
@@ -16973,6 +17401,8 @@
   initIenaka();
   initWizard();
   initBackup();
+  initMove();
+  initFreshGate();
   initIenakaLink();
   initTileSort();
   initTplHold();

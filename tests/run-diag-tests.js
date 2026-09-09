@@ -57,11 +57,20 @@ chk('⑦ 開き直すと、また閉じた状態から', await p.evaluate(()=>do
 chk('⑧ ふつうのアドレスでは、開発用の帯は出ない', await p.evaluate(()=>document.getElementById('cloudWarn').hidden)===true);
 await b.close();
 
-/* ---- 配信元がふたつある問題（4-28）。本物のホスト名で開いて確かめる ---- */
-const b2=await chromium.launch({args:['--no-sandbox','--host-resolver-rules=MAP * 127.0.0.1:'+srv.address().port],
+/* ---- 配信元がふたつある問題（4-28）。本物のホスト名で開いて確かめる ----
+ * pages.dev などはブラウザに「必ず https」と組み込まれている（HSTS の事前登録）ため、
+ * 素の http のテスト用サーバーでは開けない（CI の Chromium で ERR_SSL_PROTOCOL_ERROR）。
+ * その場で作った使い捨ての証明書で https のサーバーを立て、証明書の警告は無視させて開く。 */
+const https=require('https'),os=require('os'),{execFileSync}=require('child_process');
+const certDir=fs.mkdtempSync(path.join(os.tmpdir(),'kq-diag-cert-'));
+execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(certDir,'k.pem'),'-out',path.join(certDir,'c.pem'),'-subj','/CN=test','-days','1'],{stdio:'ignore'});
+const ssrv=https.createServer({key:fs.readFileSync(path.join(certDir,'k.pem')),cert:fs.readFileSync(path.join(certDir,'c.pem'))},
+  (q,s)=>{let p=q.url.split('?')[0];if(p.endsWith('/'))p+='index.html';const f=path.join(ROOT,decodeURIComponent(p));if(!fs.existsSync(f)||fs.statSync(f).isDirectory()){s.writeHead(404);s.end('nf');return;}s.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'application/octet-stream'});s.end(fs.readFileSync(f));});
+await new Promise(r=>ssrv.listen(0,'127.0.0.1',r));
+const b2=await chromium.launch({args:['--no-sandbox','--no-proxy-server','--ignore-certificate-errors','--host-resolver-rules=MAP * 127.0.0.1:'+ssrv.address().port],
   ...(fs.existsSync('/opt/pw-browsers/chromium')?{executablePath:'/opt/pw-browsers/chromium'}:{})});
 async function openAs(host, internal){
-  const c=await b2.newContext({serviceWorkers:'block'});
+  const c=await b2.newContext({serviceWorkers:'block',ignoreHTTPSErrors:true});
   await c.route('**/*',r=>{const u=new URL(r.request().url());
     if(u.hostname.includes('gstatic.com'))return r.abort();
     if(u.pathname.endsWith('firebase-config.js'))return r.fulfill({contentType:'application/javascript',
@@ -84,7 +93,7 @@ async function openAs(host, internal){
       firestore:Object.assign(function(){return {collection:()=>({doc:()=>doc,get:()=>Promise.resolve({forEach:()=>{}}),where(){return this;}})};},
         {FieldValue:{serverTimestamp:()=>'TS'}})};
   });
-  await pg.goto('http://'+host+'/keitai-app/?kqtest=1');
+  await pg.goto('https://'+host+'/keitai-app/?kqtest=1');
   await pg.waitForTimeout(1100);
   return {pg,c};
 }
@@ -110,7 +119,23 @@ g=await openAs('hisapiyp622-alt.github.io',true);
 chk('⑪ 社内版は同じアドレスでも止めない',
   (await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !e||e.hidden;}))===true);
 await g.c.close();
+/* 配信先の引っ越し（2026-09-08）: Cloudflare Pages の試用の住所（*.pages.dev）からも
+ * 本番のクラウドに入れてはいけない。「github.io なら止める」だと素通りするので、
+ * 「許す住所だけを書く」形（PROD_HOSTS）にした。ここはそれを見張る。 */
+for (const host of ['frontalk.pages.dev','abc123.frontalk.pages.dev','frontalk-app.example.com']) {
+  g=await openAs(host,false);
+  const band=await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !!e&&!e.hidden&&/開発用/.test(e.textContent);});
+  const signed=await trySignIn(g.pg);
+  chk('⑫ 配信元でない住所（'+host+'）では帯が出て、ログインできない', band && signed===0, '帯='+band+' 送信='+signed);
+  await g.c.close();
+}
+g=await openAs('frontalk.pages.dev',true);
+chk('⑬ 社内版は pages.dev でも止めない（別のクラウドなので対象外）',
+  (await g.pg.evaluate(()=>{const e=document.getElementById('cloudWarn');return !e||e.hidden;}))===true);
+await g.c.close();
 await b2.close();
+ssrv.close();
+fs.rmSync(certDir,{recursive:true,force:true});
 srv.close();
 const bad=errs.filter(e=>!/テスト用/.test(e));
 if(bad.length){console.error('JSエラーが発生しました:\n'+bad.join('\n'));process.exit(1);}
