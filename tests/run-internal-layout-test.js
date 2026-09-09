@@ -58,7 +58,8 @@ const MUST_404 = [
   '/keitai-app/index.html', '/keitai-app/sw.js', '/keitai-app/firebase-config.js', '/keitai-app/firestore.rules',
   '/keitai-app/README.md', '/ienaka-app/index.html', '/ienaka-app/sw.js', '/ienaka-app/firebase-config.js',
   '/ienaka-app/firestore.rules', '/ienaka-app/SETUP.md', '/ienaka-demo/index.html', '/ienaka-tiles/index.html',
-  '/dakkan-app/index.html', '/dist-product/index.html', '/keitai-app/ocr/'
+  '/dakkan-app/index.html', '/dist-product/index.html', '/keitai-app/ocr/', '/keitai-app/icon.svg', '/keitai-app/img/README.md',
+  '/tests/rules/run-rules-tests.js', '/tools/release.sh', '/.git/HEAD', '/tools/provision-store.js'
 ];
 
 (async () => {
@@ -136,10 +137,14 @@ const MUST_404 = [
     if (v.kind !== 'internal') problems.push(`version.json の kind が internal でない（${v.kind}）`);
     if (v.app !== appVer) problems.push(`version.json の版（${v.app}）と app.js（${appVer}）が違う`);
   } catch (e) { problems.push('version.json を読めません: ' + e.message); }
+  /* 見出し: 種類の推測をさせない・検索に載せない。Cache-Control は書かない（既定の「毎回確かめる」を使う） */
   const h = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');
-  for (const p of ['/sw.js', '/ienaka/sw.js', '/ienaka-tokiwahigashi/sw.js']) {
-    if (!h.includes(p + '\n')) problems.push(`_headers に ${p} の指定がない（古い sw.js が残りうる）`);
-  }
+  if (!/X-Content-Type-Options: nosniff/.test(h)) problems.push('_headers に X-Content-Type-Options が無い');
+  if (!/X-Robots-Tag: noindex/.test(h)) problems.push('_headers に X-Robots-Tag: noindex が無い（社内版は検索に載せない）');
+  if (h.split('\n').some((l) => !l.trim().startsWith('#') && /Cache-Control/i.test(l))) problems.push('_headers に Cache-Control がある（既定を上書きすると新しい版が届くのが遅れる）');
+  if ((await get(base + '/robots.txt')) !== 200) problems.push('/robots.txt が無い（社内版は検索に載せない）');
+  const rb = fs.readFileSync(path.join(OUT, 'robots.txt'), 'utf8');
+  if (!/Disallow: \/\s*$/m.test(rb)) problems.push('robots.txt が Disallow: / になっていない');
 
   await browser.close();
   srv.close();

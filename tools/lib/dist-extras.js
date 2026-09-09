@@ -5,8 +5,9 @@
  *                   返してしまう（1ページのアプリ扱い）。そうなると、参照の書き間違いで
  *                   app.js が 404 のはずのところにトップの HTML が返り、壊れているのに
  *                   気づけない。必ず入れる。
- *   _headers      … Cloudflare Pages が読む見出しの設定。sw.js は毎回サーバーに
- *                   確かめる（古いアプリが残らないように）。
+ *   _headers      … Cloudflare Pages が読む見出しの設定（種類の推測をさせない・枠に埋め込ませない）。
+ *                   Cache-Control は書かない（既定の「毎回確かめる」を使う）。
+ *   robots.txt    … 社内版だけ。検索エンジンに載せない。
  *   version.json  … 配ったものが原本のどのコミットかを照合するための印。
  *                   `node tools/check-live.js <住所>` がこれを読んで版を確かめる。
  *
@@ -50,17 +51,22 @@ code{background:#f1f1f3;padding:2px 6px;border-radius:4px;font-size:13px}
 `;
 }
 
-/* _headers（Cloudflare Pages の形式）。swPaths は毎回確かめさせたいファイルの一覧。 */
-function headersFile(swPaths) {
+/* _headers（Cloudflare Pages の形式）。
+ * Cache-Control は**書かない**。Cloudflare の既定（max-age=0, must-revalidate ＋ ETag）が
+ * sw.js・app.js の更新にいちばん向いていて、ここで上書きすると新しい版が端末に届くのが遅れる。
+ * Content-Security-Policy なども書かない（Firebase の部品・blob:・data: の画像が止まる）。
+ * noindex のとき（社内版）は検索エンジンに載せない印を足す。 */
+function headersFile(opts) {
+  const o = opts || {};
   const lines = [
     "# Cloudflare Pages が読む見出しの設定（tools/lib/dist-extras.js が作る）",
+    "# Cache-Control は書かない（既定の「毎回確かめる」が最良）",
     "/*",
     "  X-Content-Type-Options: nosniff",
     "  Referrer-Policy: strict-origin-when-cross-origin",
+    "  X-Frame-Options: SAMEORIGIN",
   ];
-  ["/version.json"].concat(swPaths).forEach((p) => {
-    lines.push(p, "  Cache-Control: no-cache");
-  });
+  if (o.noindex) lines.push("  X-Robots-Tag: noindex, nofollow");
   return lines.join("\n") + "\n";
 }
 
@@ -87,13 +93,15 @@ function versionInfo(extra) {
 
 /* out に 404.html・_headers・version.json を書く。
  *   opts.title   … 404 ページに出す名前
- *   opts.swPaths … 毎回確かめさせる sw.js の住所（"/sw.js" など）
+ *   opts.noindex … true なら検索よけ（X-Robots-Tag と robots.txt）
  *   opts.extra   … version.json に足す項目（kind など） */
 function writeExtras(out, opts) {
   const o = opts || {};
   fs.writeFileSync(path.join(out, "404.html"), page404(o.title || "フロントーク", o.homeHref || "/"));
-  fs.writeFileSync(path.join(out, "_headers"), headersFile(o.swPaths || ["/sw.js"]));
+  fs.writeFileSync(path.join(out, "_headers"), headersFile({ noindex: !!o.noindex }));
   fs.writeFileSync(path.join(out, "version.json"), JSON.stringify(versionInfo(o.extra), null, 2) + "\n");
+  // 社内版: 検索エンジンに載せない（住所を知っている人だけが使う）
+  if (o.noindex) fs.writeFileSync(path.join(out, "robots.txt"), "User-agent: *\nDisallow: /\n");
 }
 
 module.exports = { writeExtras, versionInfo, page404, headersFile };
