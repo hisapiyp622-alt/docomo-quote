@@ -29,7 +29,7 @@ function playwright() {
   return require('/opt/node22/lib/node_modules/playwright');
 }
 const STUB = fs.mkdtempSync(path.join(os.tmpdir(), 'kq-stub-'));
-execFileSync(process.execPath, [path.join(ROOT, 'tools/build-oldsite-stub.js'), '--new-url', 'https://naibu-test.pages.dev/', STUB], { stdio: 'inherit' });
+execFileSync(process.execPath, [path.join(ROOT, 'tools/build-oldsite-stub.js'), '--new-url', 'https://naibu-test.example/', STUB], { stdio: 'inherit' });
 
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.md': 'text/markdown', '.png': 'image/png', '.json': 'application/json' };
 const state = { dir: ROOT };
@@ -55,7 +55,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const { chromium } = playwright();
   /* オフライン係（Service Worker）は https か localhost でしか動かない。テスト用のホスト名を「安全な住所」として扱わせる */
   const lo = { args: ['--no-sandbox', '--host-resolver-rules=MAP * 127.0.0.1:' + port,
-    '--unsafely-treat-insecure-origin-as-secure=http://old.example,http://naibu-test.pages.dev'] };
+    '--unsafely-treat-insecure-origin-as-secure=http://old.example,http://naibu-test.example'] };
   if (fs.existsSync('/opt/pw-browsers/chromium')) lo.executablePath = '/opt/pw-browsers/chromium';
   const b = await chromium.launch(lo);
   const c = await b.newContext({ acceptDownloads: true });   // オフライン係（Service Worker）を動かす
@@ -88,7 +88,7 @@ srv.listen(0, '127.0.0.1', async () => {
   await pg.goto('http://old.example/');
   await wait(2500);
   const body = await pg.evaluate(() => document.body.innerText);
-  chk('② 案内ページが出る（古いアプリではない）', /引っ越しました/.test(body) && /naibu-test\.pages\.dev/.test(body) && !document_has(body), body.slice(0, 80));
+  chk('② 案内ページが出る（古いアプリではない）', /引っ越しました/.test(body) && /naibu-test\.example/.test(body) && !document_has(body), body.slice(0, 80));
   function document_has(t) { return /担当者コード|見積もり\s*光・5G/.test(t); }
   let regsAfter = await regs();
   for (let i = 0; i < 20 && regsAfter.length; i++) { await wait(300); regsAfter = await regs(); }
@@ -152,7 +152,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const c2 = await b.newContext({ serviceWorkers: 'block' });
   await c2.route('**/*', (r) => (r.request().url().includes('gstatic.com') ? r.abort() : r.continue()));
   const p2 = await c2.newPage(); p2.on('dialog', (d) => d.accept()); p2.on('pageerror', (e) => errs.push(String(e)));
-  await p2.goto('http://naibu-test.pages.dev/?kqtest=1'); await wait(1000);
+  await p2.goto('http://naibu-test.example/?kqtest=1'); await wait(1000);
   await p2.evaluate((json) => { document.getElementById('movePasteText').value = json; document.getElementById('movePasteBtn').click(); }, fs.readFileSync(file, 'utf8'));
   await wait(800); await p2.waitForLoadState('load'); await wait(1000);
   const l5 = await p2.evaluate(() => ({ s: localStorage.getItem('dq-saved-v1:s1'), k: localStorage.getItem('kq-config-v1'), m: localStorage.getItem('dq-moved-v1') }));
