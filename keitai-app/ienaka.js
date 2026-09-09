@@ -46,6 +46,9 @@
        * 出典: https://www.docomo.ne.jp/internet/hikari/charge/10g_type_c/
        *       （2026-09-06 確認。金額は公式ページの図の読み上げ文から取得） */
       monthly: { ht: { A: 6380, B: 6380 }, ms: { A: 6380, B: 6380 } },
+      /* タイプC新規工事料は戸建・マンションとも28,600円（2026年6月1日以降の申込み）。
+       * 出典: https://www.docomo.ne.jp/info/notice/page/260423_00.html
+       *       （2026-09-09 確認） */
       jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true, msAny: true,
       /* 1ギガ タイプC から 10ギガ タイプC への「プラン変更」のときは、
        * 新規（28,600円）ではなく 戸建 9,900円／マンション 8,250円（代表例）。
@@ -56,10 +59,12 @@
     hikaric: {
       name: "ドコモ光 1ギガ タイプC",
       monthly: { ht: { A: 5720, B: 5720 }, ms: { A: 4400, B: 4400 } },
-      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true,
       /* 料金はタイプAと同額（docomo.ne.jp/internet/hikari/charge/type_c/ 2026-08-20確認）。
        * ケーブルテレビ（ZTV等）の設備で提供。お電話・テレビはケーブルテレビ契約のまま残る。
-       * 新規工事料の公表額が見当たらないため1ギガと同額を仮置き（入力欄で変更可）。 */
+       * 新規工事料は戸建・マンションとも28,600円（2026年6月1日以降の申込み）。
+       * 出典: https://www.docomo.ne.jp/info/notice/page/260423_00.html
+       *       （2026-09-09 確認） */
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true,
       note: "2年定期契約・税込・料金はタイプAと同額。ケーブルテレビ（ZTV等）の設備で提供。お電話・テレビはケーブルテレビのご契約のまま（ドコモ光電話・テレビオプション申込不可）。ZTVは集合住宅対象外。"
     },
     ahamo1g: {
