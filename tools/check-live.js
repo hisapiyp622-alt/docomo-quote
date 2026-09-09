@@ -37,6 +37,7 @@ function fetchOnce(url, opts) {
   const o = opts || {};
   const a = ["-sS", "-o", "-", "-w", "\n%{http_code}\t%{content_type}\t%{redirect_url}", "--max-time", "20", "-H", "Cache-Control: no-cache"];
   if (o.head) a.push("-I");
+  if (o.follow) a.push("-L");
   try {
     const out = execFileSync("curl", a.concat([url]), { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     const i = out.lastIndexOf("\n");
@@ -88,8 +89,15 @@ if (OLDSITE) {
     for (const raw of m[1].match(/"[^"]*"/g) || []) {
       const rel = raw.slice(1, -1);
       const abs = new URL(rel, "https://x" + dir).pathname;
-      const r = fetch(BASE + abs);
-      if (r.code !== 200) missing.push(abs + "=" + r.code);
+      let r = fetch(BASE + abs);
+      /* Cloudflare Pages は「きれいな住所」を作るため /○○.html を /○○ へ 308 で転送する。
+       * 転送先が同じ配信先なら、たどった先が 200 なら控えは作れる（tests/run-pretty-url-test.js で
+       * 実際のブラウザでも確認している）。他所へ飛ばされたときは通さない。 */
+      if (r.code >= 300 && r.code < 400 && r.redirect && r.redirect.indexOf(BASE) === 0) {
+        const f = fetch(BASE + abs, { follow: true });
+        if (f.code === 200) { console.log("    " + abs + " は " + r.code + " で " + r.redirect + " へ転送（たどると 200）"); r = f; }
+      }
+      if (r.code !== 200) missing.push(abs + "=" + r.code + (r.redirect ? "→" + r.redirect : ""));
     }
     chk(swp + " の控え一覧が全部 200", missing.length === 0, missing.join(" "));
     const cacheName = (sw.body.match(/var CACHE = "([^"]+)"/) || [])[1];
@@ -112,7 +120,9 @@ if (OLDSITE) {
     for (const p of ["/ienaka/", "/ienaka-tokiwahigashi/"]) { const r = fetch(BASE + p); chk(p + " が開く（社内版）", r.code === 200 && /IENAKA_INTERNAL = true/.test(r.body), String(r.code)); }
     const rb = fetch(BASE + "/robots.txt"); chk("robots.txt で検索に載せない", rb.code === 200 && /Disallow: \//.test(rb.body), String(rb.code));
   }
-  const p404 = fetch(BASE + "/404.html"); chk("404.html がある", p404.code === 200 || p404.code === 404 && /ページが見つかりません/.test(p404.body), String(p404.code));
+  /* 404.html も「きれいな住所」へ転送される（/404.html → /404）ので、たどった先で見る */
+  const p404 = fetch(BASE + "/404.html", { follow: true });
+  chk("404.html がある", (p404.code === 200 || p404.code === 404) && /ページが見つかりません/.test(p404.body), String(p404.code));
   /* 転送 */
   const idx = fetch(BASE + "/index.html", { head: true });
   chk("/index.html は 200 か / への転送", idx.code === 200 || (idx.code >= 300 && idx.code < 400), String(idx.code) + (idx.redirect ? " → " + idx.redirect : ""));
