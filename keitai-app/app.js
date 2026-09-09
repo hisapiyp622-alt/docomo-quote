@@ -4834,7 +4834,14 @@
       if (k.indexOf(NS + "-saved-v1:") === 0) {
         try { saved += (JSON.parse(v) || []).length; } catch (e) {}
       } else if (k.indexOf(NS + "-state-v1:") === 0) {
-        quotes++;
+        /* 開いただけの端末にも空の作りかけが保存される。中身のあるものだけ数える
+         * （そうしないと、まだ使っていない新端末にも「すでに作りかけがあります」と出る） */
+        try {
+          var stv = JSON.parse(v);
+          var pts = (stv && stv.patterns) || [];
+          if (pts.some(function (pt) { return pt && (String(pt.custName || "").trim() || pt.planId || pt.procType || num(pt.devicePrice) > 0); })
+            || (stv && stv.ienaka && stv.ienaka.enabled)) quotes++;
+        } catch (e2) {}
       } else if (k.indexOf("ienaka-internal-") === 0) {
         ienaka++;
       } else if (k === NS + "-config-v1") {
@@ -8016,6 +8023,9 @@
         watchStoreTemplates();
         storeDoc().get().then(function (snap) {
           var dIc = snap.exists ? snap.data() : null;
+          /* 「この住所は閉じた」の合図があれば、担当者に入る前に止める（入ってしまうと、
+           * 合図のお知らせより先に作りかけの送信が走る隙がある） */
+          if (dIc && !(snap.metadata && snap.metadata.fromCache) && movedAwayCheck(dIc)) { bootDone(); return; }
           if (dIc) applyRemoteStore(dIc);
           /* はじめて開く端末で、クラウドの中身を受け取れていない（圏外・控えだけ）ときは
            * 中へ入れない。入れると初期設定の画面が出て、店名や担当者を入れた瞬間に

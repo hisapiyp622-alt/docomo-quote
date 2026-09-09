@@ -113,6 +113,16 @@ srv.listen(0, '127.0.0.1', async () => {
   const s6 = await sets(d.pg);
   chk('⑥ 旧住所からは何も送らない', s6.length === 0, JSON.stringify(s6).slice(0, 200));
   await d.c.close();
+  // 担当が1人でコード無し（担当者コードの画面を通らず、開いた瞬間に中へ入る店舗）の旧端末が、
+  // 圏外で作りかけを直していた → 旧住所で開いたとき、合図より先に作りかけを送らない
+  d = await open({ url: '/?kqtest=1', offline: false, host: 'old.example',
+    docs: { [STORE]: { storeName: 'テスト店', storeTel: '', staff: [{ id: 's1', name: '担当1', code: '' }], activeStaffId: 's1', adminLock: null, movedFrom: 'old.example', updatedAtMs: Date.now() - 600000, clientId: 'other-device' } },
+    seed: { 'dq-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [{ id: 's1', name: '担当1', code: '' }], activeStaffId: 's1' }),
+      'dq-state-v1:s1': JSON.stringify({ active: 0, gen: 1, patterns: [{ custName: '圏外で直した' }] }), 'dq-quote-at:s1': String(Date.now()) } });
+  await wait(2500);
+  const s7 = await sets(d.pg);
+  chk('⑥ 担当者コードの画面を通らない店舗でも、合図が先に効いて何も送らない', s7.length === 0 && (await vis(d.pg, 'cloudWarn')), JSON.stringify(s7).slice(0, 160));
+  await d.c.close();
   // 新しい住所（movedTo と同じ）では止まらない
   d = await open({ url: '/?kqtest=1', offline: false, host: 'new.example',
     docs: { [STORE]: Object.assign({}, cloudStore, { movedFrom: 'old.example' }) }, seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
@@ -148,11 +158,30 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('イ③ 本物を受け取ったあとは、これまでどおり送れる', (await sets(d.pg)).some((x) => x.path === IE + '/quotes/shared'));
   await d.c.close();
 
-  // ④ 端末に保存がある端末が圏外 → 入力は送れる（これまでどおり。通信が戻ったときに届く）
-  d = await open({ url: '/ienaka/', offline: true, seed: { 'ienaka-internal-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [] }) } });
+  // ② 空の端末を圏外のまま**開き直して**入力しても送らない（1回目の起動で自動保存された空の見積もりを「保存あり」と見ない）
+  {
+    const c2 = await b.newContext({ serviceWorkers: 'block' });
+    await c2.route('**/*', (r) => (r.request().url().includes('gstatic.com') ? r.abort() : r.continue()));
+    const p2 = await c2.newPage(); p2.on('dialog', (dd) => dd.accept()); p2.on('pageerror', (e) => errs.push('/ienaka/ 2回目: ' + String(e)));
+    await p2.addInitScript(fake({ offline: true }));
+    await p2.goto('http://naibu.example/ienaka/'); await wait(1000);
+    await p2.goto('http://naibu.example/ienaka/'); await wait(1000);   // 圏外のまま開き直す
+    await p2.evaluate(() => { const e = document.getElementById('custName'); e.value = '2回目に入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    await wait(1500);
+    const s2 = await p2.evaluate(() => window.__FAKE.sets.map((s) => s.path));
+    chk('イ② 空の端末を圏外のまま開き直して入力しても送らない', s2.length === 0, s2.join(','));
+    await c2.close();
+  }
+  // ④ 一度でも本物を受け取った端末（いつもの iPad）が圏外 → 入力は送れる（これまでどおり。通信が戻ったときに届く）
+  d = await open({ url: '/ienaka/', offline: true, seed: { 'ienaka-internal-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [] }), 'ienaka-internal-seen-cloud-v1': '1' } });
   await d.pg.evaluate(() => { const e = document.getElementById('custName'); e.value = 'いつもの端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await wait(1500);
-  chk('イ④ 保存のある端末は圏外でも送れる（これまでどおり）', (await sets(d.pg)).some((x) => x.path === IE + '/quotes/shared'));
+  chk('イ④ 一度本物を受け取った端末は圏外でも送れる（これまでどおり）', (await sets(d.pg)).some((x) => x.path === IE + '/quotes/shared'));
+  await d.c.close();
+  // ④' 通信できる場所で一度開いた端末には印が残り、次に圏外で開いても送れる
+  d = await open({ url: '/ienaka/', offline: false, docs: { [IE + '/quotes/shared']: { data: JSON.stringify(remoteQuote), clientId: 'other-device', updatedAtMs: Date.now() } } });
+  const mark = await d.pg.evaluate(() => localStorage.getItem('ienaka-internal-seen-cloud-v1'));
+  chk("イ④' 本物を受け取ると端末に印が残る（持ち出し・持ち込みで新端末にも運ばれる）", mark === '1', String(mark));
   await d.c.close();
 
   // ⑥ 引っ越し済みの合図

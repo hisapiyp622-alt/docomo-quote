@@ -107,6 +107,7 @@ srv.listen(0, '127.0.0.1', async () => {
   await d.pg.setInputFiles('#moveImportFile', file);
   await wait(800);
   chk('② 取り込む前に内容をたずねる', d.pg.dialogs.some((t) => /old\.example/.test(t) && /保存した見積もり 1件/.test(t) && /クラウドには書きません/.test(t)), d.pg.dialogs.join(' | ').slice(0, 160));
+  chk('② 開いただけの新端末には「すでに保存や作りかけがあります」の念押しは出ない', !d.pg.dialogs.some((t) => /すでに保存や作りかけ/.test(t)), d.pg.dialogs.join(' | ').slice(0, 160));
   chk('② 「持ち込みました」と知らせて開き直す', d.pg.dialogs.some((t) => /持ち込みました/.test(t)));
   await d.pg.waitForLoadState('load'); await wait(1200);
   const after = await ls(d.pg);

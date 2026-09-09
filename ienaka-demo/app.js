@@ -291,11 +291,13 @@
    * 担当者名は見積もり本体（state.staffName）に入れて一緒に保存・同期する。 */
   var CFG_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-config-v1" : "ienaka-internal-config-v1")
     : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
-  /* 開いた時点で端末に保存があったか。起動の途中で設定や見積もりが保存されるので、
-   * 読み込みより先に見ておく。空の端末の見分け（freshOffline）に使う。 */
-  var HAD_LOCAL_AT_BOOT = (function () {
-    try { return localStorage.getItem(KEY) != null || localStorage.getItem(CFG_KEY) != null; } catch (e) { return false; }
-  }());
+  /* クラウドの本物（控えでない内容）を一度でも受け取ったことがある端末の印。
+   * 「開いたときに端末に保存があったか」で見分けると、起動のたびに自動保存が走るので
+   * 圏外のまま2回目に開いた空の端末が「保存のある端末」扱いになり、白紙を送ってしまう
+   * （第2の反証で再現）。受け取った事実を端末に残して見分ける。
+   * 引っ越しの持ち出し・持ち込みの対象（ienaka-internal-*）なので、旧端末の印は新端末に引き継がれる。 */
+  var SEEN_CLOUD_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-seen-cloud-v1" : "ienaka-internal-seen-cloud-v1")
+    : DEMO ? "ienaka-demo-seen-cloud-v1" : "ienaka-app-seen-cloud-v1";
   function defaultConfig() { return { storeName: "" }; }
   var config = defaultConfig();
   var oldCfg = null; // 担当者分離時代の設定（見積もりの引き継ぎにだけ使う）
@@ -1399,8 +1401,7 @@
     enabled: false, user: null, db: null, auth: null,
     suppress: false, cfgTimer: null, quoteTimer: null,
     unsubStore: null, unsubQuote: null,
-    seenCloud: false,      // クラウドの内容（控えでない本物）を一度でも受け取ったか
-    hadLocalAtBoot: false, // 開いたときに端末の中に保存があったか（空の端末の見分け）
+    seenCloud: false,      // クラウドの内容（控えでない本物）をこのページで受け取ったか（端末の印は SEEN_CLOUD_KEY）
     clientId: Math.random().toString(36).slice(2) + Date.now().toString(36)
   };
   function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db && !CLOUD.movedAway; }
@@ -1474,12 +1475,19 @@
       return JSON.stringify(s);
     } catch (e) { return ""; }
   }
-  /* 「はじめて開いた空の端末」か。クラウドの内容を一度も受け取れておらず（圏外）、
-   * 開いたときに端末の中にも見積もりが無かった端末。この状態で送ると、
+  /* 「クラウドの本物を一度も受け取ったことがない端末」か。この状態で送ると、
    * 通信が戻った瞬間に白紙が全端末へ配られるので、受け取れるまで送らない。
-   * 開いたときに端末に保存があった端末（いつもの iPad が圏外なだけ）は、これまでどおり送る。 */
+   * 一度でも受け取った端末（いつもの iPad が圏外なだけ）は、これまでどおり送る。 */
+  function seenCloudEver() {
+    if (CLOUD.seenCloud) return true;
+    try { return localStorage.getItem(SEEN_CLOUD_KEY) === "1"; } catch (e) { return false; }
+  }
+  function markSeenCloud() {
+    CLOUD.seenCloud = true;
+    try { localStorage.setItem(SEEN_CLOUD_KEY, "1"); } catch (e) {}
+  }
   function freshOffline() {
-    return CLOUD.enabled && !CLOUD.seenCloud && !CLOUD.hadLocalAtBoot;
+    return CLOUD.enabled && !seenCloudEver();
   }
   function pushQuote() {
     if (!cloudOn() || CLOUD.suppress) return;
@@ -1529,10 +1537,10 @@
          * 空の端末の白紙がクラウドに載り、店内の全端末に配られてしまう
          * （ケータイ側 watchStore と同じ守り。2026-09-08 配信先の引っ越しに備えて） */
         if (snap.metadata && snap.metadata.fromCache) { cloudStatus("同期:オフライン", "err"); return; }
-        CLOUD.seenCloud = true;
+        markSeenCloud();
         pushConfig(); return; // 初回ログイン → この端末の設定を初期値として保存
       }
-      CLOUD.seenCloud = true;
+      markSeenCloud();
       if (INTERNAL && movedAwayCheck(d)) return;
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
       applyRemoteConfig(d);
@@ -1548,10 +1556,10 @@
         /* 通信できていないときの「何も無い」では送らない（上の watchStore と同じ理由）。
          * 共有の見積もりは1枚しか無いので、ここで白紙を送ると全端末の作りかけが消える。 */
         if (snap.metadata && snap.metadata.fromCache) { cloudStatus("同期:オフライン", "err"); return; }
-        CLOUD.seenCloud = true;
+        markSeenCloud();
         pushQuote(); return;
       }
-      CLOUD.seenCloud = true;
+      markSeenCloud();
       if (d.clientId === CLOUD.clientId) { cloudOk(); return; }
       if (CLOUD.quoteTimer) return; // 送信待ちのローカル編集がある間は上書きしない（後勝ち）
       applyRemoteQuote(d);
@@ -1586,7 +1594,6 @@
     return "ログインできませんでした。時間をおいて再度お試しください。";
   }
   function initCloud() {
-    CLOUD.hadLocalAtBoot = HAD_LOCAL_AT_BOOT;
     /* 社内版: ログインは使わず、読み込めていればそのまま同期を始める。
      * 店舗名・担当者一覧と、担当者ごとの見積もりが端末間で揃う。 */
     if (INTERNAL) {

@@ -46,6 +46,10 @@
   ⚠ この端末に保存できませんでした。端末の空き容量（ストレージ）を確認してください。いま入力した内容は端末に残らない可能性があります。
 </div>
 
+<!-- 引っ越しの持ち込み用のファイル選択（社内版だけ）。最初の画面（初期設定・担当者コード・門）からも押すので、
+     隠れたカードの中ではなく、ここに置く（app.js の initMove） -->
+<input type="file" id="moveImportFile" accept="application/json,.json" hidden>
+
 <main>
   <!-- ============ 見積もりタブ ============ -->
   <section id="tab-quote" class="tab-page active no-print">
@@ -1013,9 +1017,7 @@
       <div class="actions">
         <button class="btn-sub" id="moveExportBtn" type="button">この端末のデータを持ち出す</button>
         <button class="btn-sub" id="moveCopyBtn" type="button" hidden>文字としてコピー</button>
-        <label class="btn-sub file-btn">新しい住所で持ち込む
-          <input type="file" id="moveImportFile" accept="application/json,.json" hidden>
-        </label>
+        <label class="btn-sub file-btn" for="moveImportFile">新しい住所で持ち込む</label>
       </div>
       <p class="hint" id="moveMsg" hidden></p>
       <details class="hint">
