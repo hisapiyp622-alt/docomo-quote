@@ -36,20 +36,25 @@ fs.writeFileSync(path.join(OTHER, 'index.html'), '<!DOCTYPE html><html><body>oth
 fs.writeFileSync(path.join(OTHER, 'sw.js'), 'self.addEventListener("install",function(e){e.waitUntil(caches.open("other-site-v1").then(function(c){return c.put("/other/x.txt",new Response("x"));}));self.skipWaiting();});self.addEventListener("activate",function(){self.clients.claim();});');
 
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.md': 'text/markdown', '.png': 'image/png', '.json': 'application/json' };
-/* 旧住所（old.example）は本番と同じく /docomo-quote/ の下に置く。/other/ は同居する別サイト。
- * 新しい住所（naibu-test.example）は根っこに社内版（リポジトリの中身）を置く。 */
+/* オフライン係（Service Worker）は https か localhost でしか動かない。ホスト名を偽る方法は CI の Chromium で
+ * 効かなかったので、localhost の**別ポート**で「旧住所」と「新住所」を分ける（別ポート＝別のオリジン＝保存も
+ * オフライン係も別）。旧住所は本番と同じく /docomo-quote/ の下に置き、/other/ は同居する別サイトのまね。
+ * 新しい住所は根っこに社内版（リポジトリの中身）を置く。 */
 const state = { dir: ROOT };
-const srv = http.createServer((q, s) => {
-  let p = q.url.split('?')[0]; if (p.endsWith('/')) p += 'index.html';
-  let base = state.dir;
-  if ((q.headers.host || '').indexOf('old.example') === 0) {
-    if (p.indexOf('/other/') === 0) { base = OTHER; p = p.slice('/other'.length); }
-    else if (p.indexOf('/docomo-quote/') === 0) { p = p.slice('/docomo-quote'.length); }
-    else { s.writeHead(404); s.end('nf'); return; }
-  }
+function serveFile(base, p, s) {
   const f = path.join(base, decodeURIComponent(p));
   if (!f.startsWith(base) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end('nf'); return; }
   s.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' }); s.end(fs.readFileSync(f));
+}
+const srvOld = http.createServer((q, s) => {
+  let p = q.url.split('?')[0]; if (p.endsWith('/')) p += 'index.html';
+  if (p.indexOf('/other/') === 0) return serveFile(OTHER, p.slice('/other'.length), s);
+  if (p.indexOf('/docomo-quote/') === 0) return serveFile(state.dir, p.slice('/docomo-quote'.length), s);
+  s.writeHead(404); s.end('nf');
+});
+const srv = http.createServer((q, s) => {
+  let p = q.url.split('?')[0]; if (p.endsWith('/')) p += 'index.html';
+  serveFile(state.dir, p, s);
 });
 let okN = 0, ng = 0;
 function chk(l, cond, x) { console.log((cond ? 'OK  ' : 'NG  ') + l + (x ? '  ' + x : '')); if (cond) okN++; else ng++; }
@@ -63,11 +68,11 @@ const SEED = {
 };
 
 srv.listen(0, '127.0.0.1', async () => {
-  const port = srv.address().port;
+  await new Promise((r) => srvOld.listen(0, '127.0.0.1', r));
+  const OLD = 'http://localhost:' + srvOld.address().port;   // 旧住所（…/docomo-quote/ の下）
+  const NEW = 'http://localhost:' + srv.address().port;      // 新しい住所（根っこ）
   const { chromium } = playwright();
-  /* オフライン係（Service Worker）は https か localhost でしか動かない。テスト用のホスト名を「安全な住所」として扱わせる */
-  const lo = { args: ['--no-sandbox', '--host-resolver-rules=MAP * 127.0.0.1:' + port,
-    '--unsafely-treat-insecure-origin-as-secure=http://old.example,http://naibu-test.example'] };
+  const lo = { args: ['--no-sandbox', '--no-proxy-server'] };
   if (fs.existsSync('/opt/pw-browsers/chromium')) lo.executablePath = '/opt/pw-browsers/chromium';
   const b = await chromium.launch(lo);
   const c = await b.newContext({ acceptDownloads: true });   // オフライン係（Service Worker）を動かす
@@ -82,17 +87,17 @@ srv.listen(0, '127.0.0.1', async () => {
   const ls = () => pg.evaluate(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } return o; });
 
   /* ---- ① 古いアプリを開いて、控えを作らせる ---- */
-  await pg.goto('http://old.example/docomo-quote/?kqtest=1');
+  await pg.goto(OLD + '/docomo-quote/?kqtest=1');
   await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
   let names = [];
   for (let i = 0; i < 40 && !names.some((n) => /^dq-v/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('① 古い社内版ケータイの控え（dq-v*）ができる', names.some((n) => /^dq-v/.test(n)), names.join(','));
-  await pg.goto('http://old.example/docomo-quote/ienaka/');
+  await pg.goto(OLD + '/docomo-quote/ienaka/');
   await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
   for (let i = 0; i < 40 && !names.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('① 古い社内版イエナカの控え（ienaka-internal-v*）ができる', names.some((n) => /^ienaka-internal-v/.test(n)), names.join(','));
   // 同居する別サイト（/other/）のオフライン係と控え
-  await pg.goto('http://old.example/other/');
+  await pg.goto(OLD + '/other/');
   await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
   for (let i = 0; i < 40 && !names.includes('other-site-v1'); i++) { await wait(300); names = await cacheNames(); }
   const regsBefore = await regs();
@@ -100,7 +105,7 @@ srv.listen(0, '127.0.0.1', async () => {
 
   /* ---- ② 案内ページに差し替えて開き直す ---- */
   state.dir = STUB;
-  await pg.goto('http://old.example/docomo-quote/');
+  await pg.goto(OLD + '/docomo-quote/');
   await wait(2500);
   const body = await pg.evaluate(() => document.body.innerText);
   const html = await pg.content();
@@ -116,7 +121,7 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('② 同居する別サイトの控えは消さない', names.includes('other-site-v1'), names.join(','));
 
   /* ---- ③ /ienaka/ も案内になる ---- */
-  await pg.goto('http://old.example/docomo-quote/ienaka/');
+  await pg.goto(OLD + '/docomo-quote/ienaka/');
   await wait(800);
   const body3 = await pg.evaluate(() => document.body.innerText);
   chk('③ /ienaka/ を開いても古いイエナカが控えから起きず、案内が出る', /引っ越しました/.test(body3) && /イエナカ/.test(body3), body3.slice(0, 80));
@@ -127,13 +132,13 @@ srv.listen(0, '127.0.0.1', async () => {
     const c3 = await b.newContext();
     const p3 = await c3.newPage(); p3.setDefaultTimeout(10000);
     p3.on('pageerror', (e) => errs.push(String(e)));
-    await p3.goto('http://old.example/docomo-quote/ienaka/');
+    await p3.goto(OLD + '/docomo-quote/ienaka/');
     await p3.evaluate(() => navigator.serviceWorker.ready.then(() => null));
     let n3 = [];
     for (let i = 0; i < 40 && !n3.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); n3 = await p3.evaluate(() => caches.keys()); }
     chk('③b イエナカだけ使う端末にも控えができる', n3.some((n) => /^ienaka-internal-v/.test(n)), n3.join(','));
     state.dir = STUB;
-    await p3.goto('http://old.example/docomo-quote/ienaka/');
+    await p3.goto(OLD + '/docomo-quote/ienaka/');
     await wait(2500);
     const b3 = await p3.evaluate(() => document.body.innerText);
     let r3 = await p3.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope)));
@@ -150,7 +155,7 @@ srv.listen(0, '127.0.0.1', async () => {
   }
 
   /* ---- ④ 端末の保存は残り、持ち出せる ---- */
-  await pg.goto('http://old.example/docomo-quote/');
+  await pg.goto(OLD + '/docomo-quote/');
   await wait(500);
   const l4 = await ls();
   chk('④ 端末の保存（localStorage）は消えていない', l4['dq-saved-v1:s1'] === SEED['dq-saved-v1:s1'] && l4['kq-config-v1'] === SEED['kq-config-v1']);
@@ -160,7 +165,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const file = path.join(STUB, 'export.json');
   await dl.saveAs(file);
   const ex = JSON.parse(fs.readFileSync(file, 'utf8'));
-  chk('④ 持ち出しファイルは新しい住所の「持ち込む」と同じ形式', ex.kind === 'frontalk-internal-move' && /共有しない/.test(ex.note || '') && /old\.example/.test(ex.from));
+  chk('④ 持ち出しファイルは新しい住所の「持ち込む」と同じ形式', ex.kind === 'frontalk-internal-move' && /共有しない/.test(ex.note || '') && /localhost/.test(ex.from));
   const keys = Object.keys(ex.keys || {});
   chk('④ 社内版の鍵だけが入る', keys.includes('dq-config-v1') && keys.includes('dq-saved-v1:s1') && keys.includes('ienaka-internal-config-v1') && !keys.includes('kq-config-v1'), keys.join(','));
   chk('④ 持ち出しても端末の中身は消えない', (await ls())['dq-saved-v1:s1'] === SEED['dq-saved-v1:s1']);
@@ -170,11 +175,11 @@ srv.listen(0, '127.0.0.1', async () => {
   const c2 = await b.newContext({ serviceWorkers: 'block' });
   await c2.route('**/*', (r) => (r.request().url().includes('gstatic.com') ? r.abort() : r.continue()));
   const p2 = await c2.newPage(); p2.on('dialog', (d) => d.accept()); p2.on('pageerror', (e) => errs.push(String(e)));
-  await p2.goto('http://naibu-test.example/?kqtest=1'); await wait(1000);
+  await p2.goto(NEW + '/?kqtest=1'); await wait(1000);
   await p2.evaluate((json) => { document.getElementById('movePasteText').value = json; document.getElementById('movePasteBtn').click(); }, fs.readFileSync(file, 'utf8'));
   await wait(800); await p2.waitForLoadState('load'); await wait(1000);
   const l5 = await p2.evaluate(() => ({ s: localStorage.getItem('dq-saved-v1:s1'), k: localStorage.getItem('kq-config-v1'), m: localStorage.getItem('dq-moved-v1') }));
-  chk('④ 新しい住所のアプリがそのファイルを持ち込める', l5.s === SEED['dq-saved-v1:s1'] && l5.k === null && /old\.example/.test(l5.m || ''), JSON.stringify(l5).slice(0, 120));
+  chk('④ 新しい住所のアプリがそのファイルを持ち込める', l5.s === SEED['dq-saved-v1:s1'] && l5.k === null && /localhost/.test(l5.m || ''), JSON.stringify(l5).slice(0, 120));
   await c2.close();
   state.dir = STUB;
 
@@ -189,7 +194,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const l6 = await ls();
   chk('⑤ 二度「はい」で社内版の鍵だけ消える（開発コピーは残る）', dialogs.length === 2 && !('dq-saved-v1:s1' in l6) && !('dq-config-v1' in l6) && l6['kq-config-v1'] === SEED['kq-config-v1'], Object.keys(l6).join(','));
 
-  await b.close(); srv.close();
+  await b.close(); srv.close(); srvOld.close();
   fs.rmSync(STUB, { recursive: true, force: true });
   fs.rmSync(OTHER, { recursive: true, force: true });
   const bad = errs.filter((e) => !/テスト用/.test(e));

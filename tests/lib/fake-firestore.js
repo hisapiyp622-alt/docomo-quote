@@ -7,13 +7,15 @@
  *   window.__FAKE.sets           … アプリが送った書き込みの記録 [{path, data, opts}]
  *   window.__FAKE.deliver(path, data) … 通信が戻って本物の中身が届いたことにする（購読者へ配る）
  *   window.__FAKE.goOnline()     … 通信が戻ったことにする（中身なしのまま本物のお知らせを配る）
+ *   opts.delay = { path: ms }    … その書類の最初のお知らせを遅らせる（本物のクラウドは配達の順番が決まっていない。
+ *                                  「店舗の書類より先に見積もりのお知らせが届く」を再現するのに使う）
  *
  * 使いどころ: 「空の端末を圏外で開いても、白紙をクラウドへ送らないこと」のように、
  * 本物のクラウドでは試せない（試すと本番が壊れる）ことを確かめる。 */
 module.exports = function fakeFirestoreScript(opts) {
-  const o = Object.assign({ offline: true, docs: {} }, opts || {});
+  const o = Object.assign({ offline: true, docs: {}, delay: {} }, opts || {});
   return `(function(){
-    var F = window.__FAKE = { offline: ${o.offline ? 'true' : 'false'}, docs: ${JSON.stringify(o.docs)}, sets: [], listeners: {} };
+    var F = window.__FAKE = { offline: ${o.offline ? 'true' : 'false'}, docs: ${JSON.stringify(o.docs)}, delay: ${JSON.stringify(o.delay)}, sets: [], listeners: {} };
     function snap(path, fromCache) {
       var d = F.docs[path];
       return { exists: !!d, id: path.split('/').pop(), data: function () { return d ? JSON.parse(JSON.stringify(d)) : null; },
@@ -42,7 +44,7 @@ module.exports = function fakeFirestoreScript(opts) {
         delete: function () { F.sets.push({ path: path, data: null, opts: { del: true } }); delete F.docs[path]; return Promise.resolve(); },
         onSnapshot: function (cb, err) {
           (F.listeners[path] = F.listeners[path] || []).push(cb);
-          setTimeout(function () { try { cb(snap(path, F.offline)); } catch (e) {} }, 0);
+          setTimeout(function () { try { cb(snap(path, F.offline)); } catch (e) {} }, F.delay[path] || 0);
           return function () { F.listeners[path] = (F.listeners[path] || []).filter(function (x) { return x !== cb; }); };
         },
         collection: function (name) { return colRef(path + '/' + name); }

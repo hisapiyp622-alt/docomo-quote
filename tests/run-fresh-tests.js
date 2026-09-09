@@ -56,7 +56,7 @@ srv.listen(0, '127.0.0.1', async () => {
     const pg = await c.newPage(); pg.setDefaultTimeout(8000);
     pg.on('pageerror', (e) => errs.push(o.url + ': ' + String(e)));
     pg.on('dialog', (d) => d.accept());
-    await pg.addInitScript(fake({ offline: o.offline, docs: o.docs || {} }));
+    await pg.addInitScript(fake({ offline: o.offline, docs: o.docs || {}, delay: o.delay || {} }));
     if (o.seed) await pg.addInitScript((seed) => { if (!window.__seeded) { window.__seeded = 1; Object.keys(seed).forEach((k) => localStorage.setItem(k, seed[k])); } }, o.seed);
     await pg.goto('http://' + (o.host || 'naibu.example') + o.url);
     await wait(1200);
@@ -114,8 +114,9 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('⑥ 旧住所からは何も送らない', s6.length === 0, JSON.stringify(s6).slice(0, 200));
   await d.c.close();
   // 担当が1人でコード無し（担当者コードの画面を通らず、開いた瞬間に中へ入る店舗）の旧端末が、
-  // 圏外で作りかけを直していた → 旧住所で開いたとき、合図より先に作りかけを送らない
-  d = await open({ url: '/?kqtest=1', offline: false, host: 'old.example',
+  // 圏外で作りかけを直していた → 旧住所で開いたとき、合図より先に作りかけを送らない。
+  // 本物のクラウドは配達の順番が決まっていないので、店舗の書類のお知らせを 2 秒遅らせて「見積もりの送信が先に走る」形にする
+  d = await open({ url: '/?kqtest=1', offline: false, host: 'old.example', delay: { [STORE]: 2000 },
     docs: { [STORE]: { storeName: 'テスト店', storeTel: '', staff: [{ id: 's1', name: '担当1', code: '' }], activeStaffId: 's1', adminLock: null, movedFrom: 'old.example', updatedAtMs: Date.now() - 600000, clientId: 'other-device' } },
     seed: { 'dq-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [{ id: 's1', name: '担当1', code: '' }], activeStaffId: 's1' }),
       'dq-state-v1:s1': JSON.stringify({ active: 0, gen: 1, patterns: [{ custName: '圏外で直した' }] }), 'dq-quote-at:s1': String(Date.now()) } });
