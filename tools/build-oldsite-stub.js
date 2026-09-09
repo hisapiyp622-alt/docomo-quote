@@ -130,18 +130,24 @@ ${internal ? `
   var OLD_PATH = ${JSON.stringify(OLD_PATH)};
   /* この受け持ち範囲（OLD_PATH の下）のオフライン係を外し、社内版・開発コピーの控えを消す（端末の保存は消さない）。
    * 同じ github.io に同居する別サイトのオフライン係は触らない。 */
-  try {
-    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-      navigator.serviceWorker.getRegistrations().then(function (rs) {
-        rs.forEach(function (r) { try { if (new URL(r.scope).pathname.indexOf(OLD_PATH) === 0) r.unregister(); } catch (e) {} });
-      });
-    }
-    if (window.caches) {
-      caches.keys().then(function (keys) {
-        keys.forEach(function (k) { if (CACHE_PREFIXES.some(function (p) { return k.indexOf(p) === 0; })) caches.delete(k); });
-      });
-    }
-  } catch (e) {}
+  function cleanup() {
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          rs.forEach(function (r) { try { if (new URL(r.scope).pathname.indexOf(OLD_PATH) === 0) r.unregister(); } catch (e) {} });
+        });
+      }
+      if (window.caches) {
+        caches.keys().then(function (keys) {
+          keys.forEach(function (k) { if (CACHE_PREFIXES.some(function (p) { return k.indexOf(p) === 0; })) caches.delete(k); });
+        });
+      }
+    } catch (e) {}
+  }
+  /* 開いた直後と少しあとの2回。古いオフライン係が部品を入れている最中だと、消したあとに入れ直されることがあるため */
+  cleanup();
+  setTimeout(cleanup, 2000);
+  setTimeout(cleanup, 6000);
   var $ = function (id) { return document.getElementById(id); };
   if (!$("exportBtn")) return;
   function keyOk(k) { return MOVE_SKIP.indexOf(k) < 0 && MOVE_PREFIXES.some(function (p) { return k.indexOf(p) === 0; }); }

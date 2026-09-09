@@ -85,20 +85,35 @@ srv.listen(0, '127.0.0.1', async () => {
   const cacheNames = () => pg.evaluate(() => caches.keys());
   const regs = () => pg.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope)));
   const ls = () => pg.evaluate(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } return o; });
+  /* そのページのオフライン係が「入れ終わって動いている」（installing/waiting が無く active がある）まで待つ。
+   * 控えの名前が見えた時点では、まだ部品を入れている途中のことがあり、その最中に片付けを始めると
+   * 入れかけの控えが残ることがある（CI で再現） */
+  const swSettled = async (page, scopeTail) => {
+    for (let i = 0; i < 100; i++) {
+      // 古いアプリは自分で読み込み直すことがあるので、短い確認を外側から繰り返す
+      const ok = await page.evaluate((tail) => navigator.serviceWorker.getRegistrations().then((rs) => {
+        const r = rs.find((x) => x.scope.endsWith(tail));
+        return !!(r && r.active && !r.installing && !r.waiting);
+      }), scopeTail).catch(() => false);
+      if (ok) return true;
+      await wait(100);
+    }
+    return false;
+  };
 
   /* ---- ① 古いアプリを開いて、控えを作らせる ---- */
   await pg.goto(OLD + '/docomo-quote/?kqtest=1');
-  await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
+  chk('① 古い社内版ケータイのオフライン係が入れ終わる', await swSettled(pg, '/docomo-quote/'));
   let names = [];
   for (let i = 0; i < 40 && !names.some((n) => /^dq-v/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('① 古い社内版ケータイの控え（dq-v*）ができる', names.some((n) => /^dq-v/.test(n)), names.join(','));
   await pg.goto(OLD + '/docomo-quote/ienaka/');
-  await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
+  chk('① 古い社内版イエナカのオフライン係が入れ終わる', await swSettled(pg, '/docomo-quote/ienaka/'));
   for (let i = 0; i < 40 && !names.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('① 古い社内版イエナカの控え（ienaka-internal-v*）ができる', names.some((n) => /^ienaka-internal-v/.test(n)), names.join(','));
   // 同居する別サイト（/other/）のオフライン係と控え
   await pg.goto(OLD + '/other/');
-  await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
+  chk('① 別サイトのオフライン係が入れ終わる', await swSettled(pg, '/other/'));
   for (let i = 0; i < 40 && !names.includes('other-site-v1'); i++) { await wait(300); names = await cacheNames(); }
   const regsBefore = await regs();
   chk('① オフライン係が3つ（/docomo-quote/・/docomo-quote/ienaka/・別サイト /other/）登録されている', regsBefore.length === 3 && names.includes('other-site-v1'), regsBefore.join(','));
@@ -117,6 +132,7 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('② /docomo-quote/ の下のオフライン係がすべて外れる', !regsAfter.some((sc) => sc.indexOf('/docomo-quote/') >= 0), regsAfter.join(','));
   chk('② 同居する別サイト（/other/）のオフライン係は外さない', regsAfter.some((sc) => sc.indexOf('/other/') >= 0), regsAfter.join(','));
   names = await cacheNames();
+  for (let i = 0; i < 20 && names.some((n) => /^(dq-|kq-|ienaka-|dk-)/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('② 社内版・開発コピーの控えが消える', !names.some((n) => /^(dq-|kq-|ienaka-|dk-)/.test(n)), names.join(','));
   chk('② 同居する別サイトの控えは消さない', names.includes('other-site-v1'), names.join(','));
 
@@ -133,7 +149,7 @@ srv.listen(0, '127.0.0.1', async () => {
     const p3 = await c3.newPage(); p3.setDefaultTimeout(10000);
     p3.on('pageerror', (e) => errs.push(String(e)));
     await p3.goto(OLD + '/docomo-quote/ienaka/');
-    await p3.evaluate(() => navigator.serviceWorker.ready.then(() => null));
+    chk('③b イエナカのオフライン係が入れ終わる', await swSettled(p3, '/docomo-quote/ienaka/'));
     let n3 = [];
     for (let i = 0; i < 40 && !n3.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); n3 = await p3.evaluate(() => caches.keys()); }
     chk('③b イエナカだけ使う端末にも控えができる', n3.some((n) => /^ienaka-internal-v/.test(n)), n3.join(','));
@@ -144,6 +160,7 @@ srv.listen(0, '127.0.0.1', async () => {
     let r3 = await p3.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope)));
     for (let i = 0; i < 20 && r3.length; i++) { await wait(300); r3 = await p3.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope))); }
     n3 = await p3.evaluate(() => caches.keys());
+    for (let i = 0; i < 20 && n3.some((n) => /^ienaka-/.test(n)); i++) { await wait(300); n3 = await p3.evaluate(() => caches.keys()); }
     chk('③b ルートを開かなくても /ienaka/ の案内が出て、オフライン係と控えが片付く', /引っ越しました/.test(b3) && r3.length === 0 && !n3.some((n) => /^ienaka-/.test(n)), r3.join(',') + ' / ' + n3.join(','));
     await c3.close();
   }
