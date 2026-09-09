@@ -1011,11 +1011,28 @@
         持ち出しても、この端末の中身は消えません。</p>
       <div class="actions">
         <button class="btn-sub" id="moveExportBtn" type="button">この端末のデータを持ち出す</button>
+        <button class="btn-sub" id="moveCopyBtn" type="button" hidden>文字としてコピー</button>
         <label class="btn-sub file-btn">新しい住所で持ち込む
           <input type="file" id="moveImportFile" accept="application/json,.json" hidden>
         </label>
       </div>
       <p class="hint" id="moveMsg" hidden></p>
+      <details class="hint">
+        <summary>全端末の持ち込みが終わったら（旧アドレスを閉じる）</summary>
+        <p class="hint">新しい住所で開いたこの画面から押すと、旧アドレスで開いている全端末に「引っ越し済み」が伝わり、
+          旧アドレスからの保存・同期が止まります（端末の中身は消えません）。<strong>全端末の持ち込みと照合が終わってから</strong>押してください。
+          間違えて押したときは「印を消す」で戻せます。</p>
+        <div class="actions">
+          <button class="btn-sub" id="moveCloseBtn" type="button">旧アドレスを閉じる（引っ越し済みを知らせる）</button>
+          <button class="btn-sub" id="moveReopenBtn" type="button">印を消す（旧アドレスの同期を戻す）</button>
+        </div>
+      </details>
+      <details class="hint">
+        <summary>ファイルの保存・選択ができない端末のとき（貼り付けて持ち込む）</summary>
+        <p class="hint">旧アドレスで「持ち出す」のあとに出る「文字としてコピー」を押し、その内容をここに貼り付けてください。</p>
+        <textarea id="movePasteText" rows="3" style="width:100%;box-sizing:border-box" placeholder="ここに貼り付け"></textarea>
+        <div class="actions"><button class="btn-sub" id="movePasteBtn" type="button">貼り付けた内容を持ち込む</button></div>
+      </details>
     </div>
     <div id="masterBody"><!-- JSで生成 --></div>
   </section>
@@ -1044,6 +1061,19 @@
     <p class="login-lead" id="contractContact"></p>
     <p class="login-err" id="contractRecheckMsg" hidden></p>
     <button class="btn-main" id="contractRecheck" type="button">ご契約状態を再確認</button>
+  </div>
+</div>
+
+<!-- 社内版・はじめて開く端末の門（app.js の showFreshGate）。クラウドの設定を受け取れるまで中へ入れない -->
+<div class="login-overlay no-print" id="freshOverlay" hidden>
+  <div class="login-box">
+    <h2>はじめて開く端末です</h2>
+    <p class="login-lead">この端末では、まだ店舗の設定（担当者・料金表）を受け取っていません。<br>
+      <span class="login-note">通信できる場所で開き直すか、しばらくお待ちください。受け取れると自動で進みます。<br>
+      何も入力しないでください（入力すると、その内容が店内の全端末に配られることがあります）。</span></p>
+    <p class="login-err" id="freshMsg" hidden></p>
+    <button class="btn-main" id="freshRetry" type="button">もう一度確認する</button>
+    <p class="login-lead"><button type="button" class="link-btn" id="freshMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
   </div>
 </div>
 
