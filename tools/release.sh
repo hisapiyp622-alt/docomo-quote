@@ -81,8 +81,9 @@ case "$(git remote get-url origin 2>/dev/null)" in
   */frontalk|*/frontalk.git) ;;
   *) echo "$FRONTALK は配信用リポジトリ（frontalk）ではありません（origin: $(git remote get-url origin 2>/dev/null)）。FRONTALK_DIR を確かめてください" >&2; exit 1 ;;
 esac
+# origin/main の名前は、複製の作り方によっては無い（追跡の設定が無い複製）。取ってきた先頭（FETCH_HEAD）から枝を作る
 git fetch -q origin main
-git checkout -q -B "$BR" origin/main
+git checkout -q -B "$BR" FETCH_HEAD
 find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
 cp -a "$DIST/." .
 git add -A
