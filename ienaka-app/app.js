@@ -1405,14 +1405,13 @@
   };
   function cloudOn() { return CLOUD.enabled && CLOUD.user && CLOUD.db && !CLOUD.movedAway; }
   /* 引っ越し済みの合図（社内版）。ケータイ社内版の「旧アドレスを閉じる」が店舗の書類に
-   * movedTo（新しい住所）を書く。旧住所で開いた端末は受け取った時点で同期を止める。
-   * 端末の中身は消さない。 */
+   * movedFrom（閉じた旧住所のホスト名）を書く。その住所で開いた端末は受け取った時点で同期を止める。
+   * 端末の中身は消さない。新しい住所はクラウドに書かない（誰でも読める書類のため）。 */
   function movedAwayCheck(d) {
-    var to = d && typeof d.movedTo === "string" ? d.movedTo : "";
-    if (!to) return false;
-    var toHost = "";
-    try { toHost = new URL(to).hostname.toLowerCase(); } catch (e) { return false; }
-    if (!toHost || toHost === String(location.hostname || "").toLowerCase()) return false;
+    var from = d && typeof d.movedFrom === "string" ? d.movedFrom : "";
+    if (!from) return false;
+    var me = String(location.hostname || "").toLowerCase();
+    if (!me || from.toLowerCase().split(",").indexOf(me) < 0) return false;
     if (CLOUD.movedAway) return true;
     CLOUD.movedAway = true;
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
@@ -1426,7 +1425,7 @@
       var hd = document.querySelector("header");
       if (hd && hd.parentNode) hd.parentNode.insertBefore(el, hd.nextSibling); else document.body.insertBefore(el, document.body.firstChild);
     }
-    el.textContent = "⚠ 社内版は新しい住所に引っ越しました。この住所では保存・同期はできません。新しい住所: " + to;
+    el.textContent = "⚠ 社内版は新しい住所に引っ越しました。この住所では保存・同期はできません。新しい住所は店内の案内（担当の方）でご確認ください。";
     el.hidden = false;
     return true;
   }

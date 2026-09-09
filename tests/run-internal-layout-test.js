@@ -18,6 +18,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { MUST_NOT_SERVE } = require('../tools/lib/dist-extras');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'dist-internal');
@@ -51,16 +52,8 @@ const PAGES = [
   { name: '社内版イエナカ（常盤東）', url: '/ienaka-tokiwahigashi/', want: ['/ienaka-app/app.js', '/ienaka-app/style.css', '/keitai-app/qr.js', '/firebase-config.js'] }
 ];
 
-/* 配信物に無いはずの住所。1つでも 200 なら「入れすぎ」 */
-const MUST_404 = [
-  '/tools/build-internal.js', '/tests/run-calc-tests.js', '/CLAUDE.md', '/AGENTS.md', '/HANDOVER.md',
-  '/HANDOVER-CURACON.md', '/README.md', '/firebase.json', '/.github/workflows/ci.yml',
-  '/keitai-app/index.html', '/keitai-app/sw.js', '/keitai-app/firebase-config.js', '/keitai-app/firestore.rules',
-  '/keitai-app/README.md', '/ienaka-app/index.html', '/ienaka-app/sw.js', '/ienaka-app/firebase-config.js',
-  '/ienaka-app/firestore.rules', '/ienaka-app/SETUP.md', '/ienaka-demo/index.html', '/ienaka-tiles/index.html',
-  '/dakkan-app/index.html', '/dist-product/index.html', '/keitai-app/ocr/', '/keitai-app/icon.svg', '/keitai-app/img/README.md',
-  '/tests/rules/run-rules-tests.js', '/tools/release.sh', '/.git/HEAD', '/tools/provision-store.js'
-];
+/* 配信物に無いはずの住所（tools/lib/dist-extras.js の一覧を check-live.js と共用）。1つでも 200 なら「入れすぎ」 */
+const MUST_404 = MUST_NOT_SERVE.common.concat(MUST_NOT_SERVE.internal);
 
 (async () => {
   execFileSync(process.execPath, [path.join(ROOT, 'tools/build-internal-dist.js')], { stdio: 'inherit' });

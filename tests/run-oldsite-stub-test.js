@@ -12,7 +12,7 @@
  * 見ているもの:
  *   ① 古いアプリを開いた端末には、オフライン用の控え（dq-*・ienaka-internal-*）ができている
  *   ② 案内ページに差し替えたあとに開くと、案内が出て、オフライン係が全部外れ、控えが消える
- *      （同じ住所に同居する別サイトの控えは消さない）
+ *      （同じ住所（github.io）に同居する別サイトのオフライン係・控えは消さない。新しい住所はページに書かない）
  *   ③ /ienaka/ を開いても古いイエナカが控えから起きず、案内が出る
  *   ④ 端末の保存（localStorage）は消えず、「持ち出す」で新しい住所の「持ち込む」と同じ形式のファイルが出る
  *   ⑤ 「旧データを消す」は二度たずねてから、社内版の鍵だけを消す
@@ -29,14 +29,26 @@ function playwright() {
   return require('/opt/node22/lib/node_modules/playwright');
 }
 const STUB = fs.mkdtempSync(path.join(os.tmpdir(), 'kq-stub-'));
-execFileSync(process.execPath, [path.join(ROOT, 'tools/build-oldsite-stub.js'), '--new-url', 'https://naibu-test.example/', STUB], { stdio: 'inherit' });
+execFileSync(process.execPath, [path.join(ROOT, 'tools/build-oldsite-stub.js'), '--old-path', '/docomo-quote/', STUB], { stdio: 'inherit' });
+/* 同じ github.io に同居する「別サイト」のまね（/other/）。案内ページがこれを巻き込まないことを見る */
+const OTHER = fs.mkdtempSync(path.join(os.tmpdir(), 'kq-other-'));
+fs.writeFileSync(path.join(OTHER, 'index.html'), '<!DOCTYPE html><html><body>other site<script>navigator.serviceWorker.register("sw.js");</script></body></html>');
+fs.writeFileSync(path.join(OTHER, 'sw.js'), 'self.addEventListener("install",function(e){e.waitUntil(caches.open("other-site-v1").then(function(c){return c.put("/other/x.txt",new Response("x"));}));self.skipWaiting();});self.addEventListener("activate",function(){self.clients.claim();});');
 
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.md': 'text/markdown', '.png': 'image/png', '.json': 'application/json' };
+/* 旧住所（old.example）は本番と同じく /docomo-quote/ の下に置く。/other/ は同居する別サイト。
+ * 新しい住所（naibu-test.example）は根っこに社内版（リポジトリの中身）を置く。 */
 const state = { dir: ROOT };
 const srv = http.createServer((q, s) => {
   let p = q.url.split('?')[0]; if (p.endsWith('/')) p += 'index.html';
-  const f = path.join(state.dir, decodeURIComponent(p));
-  if (!f.startsWith(state.dir) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end('nf'); return; }
+  let base = state.dir;
+  if ((q.headers.host || '').indexOf('old.example') === 0) {
+    if (p.indexOf('/other/') === 0) { base = OTHER; p = p.slice('/other'.length); }
+    else if (p.indexOf('/docomo-quote/') === 0) { p = p.slice('/docomo-quote'.length); }
+    else { s.writeHead(404); s.end('nf'); return; }
+  }
+  const f = path.join(base, decodeURIComponent(p));
+  if (!f.startsWith(base) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end('nf'); return; }
   s.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' }); s.end(fs.readFileSync(f));
 });
 let okN = 0, ng = 0;
@@ -70,38 +82,44 @@ srv.listen(0, '127.0.0.1', async () => {
   const ls = () => pg.evaluate(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } return o; });
 
   /* ---- ① 古いアプリを開いて、控えを作らせる ---- */
-  await pg.goto('http://old.example/?kqtest=1');
+  await pg.goto('http://old.example/docomo-quote/?kqtest=1');
   await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
   let names = [];
   for (let i = 0; i < 40 && !names.some((n) => /^dq-v/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('① 古い社内版ケータイの控え（dq-v*）ができる', names.some((n) => /^dq-v/.test(n)), names.join(','));
-  await pg.goto('http://old.example/ienaka/');
+  await pg.goto('http://old.example/docomo-quote/ienaka/');
   await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
   for (let i = 0; i < 40 && !names.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); names = await cacheNames(); }
   chk('① 古い社内版イエナカの控え（ienaka-internal-v*）ができる', names.some((n) => /^ienaka-internal-v/.test(n)), names.join(','));
-  await pg.evaluate(() => caches.open('other-site-v1').then((c2) => c2.put('/other.txt', new Response('x'))));
+  // 同居する別サイト（/other/）のオフライン係と控え
+  await pg.goto('http://old.example/other/');
+  await pg.evaluate(() => navigator.serviceWorker.ready.then(() => null));
+  for (let i = 0; i < 40 && !names.includes('other-site-v1'); i++) { await wait(300); names = await cacheNames(); }
   const regsBefore = await regs();
-  chk('① オフライン係が2つ（/ と /ienaka/）登録されている', regsBefore.length === 2, regsBefore.join(','));
+  chk('① オフライン係が3つ（/docomo-quote/・/docomo-quote/ienaka/・別サイト /other/）登録されている', regsBefore.length === 3 && names.includes('other-site-v1'), regsBefore.join(','));
 
   /* ---- ② 案内ページに差し替えて開き直す ---- */
   state.dir = STUB;
-  await pg.goto('http://old.example/');
+  await pg.goto('http://old.example/docomo-quote/');
   await wait(2500);
   const body = await pg.evaluate(() => document.body.innerText);
-  chk('② 案内ページが出る（古いアプリではない）', /引っ越しました/.test(body) && /naibu-test\.example/.test(body) && !document_has(body), body.slice(0, 80));
-  function document_has(t) { return /担当者コード|見積もり\s*光・5G/.test(t); }
+  const html = await pg.content();
+  chk('② 案内ページが出る（古いアプリではない）', /引っ越しました/.test(body) && !document_has(body), body.slice(0, 80));
+  chk('② 新しい住所はページに書かれていない（店内の案内を見てもらう）', !/naibu-test/.test(html) && /店内の案内/.test(body));
+  function document_has(t) { return /ご自身の担当者コード|光・5G/.test(t); }
   let regsAfter = await regs();
-  for (let i = 0; i < 20 && regsAfter.length; i++) { await wait(300); regsAfter = await regs(); }
-  chk('② オフライン係がすべて外れる', regsAfter.length === 0, regsAfter.join(','));
+  for (let i = 0; i < 20 && regsAfter.some((sc) => sc.indexOf('/docomo-quote/') >= 0); i++) { await wait(300); regsAfter = await regs(); }
+  chk('② /docomo-quote/ の下のオフライン係がすべて外れる', !regsAfter.some((sc) => sc.indexOf('/docomo-quote/') >= 0), regsAfter.join(','));
+  chk('② 同居する別サイト（/other/）のオフライン係は外さない', regsAfter.some((sc) => sc.indexOf('/other/') >= 0), regsAfter.join(','));
   names = await cacheNames();
   chk('② 社内版・開発コピーの控えが消える', !names.some((n) => /^(dq-|kq-|ienaka-|dk-)/.test(n)), names.join(','));
   chk('② 同居する別サイトの控えは消さない', names.includes('other-site-v1'), names.join(','));
 
   /* ---- ③ /ienaka/ も案内になる ---- */
-  await pg.goto('http://old.example/ienaka/');
+  await pg.goto('http://old.example/docomo-quote/ienaka/');
   await wait(800);
   const body3 = await pg.evaluate(() => document.body.innerText);
-  chk('③ /ienaka/ を開いても古いイエナカが控えから起きず、案内が出る', /引っ越しました/.test(body3) && /ienaka\//.test(body3), body3.slice(0, 80));
+  chk('③ /ienaka/ を開いても古いイエナカが控えから起きず、案内が出る', /引っ越しました/.test(body3) && /イエナカ/.test(body3), body3.slice(0, 80));
 
   /* ---- ③b /ienaka/ しか開かない端末（ルートを一度も開かない）でも片付く ---- */
   {
@@ -109,13 +127,13 @@ srv.listen(0, '127.0.0.1', async () => {
     const c3 = await b.newContext();
     const p3 = await c3.newPage(); p3.setDefaultTimeout(10000);
     p3.on('pageerror', (e) => errs.push(String(e)));
-    await p3.goto('http://old.example/ienaka/');
+    await p3.goto('http://old.example/docomo-quote/ienaka/');
     await p3.evaluate(() => navigator.serviceWorker.ready.then(() => null));
     let n3 = [];
     for (let i = 0; i < 40 && !n3.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); n3 = await p3.evaluate(() => caches.keys()); }
     chk('③b イエナカだけ使う端末にも控えができる', n3.some((n) => /^ienaka-internal-v/.test(n)), n3.join(','));
     state.dir = STUB;
-    await p3.goto('http://old.example/ienaka/');
+    await p3.goto('http://old.example/docomo-quote/ienaka/');
     await wait(2500);
     const b3 = await p3.evaluate(() => document.body.innerText);
     let r3 = await p3.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope)));
@@ -132,7 +150,7 @@ srv.listen(0, '127.0.0.1', async () => {
   }
 
   /* ---- ④ 端末の保存は残り、持ち出せる ---- */
-  await pg.goto('http://old.example/');
+  await pg.goto('http://old.example/docomo-quote/');
   await wait(500);
   const l4 = await ls();
   chk('④ 端末の保存（localStorage）は消えていない', l4['dq-saved-v1:s1'] === SEED['dq-saved-v1:s1'] && l4['kq-config-v1'] === SEED['kq-config-v1']);
@@ -173,6 +191,7 @@ srv.listen(0, '127.0.0.1', async () => {
 
   await b.close(); srv.close();
   fs.rmSync(STUB, { recursive: true, force: true });
+  fs.rmSync(OTHER, { recursive: true, force: true });
   const bad = errs.filter((e) => !/テスト用/.test(e));
   if (bad.length) { console.error('JSエラー:\n' + bad.join('\n')); process.exit(1); }
   if (ng) { console.error('旧住所の案内ページのテスト: NG ' + ng + '件'); process.exit(1); }

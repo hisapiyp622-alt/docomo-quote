@@ -104,4 +104,25 @@ function writeExtras(out, opts) {
   if (o.noindex) fs.writeFileSync(path.join(out, "robots.txt"), "User-agent: *\nDisallow: /\n");
 }
 
-module.exports = { writeExtras, versionInfo, page404, headersFile };
+/* 配信先から**読めてはいけない**住所の一覧（check-live.js と tests/run-internal-layout-test.js が共用する）。
+ * 道具・テスト・設計文書・サーバー側の取り決め・製品版と社内版のもう一方の入口。 */
+const MUST_NOT_SERVE = {
+  common: ["/tools/build-product.js", "/tools/build-internal.js", "/tools/build-internal-dist.js", "/tools/check-live.js",
+    "/tools/lib/dist-extras.js", "/tools/release.sh", "/tools/provision-store.js", "/tests/run-calc-tests.js",
+    "/tests/rules/run-rules-tests.js", "/firestore.rules", "/keitai-app/firestore.rules", "/ienaka-app/firestore.rules",
+    "/CLAUDE.md", "/AGENTS.md", "/HANDOVER.md", "/HANDOVER-CURACON.md", "/_config.yml", "/.github/workflows/ci.yml",
+    "/firebase.json", "/.git/HEAD", "/dakkan-app/index.html", "/ienaka-tiles/index.html", "/dist-product/index.html",
+    "/keitai-app/img/README.md", "/ienaka-app/README.md", "/ienaka-app/SETUP.md"],
+  // 社内版に無いはずのもの（製品版の入口・接続先・イエナカ単体版の入口・デモ）
+  internal: ["/keitai-app/index.html", "/keitai-app/sw.js", "/keitai-app/manifest.webmanifest", "/keitai-app/firebase-config.js",
+    "/keitai-app/README.md", "/keitai-app/icon.svg", "/keitai-app/ocr/", "/ienaka-app/index.html", "/ienaka-app/sw.js",
+    "/ienaka-app/firebase-config.js", "/ienaka-demo/index.html", "/README.md"],
+  // 製品版に無いはずのもの（社内版の入口・原本の階層）
+  product: ["/keitai-app/index.html", "/ienaka/index.html", "/ienaka-tokiwahigashi/index.html", "/ienaka-app/index.html"],
+  // 旧住所（案内ページに差し替えたあと）に無いはずのもの
+  oldsite: ["/keitai-app/app.js", "/ienaka-app/app.js", "/tools/build-internal.js", "/firebase-config.js",
+    "/keitai-app/firebase-config.js", "/CLAUDE.md", "/AGENTS.md", "/HANDOVER.md", "/HANDOVER-CURACON.md",
+    "/keitai-app/firestore.rules", "/ienaka-app/SETUP.md", "/tests/rules/run-rules-tests.js"]
+};
+
+module.exports = { writeExtras, versionInfo, page404, headersFile, MUST_NOT_SERVE };

@@ -4819,7 +4819,7 @@
     var keys = moveLocalKeys();
     return {
       kind: MOVE_KIND, version: 1,
-      note: "店舗の実データ（お客様名を含む）。共有しない・持ち込みの確認が済んだら削除する",
+      note: "店舗の実データ（お客様名・担当者コードを含む）。共有しない・持ち込みの確認が済んだら削除する",
       from: location.host + location.pathname,
       at: nowStamp(), appVersion: APP_VERSION, count: Object.keys(keys).length,
       keys: keys
@@ -6934,52 +6934,54 @@
   }
   /* ---------- 引っ越し済みの合図（社内版） ----------
    * 新しい住所から「旧アドレスを閉じる」を押すと、クラウドの店舗の書類に
-   * movedTo（新しい住所）が書かれる。旧住所で開いた端末はこれを受け取った時点で
+   * movedFrom（閉じた旧住所のホスト名）が書かれる。その住所で開いた端末はこれを受け取った時点で
    * 同期を止め、案内を出す。旧住所の端末が圏外で古いアプリのまま起動し、あとから
    * つながっても、ここで止まるので古い内容を書き込まない。
-   * 端末の中身は消さない（「持ち出す」はそのまま使える）。 */
+   * 端末の中身は消さない（「持ち出す」はそのまま使える）。
+   * ★ 新しい住所はクラウドに書かない。社内版のクラウドの書類はログイン無しで誰でも読めるため、
+   *   書くと住所が知られる。閉じる側（旧住所）の名前はもともと公開されているので書いてよい。 */
+  var INTERNAL_OLD_HOSTS = ["hisapiyp622-alt.github.io"];   // 社内版の旧住所（引っ越し前の配信元）
   function movedAwayCheck(d) {
-    var to = d && typeof d.movedTo === "string" ? d.movedTo : "";
-    if (!to) return false;
-    var toHost = "";
-    try { toHost = new URL(to).hostname.toLowerCase(); } catch (e) { return false; }
-    if (!toHost || toHost === String(location.hostname || "").toLowerCase()) return false;
+    var from = d && typeof d.movedFrom === "string" ? d.movedFrom : "";
+    if (!from) return false;
+    var me = String(location.hostname || "").toLowerCase();
+    if (!me || from.toLowerCase().split(",").indexOf(me) < 0) return false;
     if (CLOUD.movedAway) return true;
     CLOUD.movedAway = true;
     cloudDetach();
     syncStatus("引っ越し済み", "err");
-    logAdd("引っ越し", "クラウドに引っ越し済みの合図がありました（" + to + "）。この住所からの同期を止めました");
+    logAdd("引っ越し", "クラウドに「この住所は閉じた」の合図がありました。この住所からの同期を止めました");
     var el = $("cloudWarn");
     if (el) {
       el.innerHTML = "⚠ 社内版は<b>新しい住所に引っ越しました</b>。この住所では保存・同期はできません。<br>"
-        + '新しい住所: <a href="' + esc(to) + '" style="color:#fff">' + esc(to) + "</a>"
-        + "（この端末の内容を運ぶには、マスタ設定 → 引っ越し → 「持ち出す」）";
+        + "新しい住所は店内の案内（担当の方）でご確認ください。"
+        + "この端末の内容を運ぶには、マスタ設定 → 引っ越し → 「持ち出す」。";
       el.hidden = false;
     }
     return true;
   }
   /* 新しい住所から、旧住所の全端末に「引っ越し済み」を知らせる（3つの置き場すべてに書く）。
-   * 取り消しは同じボタンで（movedTo を空にする）。 */
+   * 取り消しは同じボタンで（movedFrom を空にする）。 */
   function moveCloseOld(undo) {
     if (!cloudOn()) { moveMsg("クラウドにつながっていないため、いまは行えません。", true); return; }
-    var here = location.origin;
-    if (!undo && /github\.io$/i.test(location.hostname)) {
-      moveMsg("旧アドレス（github.io）からは行えません。新しい住所で開いた画面から押してください。", true);
+    var oldHosts = INTERNAL_OLD_HOSTS.join(",");
+    if (!undo && INTERNAL_OLD_HOSTS.indexOf(String(location.hostname || "").toLowerCase()) >= 0) {
+      moveMsg("旧アドレス（" + location.hostname + "）からは行えません。新しい住所で開いた画面から押してください。", true);
       return;
     }
     var msg = undo
       ? "クラウドの「引っ越し済み」の印を消します。旧アドレスの端末は、また同期するようになります。よろしいですか？"
-      : "旧アドレスで開いている全端末に「引っ越し済み」を知らせます。\n\n新しい住所として記録するもの: " + here
-        + "\n\n旧アドレスの端末は、次に通信したときから保存・同期ができなくなります（端末の中身は消えません）。\n"
+      : "旧アドレス（" + oldHosts + "）で開いている全端末に「引っ越し済み」を知らせます。\n\n"
+        + "旧アドレスの端末は、次に通信したときから保存・同期ができなくなります（端末の中身は消えません）。\n"
         + "全端末の持ち込みが終わってから押してください。よろしいですか？";
     if (!window.confirm(msg)) return;
-    var docs = [["docomoQuoteStore", CLOUD.db.collection("settings").doc("docomoQuoteStore")],
-      ["ienakaInternalStore", CLOUD.db.collection("settings").doc("ienakaInternalStore")],
-      ["ienakaStore_tokiwahigashi", CLOUD.db.collection("settings").doc("ienakaStore_tokiwahigashi")]];
-    var payload = { movedTo: undo ? "" : here, movedAt: undo ? "" : nowStamp() };
-    Promise.all(docs.map(function (p) { return p[1].set(payload, { merge: true }); })).then(function () {
-      moveMsg(undo ? "「引っ越し済み」の印を消しました。" : "旧アドレスの全端末に「引っ越し済み」を知らせました（" + here + "）。");
-      logAdd("引っ越し", undo ? "引っ越し済みの印を消しました" : "引っ越し済みの印を付けました（" + here + "）");
+    var docs = [CLOUD.db.collection("settings").doc("docomoQuoteStore"),
+      CLOUD.db.collection("settings").doc("ienakaInternalStore"),
+      CLOUD.db.collection("settings").doc("ienakaStore_tokiwahigashi")];
+    var payload = { movedFrom: undo ? "" : oldHosts, movedAt: undo ? "" : nowStamp() };
+    Promise.all(docs.map(function (ref) { return ref.set(payload, { merge: true }); })).then(function () {
+      moveMsg(undo ? "「引っ越し済み」の印を消しました。" : "旧アドレス（" + oldHosts + "）の全端末に「引っ越し済み」を知らせました。");
+      logAdd("引っ越し", undo ? "引っ越し済みの印を消しました" : "引っ越し済みの印を付けました（" + oldHosts + "）");
     }, function (e) {
       moveMsg("書き込めませんでした（" + String((e && e.message) || e) + "）。", true);
     });

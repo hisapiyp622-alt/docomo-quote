@@ -99,10 +99,10 @@ srv.listen(0, '127.0.0.1', async () => {
 
   // ⑥ 引っ越し済みの合図（movedTo が別の住所）
   d = await open({ url: '/?kqtest=1', offline: false, host: 'old.example',
-    docs: { [STORE]: Object.assign({}, cloudStore, { movedTo: 'https://new.example', movedAt: '2026/09/10 10:00' }) },
+    docs: { [STORE]: Object.assign({}, cloudStore, { movedFrom: 'old.example', movedAt: '2026/09/10 10:00' }) },
     seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
   const band = await d.pg.evaluate(() => { const e = document.getElementById('cloudWarn'); return e && !e.hidden ? e.textContent : ''; });
-  chk('⑥ 旧住所で開くと「引っ越しました」の案内が出る', /引っ越し/.test(band) && /new\.example/.test(band), band.slice(0, 80));
+  chk('⑥ 旧住所で開くと「引っ越しました」の案内が出る（新しい住所は載せない）', /引っ越しました/.test(band) && !/new\.example/.test(band), band.slice(0, 80));
   const st = await d.pg.evaluate(() => document.getElementById('syncStatus').textContent);
   chk('⑥ 同期の表示が「引っ越し済み」', /引っ越し済み/.test(st), st);
   // 旧住所で入力しても送らない
@@ -115,8 +115,9 @@ srv.listen(0, '127.0.0.1', async () => {
   await d.c.close();
   // 新しい住所（movedTo と同じ）では止まらない
   d = await open({ url: '/?kqtest=1', offline: false, host: 'new.example',
-    docs: { [STORE]: Object.assign({}, cloudStore, { movedTo: 'https://new.example' }) }, seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
+    docs: { [STORE]: Object.assign({}, cloudStore, { movedFrom: 'old.example' }) }, seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
   chk('⑥ 新しい住所では止まらない', !(await d.pg.evaluate(() => { const e = document.getElementById('cloudWarn'); return e && !e.hidden; })));
+  chk('⑥ クラウドの書類に新しい住所を書いていない（合図は「閉じた旧住所」だけ）', !(await d.pg.evaluate(() => JSON.stringify(window.__FAKE.docs))).includes('new.example'));
   await d.c.close();
 
   /* ---- イエナカ単体 社内版（/ienaka/） ---- */
@@ -156,10 +157,10 @@ srv.listen(0, '127.0.0.1', async () => {
 
   // ⑥ 引っ越し済みの合図
   d = await open({ url: '/ienaka/', offline: false, host: 'old.example',
-    docs: { [IE]: { storeName: 'テスト店', movedTo: 'https://new.example', clientId: 'other-device' } },
+    docs: { [IE]: { storeName: 'テスト店', movedFrom: 'old.example', clientId: 'other-device' } },
     seed: { 'ienaka-internal-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [] }) } });
   const iband = await d.pg.evaluate(() => { const e = document.getElementById('movedWarn'); return e && !e.hidden ? e.textContent : ''; });
-  chk('イ⑥ 旧住所で開くと「引っ越しました」の案内が出る', /引っ越し/.test(iband) && /new\.example/.test(iband), iband.slice(0, 80));
+  chk('イ⑥ 旧住所で開くと「引っ越しました」の案内が出る（新しい住所は載せない）', /引っ越しました/.test(iband) && !/new\.example/.test(iband), iband.slice(0, 80));
   await d.pg.evaluate(() => { const e = document.getElementById('custName'); e.value = '旧端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await wait(1500);
   chk('イ⑥ 旧住所からは何も送らない', !(await sets(d.pg)).some((x) => x.path.indexOf('quotes/shared') >= 0), JSON.stringify(await sets(d.pg)).slice(0, 200));

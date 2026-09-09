@@ -17,6 +17,7 @@
  * 通信には curl を使う（この作業環境の中継サーバー設定を引き継ぐため）。 */
 "use strict";
 const { execFileSync } = require("child_process");
+const { MUST_NOT_SERVE } = require("./lib/dist-extras");
 
 const args = process.argv.slice(2);
 const BASE = (args.find((a) => /^https?:\/\//.test(a)) || "").replace(/\/+$/, "");
@@ -58,10 +59,8 @@ if (OLDSITE) {
     const sw = fetch(BASE + p + "sw.js");
     chk("入口 " + p + "sw.js が片付け用", sw.code === 200 && /unregister/.test(sw.body), String(sw.code));
   }
-  for (const p of ["/keitai-app/app.js", "/ienaka-app/app.js", "/tools/build-internal.js", "/firebase-config.js", "/CLAUDE.md", "/keitai-app/firestore.rules"]) {
-    const r = fetch(BASE + p);
-    chk("古い部品 " + p + " が 404", r.code === 404, String(r.code));
-  }
+  const leaksOld = MUST_NOT_SERVE.oldsite.filter((p) => fetch(BASE + p).code === 200);
+  chk("古い部品・設計文書が 404（" + MUST_NOT_SERVE.oldsite.length + "件）", leaksOld.length === 0, leaksOld.join(" "));
 } else {
   const appPath = INTERNAL ? "/keitai-app/app.js" : "/app.js";
   const app = fetch(BASE + appPath);
@@ -101,11 +100,7 @@ if (OLDSITE) {
   const nf2 = fetch(BASE + "/nai-folder/nai-page/");
   chk("存在しないフォルダが 404", nf2.code === 404, String(nf2.code));
   /* 隠すべきものが読めない */
-  const hidden = ["/tools/build-product.js", "/tools/release.sh", "/tests/run-calc-tests.js", "/firestore.rules", "/keitai-app/firestore.rules",
-    "/CLAUDE.md", "/AGENTS.md", "/HANDOVER.md", "/HANDOVER-CURACON.md", "/.github/workflows/ci.yml", "/firebase.json", "/.git/HEAD",
-    "/dakkan-app/index.html", "/ienaka-tiles/index.html", "/tests/rules/run-rules-tests.js", "/tools/provision-store.js"]
-    .concat(INTERNAL ? ["/keitai-app/index.html", "/keitai-app/firebase-config.js", "/ienaka-app/index.html", "/ienaka-app/SETUP.md", "/ienaka-demo/index.html", "/keitai-app/README.md"]
-      : ["/keitai-app/index.html", "/ienaka/index.html", "/ienaka-tokiwahigashi/index.html", "/ienaka-app/firestore.rules"]);
+  const hidden = MUST_NOT_SERVE.common.concat(INTERNAL ? MUST_NOT_SERVE.internal : MUST_NOT_SERVE.product);
   const leaks = hidden.filter((p) => fetch(BASE + p).code === 200);
   chk("道具・テスト・設計文書・取り決めが読めない（" + hidden.length + "件）", leaks.length === 0, leaks.join(" "));
   /* 入口 */

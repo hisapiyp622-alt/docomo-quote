@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /* 旧・社内版の住所（hisapiyp622-alt.github.io/docomo-quote/）に置く「引っ越しました」の案内ページを作る。
  *
- *   node tools/build-oldsite-stub.js --new-url https://<社内版の新しい住所>/ [出力先]   既定: dist-oldsite/
+ *   node tools/build-oldsite-stub.js [--old-path /docomo-quote/] [出力先]   既定: dist-oldsite/
+ *
+ * ★ 社内版の**新しい住所はこのページに書かない**。旧住所は誰でも開ける公開の住所で、写しも残るため、
+ *   ここに書くと新しい住所（社内版の守りは「住所を知らないこと」）が知られる。
+ *   新しい住所は店内で（安藤さんから）伝える。製品版・営業用デモの住所は公開情報なので書く。
  *
  * なぜ要るか（2026-09-08・配信先の引っ越し）:
  *   旧住所を単に消す（404）と、端末のオフライン係（sw.js）が「ネットから取れなかったので控えを出す」
@@ -10,11 +14,12 @@
  *   入口ごとに sw.js の受け持ち範囲（scope）が別なので、ルートだけでは足りない。
  *
  * ── 各入口に置くもの ──
- *   index.html … 「引っ越しました」の案内。新しい住所へのリンク。
+ *   index.html … 「引っ越しました」の案内（新しい住所は書かない。店内の案内を見てもらう）。
  *                社内版の入口（/・/ienaka/・/ienaka-tokiwahigashi/）には
  *                「この端末のデータを持ち出す」（新しい住所の「持ち込む」で読める同じ形式）と
- *                「文字としてコピー」を置く。開いた時点でこの住所のオフライン係を全部外し、
+ *                「文字としてコピー」を置く。開いた時点で**この受け持ち範囲（--old-path の下）**のオフライン係を外し、
  *                社内版・製品版の開発コピーの控え（キャッシュ）を消す。端末の保存（localStorage）は消さない。
+ *                同じ github.io に同居する別サイトのオフライン係・控えは触らない。
  *   sw.js      … 入れ替わった瞬間に、自分の受け持ちの控えを消して自分を外す（fetch は素通し）。
  *
  * ── 消す控えの名前 ──
@@ -27,27 +32,23 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const args = process.argv.slice(2);
 function opt(name, dflt) { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : dflt; }
-const NEW_URL = opt("--new-url", "");
 const PRODUCT_URL = opt("--product-url", "https://frontalk.curacon.co.jp/");
+/* 旧住所の根っこのパス（オフライン係を外す範囲。github.io の同居サイトを巻き込まないため） */
+const OLD_PATH = opt("--old-path", "/docomo-quote/").replace(/\/?$/, "/");
 const rest = args.filter((a, i) => !/^--/.test(a) && !/^--/.test(args[i - 1] || ""));
 const OUT = path.resolve(rest[0] || path.join(ROOT, "dist-oldsite"));
-if (!/^https:\/\/[^/]+\/?$/.test(NEW_URL)) {
-  console.error("使い方: node tools/build-oldsite-stub.js --new-url https://<社内版の新しい住所>/ [出力先]");
-  console.error("（新しい住所は https:// で始まり、ホスト名だけ。例: https://example.pages.dev/）");
-  process.exit(1);
-}
-const NEW = NEW_URL.replace(/\/?$/, "/");
+if (OLD_PATH.charAt(0) !== "/") { console.error("--old-path は / で始めてください（例: /docomo-quote/）"); process.exit(1); }
 
-/* 入口の一覧。kind: internal=社内版（持ち出しあり）/ product=製品版の開発コピー / demo / retired */
+/* 入口の一覧。kind: internal=社内版（持ち出しあり・新住所は書かない）/ product=製品版の開発コピー / demo / retired */
 const ENTRIES = [
-  { dir: "", kind: "internal", label: "社内版ケータイ見積もり", to: NEW },
-  { dir: "ienaka", kind: "internal", label: "社内版イエナカ見積もり（阪南）", to: NEW + "ienaka/" },
-  { dir: "ienaka-tokiwahigashi", kind: "internal", label: "社内版イエナカ見積もり（常盤東）", to: NEW + "ienaka-tokiwahigashi/" },
+  { dir: "", kind: "internal", label: "社内版ケータイ見積もり" },
+  { dir: "ienaka", kind: "internal", label: "社内版イエナカ見積もり（阪南）" },
+  { dir: "ienaka-tokiwahigashi", kind: "internal", label: "社内版イエナカ見積もり（常盤東）" },
   { dir: "keitai-app", kind: "product", label: "製品版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-app", kind: "product", label: "イエナカ単体版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-demo", kind: "demo", label: "営業用デモ", to: PRODUCT_URL.replace(/\/?$/, "/") + "demo/" },
-  { dir: "ienaka-tiles", kind: "retired", label: "タイル式の試作（終了）", to: NEW },
-  { dir: "dakkan-app", kind: "retired", label: "他社比較の試作（終了）", to: NEW }
+  { dir: "ienaka-tiles", kind: "retired", label: "タイル式の試作（終了）" },
+  { dir: "dakkan-app", kind: "retired", label: "他社比較の試作（終了）" }
 ];
 const CACHE_PREFIXES = ["dq-", "kq-", "ienaka-", "dk-"];
 const MOVE_PREFIXES = ["dq-", "ienaka-internal-", "ienaka-hannan-"];
@@ -71,11 +72,13 @@ self.addEventListener("activate", function (e) {
 function page(e) {
   const internal = e.kind === "internal";
   const lead = {
-    internal: `<p>社内版は<b>新しい住所</b>に引っ越しました。ホーム画面のアイコンを新しい住所で作り直してお使いください。</p>`,
+    internal: `<p>社内版は<b>新しい住所</b>に引っ越しました。<b>新しい住所は店内の案内（担当の方）でご確認ください。</b>ホーム画面のアイコンを新しい住所で作り直してお使いください。</p>`,
     product: `<p>ここは開発用のコピーでした。製品版は次の住所からお使いください。</p>`,
     demo: `<p>営業用デモは次の住所に移りました。</p>`,
-    retired: `<p>この試作は終了しました。社内版は次の住所です。</p>`
+    retired: `<p>この試作は終了しました。社内版の新しい住所は店内の案内でご確認ください。</p>`
   }[e.kind];
+  const link = e.to ? `<p class="url"><a href="${e.to}">${e.to}</a></p>
+<p><a class="btn" href="${e.to}">新しい住所を開く</a></p>` : "";
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -102,14 +105,13 @@ textarea{width:100%;box-sizing:border-box;font-size:12px}
 <main>
 <h1>引っ越しました（${e.label}）</h1>
 ${lead}
-<p class="url"><a href="${e.to}">${e.to}</a></p>
-<p><a class="btn" href="${e.to}">新しい住所を開く</a></p>
+${link}
 ${internal ? `
 <h2>この端末に残っているデータを運ぶ</h2>
 <p class="hint">この住所で使っていた端末の中身（保存した見積もり・お客様名・作りかけ・担当者・料金表・イエナカ）を、
 新しい住所へ運ぶためのファイルを作ります。<b>持ち出しても、この端末の中身は消えません。</b>
 新しい住所で「マスタ設定 → 引っ越し → 持ち込む」からこのファイルを選んでください。
-ファイルにはお客様名が入ります。持ち込みの確認が済んだら削除してください。</p>
+ファイルにはお客様名と担当者コードが入ります。持ち込みの確認が済んだら削除してください。</p>
 <p id="counts" class="hint"></p>
 <p><button type="button" id="exportBtn">この端末のデータを持ち出す</button>
 <button type="button" class="sub" id="copyBtn">文字としてコピー</button></p>
@@ -125,10 +127,14 @@ ${internal ? `
   var CACHE_PREFIXES = ${JSON.stringify(CACHE_PREFIXES)};
   var MOVE_PREFIXES = ${JSON.stringify(MOVE_PREFIXES)};
   var MOVE_SKIP = ${JSON.stringify(MOVE_SKIP)};
-  /* この住所のオフライン係をすべて外し、社内版・開発コピーの控えを消す（端末の保存は消さない） */
+  var OLD_PATH = ${JSON.stringify(OLD_PATH)};
+  /* この受け持ち範囲（OLD_PATH の下）のオフライン係を外し、社内版・開発コピーの控えを消す（端末の保存は消さない）。
+   * 同じ github.io に同居する別サイトのオフライン係は触らない。 */
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-      navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
+      navigator.serviceWorker.getRegistrations().then(function (rs) {
+        rs.forEach(function (r) { try { if (new URL(r.scope).pathname.indexOf(OLD_PATH) === 0) r.unregister(); } catch (e) {} });
+      });
     }
     if (window.caches) {
       caches.keys().then(function (keys) {
@@ -144,7 +150,7 @@ ${internal ? `
     for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && keyOk(k)) { keys[k] = localStorage.getItem(k); n++; } }
     var d = new Date(); function z(x) { return ("0" + x).slice(-2); }
     return { kind: "frontalk-internal-move", version: 1,
-      note: "店舗の実データ（お客様名を含む）。共有しない・持ち込みの確認が済んだら削除する",
+      note: "店舗の実データ（お客様名・担当者コードを含む）。共有しない・持ち込みの確認が済んだら削除する",
       from: location.host + location.pathname, at: d.getFullYear() + "/" + z(d.getMonth() + 1) + "/" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes()),
       appVersion: "oldsite-stub", count: n, keys: keys };
   }
@@ -211,7 +217,8 @@ for (const e of ENTRIES) {
   fs.writeFileSync(path.join(d, "sw.js"), SW);
 }
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
+// robots.txt はサイトの根っこにしか効かない（/docomo-quote/ の下では読まれない）。各ページの meta の noindex が守り。念のため置く
 fs.writeFileSync(path.join(OUT, "robots.txt"), "User-agent: *\nDisallow: /\n");
-fs.writeFileSync(path.join(OUT, "404.html"), page({ dir: "", kind: "retired", label: "ページが見つかりません", to: NEW }));
-console.log(`できあがり: ${OUT}（入口 ${ENTRIES.length}か所・新しい住所 ${NEW}）`);
+fs.writeFileSync(path.join(OUT, "404.html"), page({ dir: "", kind: "retired", label: "ページが見つかりません" }));
+console.log(`できあがり: ${OUT}（入口 ${ENTRIES.length}か所・受け持ち範囲 ${OLD_PATH}。新しい住所は書いていません）`);
 console.log("旧住所（GitHub Pages）の配信元をこの中身に差し替えます。手順は非公開リポジトリの migration/RUNBOOK.md。");

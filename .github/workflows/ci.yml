@@ -8,7 +8,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # 手で流す（配った版を戻すときなど。タグや枝を選んで実行すると、その中身を配る）
+  # 手で流す（main の中身をもう一度配るとき）。配った版を戻すのは Cloudflare の Rollback で行う
+  #（Environment「production」は main だけに限っているので、タグや別の枝からは配れない）
   workflow_dispatch:
 
 # 自動実行が持つ権限は「読むだけ」。配信の合鍵（Cloudflare のトークン）は下の deploy ジョブの
@@ -119,9 +120,12 @@ jobs:
   # main に入った版を、上のテストが**全部通ったあとだけ**配る。製品版と社内版は別のプロジェクト。
   # 秘密（合鍵）は GitHub の Environment「production」に置く（Settings → Environments →
   # production → Deployment branches を main だけに限定 → Environment secrets に
-  # CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）。Repository secrets には置かない。
+  # CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / CF_PAGES_PROJECT_INTERNAL / CHECK_LIVE_INTERNAL_URL）。
+  # Repository secrets には置かない。※Environment の枝制限と秘密は、Private リポジトリでは GitHub Pro 以上でしか効かない。
+  # 社内版のプロジェクト名と住所も secrets に置く（Variables は自動実行の記録（ログ）に平文で出て、
+  # 公開リポジトリのログはログインした人なら誰でも読めるため。secrets なら伏せ字になる）。
   # 配るかどうかは Variables の DEPLOY_ENABLED（"true" のときだけ）。住所の切替の日は false にして止める。
-  # プロジェクト名は Variables の CF_PAGES_PROJECT_PRODUCT / CF_PAGES_PROJECT_INTERNAL（社内版の名前は公開しない）。
+  # 製品版の名前は公開情報なので Variables の CF_PAGES_PROJECT_PRODUCT でよい。
   deploy:
     needs: test
     if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.DEPLOY_ENABLED == 'true' }}
@@ -130,21 +134,22 @@ jobs:
     environment: production
     permissions:
       contents: read
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: 合鍵がそろっているか
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT_INTERNAL: ${{ secrets.CF_PAGES_PROJECT_INTERNAL }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "Cloudflare の合鍵（Environment secrets）が未登録のため、配信は行いません"; exit 1
           fi
-          [ -n "${{ vars.CF_PAGES_PROJECT_PRODUCT }}" ] || { echo "CF_PAGES_PROJECT_PRODUCT が未設定"; exit 1; }
-          [ -n "${{ vars.CF_PAGES_PROJECT_INTERNAL }}" ] || { echo "CF_PAGES_PROJECT_INTERNAL が未設定"; exit 1; }
+          [ -n "${{ vars.CF_PAGES_PROJECT_PRODUCT }}" ] || { echo "CF_PAGES_PROJECT_PRODUCT（Variables）が未設定"; exit 1; }
+          [ -n "$CF_PAGES_PROJECT_INTERNAL" ] || { echo "CF_PAGES_PROJECT_INTERNAL（Environment secrets）が未設定"; exit 1; }
       - name: 配信物を作る（製品版・社内版）
         run: |
           node tools/build-product.js dist-product
@@ -156,12 +161,22 @@ jobs:
             if (v.commit!==sha||w.commit!==sha||v.dirty||w.dirty) { console.error("version.json の commit が一致しません", v, w, sha); process.exit(1); }
             console.log("配る版:", v.app, "commit:", sha);'
       - name: 社内版を配る（阪南が先に踏む）
-        run: npx --yes wrangler@4.130.0 pages deploy dist-internal --project-name "${{ vars.CF_PAGES_PROJECT_INTERNAL }}" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT_INTERNAL: ${{ secrets.CF_PAGES_PROJECT_INTERNAL }}
+        run: npx --yes wrangler@4.130.0 pages deploy dist-internal --project-name "$CF_PAGES_PROJECT_INTERNAL" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
       - name: 製品版を配る
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4.130.0 pages deploy dist-product --project-name "${{ vars.CF_PAGES_PROJECT_PRODUCT }}" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
       - name: 配ったものを確かめる（製品版）
         if: ${{ vars.CHECK_LIVE_PRODUCT_URL != '' }}
         run: sleep 20 && node tools/check-live.js "${{ vars.CHECK_LIVE_PRODUCT_URL }}" --commit "$GITHUB_SHA"
-      - name: 配ったものを確かめる（社内版）
-        if: ${{ vars.CHECK_LIVE_INTERNAL_URL != '' }}
-        run: node tools/check-live.js "${{ vars.CHECK_LIVE_INTERNAL_URL }}" --internal --commit "$GITHUB_SHA"
+      - name: 配ったものを確かめる（社内版。住所は secrets に置くので記録には伏せ字で出る）
+        env:
+          CHECK_LIVE_INTERNAL_URL: ${{ secrets.CHECK_LIVE_INTERNAL_URL }}
+        run: |
+          if [ -z "$CHECK_LIVE_INTERNAL_URL" ]; then echo "CHECK_LIVE_INTERNAL_URL が未設定のため、社内版の確認は飛ばします"; exit 0; fi
+          node tools/check-live.js "$CHECK_LIVE_INTERNAL_URL" --internal --commit "$GITHUB_SHA"
