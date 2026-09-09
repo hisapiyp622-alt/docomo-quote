@@ -80,6 +80,8 @@ jobs:
         run: node tests/run-product-layout-test.js
       - name: 社内版の配信物（許可リスト・入れすぎ・控え一覧）の確認
         run: node tests/run-internal-layout-test.js
+      - name: 配信ジョブの決まり（Node の版・秘密の置き場）
+        run: node tests/run-ci-config-test.js
       - name: 空の端末が本番を白紙にしないこと・引っ越し済みの合図
         run: node tests/run-fresh-tests.js
       - name: 引っ越し（持ち出し・持ち込み）
@@ -139,7 +141,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # wrangler 4.x は Node 22 以上を要求する（20 だと起動せず配信が止まる）
+          node-version: 22
       - name: 合鍵がそろっているか
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
