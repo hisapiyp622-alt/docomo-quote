@@ -8,6 +8,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手で流す（配った版を戻すときなど。タグや枝を選んで実行すると、その中身を配る）
+  workflow_dispatch:
+
+# 自動実行が持つ権限は「読むだけ」。配信の合鍵（Cloudflare のトークン）は下の deploy ジョブの
+# 環境（production）にだけ置き、main 以外の枝からは使えない（GitHub の Environment の枝制限）。
+permissions:
+  contents: read
+
+# 同じ PR に続けて push したときは、古い実行を止める（Actions の分数の節約）
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -65,6 +77,14 @@ jobs:
         run: node tools/build-agents.js --check
       - name: 出荷用（独自ドメイン版）の並びの確認
         run: node tests/run-product-layout-test.js
+      - name: 社内版の配信物（許可リスト・入れすぎ・控え一覧）の確認
+        run: node tests/run-internal-layout-test.js
+      - name: 空の端末が本番を白紙にしないこと・引っ越し済みの合図
+        run: node tests/run-fresh-tests.js
+      - name: 引っ越し（持ち出し・持ち込み）
+        run: node tests/run-move-tests.js
+      - name: 旧住所の案内ページ（オフライン係の片付け）
+        run: node tests/run-oldsite-stub-test.js
 
       # ルールを1文字間違えると全店舗が止まる／他店が見える（レビュー4-25）
       - name: Java 21 を用意（Firestore エミュレータが要求）
@@ -94,3 +114,54 @@ jobs:
       - name: リリースの決まり（版の一致・キャッシュ名・生成物の鮮度）
         if: github.event_name == 'pull_request'
         run: node tools/release-check.js "${{ github.event.pull_request.base.sha }}"
+
+  # ── 配信（Cloudflare Pages）────────────────────────────────
+  # main に入った版を、上のテストが**全部通ったあとだけ**配る。製品版と社内版は別のプロジェクト。
+  # 秘密（合鍵）は GitHub の Environment「production」に置く（Settings → Environments →
+  # production → Deployment branches を main だけに限定 → Environment secrets に
+  # CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）。Repository secrets には置かない。
+  # 配るかどうかは Variables の DEPLOY_ENABLED（"true" のときだけ）。住所の切替の日は false にして止める。
+  # プロジェクト名は Variables の CF_PAGES_PROJECT_PRODUCT / CF_PAGES_PROJECT_INTERNAL（社内版の名前は公開しない）。
+  deploy:
+    needs: test
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 合鍵がそろっているか
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Cloudflare の合鍵（Environment secrets）が未登録のため、配信は行いません"; exit 1
+          fi
+          [ -n "${{ vars.CF_PAGES_PROJECT_PRODUCT }}" ] || { echo "CF_PAGES_PROJECT_PRODUCT が未設定"; exit 1; }
+          [ -n "${{ vars.CF_PAGES_PROJECT_INTERNAL }}" ] || { echo "CF_PAGES_PROJECT_INTERNAL が未設定"; exit 1; }
+      - name: 配信物を作る（製品版・社内版）
+        run: |
+          node tools/build-product.js dist-product
+          node tools/build-internal-dist.js dist-internal
+          # 配るものが、いまテストした commit そのものであること（version.json で照合できるようにする）
+          node -e '
+            const v=require("./dist-product/version.json"), w=require("./dist-internal/version.json");
+            const sha=process.env.GITHUB_SHA;
+            if (v.commit!==sha||w.commit!==sha||v.dirty||w.dirty) { console.error("version.json の commit が一致しません", v, w, sha); process.exit(1); }
+            console.log("配る版:", v.app, "commit:", sha);'
+      - name: 社内版を配る（阪南が先に踏む）
+        run: npx --yes wrangler@4.130.0 pages deploy dist-internal --project-name "${{ vars.CF_PAGES_PROJECT_INTERNAL }}" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
+      - name: 製品版を配る
+        run: npx --yes wrangler@4.130.0 pages deploy dist-product --project-name "${{ vars.CF_PAGES_PROJECT_PRODUCT }}" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=false
+      - name: 配ったものを確かめる（製品版）
+        if: ${{ vars.CHECK_LIVE_PRODUCT_URL != '' }}
+        run: sleep 20 && node tools/check-live.js "${{ vars.CHECK_LIVE_PRODUCT_URL }}" --commit "$GITHUB_SHA"
+      - name: 配ったものを確かめる（社内版）
+        if: ${{ vars.CHECK_LIVE_INTERNAL_URL != '' }}
+        run: node tools/check-live.js "${{ vars.CHECK_LIVE_INTERNAL_URL }}" --internal --commit "$GITHUB_SHA"

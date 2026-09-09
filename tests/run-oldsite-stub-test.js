@@ -103,6 +103,34 @@ srv.listen(0, '127.0.0.1', async () => {
   const body3 = await pg.evaluate(() => document.body.innerText);
   chk('③ /ienaka/ を開いても古いイエナカが控えから起きず、案内が出る', /引っ越しました/.test(body3) && /ienaka\//.test(body3), body3.slice(0, 80));
 
+  /* ---- ③b /ienaka/ しか開かない端末（ルートを一度も開かない）でも片付く ---- */
+  {
+    state.dir = ROOT;
+    const c3 = await b.newContext();
+    const p3 = await c3.newPage(); p3.setDefaultTimeout(10000);
+    p3.on('pageerror', (e) => errs.push(String(e)));
+    await p3.goto('http://old.example/ienaka/');
+    await p3.evaluate(() => navigator.serviceWorker.ready.then(() => null));
+    let n3 = [];
+    for (let i = 0; i < 40 && !n3.some((n) => /^ienaka-internal-v/.test(n)); i++) { await wait(300); n3 = await p3.evaluate(() => caches.keys()); }
+    chk('③b イエナカだけ使う端末にも控えができる', n3.some((n) => /^ienaka-internal-v/.test(n)), n3.join(','));
+    state.dir = STUB;
+    await p3.goto('http://old.example/ienaka/');
+    await wait(2500);
+    const b3 = await p3.evaluate(() => document.body.innerText);
+    let r3 = await p3.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope)));
+    for (let i = 0; i < 20 && r3.length; i++) { await wait(300); r3 = await p3.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.scope))); }
+    n3 = await p3.evaluate(() => caches.keys());
+    chk('③b ルートを開かなくても /ienaka/ の案内が出て、オフライン係と控えが片付く', /引っ越しました/.test(b3) && r3.length === 0 && !n3.some((n) => /^ienaka-/.test(n)), r3.join(',') + ' / ' + n3.join(','));
+    await c3.close();
+  }
+  /* 全入口に index.html と sw.js の組があること（入口ごとに受け持ち範囲が別なので、1つでも欠けると古いアプリが残る） */
+  {
+    const missing = ['', 'ienaka', 'ienaka-tokiwahigashi', 'keitai-app', 'ienaka-app', 'ienaka-demo', 'ienaka-tiles', 'dakkan-app']
+      .flatMap((d) => ['index.html', 'sw.js'].map((f) => path.posix.join(d, f))).filter((f) => !fs.existsSync(path.join(STUB, f)));
+    chk('全入口（8か所）に案内と片付け用 sw.js がある', missing.length === 0, missing.join(','));
+  }
+
   /* ---- ④ 端末の保存は残り、持ち出せる ---- */
   await pg.goto('http://old.example/');
   await wait(500);
