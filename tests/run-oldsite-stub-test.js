@@ -66,6 +66,7 @@ const SEED = {
   'ienaka-internal-config-v1': JSON.stringify({ storeName: 'ドコモショップ阪南店' }),
   'kq-config-v1': JSON.stringify({ storeName: '製品版の開発コピー' }),
   'dq-moved-out-v1': '2026/09/10 10:00',   // 旧アプリで一度持ち出した端末の印（案内ページの持ち出しには入らない・入っても新住所で捨てられる）
+  'dq-state-v1:s1': JSON.stringify({ active: 0, gen: 1, patterns: [{ custName: '作りかけ 田中' }] }),   // 中身のある作りかけ（数える）
   'dq-state-v1:s2': JSON.stringify({ active: 0, patterns: [{}] })   // 開いただけの空の作りかけ（数えない）
 };
 
@@ -181,7 +182,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const counts = await pg.evaluate(() => document.getElementById('counts').textContent);
   chk('④ 画面にこの端末の件数が出る（空の作りかけは数えない）', /保存した見積もり 1件/.test(counts) && /作りかけ 1人分/.test(counts) && /佐藤/.test(counts), counts);
   const ieHtml = fs.readFileSync(path.join(STUB, 'ienaka', 'index.html'), 'utf8');
-  chk('④ イエナカの入口には持ち出しボタンが無く、入れ直しの案内がある', !/exportBtn/.test(ieHtml) && /入れ直し/.test(ieHtml));
+  chk('④ イエナカの入口には持ち出しボタンが無く、入れ直しの案内がある', !/id="exportBtn"/.test(ieHtml) && /入れ直し/.test(ieHtml));
   const [dl] = await Promise.all([pg.waitForEvent('download'), pg.evaluate(() => document.getElementById('exportBtn').click())]);
   const file = path.join(STUB, 'export.json');
   await dl.saveAs(file);
