@@ -104,12 +104,28 @@ const TARGETS = [
       const ctx = await browser.newContext();
       const page = await ctx.newPage();
       await page.route('**/*', (route) => (route.request().url().includes('gstatic.com') ? route.abort() : route.continue()));
-      await page.goto(base + spec.url, { waitUntil: 'load' }).catch((e) => problems.push(`${t.name} ${spec.url}: 開けません ${e.message}`));
+      await page.goto(base + spec.url, { waitUntil: 'domcontentloaded' }).catch((e) => problems.push(`${t.name} ${spec.url}: 開けません ${e.message}`));
+      /* 開いた直後はアプリ側の移動が続くことがある。落ち着くまで待つ */
+      await page.waitForLoadState('load').catch(() => {});
+      await page.waitForTimeout(1000);
 
       /* Service Worker が入り、控えが全部そろうまで待つ */
       const want = assetsOf(dir, spec.sw);
       if (!want) { problems.push(`${t.name} ${spec.sw}: 控え一覧が読めません`); await ctx.close(); continue; }
-      const got = await page.evaluate(async () => {
+      /* 「Execution context was destroyed」＝評価の最中に画面が移動した、というだけ。
+       * 中身の問題ではないので、少し待って数回やり直す（CI での気まぐれな赤を防ぐ） */
+      const evalRetry = async (fn) => {
+        let last = null;
+        for (let i = 0; i < 3; i++) {
+          try { return await page.evaluate(fn); } catch (e) {
+            last = e;
+            if (!/Execution context was destroyed|Target closed|navigation/i.test(String(e.message || e))) break;
+            await page.waitForTimeout(1500);
+          }
+        }
+        return { sw: false, urls: [], err: String((last && last.message) || last) };
+      };
+      const got = await evalRetry(async () => {
         /* 控えの作成に失敗すると ready は永久に返らない。待つのは20秒までにして、
          * 「入らなかった」として報告する（CI が止まらないように） */
         const limit = (pr, ms) => Promise.race([pr, new Promise((r) => setTimeout(() => r('timeout'), ms))]);
@@ -127,7 +143,7 @@ const TARGETS = [
           await new Promise((r) => setTimeout(r, 250));
         }
         return { sw: true, name: null, urls: [] };
-      }).catch((e) => ({ sw: false, urls: [], err: String(e.message || e) }));
+      });
 
       if (!got.sw) problems.push(`${t.name} ${spec.url}: Service Worker が入りません（${got.err || ''}）`);
       else {
