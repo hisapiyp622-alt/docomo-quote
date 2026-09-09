@@ -76,6 +76,11 @@ fi
 echo "-- 4. 配信用リポジトリの枝へ入れる（main へは直接 push しない）"
 BR="release/v$VER"
 cd "$FRONTALK"
+# 指す先が本当に配信用リポジトリ（frontalk）か。違う場所を指していると、その中身を丸ごと消してしまう
+case "$(git remote get-url origin 2>/dev/null)" in
+  */frontalk|*/frontalk.git) ;;
+  *) echo "$FRONTALK は配信用リポジトリ（frontalk）ではありません（origin: $(git remote get-url origin 2>/dev/null)）。FRONTALK_DIR を確かめてください" >&2; exit 1 ;;
+esac
 git fetch -q origin main
 git checkout -q -B "$BR" origin/main
 find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +

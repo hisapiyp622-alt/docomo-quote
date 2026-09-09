@@ -4802,7 +4802,7 @@
   var MOVE_KIND = "frontalk-internal-move";
   var MOVE_PREFIXES = ["dq-", "ienaka-internal-", "ienaka-hannan-"];   // ienaka-hannan- は 2026-08-14 より前の保存名
   var MOVED_KEY = NS + "-moved-v1";   // いつ・どこから持ち込んだか（「情報」に出す）
-  var MOVE_SKIP = [NS + "-handoff-v1"];   // 一時的な引き渡し（読んだら消えるもの）は運ばない
+  var MOVE_SKIP = [NS + "-handoff-v1", NS + "-moved-out-v1"];   // 一時的な引き渡し・旧端末だけの印は運ばない
   function moveKeyOk(k) {
     if (MOVE_SKIP.indexOf(String(k)) >= 0) return false;
     return MOVE_PREFIXES.some(function (p) { return String(k).indexOf(p) === 0; });
@@ -4881,6 +4881,20 @@
       + " 新しい住所で「持ち込む」からこのファイルを選んでください。この端末の中身は消えていません。" + moveSyncNote(),
       !!moveSyncNote());
     logAdd("引っ越し", "この端末のデータを持ち出しました（" + sm.total + "件）");
+    /* 旧住所で持ち出したら、次に開いたときから「持ち出し済み」の帯を出す。新旧のアイコンの名前・見た目が同じで、
+     * 移行の途中にスタッフがどちらを開いているか分からなくなるため（同期は止めない）。 */
+    if (atOldHost()) { try { localStorage.setItem(MOVED_OUT_KEY, nowStamp()); } catch (e) {} }
+  }
+  function showMovedOutNote() {
+    if (!INTERNAL) return;
+    var at = "";
+    try { at = localStorage.getItem(MOVED_OUT_KEY) || ""; } catch (e) {}
+    if (!at) return;
+    var el = $("cloudWarn");
+    if (!el || !el.hidden) return;
+    el.innerHTML = "⚠ この端末は " + esc(at) + " に<b>持ち出し済み</b>です。新しい住所のアイコンからお使いください。"
+      + "こちらで入力したお客様名は新しい住所に残りません。";
+    el.hidden = false;
   }
   function moveDownload(json, name) {
     var blob = new Blob([json], { type: "application/json" });
@@ -6947,7 +6961,9 @@
    * 端末の中身は消さない（「持ち出す」はそのまま使える）。
    * ★ 新しい住所はクラウドに書かない。社内版のクラウドの書類はログイン無しで誰でも読めるため、
    *   書くと住所が知られる。閉じる側（旧住所）の名前はもともと公開されているので書いてよい。 */
-  var INTERNAL_OLD_HOSTS = ["hisapiyp622-alt.github.io"];   // 社内版の旧住所（引っ越し前の配信元）
+  var INTERNAL_OLD_HOSTS = (typeof window !== "undefined" && window.KEITAI_OLD_HOSTS) || ["hisapiyp622-alt.github.io"];   // 社内版の旧住所（引っ越し前の配信元。テストでは差し替える）
+  function atOldHost() { return INTERNAL_OLD_HOSTS.indexOf(String(location.hostname || "").toLowerCase()) >= 0; }
+  var MOVED_OUT_KEY = NS + "-moved-out-v1";   // この端末（旧住所）から持ち出し済みの印（新旧のアイコンの見分けに）
   function movedAwayCheck(d) {
     var from = d && typeof d.movedFrom === "string" ? d.movedFrom : "";
     if (!from) return false;
@@ -17185,6 +17201,7 @@
    * 版がずれた2つのアプリが同じ店舗のデータを触る事故が起きうる。
    * こちらのアドレスで開かれたときは、正しいアドレスへ案内する。
    * 社内版（阪南・常盤東）は別のクラウドなので、この案内は出さない。 */
+  showMovedOutNote();
   if (devHost()) {
     (function () {
       var el = document.getElementById("cloudWarn");

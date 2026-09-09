@@ -18,7 +18,7 @@
  *   ③ 通信が戻って本物が届いたら自動で中へ入り、担当者一覧はクラウドのもの（1人だけの内容を送っていない）
  *   ④ 端末に保存があった端末（いつもの iPad が圏外なだけ）は、これまでどおり送れる
  *   ⑤ 通信できていて本当にクラウドが空なら、これまでどおり初期値を送る（初めて使う店舗）
- *   ⑥ クラウドに「引っ越し済み（movedTo）」があり、この住所がそれと違うなら、同期を止めて案内を出す
+ *   ⑥ クラウドに「閉じた旧住所（movedFrom）」があり、この住所がそれなら、同期を止めて案内を出す
  */
 const http = require('http');
 const fs = require('fs');
@@ -97,7 +97,7 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('④ 保存のある端末が圏外でも、門は出ない（これまでどおり）', !(await vis(d.pg, 'freshOverlay')) && (await vis(d.pg, 'staffOverlay')));
   await d.c.close();
 
-  // ⑥ 引っ越し済みの合図（movedTo が別の住所）
+  // ⑥ 引っ越し済みの合図（movedFrom がこの住所）
   d = await open({ url: '/?kqtest=1', offline: false, host: 'old.example',
     docs: { [STORE]: Object.assign({}, cloudStore, { movedFrom: 'old.example', movedAt: '2026/09/10 10:00' }) },
     seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
@@ -124,7 +124,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const s7 = await sets(d.pg);
   chk('⑥ 担当者コードの画面を通らない店舗でも、合図が先に効いて何も送らない', s7.length === 0 && (await vis(d.pg, 'cloudWarn')), JSON.stringify(s7).slice(0, 160));
   await d.c.close();
-  // 新しい住所（movedTo と同じ）では止まらない
+  // 新しい住所（movedFrom に無い）では止まらない
   d = await open({ url: '/?kqtest=1', offline: false, host: 'new.example',
     docs: { [STORE]: Object.assign({}, cloudStore, { movedFrom: 'old.example' }) }, seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
   chk('⑥ 新しい住所では止まらない', !(await d.pg.evaluate(() => { const e = document.getElementById('cloudWarn'); return e && !e.hidden; })));

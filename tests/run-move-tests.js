@@ -16,6 +16,7 @@
  *   ③ バックアップのファイル・対象外の鍵が混ざったファイルは拒否し、端末の中身を変えない
  *   ④ 新しい住所ですでに入力していた端末には、上書きする前にもう一度たずねる
  *   ⑤ 「貼り付けて持ち込む」でも同じ結果になる
+ *   ⑥ 旧住所で持ち出した端末は、次に開いたとき「持ち出し済み」の帯が出る（新旧のアイコンの見分け）。持ち込んだ側には出ない
  */
 const http = require('http');
 const fs = require('fs');
@@ -69,6 +70,7 @@ srv.listen(0, '127.0.0.1', async () => {
     pg.dialogs = []; pg.dismissIf = null;
     pg.on('dialog', (d) => { pg.dialogs.push(d.message()); if (pg.dismissIf && pg.dismissIf.test(d.message())) d.dismiss(); else d.accept(); });
     if (seed) await pg.addInitScript((s) => { if (!window.__seeded) { window.__seeded = 1; Object.keys(s).forEach((k) => localStorage.setItem(k, s[k])); } }, seed);
+    await pg.addInitScript(() => { window.KEITAI_OLD_HOSTS = ['old.example']; });   // 旧住所の名前をテスト用に
     await pg.goto('http://' + host + '/?kqtest=1');
     await wait(1000);
     return { pg, c };
@@ -98,6 +100,10 @@ srv.listen(0, '127.0.0.1', async () => {
   const m1 = await msg(d.pg);
   chk('① 画面に持ち出した内容（保存 1件・担当者）が出る', /持ち出しました/.test(m1) && /保存した見積もり 1件/.test(m1) && /佐藤/.test(m1), m1.slice(0, 120));
   chk('① 持ち出しても旧住所の中身は消えない', (await ls(d.pg))['dq-saved-v1:s1'] === ex.keys['dq-saved-v1:s1']);
+  chk('① 持ち出しファイルに「持ち出し済み」の印は入らない', !('dq-moved-out-v1' in ex.keys));
+  await d.pg.reload(); await wait(1200);
+  const band6 = await d.pg.evaluate(() => { const e = document.getElementById('cloudWarn'); return e && !e.hidden ? e.textContent : ''; });
+  chk('⑥ 旧住所で持ち出した端末を開き直すと「持ち出し済み」の帯が出る', /持ち出し済み/.test(band6), band6.slice(0, 80));
   await d.c.close();
 
   /* ---- ② 新しい住所の最初の画面から持ち込む ---- */
@@ -116,6 +122,7 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('② 持ち出した鍵がすべて同じ中身で入っている', keys.every(same) && ('dq-quote-at:s1' in after), keys.filter((k) => !same(k)).join(','));
   chk('② 対象外の鍵は新住所に無い', !('kq-config-v1' in after) && !('ienaka-demo-config-v1' in after) && !('dq-handoff-v1' in after));
   chk('② 持ち込みの記録が残る', /old\.example/.test(after['dq-moved-v1'] || ''), after['dq-moved-v1']);
+  chk('⑥ 持ち込んだ側には「持ち出し済み」の帯は出ない', !(await d.pg.evaluate(() => { const e = document.getElementById('cloudWarn'); return e && !e.hidden; })));
   chk('② 開き直すと担当者コードの画面（旧住所の担当者）', await vis(d.pg, 'staffOverlay') && !(await vis(d.pg, 'setupOverlay')));
   await enterCode(d.pg);
   const cust = await d.pg.evaluate(() => document.getElementById('custName').value);
