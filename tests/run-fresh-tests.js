@@ -20,7 +20,8 @@
  *   ⑤ 通信できていて本当にクラウドが空なら、これまでどおり初期値を送る（初めて使う店舗）
  *   ⑥ クラウドに「閉じた旧住所（movedFrom）」があり、この住所がそれなら、同期を止めて案内を出す
  *   ⑧ 「旧アドレスを閉じる」は3つの書類すべてに movedFrom を書き、「印を消す」で空に戻る。旧住所からは押せない
- *   ⑨ 持ち込んだ直後の最初の同期で、クラウドの新しい作りかけを消さず、お客様名は端末のものが残る
+ *   ⑨ 持ち込んだ直後の最初の同期で、クラウドの新しい作りかけを消さず、ケータイ側のお客様名は端末のものが残る
+ *   イ③ イエナカ単体には氏名欄がなく、以前の版の氏名も保存・同期しない
  */
 const http = require('http');
 const fs = require('fs');
@@ -222,12 +223,12 @@ srv.listen(0, '127.0.0.1', async () => {
   const first = (await sets(d.pg)).filter((x) => x.path === IE + '/quotes/shared')[0];
   chk('イ⑤ 通信できていてクラウドが空なら初期値を送る（初めて使う店舗）', !!first);
   await d.c.close();
-  const remoteQuote = (() => { const q = JSON.parse(first.data.data); q.staffName = '田中'; q.custName = ''; return q; })();
+  const remoteQuote = (() => { const q = JSON.parse(first.data.data); q.staffName = '田中'; q.custName = '以前の版の名前'; return q; })();
 
   // ① 空の端末を圏外で開く → 送らない。入力しても送らない
   d = await open({ url: '/ienaka/', offline: true });
   chk('イ① 空の端末を圏外で開いても、クラウドへの書き込みが無い', (await sets(d.pg)).length === 0, JSON.stringify(await sets(d.pg)).slice(0, 200));
-  await d.pg.evaluate(() => { const e = document.getElementById('custName'); e.value = '空の端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await d.pg.evaluate(() => { const e = document.getElementById('quoteMemo'); e.value = '空の端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await wait(1500);
   chk('イ① 空の端末で入力しても、本物を受け取るまで送らない', (await sets(d.pg)).length === 0, JSON.stringify(await sets(d.pg)).slice(0, 200));
   const ist = await d.pg.evaluate(() => (document.getElementById('cloudStatus') || document.querySelector('.sync-status, #syncStatus, .cloud-status') || { textContent: '' }).textContent);
@@ -238,9 +239,13 @@ srv.listen(0, '127.0.0.1', async () => {
   await wait(800);
   const staffName = await d.pg.evaluate(() => document.getElementById('staffName').value);
   chk('イ③ 本物が届いたら取り込む（他端末の担当者名が入る）', staffName === '田中', staffName);
-  await d.pg.evaluate(() => { const e = document.getElementById('custName'); e.value = '本物のあとで入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  chk('イ③ お客様名の入力欄は無い', !(await d.pg.$('#custName')));
+  await d.pg.evaluate(() => { const e = document.getElementById('quoteMemo'); e.value = '本物のあとで入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await wait(1500);
   chk('イ③ 本物を受け取ったあとは、これまでどおり送れる', (await sets(d.pg)).some((x) => x.path === IE + '/quotes/shared'));
+  const sentQuote = (await sets(d.pg)).filter((x) => x.path === IE + '/quotes/shared').slice(-1)[0];
+  const sentData = sentQuote && sentQuote.data && sentQuote.data.data ? JSON.parse(sentQuote.data.data) : null;
+  chk('イ③ 以前の版のお客様名を保存・同期しない', !!sentData && !Object.prototype.hasOwnProperty.call(sentData, 'custName'), JSON.stringify(sentData).slice(0, 200));
   await d.c.close();
 
   // ② 空の端末を圏外のまま**開き直して**入力しても送らない（1回目の起動で自動保存された空の見積もりを「保存あり」と見ない）
@@ -251,7 +256,7 @@ srv.listen(0, '127.0.0.1', async () => {
     await p2.addInitScript(fake({ offline: true }));
     await p2.goto('http://naibu.example/ienaka/'); await wait(1000);
     await p2.goto('http://naibu.example/ienaka/'); await wait(1000);   // 圏外のまま開き直す
-    await p2.evaluate(() => { const e = document.getElementById('custName'); e.value = '2回目に入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    await p2.evaluate(() => { const e = document.getElementById('quoteMemo'); e.value = '2回目に入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
     await wait(1500);
     const s2 = await p2.evaluate(() => window.__FAKE.sets.map((s) => s.path));
     chk('イ② 空の端末を圏外のまま開き直して入力しても送らない', s2.length === 0, s2.join(','));
@@ -259,7 +264,7 @@ srv.listen(0, '127.0.0.1', async () => {
   }
   // ④ 一度でも本物を受け取った端末（いつもの iPad）が圏外 → 入力は送れる（これまでどおり。通信が戻ったときに届く）
   d = await open({ url: '/ienaka/', offline: true, seed: { 'ienaka-internal-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [] }), 'ienaka-internal-seen-cloud-v1': '1' } });
-  await d.pg.evaluate(() => { const e = document.getElementById('custName'); e.value = 'いつもの端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await d.pg.evaluate(() => { const e = document.getElementById('quoteMemo'); e.value = 'いつもの端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await wait(1500);
   chk('イ④ 一度本物を受け取った端末は圏外でも送れる（これまでどおり）', (await sets(d.pg)).some((x) => x.path === IE + '/quotes/shared'));
   await d.c.close();
@@ -275,7 +280,7 @@ srv.listen(0, '127.0.0.1', async () => {
     seed: { 'ienaka-internal-config-v1': JSON.stringify({ storeName: 'テスト店', staff: [] }) } });
   const iband = await d.pg.evaluate(() => { const e = document.getElementById('movedWarn'); return e && !e.hidden ? e.textContent : ''; });
   chk('イ⑥ 旧住所で開くと「引っ越しました」の案内が出る（新しい住所は載せない）', /引っ越しました/.test(iband) && !/new\.example/.test(iband), iband.slice(0, 80));
-  await d.pg.evaluate(() => { const e = document.getElementById('custName'); e.value = '旧端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await d.pg.evaluate(() => { const e = document.getElementById('quoteMemo'); e.value = '旧端末で入力'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await wait(1500);
   chk('イ⑥ 旧住所からは何も送らない', !(await sets(d.pg)).some((x) => x.path.indexOf('quotes/shared') >= 0), JSON.stringify(await sets(d.pg)).slice(0, 200));
   await d.c.close();
