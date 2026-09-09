@@ -49,7 +49,8 @@ function fetchOnce(url, opts) {
 const ok = [], ng = [];
 function chk(label, cond, extra) { (cond ? ok : ng).push(label + (extra ? "（" + extra + "）" : "")); console.log((cond ? "OK  " : "NG  ") + label + (extra ? "  " + extra : "")); }
 
-console.log("== 配信先の確認: " + BASE + (INTERNAL ? "（社内版）" : OLDSITE ? "（旧住所の案内ページ）" : "（製品版）"));
+// 社内版の住所は記録に残さない（住所を知られないことが守り）
+console.log("== 配信先の確認: " + (INTERNAL ? "社内版" : BASE + (OLDSITE ? "（旧住所の案内ページ）" : "（製品版）")));
 
 if (OLDSITE) {
   /* 旧住所: すべての入口が案内ページで、古いアプリの部品は 404 */

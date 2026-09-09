@@ -124,6 +124,28 @@ srv.listen(0, '127.0.0.1', async () => {
   const s7 = await sets(d.pg);
   chk('⑥ 担当者コードの画面を通らない店舗でも、合図が先に効いて何も送らない', s7.length === 0 && (await vis(d.pg, 'cloudWarn')), JSON.stringify(s7).slice(0, 160));
   await d.c.close();
+  // 圏外で開いた旧端末（控えに合図なし）で担当者を選ぶ → 担当者一覧の送信が予約されるが、
+  // 本物を受け取るまで送らない。通信が戻って合図（movedFrom）が届いたら、予約していたぶんも送らない
+  d = await open({ url: '/?kqtest=1', offline: true, host: 'old.example',
+    docs: { [STORE]: Object.assign({}, cloudStore) },   // 控えには合図なし（引っ越し前に取った控え）
+    seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
+  await d.pg.evaluate(() => { document.getElementById('staffCode').value = '1111'; document.getElementById('staffForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  await wait(1500);
+  chk('⑦ 圏外の旧端末で担当者を選んでも、本物を受け取るまで担当者一覧を送らない', (await sets(d.pg)).length === 0, JSON.stringify(await sets(d.pg)).slice(0, 160));
+  await d.pg.evaluate(([p, doc]) => window.__FAKE.deliver(p, doc), [STORE, Object.assign({}, cloudStore, { movedFrom: 'old.example' })]);
+  await wait(1500);
+  chk('⑦ 通信が戻って合図が届いたら、予約していた担当者一覧も送らない', (await sets(d.pg)).length === 0, JSON.stringify(await sets(d.pg)).slice(0, 160));
+  await d.c.close();
+  // 同じ状況で合図が無ければ、圏外のあいだに直した担当者一覧はこれまでどおり送られる（保留の解放）
+  d = await open({ url: '/?kqtest=1', offline: true, host: 'naibu.example',
+    docs: { [STORE]: Object.assign({}, cloudStore) },
+    seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
+  await d.pg.evaluate(() => { document.getElementById('staffCode').value = '1111'; document.getElementById('staffForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  await wait(800);
+  await d.pg.evaluate(([p, doc]) => window.__FAKE.deliver(p, doc), [STORE, Object.assign({}, cloudStore)]);
+  await wait(1500);
+  chk('⑦ 合図が無ければ、圏外のあいだの担当者の変更はこれまでどおり送られる', (await sets(d.pg)).some((x) => x.path === STORE && x.data && x.data.staff), JSON.stringify(await sets(d.pg)).slice(0, 160));
+  await d.c.close();
   // 新しい住所（movedFrom に無い）では止まらない
   d = await open({ url: '/?kqtest=1', offline: false, host: 'new.example',
     docs: { [STORE]: Object.assign({}, cloudStore, { movedFrom: 'old.example' }) }, seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });

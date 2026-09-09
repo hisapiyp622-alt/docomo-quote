@@ -4953,6 +4953,7 @@
     var okKeys = {}, bad = [];
     Object.keys(d.keys).forEach(function (k) {
       if (moveKeyOk(k) && typeof d.keys[k] === "string") okKeys[k] = d.keys[k];
+      else if (MOVE_SKIP.indexOf(k) >= 0) return;   // 一時的な引き渡し・旧端末だけの印は黙って捨てる
       else bad.push(k);
     });
     /* 対象外の鍵（製品版の kq-*・デモ・ログイン情報など）が混ざったファイルは、
@@ -6406,8 +6407,20 @@
     CLOUD[key] = setTimeout(fn, ms);
     return CLOUD[key];
   }
+  /* 社内版: 店舗の書類（担当者・料金表）は、サーバーから一度受け取るまで送らない。
+   * 圏外で開いた旧住所の端末が担当者を選ぶと担当者一覧の送信が予約され、通信が戻った瞬間に
+   * 「引っ越し済み」の合図より先に届いてしまう（第2の反証で再現）。受け取ったときに合図が
+   * あれば送らず、無ければ保留していたぶん（pendingStore）をその場で送る。 */
+  function storeHold() {
+    if (!INTERNAL || CLOUD.storeSynced) return false;
+    CLOUD.pendingStore = true;
+    markStoreAt();
+    syncStatus("同期:オフライン", "err");
+    return true;
+  }
   function pushConfig() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeHold()) return;
     markStoreAt();   // 送る前に閉じても、次に開いたときに送り直せるように
     if (CLOUD.cfgTimer) clearTimeout(CLOUD.cfgTimer);
     syncStatus("同期中…", "");
@@ -6455,6 +6468,7 @@
   }
   function pushStoreMeta() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (INTERNAL && !CLOUD.storeSynced) return;   // 受け取る前は版の記録も書かない
     /* 上位・保守で店舗を開いているときは書かない。
      * その端末のアプリの版を、店舗が使っている版として記録してしまうため。 */
     if (superActing()) return;
@@ -6473,6 +6487,7 @@
   // 料金マスタ（店舗で共通）の送信
   function markMasterEdit() {
     if (!cloudOn() || CLOUD.suppress || contractBlocked()) return;
+    if (storeHold()) return;
     markStoreAt();
     if (CLOUD.masterTimer) clearTimeout(CLOUD.masterTimer);
     syncStatus("同期中…", "");
@@ -6922,6 +6937,7 @@
     var firstStore = true;
     CLOUD.unsubStore = storeDoc().onSnapshot(function (snap) {
       var d = snap.exists ? snap.data() : null;
+      if (!(snap.metadata && snap.metadata.fromCache)) CLOUD.storeSynced = true;   // 本物を受け取った
       if (!d) {
         /* 「クラウドに何も無い」は、初めてログインした店舗のときだけ本当。
          * 通信できていないときも同じ形で届く（端末内の控え由来）ので、
@@ -6934,9 +6950,18 @@
       /* 通信できないうちに直した店舗情報・料金マスタが、クラウドの古い内容で
        * 消されないようにする。端末の方が新しいときは取り込まずに送り直す
        * （製品化レビュー 4-19）。 */
-      if (INTERNAL && firstStore && movedAwayCheck(d)) { firstStore = false; return; }
+      if (INTERNAL && firstStore && movedAwayCheck(d)) { firstStore = false; CLOUD.pendingStore = false; return; }
       if (firstStore && num(CLOUD.storeAtLoaded) > num(d.updatedAtMs)) {
         firstStore = false;
+        pushConfig(); markMasterEdit();
+        return;
+      }
+      /* 圏外のあいだ保留していた担当者・料金表（storeHold）は、本物を受け取ったこの時点で送る
+       * （最初のお知らせが控えだったときは firstStore がもう消えているので、ここで見る） */
+      if (INTERNAL && CLOUD.pendingStore && !(snap.metadata && snap.metadata.fromCache)) {
+        firstStore = false;
+        if (movedAwayCheck(d)) { CLOUD.pendingStore = false; return; }
+        CLOUD.pendingStore = false;
         pushConfig(); markMasterEdit();
         return;
       }
@@ -8041,6 +8066,7 @@
           var dIc = snap.exists ? snap.data() : null;
           /* 「この住所は閉じた」の合図があれば、担当者に入る前に止める（入ってしまうと、
            * 合図のお知らせより先に作りかけの送信が走る隙がある） */
+          if (!(snap.metadata && snap.metadata.fromCache)) CLOUD.storeSynced = true;
           if (dIc && !(snap.metadata && snap.metadata.fromCache) && movedAwayCheck(dIc)) { bootDone(); return; }
           if (dIc) applyRemoteStore(dIc);
           /* はじめて開く端末で、クラウドの中身を受け取れていない（圏外・控えだけ）ときは

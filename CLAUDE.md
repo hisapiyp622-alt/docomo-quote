@@ -85,7 +85,7 @@
 |---|---|---|
 | 製品版（`frontalk.curacon.co.jp`） | `node tools/build-product.js` | CI の `deploy` ジョブ（`.github/workflows/ci.yml`）が、main のテストが**全部通ったあとだけ** Cloudflare へ配る |
 | 社内版（阪南・常盤東） | `node tools/build-internal-dist.js`（**許可リスト方式**。要るファイルだけ） | 同上（別プロジェクト） |
-| 旧・社内版の住所（github.io） | `node tools/build-oldsite-stub.js --new-url …` | 「引っ越しました」の案内と、片付け用の sw.js を全入口に置く |
+| 旧・社内版の住所（github.io） | `node tools/build-oldsite-stub.js --old-path /docomo-quote/ [出力先]`（**新しい住所は入れない**。店内で伝える） | 「引っ越しました」の案内と、片付け用の sw.js を全入口に置く |
 
 - 配信物には `404.html`・`_headers`・`version.json` が入る（`tools/lib/dist-extras.js`）。
   **Cloudflare Pages は `404.html` が無いと、無い住所にトップページを返す**（壊れが隠れる）ので必ず入れる。

@@ -35,6 +35,13 @@ function opt(name, dflt) { const i = args.indexOf(name); return i >= 0 ? args[i 
 const PRODUCT_URL = opt("--product-url", "https://frontalk.curacon.co.jp/");
 /* 旧住所の根っこのパス（オフライン係を外す範囲。github.io の同居サイトを巻き込まないため） */
 const OLD_PATH = opt("--old-path", "/docomo-quote/").replace(/\/?$/, "/");
+const KNOWN = ["--product-url", "--old-path"];
+const unknown = args.filter((a) => /^--/.test(a) && !KNOWN.includes(a));
+if (unknown.length) {
+  console.error("知らない指定があります: " + unknown.join(" ") + "（使えるのは " + KNOWN.join(" ") + "）");
+  if (unknown.includes("--new-url")) console.error("社内版の新しい住所は案内ページに書かない方針です（店内で伝える）。");
+  process.exit(1);
+}
 const rest = args.filter((a, i) => !/^--/.test(a) && !/^--/.test(args[i - 1] || ""));
 const OUT = path.resolve(rest[0] || path.join(ROOT, "dist-oldsite"));
 if (OLD_PATH.charAt(0) !== "/") { console.error("--old-path は / で始めてください（例: /docomo-quote/）"); process.exit(1); }
@@ -52,7 +59,7 @@ const ENTRIES = [
 ];
 const CACHE_PREFIXES = ["dq-", "kq-", "ienaka-", "dk-"];
 const MOVE_PREFIXES = ["dq-", "ienaka-internal-", "ienaka-hannan-"];
-const MOVE_SKIP = ["dq-handoff-v1"];
+const MOVE_SKIP = ["dq-handoff-v1", "dq-moved-out-v1"];   // 一時的な引き渡し・旧端末だけの印は運ばない
 
 const SW = `/* 旧住所の片付け用（tools/build-oldsite-stub.js が作る）。
  * 入れ替わった瞬間に、この受け持ちの古い控えを消して自分を外す。fetch は素通し。 */

@@ -128,7 +128,8 @@ jobs:
   # 製品版の名前は公開情報なので Variables の CF_PAGES_PROJECT_PRODUCT でよい。
   deploy:
     needs: test
-    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.DEPLOY_ENABLED == 'true' }}
+    # main 以外の枝からは配らない（手動実行でも）。Environment の枝制限が効かない契約でも、ここで止まる
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production

@@ -64,7 +64,8 @@ const SEED = {
   'dq-config-v1': JSON.stringify({ storeName: 'ドコモショップ阪南店', staff: [{ id: 's1', name: '佐藤', code: '1111' }], activeStaffId: 's1' }),
   'dq-saved-v1:s1': JSON.stringify([{ id: 'sv1', name: '山田様', custName: '山田 太郎', data: { patterns: [{ custName: '山田 太郎' }] } }]),
   'ienaka-internal-config-v1': JSON.stringify({ storeName: 'ドコモショップ阪南店' }),
-  'kq-config-v1': JSON.stringify({ storeName: '製品版の開発コピー' })
+  'kq-config-v1': JSON.stringify({ storeName: '製品版の開発コピー' }),
+  'dq-moved-out-v1': '2026/09/10 10:00'   // 旧アプリで一度持ち出した端末の印（案内ページの持ち出しには入らない・入っても新住所で捨てられる）
 };
 
 srv.listen(0, '127.0.0.1', async () => {
@@ -184,7 +185,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const ex = JSON.parse(fs.readFileSync(file, 'utf8'));
   chk('④ 持ち出しファイルは新しい住所の「持ち込む」と同じ形式', ex.kind === 'frontalk-internal-move' && /共有しない/.test(ex.note || '') && /localhost/.test(ex.from));
   const keys = Object.keys(ex.keys || {});
-  chk('④ 社内版の鍵だけが入る', keys.includes('dq-config-v1') && keys.includes('dq-saved-v1:s1') && keys.includes('ienaka-internal-config-v1') && !keys.includes('kq-config-v1'), keys.join(','));
+  chk('④ 社内版の鍵だけが入る（持ち出し済みの印は入らない）', keys.includes('dq-config-v1') && keys.includes('dq-saved-v1:s1') && keys.includes('ienaka-internal-config-v1') && !keys.includes('kq-config-v1') && !keys.includes('dq-moved-out-v1'), keys.join(','));
   chk('④ 持ち出しても端末の中身は消えない', (await ls())['dq-saved-v1:s1'] === SEED['dq-saved-v1:s1']);
 
   /* 新しい住所側で本当に読めるか（アプリの持ち込みに通す） */
