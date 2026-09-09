@@ -82,6 +82,8 @@ jobs:
         run: node tests/run-internal-layout-test.js
       - name: 配信ジョブの決まり（Node の版・秘密の置き場）
         run: node tests/run-ci-config-test.js
+      - name: きれいな住所への転送に耐えるか（控えの作成・圏外での起動）
+        run: node tests/run-pretty-url-test.js
       - name: 空の端末が本番を白紙にしないこと・引っ越し済みの合図
         run: node tests/run-fresh-tests.js
       - name: 引っ越し（持ち出し・持ち込み）
