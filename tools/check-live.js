@@ -20,12 +20,47 @@ const { execFileSync } = require("child_process");
 const { MUST_NOT_SERVE } = require("./lib/dist-extras");
 
 const args = process.argv.slice(2);
-const BASE = (args.find((a) => /^https?:\/\//.test(a)) || "").replace(/\/+$/, "");
 const INTERNAL = args.includes("--internal");
 const OLDSITE = args.includes("--oldsite");
+
+/* 住所の掃除（2026-09-09 の失敗から）:
+ * GitHub の秘密に住所を貼るとき、日本語入力のまま打つと全角の英字（ｈｔｔｐｓ）や
+ * 全角のコロン・空白・改行・引用符が混ざる。そのままだと curl が全部 URL を拒み、
+ * 「NG 17件」という原因の分からない赤になる。直せるものは直し、直せないものは
+ * 何が悪いかだけを言う（社内版の住所そのものは記録に出さない）。 */
+function tidyUrl(raw) {
+  const notes = [];
+  let v = String(raw || "");
+  if (/[\uFF01-\uFF5E\u3000]/.test(v)) notes.push("全角の文字（日本語入力のまま打った可能性）");
+  v = v.normalize("NFKC");
+  if (/^\s|\s$/.test(v)) notes.push("前後の空白か改行");
+  v = v.trim();
+  if (/^["'`]|["'`]$/.test(v)) { notes.push("引用符"); v = v.replace(/^["'`]+|["'`]+$/g, ""); }
+  if (/\s/.test(v)) notes.push("途中の空白");
+  v = v.replace(/\s+/g, "").replace(/\/+$/, "");
+  return { url: v, notes };
+}
+const rawBase = args.find((a) => /^\s*["'`]?[a-zA-Z\uFF41-\uFF5A\uFF21-\uFF3A]+[:\uFF1A]/.test(a))
+  || args.find((a) => !a.startsWith("--") && /\.[a-z]{2,}(\/|$)/i.test(a)) || "";
+const tidy = tidyUrl(rawBase);
+if (tidy.url && !/:/.test(tidy.url)) { tidy.notes.push("https:// の書き忘れ"); tidy.url = "https://" + tidy.url; }
+const BASE = tidy.url;
 function opt(n) { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : ""; }
 const EXPECT = opt("--expect"), COMMIT = opt("--commit");
 if (!BASE) { console.error("使い方: node tools/check-live.js https://<住所> [--internal|--oldsite] [--expect <版>] [--commit <sha>]"); process.exit(2); }
+if (tidy.notes.length) console.log("※ 住所に " + tidy.notes.join("・") + " が混ざっていたので取り除きました（設定を直してください）");
+if (!/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]+)?(\/[A-Za-z0-9._~%\-\/]*)?$/.test(BASE)) {
+  console.error("住所の形が正しくありません" + (INTERNAL ? "（社内版なので中身は出しません）" : "：" + BASE));
+  console.error("  ・先頭は半角の https:// ですか（日本語入力のままだと ｈｔｔｐｓ：／／ になります）");
+  console.error("  ・空白・改行・引用符が混ざっていませんか");
+  console.error("  ・末尾に / を付けていませんか");
+  process.exit(2);
+}
+/* --check-url … 住所の形だけを見て終わる（テスト用。通信はしない） */
+if (args.includes("--check-url")) {
+  console.log(INTERNAL ? "住所の形は問題ありません（社内版なので中身は出しません）" : BASE);
+  process.exit(0);
+}
 
 function fetch(url, opts) {
   /* 通信の途切れ（中継サーバーの都合など）は2回まで試し直す */

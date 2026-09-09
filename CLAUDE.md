@@ -181,7 +181,8 @@
    `node tests/run-product-layout-test.js`・`node tests/run-internal-layout-test.js`（社内版の配信物の入れ忘れ・入れすぎ）・
    `node tests/run-oldsite-stub-test.js`（旧住所の案内ページ）・
    `node tests/run-ci-config-test.js`（配信ジョブの Node の版・社内版の名前が記録に残らないか）・
-   `node tests/run-pretty-url-test.js`（Cloudflare の住所の書き換えでオフライン用の控えが壊れないか）・Playwright で動作確認
+   `node tests/run-pretty-url-test.js`（Cloudflare の住所の書き換えでオフライン用の控えが壊れないか）・
+   `node tests/run-check-live-arg-test.js`（配信先の住所に全角・空白が混ざったときの受け取り方）・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、
    `tools/provision-store.js` を触ったときは `sh tools/test-provision.sh` も）
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す
