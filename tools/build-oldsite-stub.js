@@ -49,8 +49,8 @@ if (OLD_PATH.charAt(0) !== "/") { console.error("--old-path は / で始めて�
 /* 入口の一覧。kind: internal=社内版（持ち出しあり・新住所は書かない）/ product=製品版の開発コピー / demo / retired */
 const ENTRIES = [
   { dir: "", kind: "internal", label: "社内版ケータイ見積もり" },
-  { dir: "ienaka", kind: "internal", label: "社内版イエナカ見積もり（阪南）" },
-  { dir: "ienaka-tokiwahigashi", kind: "internal", label: "社内版イエナカ見積もり（常盤東）" },
+  { dir: "ienaka", kind: "ienaka", label: "社内版イエナカ見積もり（阪南）" },
+  { dir: "ienaka-tokiwahigashi", kind: "ienaka", label: "社内版イエナカ見積もり（常盤東）" },
   { dir: "keitai-app", kind: "product", label: "製品版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-app", kind: "product", label: "イエナカ単体版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-demo", kind: "demo", label: "営業用デモ", to: PRODUCT_URL.replace(/\/?$/, "/") + "demo/" },
@@ -80,6 +80,8 @@ function page(e) {
   const internal = e.kind === "internal";
   const lead = {
     internal: `<p>社内版は<b>新しい住所</b>に引っ越しました。<b>新しい住所は店内の案内（担当の方）でご確認ください。</b>ホーム画面のアイコンを新しい住所で作り直してお使いください。</p>`,
+    ienaka: `<p>社内版は<b>新しい住所</b>に引っ越しました。<b>新しい住所は店内の案内（担当の方）でご確認ください。</b>ホーム画面のアイコンを新しい住所で作り直してお使いください。</p>
+<p class="hint">イエナカ専用の端末では、データの持ち出しは使いません（作りかけ本体はクラウドから戻ります。お客様名だけ新しいアイコンで入れ直してください）。ケータイ見積もりと同じ端末なら、ケータイの入口で持ち出してください。</p>`,
     product: `<p>ここは開発用のコピーでした。製品版は次の住所からお使いください。</p>`,
     demo: `<p>営業用デモは次の住所に移りました。</p>`,
     retired: `<p>この試作は終了しました。社内版の新しい住所は店内の案内でご確認ください。</p>`
@@ -172,7 +174,11 @@ ${internal ? `
     Object.keys(keys).forEach(function (k) {
       var v = keys[k];
       if (k.indexOf("dq-saved-v1:") === 0) { try { saved += (JSON.parse(v) || []).length; } catch (e) {} }
-      else if (k.indexOf("dq-state-v1:") === 0) quotes++;
+      else if (k.indexOf("dq-state-v1:") === 0) {
+        // アプリの持ち込み画面と同じ数え方: 中身のある作りかけだけ（開いただけの空の見積もりは数えない）
+        try { var st = JSON.parse(v); var pts = (st && st.patterns) || [];
+          if (pts.some(function (pt) { return pt && (String(pt.custName || "").trim() || pt.planId || pt.procType || Number(pt.devicePrice) > 0); }) || (st && st.ienaka && st.ienaka.enabled)) quotes++; } catch (e) {}
+      }
       else if (k.indexOf("ienaka-") === 0) ienaka++;
       else if (k === "dq-config-v1") { try { staff = (JSON.parse(v).staff || []).map(function (s) { return s.name || s.id; }); } catch (e) {} }
     });

@@ -1426,7 +1426,7 @@
       var hd = document.querySelector("header");
       if (hd && hd.parentNode) hd.parentNode.insertBefore(el, hd.nextSibling); else document.body.insertBefore(el, document.body.firstChild);
     }
-    el.textContent = "⚠ 社内版は新しい住所に引っ越しました。この住所では保存・同期はできません。新しい住所は店内の案内（担当の方）でご確認ください。";
+    el.textContent = "⚠ 社内版は新しい住所に引っ越しました。この住所では保存・同期はできません。新しい住所は店内の案内（担当の方）でご確認ください。（版 " + APP_VERSION + "）";
     el.hidden = false;
     return true;
   }

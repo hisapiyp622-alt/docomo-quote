@@ -7027,11 +7027,18 @@
       CLOUD.db.collection("settings").doc("ienakaInternalStore"),
       CLOUD.db.collection("settings").doc("ienakaStore_tokiwahigashi")];
     var payload = { movedFrom: undo ? "" : oldHosts, movedAt: undo ? "" : nowStamp() };
-    Promise.all(docs.map(function (ref) { return ref.set(payload, { merge: true }); })).then(function () {
+    /* 3つの書類に順番に書く。途中で失敗したら、書けた分を空に戻して「半分だけ閉じた」状態を残さない */
+    var done = [];
+    docs.reduce(function (p, ref) {
+      return p.then(function () { return ref.set(payload, { merge: true }).then(function () { done.push(ref); }); });
+    }, Promise.resolve()).then(function () {
       moveMsg(undo ? "「引っ越し済み」の印を消しました。" : "旧アドレス（" + oldHosts + "）の全端末に「引っ越し済み」を知らせました。");
       logAdd("引っ越し", undo ? "引っ越し済みの印を消しました" : "引っ越し済みの印を付けました（" + oldHosts + "）");
     }, function (e) {
-      moveMsg("書き込めませんでした（" + String((e && e.message) || e) + "）。", true);
+      var back = { movedFrom: "", movedAt: "" };
+      Promise.all(done.map(function (ref) { return ref.set(back, { merge: true }).catch(function () {}); })).then(function () {
+        moveMsg("書き込めませんでした（" + String((e && e.message) || e) + "）。書けた分は戻しました。通信できる場所でもう一度押してください。", true);
+      });
     });
   }
 

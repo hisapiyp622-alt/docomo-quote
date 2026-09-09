@@ -19,6 +19,8 @@
  *   ④ 端末に保存があった端末（いつもの iPad が圏外なだけ）は、これまでどおり送れる
  *   ⑤ 通信できていて本当にクラウドが空なら、これまでどおり初期値を送る（初めて使う店舗）
  *   ⑥ クラウドに「閉じた旧住所（movedFrom）」があり、この住所がそれなら、同期を止めて案内を出す
+ *   ⑧ 「旧アドレスを閉じる」は3つの書類すべてに movedFrom を書き、「印を消す」で空に戻る。旧住所からは押せない
+ *   ⑨ 持ち込んだ直後の最初の同期で、クラウドの新しい作りかけを消さず、お客様名は端末のものが残る
  */
 const http = require('http');
 const fs = require('fs');
@@ -152,6 +154,66 @@ srv.listen(0, '127.0.0.1', async () => {
   chk('⑥ 新しい住所では止まらない', !(await d.pg.evaluate(() => { const e = document.getElementById('cloudWarn'); return e && !e.hidden; })));
   chk('⑥ クラウドの書類に新しい住所を書いていない（合図は「閉じた旧住所」だけ）', !(await d.pg.evaluate(() => JSON.stringify(window.__FAKE.docs))).includes('new.example'));
   await d.c.close();
+
+  /* ---- ⑧ 旧アドレスを閉じる／印を消す ---- */
+  const IE_STORE = 'settings/ienakaInternalStore', TK_STORE = 'settings/ienakaStore_tokiwahigashi';
+  const three = { [STORE]: Object.assign({}, cloudStore), [IE_STORE]: { storeName: 'テスト店' }, [TK_STORE]: { storeName: '常盤東' } };
+  d = await open({ url: '/?kqtest=1', offline: false, host: 'new.example', docs: JSON.parse(JSON.stringify(three)), seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
+  await d.pg.addInitScript(() => { window.KEITAI_OLD_HOSTS = ['old.example']; });
+  await d.pg.reload(); await wait(1200);
+  await d.pg.evaluate(() => { document.getElementById('staffCode').value = '1111'; document.getElementById('staffForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  await wait(500);
+  await d.pg.evaluate(() => document.getElementById('moveCloseBtn').click()); await wait(800);
+  let docsNow = await d.pg.evaluate(() => window.__FAKE.docs);
+  chk('⑧ 「旧アドレスを閉じる」で3つの書類すべてに閉じた旧住所が書かれる', [STORE, IE_STORE, TK_STORE].every((p) => docsNow[p] && docsNow[p].movedFrom === 'old.example'), JSON.stringify([STORE, IE_STORE, TK_STORE].map((p) => docsNow[p] && docsNow[p].movedFrom)));
+  chk('⑧ 新しい住所はクラウドに書かれない', !JSON.stringify(docsNow).includes('new.example'));
+  chk('⑧ 画面に知らせが出る', /知らせました/.test(await d.pg.evaluate(() => document.getElementById('moveMsg').textContent)));
+  await d.pg.evaluate(() => document.getElementById('moveReopenBtn').click()); await wait(800);
+  docsNow = await d.pg.evaluate(() => window.__FAKE.docs);
+  chk('⑧ 「印を消す」で3つとも空に戻る', [STORE, IE_STORE, TK_STORE].every((p) => docsNow[p] && docsNow[p].movedFrom === ''), JSON.stringify([STORE, IE_STORE, TK_STORE].map((p) => docsNow[p] && docsNow[p].movedFrom)));
+  await d.c.close();
+  // 旧住所からは押せない
+  d = await open({ url: '/?kqtest=1', offline: false, host: 'old.example', docs: JSON.parse(JSON.stringify(three)), seed: { 'dq-config-v1': JSON.stringify(cloudStore) } });
+  await d.pg.addInitScript(() => { window.KEITAI_OLD_HOSTS = ['old.example']; });
+  await d.pg.reload(); await wait(1200);
+  await d.pg.evaluate(() => { document.getElementById('staffCode').value = '1111'; document.getElementById('staffForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  await wait(500);
+  await d.pg.evaluate(() => document.getElementById('moveCloseBtn').click()); await wait(800);
+  const m8 = await d.pg.evaluate(() => document.getElementById('moveMsg').textContent);
+  chk('⑧ 旧住所からは押せず、合図を書かない', /旧アドレス/.test(m8) && /行えません/.test(m8) && !(await sets(d.pg)).some((x) => x.data && 'movedFrom' in x.data), m8.slice(0, 60));
+  await d.c.close();
+
+  /* ---- ⑨ 持ち込んだ直後の最初の同期（旧端末の時刻を持ったまま新住所で開く） ---- */
+  {
+    const oldAt = Date.now() - 3600000;   // 旧端末は1時間前に開いた・送った
+    /* 旧端末の作りかけは、アプリ自身に作らせて本物の形にする（手で書いた最小の形だと、開いたときの
+     * 整えなおしで「この端末で入力があった」と見なされ、試したい筋道と別のものになる） */
+    const oldCfg = Object.assign({}, cloudStore, { staff: [{ id: 's1', name: '佐藤', code: '1111' }] });
+    const mk = await open({ url: '/?kqtest=1', offline: true, host: 'maker.example', seed: { 'dq-config-v1': JSON.stringify(oldCfg) } });
+    await mk.pg.evaluate(() => { document.getElementById('staffCode').value = '1111'; document.getElementById('staffForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+    await wait(500);
+    await mk.pg.evaluate(() => { window.__KQ_TEST__.saved.pickPlan('current', 'max'); const e = document.getElementById('custName'); e.value = '持ち込んだお客様'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    await wait(1200);
+    const oldState = await mk.pg.evaluate(() => localStorage.getItem('dq-state-v1:s1'));
+    await mk.c.close();
+    const newState = JSON.parse(oldState); newState.patterns[0].planId = 'mini'; newState.patterns[0].custName = '';
+    const cloudQuote = { data: JSON.stringify(newState), updatedAtMs: Date.now() - 60000, clientId: 'other-device' };
+    // 持ち込んだ直後の端末の中身（旧端末の作りかけ・お客様名・開いた時刻・店舗の書類を送った時刻）。旧端末の担当者一覧は古い（1人）
+    const seeded = { 'dq-config-v1': JSON.stringify(oldCfg), 'dq-state-v1:s1': oldState,
+      'dq-quote-at:s1': String(oldAt), 'dq-store-at': String(oldAt) };
+    d = await open({ url: '/?kqtest=1', offline: false, host: 'new.example', seed: seeded,
+      docs: { [STORE]: Object.assign({}, cloudStore, { updatedAtMs: Date.now() - 120000 }), [STORE + '/quotes/s1']: cloudQuote } });
+    await d.pg.evaluate(() => { document.getElementById('staffCode').value = '1111'; document.getElementById('staffForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+    await wait(500);
+    // 作りかけがある端末は「続きから開く？」とたずねられる（持ち込んだ端末はこうなる）→ 続きから開く
+    await d.pg.evaluate(() => { const b = document.getElementById('resumeDlgCont'); if (b && !document.getElementById('resumeDlg').hidden) b.click(); });
+    await wait(2500);
+    const st9 = await d.pg.evaluate(() => ({ cust: document.getElementById('custName').value, plan: window.__KQ_TEST__.sync.planId(), staff: (JSON.parse(localStorage.getItem('dq-config-v1') || '{}').staff || []).length,
+      autos: window.__KQ_TEST__.sync.autoNames() }));
+    chk('⑨ クラウドの方が新しい作りかけはクラウドを採り、お客様名は端末のものが残る', st9.plan === 'mini' && st9.cust === '持ち込んだお客様', JSON.stringify(st9));
+    chk('⑨ 担当者一覧はクラウドの新しいもの（旧端末の古い一覧で置き換えない）', st9.staff === 2 && !(await sets(d.pg)).some((x) => x.path === STORE && x.data && x.data.staff && x.data.staff.length === 1), JSON.stringify(st9));
+    await d.c.close();
+  }
 
   /* ---- イエナカ単体 社内版（/ienaka/） ---- */
   const IE = 'settings/ienakaInternalStore';
