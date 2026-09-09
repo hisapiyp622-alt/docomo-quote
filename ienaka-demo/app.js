@@ -291,6 +291,11 @@
    * 担当者名は見積もり本体（state.staffName）に入れて一緒に保存・同期する。 */
   var CFG_KEY = INTERNAL ? (STORE_TAG ? "ienaka-internal-" + STORE_TAG + "-config-v1" : "ienaka-internal-config-v1")
     : DEMO ? "ienaka-demo-config-v1" : "ienaka-app-config-v1";
+  /* 開いた時点で端末に保存があったか。起動の途中で設定や見積もりが保存されるので、
+   * 読み込みより先に見ておく。空の端末の見分け（freshOffline）に使う。 */
+  var HAD_LOCAL_AT_BOOT = (function () {
+    try { return localStorage.getItem(KEY) != null || localStorage.getItem(CFG_KEY) != null; } catch (e) { return false; }
+  }());
   function defaultConfig() { return { storeName: "" }; }
   var config = defaultConfig();
   var oldCfg = null; // 担当者分離時代の設定（見積もりの引き継ぎにだけ使う）
@@ -1405,9 +1410,9 @@
   function movedAwayCheck(d) {
     var to = d && typeof d.movedTo === "string" ? d.movedTo : "";
     if (!to) return false;
-    var toOrigin = "";
-    try { toOrigin = new URL(to).origin; } catch (e) { return false; }
-    if (!toOrigin || toOrigin === location.origin) return false;
+    var toHost = "";
+    try { toHost = new URL(to).hostname.toLowerCase(); } catch (e) { return false; }
+    if (!toHost || toHost === String(location.hostname || "").toLowerCase()) return false;
     if (CLOUD.movedAway) return true;
     CLOUD.movedAway = true;
     if (CLOUD.unsubStore) { CLOUD.unsubStore(); CLOUD.unsubStore = null; }
@@ -1582,7 +1587,7 @@
     return "ログインできませんでした。時間をおいて再度お試しください。";
   }
   function initCloud() {
-    try { CLOUD.hadLocalAtBoot = localStorage.getItem(quoteKey()) != null || localStorage.getItem(CFG_KEY) != null; } catch (eH) {}
+    CLOUD.hadLocalAtBoot = HAD_LOCAL_AT_BOOT;
     /* 社内版: ログインは使わず、読み込めていればそのまま同期を始める。
      * 店舗名・担当者一覧と、担当者ごとの見積もりが端末間で揃う。 */
     if (INTERNAL) {

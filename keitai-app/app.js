@@ -6952,9 +6952,9 @@
   function movedAwayCheck(d) {
     var to = d && typeof d.movedTo === "string" ? d.movedTo : "";
     if (!to) return false;
-    var toOrigin = "";
-    try { toOrigin = new URL(to).origin; } catch (e) { return false; }
-    if (!toOrigin || toOrigin === location.origin) return false;
+    var toHost = "";
+    try { toHost = new URL(to).hostname.toLowerCase(); } catch (e) { return false; }
+    if (!toHost || toHost === String(location.hostname || "").toLowerCase()) return false;
     if (CLOUD.movedAway) return true;
     CLOUD.movedAway = true;
     cloudDetach();
