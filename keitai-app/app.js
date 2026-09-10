@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "1.185.0";
+  var APP_VERSION = "1.186.0";
 
   /* ---------- カメラ読み取り（アプリ内OCR）の入・切 ----------
    * 「現在のお支払い」カードの「カメラで読み取る」を出すかどうか。
@@ -13129,7 +13129,7 @@
     if (!show) markVersionSeen();
   }
   /* ---------- イエナカ見積もりへの移動 ----------
-   * 同じサイトの別アプリなので、店舗名・担当者名・お客様名を引き渡して、
+   * 同じサイトの別アプリなので、店舗名・担当者名を引き渡して、
    * 移った先で入力し直さなくて済むようにする。
    * 受け渡しは localStorage（同一オリジンのため読める）。一度読んだら消える。 */
   var HANDOFF_KEY = NS + "-handoff-v1";
@@ -13148,7 +13148,6 @@
           storeName: config.storeName || "",
           storeTel: config.storeTel || "",
           staffName: (st && st.name) || "",
-          custName: (state && state.custName) || "",
           from: "keitai", at: Date.now()
         }));
       } catch (e) {}

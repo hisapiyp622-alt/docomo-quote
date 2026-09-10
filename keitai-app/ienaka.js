@@ -46,6 +46,9 @@
        * 出典: https://www.docomo.ne.jp/internet/hikari/charge/10g_type_c/
        *       （2026-09-06 確認。金額は公式ページの図の読み上げ文から取得） */
       monthly: { ht: { A: 6380, B: 6380 }, ms: { A: 6380, B: 6380 } },
+      /* タイプC新規工事料は戸建・マンションとも28,600円（2026年6月1日以降の申込み）。
+       * 出典: https://www.docomo.ne.jp/info/notice/page/260423_00.html
+       *       （2026-09-09 確認） */
       jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true, msAny: true,
       /* 1ギガ タイプC から 10ギガ タイプC への「プラン変更」のときは、
        * 新規（28,600円）ではなく 戸建 9,900円／マンション 8,250円（代表例）。
@@ -56,10 +59,12 @@
     hikaric: {
       name: "ドコモ光 1ギガ タイプC",
       monthly: { ht: { A: 5720, B: 5720 }, ms: { A: 4400, B: 4400 } },
-      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true,
       /* 料金はタイプAと同額（docomo.ne.jp/internet/hikari/charge/type_c/ 2026-08-20確認）。
        * ケーブルテレビ（ZTV等）の設備で提供。お電話・テレビはケーブルテレビ契約のまま残る。
-       * 新規工事料の公表額が見当たらないため1ギガと同額を仮置き（入力欄で変更可）。 */
+       * 新規工事料は戸建・マンションとも28,600円（2026年6月1日以降の申込み）。
+       * 出典: https://www.docomo.ne.jp/info/notice/page/260423_00.html
+       *       （2026-09-09 確認） */
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true,
       note: "2年定期契約・税込・料金はタイプAと同額。ケーブルテレビ（ZTV等）の設備で提供。お電話・テレビはケーブルテレビのご契約のまま（ドコモ光電話・テレビオプション申込不可）。ZTVは集合住宅対象外。"
     },
     ahamo1g: {
@@ -281,7 +286,7 @@
       /* dカード還元を月額から差し引くか。既定は差し引かない（もらえるポイントとして案内）。
        * ケータイ見積もり側の⑧「ポイントの扱い」と同じ考え方に揃えた（製品化レビュー 4-7）。 */
       dcardApply: false, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
-      dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
+      dpoint: 20000, staffName: "", quoteMemo: "",
       typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
       /* その内訳（2026-09-04 店舗の要望）。テレビ・お電話の額を分けて出せるようにする。
        * どれかを入れたら、合計は内訳から計算する（上の1行は使わない）。
@@ -1369,7 +1374,7 @@
 
 
   /* ---------- 光の見積書（単体の1枚） ----------
-   * 単体版（ienaka-app）の見積書と同じ内容。表題・お客様名・発行元・注意書きは
+   * 単体版（ienaka-app）の見積書と同じ内容。表題・発行元・注意書きは
    * ケータイ側が付けるので、ここでは中身だけを返す。
    * セット割はケータイ側で実際に引いている金額を受け取る。 */
   /* ---------- 現在お使いの回線（ヒアリング） ----------
@@ -2284,6 +2289,8 @@
     defaultState: defaultState,
     attach: function (st, cb) {
       state = st;
+      // 以前の版で光側に残った氏名は、光・home 5Gでは引き継がない
+      if (state) delete state.custName;
       onChange = cb || function () {};
     },
     bind: bind,
