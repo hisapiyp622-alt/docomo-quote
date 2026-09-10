@@ -55,7 +55,7 @@ const ENTRIES = [
   { dir: "ienaka-app", kind: "product", label: "イエナカ単体版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-demo", kind: "demo", label: "営業用デモ", to: PRODUCT_URL.replace(/\/?$/, "/") + "demo/" },
   { dir: "ienaka-tiles", kind: "retired", label: "タイル式の試作（終了）" }, /* 原本は 2026-09-10 に削除。端末に控えが残っているので入口は残す */
-  { dir: "dakkan-app", kind: "retired", label: "他社比較の試作（終了）" }
+  { dir: "dakkan-app", kind: "retired", label: "他社比較の試作（この住所での提供は終了）" } /* 原本は残す。フロントークが落ち着いたら開発予定（2026-09-10） */
 ];
 const CACHE_PREFIXES = ["dq-", "kq-", "ienaka-", "dk-"];
 const MOVE_PREFIXES = ["dq-", "ienaka-internal-", "ienaka-hannan-"];
@@ -84,7 +84,7 @@ function page(e) {
 <p class="hint">イエナカ専用の端末では、データの持ち出しは使いません（作りかけ本体はクラウドから戻ります。お客様名だけ新しいアイコンで入れ直してください）。ケータイ見積もりと同じ端末なら、ケータイの入口で持ち出してください。</p>`,
     product: `<p>ここは開発用のコピーでした。製品版は次の住所からお使いください。</p>`,
     demo: `<p>営業用デモは次の住所に移りました。</p>`,
-    retired: `<p>この試作は終了しました。社内版の新しい住所は店内の案内でご確認ください。</p>`
+    retired: `<p>この住所での提供は終了しました。社内版の新しい住所は店内の案内でご確認ください。</p>`
   }[e.kind];
   const link = e.to ? `<p class="url"><a href="${e.to}">${e.to}</a></p>
 <p><a class="btn" href="${e.to}">新しい住所を開く</a></p>` : "";
