@@ -54,7 +54,7 @@ const ENTRIES = [
   { dir: "keitai-app", kind: "product", label: "製品版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-app", kind: "product", label: "イエナカ単体版（開発用のコピー）", to: PRODUCT_URL },
   { dir: "ienaka-demo", kind: "demo", label: "営業用デモ", to: PRODUCT_URL.replace(/\/?$/, "/") + "demo/" },
-  { dir: "ienaka-tiles", kind: "retired", label: "タイル式の試作（終了）" },
+  { dir: "ienaka-tiles", kind: "retired", label: "タイル式の試作（終了）" }, /* 原本は 2026-09-10 に削除。端末に控えが残っているので入口は残す */
   { dir: "dakkan-app", kind: "retired", label: "他社比較の試作（終了）" }
 ];
 const CACHE_PREFIXES = ["dq-", "kq-", "ienaka-", "dk-"];
