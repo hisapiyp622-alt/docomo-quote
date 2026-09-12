@@ -34,6 +34,7 @@
 | ~~`/ienaka-tiles/`~~ | タイル式UIの試作。**2026-09-10 に削除**（使わないため）。旧住所には「終了」の案内だけ残す |
 | `/dakkan-app/` | 他社比較の試作。**いまは使っていないが原本は残す**（フロントークが落ち着いたら開発予定 2026-09-10）。出荷しない・社内版の新しい住所にも入れない |
 | `/ienaka-demo/` | イエナカ **デモ版**（ログイン不要・オンライン専用。営業のQR配布用。製品版から手動コピーで更新） |
+| `/keitai-demo/` | ケータイ **デモ版**（ログイン不要・クラウド無し・オンライン専用。大人数の場で配る用）。**生成物・直接編集しない**（`node tools/build-keitai-demo.js` が `keitai-app/` から作る。デモだけの違いは `keitai-app/app.js` の `DEMO`＝`window.KEITAI_DEMO`。保存の接頭辞は `kqdemo`） |
 
 ## 社内版はビルドで生成する（2026-08-14 以降のルール）
 
@@ -66,6 +67,7 @@
 |---|---|
 | `/` | `keitai-app/`（ルートへ移す） |
 | `/demo/` | `ienaka-demo/` |
+| `/keitai-demo/` | `keitai-demo/`（ケータイのデモ。ログイン無し・クラウド無し） |
 
 - イエナカ単体版（`ienaka-app/`）は**出荷しない**（2026-08-20 販売方針）。
   阪南の社内版 `/ienaka/` の生成元としては残す。戻し方は `tools/build-product.js` 内のコメント
@@ -183,7 +185,9 @@
    `node tests/run-oldsite-stub-test.js`（旧住所の案内ページ）・
    `node tests/run-ci-config-test.js`（配信ジョブの Node の版・社内版の名前が記録に残らないか）・
    `node tests/run-pretty-url-test.js`（Cloudflare の住所の書き換えでオフライン用の控えが壊れないか）・
-   `node tests/run-check-live-arg-test.js`（配信先の住所に全角・空白が混ざったときの受け取り方）・Playwright で動作確認
+   `node tests/run-check-live-arg-test.js`（配信先の住所に全角・空白が混ざったときの受け取り方）・
+   `node tests/run-keitai-demo-test.js`（ケータイのデモがログイン無しで開き、製品版の保存と混ざらないか）・
+   `node tools/build-keitai-demo.js --check`（デモが原本とズレていないか）・Playwright で動作確認
    （`keitai-app/firestore.rules` を触ったときは `sh tools/test-rules.sh`、
    `tools/provision-store.js` を触ったときは `sh tools/test-provision.sh` も）
 2. `keitai-app/app.js` の `APP_VERSION` と `keitai-app/sw.js` の `CACHE` を必ず両方上げ、`changelog.js` に1件足す

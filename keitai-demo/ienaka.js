@@ -1,0 +1,2335 @@
+/* ── イエナカ見積もり（フロントークに組み込む版） ────────────
+ * 単体版（ienaka-app/app.js）から、料金の計算と入力画面だけを移してある。
+ * 保存・端末間同期・ログイン・担当者はケータイ側が持っているので入れない。
+ *
+ * 画面のidは、ケータイ側とぶつからないよう頭に ie を付けている
+ * （product → ieProduct）。data-属性も同じ理由で ie を付けている。
+ *
+ * 入力内容はケータイ側の store.ienaka を直接読み書きする。
+ * 光は世帯に1本なので、回線ごとのパターン（回線1・2・3）では分けない。
+ *
+ * 計算そのものは単体版と同じ。直すときは両方に同じ変更を入れること。 */
+(function () {
+  "use strict";
+
+  var state = null;                 // ケータイ側の store.ienaka を指す
+  var onChange = function () {};    // 保存と再描画をケータイ側へ知らせる
+
+  function $(id) { return document.getElementById(id); }
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+  function yen(n) { return (n < 0 ? "\u2212" : "") + Math.abs(Math.round(n)).toLocaleString("ja-JP") + "円"; }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function recalc() { render(); onChange(); }
+
+  /* 標準料金（2026-07-24 ドコモ公式サイト調査値。入力欄でいつでも変更可） */
+  var PRODUCTS = {
+    hikari1g: {
+      name: "ドコモ光 1ギガ",
+      monthly: { ht: { A: 5720, B: 5940 }, ms: { A: 4400, B: 4620 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 },
+      note: "2年定期契約・税込。タイプBはタイプA＋220円。新規工事料28,600円（実質0円特典あり・エントリー不要）。"
+    },
+    hikari10g: {
+      name: "ドコモ光 10ギガ",
+      monthly: { ht: { A: 6380, B: 6600 }, ms: { A: 6380, B: 6600 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 },
+      note: "2年定期契約・税込。提供エリア・対応設備の確認が必要。新規工事料28,600円（実質0円特典あり・エントリー不要）。"
+    },
+    hikaric10g: {
+      name: "ドコモ光 10ギガ タイプC",
+      /* 月額は戸建・マンション同額 6,380円（2年定期契約・税込）。
+       * 定期契約なしは 8,030円。1ギガ タイプCと同じくタイプA・Bの区別は無い。
+       * 出典: https://www.docomo.ne.jp/internet/hikari/charge/10g_type_c/
+       *       （2026-09-06 確認。金額は公式ページの図の読み上げ文から取得） */
+      monthly: { ht: { A: 6380, B: 6380 }, ms: { A: 6380, B: 6380 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true, msAny: true,
+      /* 1ギガ タイプC から 10ギガ タイプC への「プラン変更」のときは、
+       * 新規（28,600円）ではなく 戸建 9,900円／マンション 8,250円（代表例）。
+       * 申込区分に「プラン変更」が無いので、工事料の欄で直していただく。 */
+      kojiChange: { ht: 9900, ms: 8250 },
+      note: "2年定期契約・税込・戸建/マンション同額。ケーブルテレビ（提携CATV）の設備で提供。お電話・テレビはケーブルテレビのご契約のまま（ドコモ光電話・テレビオプション申込不可）。10ギガ対応ルーターのドコモレンタルは対象外（お客様でご用意、または提携CATVのレンタル）。マンションタイプの有無はケーブルテレビ会社により異なります。"
+    },
+    hikaric: {
+      name: "ドコモ光 1ギガ タイプC",
+      monthly: { ht: { A: 5720, B: 5720 }, ms: { A: 4400, B: 4400 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true, typec: true,
+      /* 料金はタイプAと同額（docomo.ne.jp/internet/hikari/charge/type_c/ 2026-08-20確認）。
+       * ケーブルテレビ（ZTV等）の設備で提供。お電話・テレビはケーブルテレビ契約のまま残る。
+       * 新規工事料の公表額が見当たらないため1ギガと同額を仮置き（入力欄で変更可）。 */
+      note: "2年定期契約・税込・料金はタイプAと同額。ケーブルテレビ（ZTV等）の設備で提供。お電話・テレビはケーブルテレビのご契約のまま（ドコモ光電話・テレビオプション申込不可）。ZTVは集合住宅対象外。"
+    },
+    ahamo1g: {
+      name: "ahamo光 1ギガ",
+      dcard: false,   // dカード還元の対象外（公式「ドコモ光（ahamo光を除く）」）
+      monthly: { ht: { A: 4950, B: 4950 }, ms: { A: 3630, B: 3630 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
+      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・プロバイダ一体型。ドコモ光セット割の対象外。ルーターはレンタル330円/月または持込。"
+    },
+    ahamo10g: {
+      name: "ahamo光 10ギガ",
+      dcard: false,   // 同上
+      monthly: { ht: { A: 5610, B: 5610 }, ms: { A: 5610, B: 5610 } },
+      jimu: 4950, koji: { ht: 28600, ms: 28600 }, noPtype: true,
+      note: "ahamoユーザー専用（ペア回線必須）・2年定期契約・税込・戸建/マンション共通5,610円。セット割対象外。ルーターはレンタル550円/月または持込。"
+    },
+    home5g: {
+      name: "home 5G",
+      monthly: 5280,
+      jimu: 4950, koji: 0,
+      note: "工事不要・コンセントに挿すだけ。プラン月額5,280円（税込）・事務手数料4,950円（店頭）。"
+    }
+  };
+  function is10g() {
+    return state.product === "hikari10g" || state.product === "ahamo10g"
+      || state.product === "hikaric10g";
+  }
+  /* 10Gルーターを買っていただくのはドコモ光 10ギガだけ。
+   * ahamo光はプロバイダ一体型で、対応ルーターは月額レンタルか持込になる。 */
+  function canBuy10gRouter() { return state.product === "hikari10g"; }
+  /* 10ギガの対応ルーターは、プロバイダによって取り扱いが違う。
+   *
+   * @nifty … 優待価格の分割購入。バッファロー WSR6500BE6P-10G を
+   *          月額418円（税込）×48回＝総額20,064円（税込）。
+   *          ニフティで購入する場合、ドコモの「10Gbps対応無線LANルーター」
+   *          （月額550円）の契約は不要。
+   *          ※ページの「380円/月・総額18,240円」は税抜表示。
+   *            この見積もりは全体を税込で作っているため税込額を既定にしている。
+   *          出典: https://setsuzoku.nifty.com/docomo/option/router_purchase/
+   *                （2026-07-30 確認）
+   *          @nifty は一括か48回分割のみ（36回の取り扱いは無い）。
+   * GMOとくとくBB … 月額190円（税込）×36回＝総額6,840円（税込）。
+   *          一括か36回分割のみ。
+   * それ以外 … 取り扱いが分からないので、一括・36回・48回すべて出す。 */
+  var ROUTER10G = {
+    "@nifty": { price: 20064, pay: "b48", pays: ["once", "b48"] },
+    "GMOとくとくBB": { price: 6840, pay: "b36", pays: ["once", "b36"] }
+  };
+  var ROUTER10G_DEFAULT_PAYS = ["once", "b36", "b48"];
+  /* ルーターの分割回数と、選択肢に出す名前。
+   * 回数を増やすときは、この2つの表に足すだけでよい（画面・計算・見積書・
+   * 引き継ぎシートは、すべてこの表を見て動く）。 */
+  var ROUTER10G_SPLIT = { b36: 36, b48: 48 };
+  var ROUTER10G_PAY_LABEL = {
+    once: "一括（初期費用）",
+    b36: "36回分割（3年・月額に加算）",
+    b48: "48回分割（月額に加算）"
+  };
+  function router10gSplitN() { return ROUTER10G_SPLIT[state.router10gPay] || 0; }
+  /* そのプロバイダで実際に選べる払い方だけを出す。
+   * 取り扱いの無い回数を選べてしまうと、店頭で存在しない支払い方法を
+   * 案内することになるため。取り扱いが分からないプロバイダは全部出す。 */
+  function router10gPays() {
+    var d = ROUTER10G[provider()];
+    return (d && d.pays) || ROUTER10G_DEFAULT_PAYS;
+  }
+  function renderRouter10gPays(sel) {
+    if (!sel) return;
+    var pays = router10gPays();
+    // 選べない払い方が選ばれたままにならないようにする
+    if (pays.indexOf(state.router10gPay) < 0) state.router10gPay = pays[0];
+    var h = "";
+    pays.forEach(function (k) {
+      h += '<option value="' + k + '">' + ROUTER10G_PAY_LABEL[k] + "</option>";
+    });
+    sel.innerHTML = h;
+  }
+  var ROUTER10G_DEFAULT = { price: 6780, pay: "once" };
+  function router10gDefault() { return ROUTER10G[provider()] || ROUTER10G_DEFAULT; }
+  /* プロバイダや商材が変わったら、ルーターの価格と払い方を既定に戻す。
+   * 手で直した金額は、そのプロバイダの中で入力しているあいだは残る。 */
+  function applyRouter10gDefault() {
+    var d = router10gDefault();
+    state.router10gPrice = d.price;
+    state.router10gPay = d.pay;
+  }
+  /* 住居タイプ。マンションは設備の最大速度で 100M と 1G に分かれるが、
+   * 料金はどちらも同じなので、料金表を引くときは "ms" にまとめる。
+   * 100M かどうかは表示と引き継ぎシートのために持っておく。 */
+  var HOUSING_LABEL = { ht: "戸建", ms: "マンション", ms100: "マンション100M" };
+  function hKey() { return state.housing === "ms100" ? "ms" : state.housing; }
+  function isHikari() { return state.product !== "home5g"; }
+  /* この商材でプロバイダを選べるか。ahamo光は一体型、タイプC・home 5G は
+   * ケーブルテレビ／ドコモの設備なので、プロバイダの欄そのものが出ない。
+   * 商材を変えたあとも state.provider に前の商材の値が残るため、
+   * 「表に出す・流れに書く」ときは必ずこちらを通す（2026-09-08）。 */
+  function hasProvider() {
+    return isHikari() && !PRODUCTS[state.product].noPtype;
+  }
+  function provider() { return hasProvider() ? (state.provider || "") : ""; }
+  /* 月額オプション（チェック式・金額は見積もりごとに編集可）
+   * koji: チェック時に初期費用へ自動加算される工事料（同時申込時の公式価格） */
+  var IENAKA_OPTS = [
+    /* phone: 光電話の印。番号ポータビリティの選択と、同番移行2,200円・
+     * 10ギガ機器設置1,650円の判定に使う。
+     * 交換機等工事費1,100円（koji）は初期費用に自動で入れるが、
+     * タイル横の「工事料+1,100円」の表示は出さない（店舗の指定・2026-08-09）。 */
+    { id: "denwa", name: "ドコモ光電話", price: 550, phone: true, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "denwaBV", name: "ドコモ光電話バリュー", price: 1650, phone: true, koji: 1100, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 電話の付加サービス。金額と「バリューに含まれるか（inBV）」は
+     * docomo.ne.jp/internet/hikari/tell_service/service/ の表のとおり（2026-08-14 確認）。
+     * inBV の6つはバリュー選択中はタイルを出さない（含まれているため）。 */
+    { id: "dpNumDisp", name: "発信者番号表示（ナンバー・ディスプレイ）", price: 440, needsPhone: true, inBV: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpCatch", name: "通話中着信", price: 330, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpNumReq", name: "ナンバー・リクエスト", price: 220, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpMeiwaku", name: "迷惑電話ストップサービス", price: 220, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpChakushin", name: "着信お知らせメール", price: 110, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpTensou", name: "転送でんわ", price: 550, needsPhone: true, inBV: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpWch", name: "ダブルチャネル", price: 220, needsPhone: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "dpAddNum", name: "追加番号", price: 110, needsPhone: true, phoneMore: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "tv", name: "ドコモ光テレビオプション", price: 990, tvKoji: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "skyp", name: "映像サービス", price: 0, sumOf: "needsVideo", for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 映像サービスの内訳（「映像サービス」にチェックしたときだけ表示）。金額は見積もりごとに変更可。
+     * 社内版（ienaka/ienaka.js）から移植。これまで見出し1行・0円のままで、
+     * チェックしても月額に乗らない誤りがあった。 */
+    { id: "vsHikariTv", name: "ひかりTV 専門チャンネルプラン（チューナーレンタル込み）", price: 3850, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsHikariHajime", name: "ひかりTV初めて割（2年間）", price: -1100, timedMonths: 24, needsVideo: true, needsHikariTv: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBase", name: "スカパー！基本料", price: 429, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSkyBasic", name: "スカパー！基本プラン", price: 3960, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSelect5", name: "スカパー！セレクト5", price: 1980, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    { id: "vsSelect10", name: "スカパー！セレクト10", price: 2860, needsVideo: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g"] },
+    /* 無線LANのレンタルは回線の速さで品目と月額が違う（公式の機器使用料の表・2026-08-14 確認）。
+     * 1ギガは330円、10ギガは「10ギガ対応無線LANルーター」550円。 */
+    { id: "lanCard", name: "無線LANカード", price: 330, for: ["hikari1g"] },
+    { id: "lanRouter10g", name: "10ギガ対応無線LANルーター（レンタル）", price: 550, for: ["hikari10g"] },
+    /* ahamo光はプロバイダ一体型で、OCNバーチャルコネクト対応ルーターが要る。
+     * ドコモからの月額レンタルか、お客様の持込になる（優待購入の取り扱いは無い）。
+     * 1ギガ330円／10ギガ550円。
+     * 出典: https://www.docomo.ne.jp/internet/ahamo_hikari/10g_plan/ （2026-07-30 確認） */
+    { id: "ahamoRouter", name: "ルーターレンタル（OCNバーチャルコネクト対応）", price: 330, for: ["ahamo1g"] },
+    { id: "ahamoRouter10g", name: "ルーターレンタル（10ギガ・OCNバーチャルコネクト対応）", price: 550, for: ["ahamo10g"] },
+    { id: "apHome", name: "あんしんパック ホーム（デジタル機器補償＋ネットトータルサポート＋ネットワークセキュリティ）", price: 968, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
+    { id: "h5hosho", name: "smartあんしん補償", price: 330, for: ["home5g"] },
+    { id: "h5pack", name: "home 5G パック（smartあんしん補償＋ネットワークセキュリティ・165円割引込）", price: 550, for: ["home5g"] },
+    /* homeでんわ。ドコモ光・home 5G のどちらでも申し込める。
+     * 月額はセット割の前の金額を入れ、セット割は別の行（マイナス）で引く。
+     * セット割は同一ファミリー割引グループに ドコモ MAX・eximo・ahamo・
+     * home 5G プラン等があるときに ▲528円。
+     * 出典: https://www.docomo.ne.jp/home_denwa/ （2026-09-07 確認）
+     * 端末（HP01）代金・契約事務手数料2,200円・番号継続登録料2,200円は別。 */
+    { id: "homeDenwaLight", name: "homeでんわ ライト", price: 1078, homeDenwa: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
+    { id: "homeDenwaBasic", name: "homeでんわ ベーシック", price: 2178, homeDenwa: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] },
+    { id: "homeDenwaSet", name: "homeでんわ セット割（ファミリー割引グループにドコモの回線がある場合）", price: -528, needsHomeDenwa: true, for: ["hikari1g", "hikari10g", "ahamo1g", "ahamo10g", "home5g"] }
+  ];
+  /* homeでんわ を選んでいるか（セット割の出し分けに使う） */
+  function homeDenwaOn() {
+    return !!(state.opts.homeDenwaLight || state.opts.homeDenwaBasic);
+  }
+  /* 商材と申込区分の選択肢。**出さないものは一覧そのものから外す**。
+   * option に hidden を付けても iPhone・iPad の Safari は無視するため
+   * （2026-09-06 に実機で122件の事故）。いま選んであるものは、
+   * 出さない条件でも残す（保存した見積もりが黙って変わらないように）。 */
+  var IE_PRODUCT_OPTS = [
+    { v: "hikari1g", t: "ドコモ光 1ギガ" },
+    { v: "hikari10g", t: "ドコモ光 10ギガ" },
+    { v: "hikaric", t: "ドコモ光 1ギガ タイプC（ケーブルテレビ設備）", typec: true },
+    { v: "hikaric10g", t: "ドコモ光 10ギガ タイプC（ケーブルテレビ設備）", typec: true },
+    { v: "ahamo1g", t: "ahamo光 1ギガ" },
+    { v: "ahamo10g", t: "ahamo光 10ギガ" },
+    { v: "home5g", t: "home 5G" }
+  ];
+  var IE_APPLY_OPTS = [
+    { v: "shinki", t: "新規" },
+    { v: "tenyo", t: "転用（フレッツ光から）", notC: true },
+    { v: "jigyosha", t: "事業者変更（他社光コラボから）", notC: true },
+    { v: "kirikae", t: "転用（タイプC）", typec: true }
+  ];
+  var IE_HOUSING_OPTS = [
+    { v: "ht", t: "戸建" },
+    { v: "ms", t: "マンション" },
+    { v: "ms100", t: "マンション（100M）" }
+  ];
+  function ieFillSelect(id, list, cur) {
+    var sel = $(id);
+    if (!sel) return cur;
+    sel.innerHTML = list.map(function (o) {
+      return '<option value="' + o.v + '">' + esc(o.t) + "</option>";
+    }).join("");
+    if (!list.some(function (o) { return o.v === cur; })) cur = list.length ? list[0].v : "";
+    sel.value = cur;
+    return cur;
+  }
+  /* テレビ工事の選択肢
+   * koji=ドコモ請求の工事料（分割対象）/ reg=視聴サービス登録料（手数料・分割対象外・常に一括）
+   * onsite=スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外） */
+  var TV_KOJI = {
+    sky: { label: "スカパー工事（スカパー同時申込・接続工事無料）", rowName: "テレビ基本工事料（スカパー工事・接続工事無料）", koji: 3300, reg: 3080, onsite: 0 },
+    skyOnly: { label: "スカパー工事のみ（未加入・接続工事は当日現地払い）", rowName: "テレビ基本工事料（スカパー工事のみ）", koji: 3300, reg: 3080, onsite: 10000 },
+    ntt1: { label: "NTT工事（テレビ1台）", rowName: "テレビ工事料（NTT工事・1台）", koji: 10450, reg: 3080, onsite: 0 },
+    ntt24: { label: "NTT工事（テレビ2〜4台）", rowName: "テレビ工事料（NTT工事・2〜4台）", koji: 28380, reg: 3080, onsite: 0 }
+  };
+
+  function defaultState() {
+    return {
+      product: "hikari1g", applyType: "shinki", housing: "ht", ptype: "A", provider: "", providerType: "shinki", routerRental: "ari",
+      visitSupport: false,             // 訪問設定サポート希望（@niftyフォローコールで日程調整）
+      baseMonthly: 5720, tvPoint: true,
+      h5DeviceName: "home 5G HR02", h5DevicePrice: 73260, h5Pay: "b48", h5Support: true,
+      h5Kubun: "shinki",               // 新規／機種変更（実績を分けるため・2026-09-07）
+      opts: {}, optPrices: {},
+      extraMonthly: [], extraInitial: [],
+      jimuFee: 4950, kojiFee: 28600, kojiPay: "b24", kojiFree: true, tvKoji: "sky",
+      denwaBanpo: "mnp", onecoin: true, tvKojiFee: null, tvOnsiteFee: null,
+      router10g: true, router10gPrice: 6780, router10gPay: "once",
+      dcard: "none", dcardPt: null,
+      /* dカード PLATINUM の還元率（％）。初年度20%／2年目以降は前年の
+       * ショッピングご利用額により 10〜20%。お客様のカードごとに違うので選べるようにする。 */
+      dcardPlatRate: 20,
+      /* dカード還元を月額から差し引くか。既定は差し引かない（もらえるポイントとして案内）。
+       * ケータイ見積もり側の⑧「ポイントの扱い」と同じ考え方に揃えた（製品化レビュー 4-7）。 */
+      dcardApply: false, h5Mig: false, storeCash: 0, storePt: 0, setWariTotal: 0,
+      dpoint: 20000, custName: "", staffName: "", quoteMemo: "",
+      typecKeepAmt: 0,                 // タイプC: ケーブルテレビに残る月額（参考表示のみ・計算に入れない）
+      /* その内訳（2026-09-04 店舗の要望）。テレビ・お電話の額を分けて出せるようにする。
+       * どれかを入れたら、合計は内訳から計算する（上の1行は使わない）。
+       * 内訳を入れていない古い見積もりは、今までどおり上の1行で出る。 */
+      typecKeepTv: 0, typecKeepPhone: 0, typecKeepOther: 0, typecKeepOff: 0,
+      /* 転用（タイプC）のいまの回線設備。hikari=光回線（工事なし）／coax=同軸ケーブル
+       * （光への切り替え工事あり。工事はケーブルテレビ会社が行う・2026-08-29共有）。
+       * typecKoji はその工事料（同社の案内額。わかるときだけ入れる・初期費用に載る） */
+      typecLine: "hikari", typecKoji: null,
+      curLine: "", curLineOther: "",   // 現在お使いの回線（ヒアリング・奪還比較の入口）
+      /* その他コラボ光・その他を選んだときの、お店の手書き（2026-09-04）。
+       * 会社名は curLineOther、解約のご連絡先は curLineTel。
+       * どちらも「開通までの流れ」にそのまま載る。 */
+      curLineTel: "",
+      /* 現在の固定回線ヒアリング（電話・テレビ）。J:COMはテレビを残したまま
+       * ネットだけ乗り換えるご案内があるため、テレビの有無と残すかどうかを控える */
+      curPhone: "", curTv: "", curTvDigi: false, curTvBs: false, curTvCs: false, curTvKeep: false,
+      flowDates: {},                   // 開通までの流れ（1枚）の予定日メモ {工程番号: 文字}
+      enabled: false   // この見積もりに光・home 5G を含めるか（見積書に出すかどうか）
+    };
+  }
+
+  /* 商材・住居・タイプ変更時に標準料金をセット */
+  function applyDefaults() {
+    if (!state) return;
+    var p = PRODUCTS[state.product];
+    /* タイプCでマンションが使えるかは、ケーブルテレビ会社によって違う
+     * （関西では KCN・KCN京都・テレビ岸和田 のみ使える）。
+     * 使えない会社のときは、料金を引く前に戸建へ寄せる
+     * （マンションのまま引くと、1,320円/月 安い金額が出てしまう）。
+     * ただし黙って直すだけだと、お店は「マンションでも申し込める」と思ったままになる。
+     * 直したことを覚えておいて、画面で知らせる（下の typecMsBlocked）。 */
+    typecMsBlocked = false;
+    if (p.typec && !p.msAny && !typecMansionOk() && state.housing !== "ht") {
+      state.housing = "ht";
+      typecMsBlocked = true;
+    }
+    if (state.product === "home5g") {
+      state.baseMonthly = p.monthly;
+      state.kojiFee = 0; state.kojiFree = false;
+    } else {
+      state.baseMonthly = p.monthly[hKey()][state.ptype];
+      state.kojiFee = p.koji[hKey()];
+      if (canBuy10gRouter()) applyRouter10gDefault();
+    }
+    state.jimuFee = p.jimu;
+  }
+
+  // 見出しオプション（映像サービスなど）に紐づく、選択中の内訳の合計月額
+  function groupTotal(parent) {
+    var t = 0;
+    IENAKA_OPTS.forEach(function (c) {
+      if (!c[parent.sumOf] || !state.opts[c.id]) return;
+      if (c.for.indexOf(state.product) < 0) return;
+      if (c.needsHikariTv && !state.opts.vsHikariTv) return;
+      t += state.optPrices[c.id] != null ? num(state.optPrices[c.id]) : c.price;
+    });
+    return t;
+  }
+  // 見出しの合計表示だけを更新する（内訳の金額を編集した直後に使う）
+  function updateGroupTotals() {
+    IENAKA_OPTS.forEach(function (o) {
+      if (!o.sumOf || !state.opts[o.id]) return;
+      var cb = document.querySelector('#ieOptList input[data-ieopt="' + o.id + '"]');
+      if (!cb) return;
+      var span = cb.parentElement.querySelector(".opt-price");
+      if (span) span.textContent = "合計 " + yen(groupTotal(o)) + "/月";
+    });
+  }
+
+  /* きょうの日付（YYYY-MM-DD）。テストで差し替えられるようにしておく。
+   * 改定の切り替えと「改定予告」の出し分けで、同じ日付を使う。 */
+  var ieToday = "";
+  function todayYmd() {
+    if (ieToday) return ieToday;
+    var d = new Date();
+    function z(n) { return ("0" + n).slice(-2); }
+    return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate());
+  }
+
+  /* PLATINUM の還元率（％）。空欄・範囲の外はその時点の上限として扱う
+   * （この項目が無い古い保存も上限に落ちる）。
+   *
+   * 2026年12月ご利用分からの改定（2026-09-01 公式発表）:
+   *   ドコモ光のご利用料金への進呈率が **最大20% → 最大12%** に変わる。
+   *   毎月のショッピングご利用金額により 10%／11%／12%
+   *   （入会月から2か月後までは一律12%）。
+   *   ※ケータイの進呈率（10/15/20%）は変わらない。変わるのはドコモ光。
+   *   ※エリアの差があるのは「ドコモでんきGreen」で、ドコモ光には無い。
+   *   出典: https://www.docomo.ne.jp/info/notice/page/260901_00.html */
+  var PLAT_MIN = 10, PLAT_MAX_OLD = 20, PLAT_MAX_NEW = 12;
+  var PLAT_REVISE_FROM = "2026-12-01";
+  /* いつから新しい上限にするか。
+   * **2026-09-06 の店舗判断で「いま即座に切り替える」**（日付を待たない）。
+   * 理由: 11月ご利用分まではお客様が実際に受け取るポイントのほうが多くなるので、
+   * 見積書が「多めに見せる」side には倒れない。
+   * 日付で切り替える形に戻すときは
+   *   return todayYmd() >= PLAT_REVISE_FROM ? PLAT_MAX_NEW : PLAT_MAX_OLD;
+   * に直す。 */
+  function platMax() { return PLAT_MAX_NEW; }
+  function platRate() {
+    var mx = platMax();
+    var v = Math.round(num(state.dcardPlatRate));
+    if (!v) return mx;
+    return Math.min(mx, Math.max(PLAT_MIN, v));
+  }
+
+  /* PLATINUM の還元率の案内文。改定の前と後で書き分ける（2026-09-01 公式発表）。 */
+  function platHintText() {
+    return "ドコモ光への還元は<strong>最大12%</strong>です。"
+      + "<strong>入会月から2か月後まで</strong>は一律12%、<strong>3か月後以降</strong>は"
+      + "<strong>毎月の</strong>ショッピングご利用額により<strong>10〜12%</strong>に変わるため、"
+      + "お客様のカードの率に合わせてここを直してください。"
+      + "<br>※<strong>2026年11月ご利用分まで</strong>は最大20%です。"
+      + "この見積もりは、<strong>12月からの新しい率</strong>でご案内しています"
+      + "（11月ご利用分までは、実際にはこれより多くたまります）。";
+  }
+  // 画面・見積書に出す「10%」「20%」などの文字
+  function dcardRateText() { return state.dcard === "gold" ? "10" : String(platRate()); }
+  /* 今後の料金改定のお知らせ（製品化レビュー 5-2）。
+   * 画面のヒントだけでなく、お客様のお手元に残る見積書にも同じ文を入れる。
+   * 改定の日（2026-12-01）が来たら自動で出さない。そのときは計算のほうを直す。 */
+  var REVISE = [{
+    from: "2026-12-01",
+    when: function () { return state.dcard === "platinum" && PRODUCTS[state.product].dcard !== false; },
+    text: "このお見積もりのdポイントは、2026年12月のご利用分から適用される還元率（dカード PLATINUM のドコモ光ご利用料金への還元 最大12%）で計算しています。2026年11月のご利用分までは最大20%のため、実際にはこのお見積もりより多くたまります。"
+  }];
+  function reviseNotices() {
+    var ymd = todayYmd();
+    return REVISE.filter(function (r2) { return ymd < r2.from && r2.when(); })
+      .map(function (r2) { return r2.text; });
+  }
+
+  /* タイプC転用のとき、ケーブルテレビ会社に残るお支払い（2026-09-04）。
+   * ドコモとは別の請求なので、月額には足さず、見積書に別枠で出す。
+   * テレビ・お電話などの内訳を入れたら、その合計を使う。
+   * 何も入れていなければ、今までどおり「残る月額」の1行を使う。 */
+  function typecKeepRows() {
+    var rows = [], any = false;
+    function put(name, v) {
+      var n = Math.max(0, num(v));
+      if (n > 0) { rows.push({ name: name, amount: n }); any = true; }
+    }
+    put("テレビ", state.typecKeepTv);
+    put("お電話", state.typecKeepPhone);
+    put("そのほか・契約基本料", state.typecKeepOther);
+    var off = Math.max(0, num(state.typecKeepOff));
+    if (off > 0) { rows.push({ name: "ドコモ光タイプC向け割引", amount: -off }); any = true; }
+    if (!any) {
+      var lump = Math.max(0, num(state.typecKeepAmt));
+      if (lump > 0) rows.push({ name: "お電話・テレビなど（ケーブルテレビからの請求）", amount: lump });
+      return rows;
+    }
+    return rows;
+  }
+  function typecKeepTotal() {
+    var t = 0;
+    typecKeepRows().forEach(function (x) { t += x.amount; });
+    return Math.max(0, t);
+  }
+
+  /* ---------- 計算 ---------- */
+  function calc() {
+    var p = PRODUCTS[state.product];
+    var rows = [{ name: p.name + productLabel(), amount: num(state.baseMonthly) }];
+    var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var optTimed = []; // 期間限定のオプション割引（あとで月額の推移へ反映）
+    IENAKA_OPTS.forEach(function (o) {
+      if (o.for.indexOf(state.product) < 0) return;
+      if (o.needsPhone && !phoneOn) return;
+      if (o.needsHomeDenwa && !homeDenwaOn()) return; // 光電話の付加サービスは光電話利用時のみ
+      if (o.needsVideo && !state.opts.skyp) return; // 映像サービスの内訳は映像サービス利用時のみ
+      if (o.needsHikariTv && !state.opts.vsHikariTv) return; // ひかりTV利用時のみ
+      if (!state.opts[o.id]) return;
+      var pr = state.optPrices[o.id] != null ? num(state.optPrices[o.id]) : o.price;
+      if (o.timedMonths) { optTimed.push({ name: o.name, amount: pr, from: 1, to: o.timedMonths }); return; }
+      if (o.sumOf) return; // 見出し行。金額は内訳側で計上する
+      // 映像サービス（ひかりTV・スカパー）はドコモ光の利用料金ではないため、dカード還元の対象外
+      rows.push({ name: o.name, amount: pr, noDcard: !!(o.needsVideo || o.needsHikariTv) });
+    });
+    state.extraMonthly.forEach(function (a) {
+      if (!a.name && !num(a.amount)) return;
+      rows.push({ name: a.name || "追加項目", amount: num(a.amount) });
+    });
+
+    /* dカードGOLD/PLATINUM還元: 利用料金1,100円（税込）ごとに
+     * 100pt（GOLD 10%）／PLATINUM は選んだ率×10pt（20%なら200pt）。
+     * PLATINUM は初年度20%で、2年目以降は前年のご利用額により 10〜20% に変わる。 */
+    var dcardEligible = 0;
+    rows.forEach(function (x) { if (x.amount > 0 && !x.noDcard) dcardEligible += x.amount; });
+    /* ahamo光は還元の対象外（公式「ドコモ光（ahamo光を除く）」・2026-09-03 確認）。 */
+    var dcardOk = PRODUCTS[state.product].dcard !== false;
+    var dcardRate = !dcardOk ? 0 : state.dcard === "gold" ? 100
+      : state.dcard === "platinum" ? platRate() * 10 : 0;
+    var dcardAutoPt = dcardRate > 0 ? Math.floor(dcardEligible / 1100) * dcardRate : 0;
+    var dcardPt = (state.dcard === "none" || !dcardOk) ? 0
+      : (state.dcardPt != null ? Math.max(0, num(state.dcardPt)) : dcardAutoPt);
+    var dcardApply = state.dcardApply === true;
+    if (dcardPt > 0 && dcardApply) {
+      // ポイント進呈ではなく、毎月の料金へ自動充当される体裁で月額から差引
+      rows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + "還元 充当（利用料金の" + dcardRateText() + "%）", amount: -dcardPt });
+    }
+
+    // 期間限定の月額項目 {name, amount, from, to}（工事費分割・ポイント充当・端末分割）
+    var timed = [], deviceNote = "";
+    optTimed.forEach(function (t) { timed.push(t); });
+
+    // 10ギガ ワンコインキャンペーン: 開通〜最大6か月目まで基本料500円（税込）
+    var onecoinOn = is10g() && state.onecoin && num(state.baseMonthly) > 500;
+    if (onecoinOn) {
+      timed.push({ name: "10ギガ ワンコインキャンペーン（基本料500円・〜6か月目）", amount: -(num(state.baseMonthly) - 500), from: 1, to: 6 });
+    }
+    if (state.product === "home5g") {
+      var dp = num(state.h5DevicePrice);
+      var dName = state.h5DeviceName || "home 5G 端末";
+      if (dp > 0) {
+        var dm = Math.floor(dp / 48);
+        if (state.h5Pay !== "ikkatsu") {
+          timed.push({ name: dName + " 分割支払金（48回）", amount: dm, from: 1, to: 48 });
+        }
+        if (state.h5Support) {
+          timed.push({ name: "月々サポート（48か月間）", amount: -dm, from: 1, to: 48 });
+          deviceNote = state.h5Pay === "ikkatsu"
+            ? "月々サポート適用: 毎月の料金から" + yen(dm) + "×48か月を割引"
+            : "月々サポート適用で端末実質負担0円（48か月継続利用の場合）";
+        } else if (state.h5Pay === "ikkatsu") {
+          deviceNote = "端末代金は一括払い（初期費用に計上）";
+        }
+      }
+    }
+
+    // 工事費（ドコモ光のみ）: 回線の新規工事料＋オプション工事料（光電話・テレビ）
+    // 分割24回を選ぶと工事料の合計を24回で分割。テレビ視聴サービス登録料は手数料のため分割対象外（常に一括）
+    // 回線工事費: 申込区分から自動判定（新規=標準28,600円／転用・事業者変更=0円）
+    var koji = 0;
+    if (isHikari() && state.applyType === "shinki") {
+      koji = PRODUCTS[state.product].koji[hKey()];
+    }
+    // オプション工事料も新規のみ自動加算（転用・事業者変更は設備そのまま移行のため0円）
+    var optKoji = 0, optKojiRows = [], tvRegRows = [], phoneKoji = 0, phoneChecked = false;
+    if (isHikari() && state.applyType === "shinki") {
+      IENAKA_OPTS.forEach(function (o) {
+        if (o.for.indexOf(state.product) < 0 || !state.opts[o.id]) return;
+        if (o.phone) phoneChecked = true;
+        if (o.koji) phoneKoji += o.koji;
+        if (o.tvKoji) {
+          var tk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
+          var tkFee = state.tvKojiFee != null ? num(state.tvKojiFee) : tk.koji; // 金額は編集可
+          optKoji += tkFee;
+          optKojiRows.push({ name: tk.rowName, amount: tkFee });
+          tvRegRows.push({ name: "テレビ視聴サービス登録料（手数料・分割対象外）", amount: tk.reg });
+          // スカパーへ工事当日に現地払いする接続工事費（ドコモ請求外・分割対象外）
+          var onsite = state.tvOnsiteFee != null ? num(state.tvOnsiteFee) : (tk.onsite || 0);
+          if (onsite > 0) {
+            tvRegRows.push({ name: "テレビ接続工事費（スカパーへ工事当日お支払い・現地払い）", amount: onsite });
+          }
+        }
+      });
+      // 番号ポータビリティ（同番移行）: 光電話利用時のみ・2,200円/番号（公式PDF確認値）
+      if (phoneChecked && state.denwaBanpo === "mnp") phoneKoji += 2200;
+      // 10ギガで光電話利用時は対応ルーターの機器設置工事料1,650円が追加（公式PDF＊8）
+      if (phoneChecked && is10g()) phoneKoji += 1650;
+      // 光電話まわりの工事料（交換機等・同番移行・10G機器設置）は1行にまとめて表示
+      if (phoneKoji > 0) {
+        optKoji += phoneKoji;
+        optKojiRows.unshift({ name: "光電話工事費", amount: phoneKoji });
+      }
+    }
+    var kojiTotal = koji + optKoji;
+    /* 実質0円特典のポイントは回線の新規工事料相当分のみ。
+     * 進呈は「ご利用開始月の7か月後の月から24か月間分割」（＝8か月目〜31か月目）。
+     * 2026年6月1日以降のお申込み分から、それまでの「1か月後の月から」より
+     * 6か月遅くなった。エントリーは不要で、条件を満たせば自動で対象になる。
+     * 出典: https://www.docomo.ne.jp/campaign_event/hikari_shinkikojiryo_free/
+     *       https://www.docomo.ne.jp/info/notice/page/260423_00.html （2026-07-30 確認） */
+    var kojiPt = Math.floor(koji / 24);
+    if (kojiTotal > 0 && state.kojiPay === "b24") {
+      /* 24回に割り切れないぶんは初回に寄せる。
+       * 捨ててしまうと、見積書に「総額28,600円」と書いてあるのに
+       * 1,191円 ×24回 ＝28,584円 となって、足しても合わない。 */
+      var kojiM = Math.floor(kojiTotal / 24);
+      var kojiRem = kojiTotal - kojiM * 24;
+      timed.push({ name: "工事料 分割（24回・総額" + yen(kojiTotal) + "）", amount: kojiM, from: 1, to: 24 });
+      if (kojiRem > 0) {
+        timed.push({ name: "工事料 分割の端数（初回のみ）", amount: kojiRem, from: 1, to: 1 });
+      }
+    }
+    if (koji > 0 && state.kojiFree) {
+      timed.push({ name: "工事費相当ポイント充当（利用開始の7か月後から24回進呈）", amount: -kojiPt, from: 8, to: 31 });
+    }
+    // 10Gルーターの分割購入。一括のときは下の初期費用へ回す
+    var r10g = canBuy10gRouter() && state.router10g ? num(state.router10gPrice) : 0;
+    var r10gN = router10gSplitN();
+    var r10gSplit = r10g > 0 && r10gN > 0;
+    if (r10gSplit) {
+      timed.push({ name: "10Gルーター 分割（" + r10gN + "回・総額" + yen(r10g) + "）",
+        amount: Math.floor(r10g / r10gN), from: 1, to: r10gN });
+    }
+
+    // 期間セグメント（変化点ごとの月額）
+    var permanent = 0;
+    rows.forEach(function (r) { permanent += r.amount; });
+    var startSet = { 1: 1 };
+    timed.forEach(function (t) { startSet[t.from] = 1; startSet[t.to + 1] = 1; });
+    var starts = Object.keys(startSet).map(Number).sort(function (a, b) { return a - b; });
+    var segs = [];
+    starts.forEach(function (s, i) {
+      var end = i + 1 < starts.length ? starts[i + 1] - 1 : null;
+      var m = permanent;
+      timed.forEach(function (t) { if (s >= t.from && s <= t.to) m += t.amount; });
+      m = Math.max(0, m);
+      if (segs.length && segs[segs.length - 1].monthly === m) { segs[segs.length - 1].to = end; return; }
+      segs.push({ from: s, to: end, monthly: m });
+    });
+
+    var initRows = [];
+    if (num(state.jimuFee) > 0) initRows.push({ name: "契約事務手数料", amount: num(state.jimuFee) });
+    if (kojiTotal > 0 && state.kojiPay !== "b24") {
+      if (koji > 0) initRows.push({ name: "新規工事料（一括）", amount: koji });
+      optKojiRows.forEach(function (x) { initRows.push(x); });
+    }
+    // 視聴サービス登録料は手数料のため常に一括で初期費用へ
+    tvRegRows.forEach(function (x) { initRows.push(x); });
+    // 10Gルーター購入費用（10ギガ選択時・チェック式）。分割のときは月額に入っている
+    if (r10g > 0 && !r10gSplit) {
+      initRows.push({ name: "10Gルーター購入費用", amount: r10g });
+    }
+    if (state.product === "home5g" && state.h5Pay === "ikkatsu" && num(state.h5DevicePrice) > 0) {
+      initRows.push({ name: (state.h5DeviceName || "home 5G 端末") + "（一括）", amount: num(state.h5DevicePrice) });
+    }
+    /* 転用（タイプC）で、いまの回線が同軸ケーブルの場合の光切り替え工事料。
+     * 工事はケーブルテレビ会社が行い、金額も同社の案内による（2026-08-29共有）。
+     * 金額がわかっているときだけ入力してもらい、一括の初期費用として載せる。 */
+    if (isHikari() && state.applyType === "kirikae"
+        && (state.typecLine || "hikari") === "coax" && num(state.typecKoji) > 0) {
+      initRows.push({ name: "光切り替え工事料（ケーブルテレビ会社の請求）", amount: num(state.typecKoji) });
+    }
+    state.extraInitial.forEach(function (a) {
+      if (!a.name && !num(a.amount)) return;
+      initRows.push({ name: a.name || "追加項目", amount: num(a.amount) });
+    });
+    var initial = 0;
+    initRows.forEach(function (r) { initial += r.amount; });
+
+    // テレビオプションが選択されているか（特典判定用・区分によらず）
+    var tvOn = false;
+    IENAKA_OPTS.forEach(function (o) {
+      if (o.tvKoji && o.for.indexOf(state.product) >= 0 && state.opts[o.id]) tvOn = true;
+    });
+
+    return {
+      rows: rows, timed: timed, segs: segs, deviceNote: deviceNote,
+      monthly: segs[0].monthly, koji: koji, kojiPt: kojiPt,
+      kojiTotal: kojiTotal, optKojiRows: optKojiRows, tvRegRows: tvRegRows,
+      tvOn: tvOn,
+      dcardAutoPt: dcardAutoPt, dcardPt: dcardPt, dcardEligible: dcardEligible, dcardApply: dcardApply,
+      initRows: initRows, initial: Math.max(0, initial)
+    };
+  }
+  function segLabel(sg) {
+    if (sg.to == null) return sg.from === 1 ? "毎月" : sg.from + "か月目以降";
+    return (sg.from === 1 ? "〜" : sg.from + "〜") + sg.to + "か月目";
+  }
+  /* kirikae（内部の値の名前は昔のまま）＝ケーブルテレビのネットからタイプCへの
+   * 乗り換え。表記は「転用（タイプC）」（店舗の指定・2026-08-29。工事なしの扱いは変わらない） */
+  var APPLY_LABEL = { shinki: "新規", tenyo: "転用", jigyosha: "事業者変更", kirikae: "転用（タイプC）" };
+  function productLabel() {
+    if (state.product === "home5g") return "";
+    var parts = [HOUSING_LABEL[state.housing] || "戸建"];
+    if (!PRODUCTS[state.product].noPtype) parts.push("タイプ" + state.ptype);
+    parts.push(APPLY_LABEL[state.applyType] || "新規");
+    return "（" + parts.join("・") + "）";
+  }
+
+  /* ---------- 画面描画 ----------
+   * 月額オプションは、スマホの補償・セキュリティと同じタイルで選ぶ
+   * （小川さんの指定・2026-08-13）。グループはスケッチの構成に合わせる。
+   *   でんわ（基本・排他）→ でんわ追加 → TV（地デジ・BS）→ スカパー！（CS）
+   *   → ひかりTV → そのほか
+   * 「映像サービス」の見出し（skyp）はタイルに出さず、内訳が選ばれているか
+   * どうかで自動で付ける（計算と見積書の互換のため）。 */
+  /* 出番の少ないものは畳んでおく（店舗の指定・2026-08-14）。
+   *   でんわ追加 … 表に出すのは発信者番号表示だけ。「その他のでんわオプション」
+   *                 のチェックで残りが出る（state.opts.phoneMore）
+   *   スカパー！・ひかりTV … 「映像系サービス」のチェックで出る（state.opts.skyp。
+   *                 昔の「映像サービス」見出しと同じキーなので、計算・見積書・
+   *                 保存済みデータとの互換はそのまま） */
+  var IE_OPT_GROUPS = [
+    { title: "でんわオプション（基本）", ids: ["denwa", "denwaBV"], phoneBase: true },
+    { title: "でんわ追加オプション",
+      ids: ["dpNumDisp", "dpCatch", "dpNumReq", "dpMeiwaku", "dpChakushin", "dpTensou", "dpWch", "dpAddNum"],
+      needsPhone: true, moreToggle: true },
+    { title: "TVオプション（地デジ・BS）", ids: ["tv"], tvBase: true, videoToggleAfter: true },
+    { title: "スカパー！（CS）", ids: ["vsSkyBase", "vsSkyBasic", "vsSelect5", "vsSelect10"], needsVideo: true },
+    { title: "ひかりTV", ids: ["vsHikariTv", "vsHikariHajime"], needsVideo: true },
+    /* homeでんわ。セット割は homeでんわ を選んでいるときだけ出す。
+     * 2026-09-07 に足したとき、この組分けの表に入れ忘れて画面に1つも
+     * 出ていなかった（IENAKA_OPTS に足すだけでは出ない）。 */
+    { title: "homeでんわ", ids: ["homeDenwaLight", "homeDenwaBasic"] },
+    { title: "homeでんわ セット割", ids: ["homeDenwaSet"], needsHomeDenwa: true },
+    { title: "そのほかのオプション", ids: ["lanCard", "lanRouter10g", "ahamoRouter", "ahamoRouter10g", "apHome", "h5hosho", "h5pack"] }
+  ];
+  function ieOptById(id) {
+    return IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
+  }
+  /* いまの商材で「実際に選ばれている」オプションか。
+   * 商材を変えても state.opts の選択は残る（元の商材に戻したときのため）ので、
+   * 表に出す・紙に刷るときは必ずこちらを通す。通さないと、home 5G・タイプCに
+   * 変えたあとも前の商材のご案内が残る（2026-09-08）。 */
+  function optOn(id) {
+    var od = ieOptById(id);
+    if (!od || od.for.indexOf(state.product) < 0) return false;
+    return !!state.opts[id];
+  }
+  function toggleIeOpt(id) {
+    var od = ieOptById(id);
+    if (!od) return;
+    var on = !state.opts[id];
+    state.opts[id] = on;
+    /* でんわの基本は排他。バリューを選んだら、含まれている
+     * 発信者番号表示・転送でんわの単品も外す（二重にならないように） */
+    if (on && id === "denwa") delete state.opts.denwaBV;
+    if (on && id === "denwaBV") {
+      delete state.opts.denwa;
+      IENAKA_OPTS.forEach(function (o) { if (o.inBV) delete state.opts[o.id]; });
+    }
+    if (!state.opts.denwa && !state.opts.denwaBV) {
+      IENAKA_OPTS.forEach(function (o) { if (o.needsPhone) delete state.opts[o.id]; });
+    }
+    if (id === "vsHikariTv" && !on) delete state.opts.vsHikariHajime;
+    /* 10ギガのルーターは、レンタルと購入のどちらか一方。
+     * レンタルを選んだら購入のチェックを外す（店舗の指定・2026-08-14） */
+    if (id === "lanRouter10g" && on) { state.router10g = false; syncForm(); }
+    renderOpts();
+    recalc();
+  }
+  function renderOpts() {
+    if (!state) return;
+    var shinki = state.applyType === "shinki" && state.product !== "home5g";
+    var phoneOn = !!(state.opts.denwa || state.opts.denwaBV);
+    var h = "";
+    IE_OPT_GROUPS.forEach(function (g) {
+      if (g.needsPhone && !phoneOn) return;
+      if (g.needsHomeDenwa && !homeDenwaOn()) return;
+      if (g.needsVideo && !state.opts.skyp) return;
+      var items = g.ids.map(ieOptById).filter(function (o) {
+        if (!o || o.for.indexOf(state.product) < 0) return false;
+        if (o.needsHikariTv && !state.opts.vsHikariTv) return false;
+        /* バリューに含まれるものは、バリュー選択中は出さない */
+        if (state.opts.denwaBV && o.inBV) return false;
+        /* 出番の少ない電話オプションは「その他」を開いたときだけ */
+        if (o.phoneMore && !state.opts.phoneMore) return false;
+        return true;
+      });
+      var toggles = "";
+      if (g.moreToggle) {
+        toggles += '<label class="check ie-more"><input type="checkbox" data-ieopt="phoneMore"'
+          + (state.opts.phoneMore ? " checked" : "") + "> その他のでんわオプションを表示</label>";
+      }
+      if (g.videoToggleAfter) {
+        toggles += '<label class="check ie-more"><input type="checkbox" data-ieopt="skyp"'
+          + (state.opts.skyp ? " checked" : "") + "> 映像系サービス（スカパー！・ひかりTV）を表示</label>";
+      }
+      if (!items.length && !toggles) return;
+      h += '<div class="opt-cat">' + esc(g.title) + "</div>";
+      h += '<div class="tile-grid ie-grid">' + items.map(function (o) {
+        var on = !!state.opts[o.id];
+        var pr = state.optPrices[o.id] != null ? state.optPrices[o.id] : o.price;
+        var months = o.timedMonths ? "・" + o.timedMonths + "か月" : "";
+        var priceHtml = on
+          ? '<span class="t-price"><input type="number" data-ieoptprice="' + o.id + '" value="' + pr + '">円/月' + months + "</span>"
+          : '<span class="t-price">' + yen(pr) + "/月" + months + "</span>";
+        return '<div class="tile' + (on ? " on" : "") + '" role="checkbox" aria-checked="' + (on ? "true" : "false")
+          + '" tabindex="0" data-ietile="' + o.id + '">'
+          + '<span class="t-name">' + esc(o.name) + "</span>" + priceHtml + "</div>";
+      }).join("") + "</div>" + toggles;
+
+      /* グループ直下の付帯UI（従来のまま） */
+      if (g.phoneBase) {
+        if (shinki && phoneOn) {
+          h += '<div class="field tv-koji"><label>電話番号</label><select data-iebanpo="1">'
+            + '<option value="new"' + (state.denwaBanpo !== "mnp" ? " selected" : "") + '>新規発番</option>'
+            + '<option value="mnp"' + (state.denwaBanpo === "mnp" ? " selected" : "") + '>番号ポータビリティあり</option>'
+            + "</select></div>"
+            + '<p class="hint">番号ポータビリティの場合、NTT加入電話の利用休止工事料が別途NTT東西から請求される場合があります。</p>';
+        }
+        if (state.opts.denwaBV) {
+          h += '<p class="hint">※ 光電話バリューには発信者番号表示・転送でんわ・迷惑電話ストップなど6つの付加サービスと528円分の無料通話が含まれます（含まれるサービスの個別追加は不要です）。</p>';
+        }
+      }
+      if (g.tvBase && shinki && state.opts.tv) {
+        var curTk = TV_KOJI[state.tvKoji] || TV_KOJI.sky;
+        var curFee = state.tvKojiFee != null ? state.tvKojiFee : curTk.koji;
+        h += '<div class="field tv-koji"><label>テレビ工事</label><select data-ietvkoji="1">'
+          + Object.keys(TV_KOJI).map(function (k) {
+              return '<option value="' + k + '"' + (state.tvKoji === k ? " selected" : "") + ">" + esc(TV_KOJI[k].label) + "</option>";
+            }).join("")
+          + "</select></div>"
+          + '<div class="field tv-koji"><label>テレビ工事費（ドコモ請求）</label><input type="number" data-ietvkojifee="1" value="' + curFee + '" inputmode="numeric" min="0"> 円'
+          + '<span class="opt-price">（ブースター等の追加工事がある場合はここで調整）</span></div>';
+        if (curTk.onsite > 0 || state.tvOnsiteFee != null) {
+          var curOnsite = state.tvOnsiteFee != null ? state.tvOnsiteFee : curTk.onsite;
+          h += '<div class="field tv-koji"><label>接続工事費（現地払い）</label><input type="number" data-ietvonsite="1" value="' + curOnsite + '" inputmode="numeric" min="0"> 円'
+            + '<span class="opt-price">スカパーへ工事当日お支払い。通常19,800円・キャンペーンで10,000円（2026年8月も継続中）</span></div>';
+        }
+      }
+    });
+    $("ieOptList").innerHTML = h || '<p class="hint">この商材に該当する定番オプションはありません。</p>';
+  }
+
+  // 表示中のセクションだけで①②③…を振り直す（home 5G端末セクションが隠れても番号が飛ばないように）
+  var MARU = ["①", "②", "③", "④", "⑤", "⑥", "⑦"];
+  function renumberSteps() {
+    var i = 0;
+    document.querySelectorAll("#tab-ienaka .step").forEach(function (s) {
+      if (s.hidden) return;
+      var h2 = s.querySelector("h2[data-iet]");
+      if (h2) h2.textContent = MARU[i++] + " " + h2.getAttribute("data-iet");
+    });
+  }
+
+  function renderExtras(listId, key, addLabel) {
+    var el = $(listId), h = "";
+    state[key].forEach(function (a, i) {
+      h += '<div class="adhoc-row">'
+        + '<input type="text" placeholder="項目名" value="' + esc(a.name || "") + '" data-iex="' + key + '" data-iei="' + i + '" data-ief="name">'
+        + '<input type="number" placeholder="金額（円）" value="' + (a.amount || "") + '" data-iex="' + key + '" data-iei="' + i + '" data-ief="amount">'
+        + '<button class="del" data-iexdel="' + key + '" data-iei="' + i + '" type="button" aria-label="削除">×</button>'
+        + "</div>";
+    });
+    el.innerHTML = h;
+  }
+
+  function syncForm() {
+    if (!state) return;
+    $("ieProduct").value = state.product;
+    /* タイプCでマンションが使えるかは、ケーブルテレビ会社ごとに違う。
+     * 使える会社（KCN・KCN京都・テレビ岸和田）を選んでいるときだけ、
+     * マンションも選べるようにする。それ以外は戸建だけにする。 */
+    /* 10ギガ タイプCは戸建・マンションが同額で、マンションタイプを出している
+     * ケーブルテレビ会社も多いため、戸建に寄せない（msAny）。 */
+    var isCms = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec)
+      && !PRODUCTS[state.product].msAny && !typecMansionOk();
+    if (isCms && state.housing !== "ht") state.housing = "ht";
+    /* 戸建てだけのときは、マンションを一覧そのものから外す
+     * （disabled で選べなくはなるが、iPhone・iPad では hidden が効かず、
+     *  選べないものが見えたままになるため） */
+    state.housing = ieFillSelect("ieHousing", IE_HOUSING_OPTS.filter(function (o) {
+      return !isCms || o.v === "ht";
+    }), state.housing);
+    /* 100M の設備を選んだときの案内。月額はマンションと同じ。
+     * 10ギガは対応設備が要るので、組み合わせが合っていないことを知らせる。 */
+    var hn = $("ieHousingNote");
+    if (isCms) {
+      hn.hidden = false;
+      hn.innerHTML = "タイプCは<strong>マンションタイプの提供がありません</strong>（提携ケーブルテレビの提供条件）。戸建のみです。";
+    } else if (state.housing !== "ms100" || state.product === "home5g") {
+      hn.hidden = true;
+    } else {
+      hn.hidden = false;
+      hn.innerHTML = is10g()
+        ? '<strong style="color:var(--red)">⚠ 10ギガは10ギガ対応設備が必要です。</strong>'
+          + "100Mbpsの設備のままではお申し込みいただけません。設備をご確認ください。"
+        : "100Mbpsの設備（VDSL方式・LAN配線方式）です。<strong>月額はマンションと同じ</strong>です。";
+    }
+    $("iePtype").value = state.ptype;
+    $("ieBaseMonthly").value = state.baseMonthly || "";
+    $("ieHikariFields").hidden = state.product === "home5g";
+    $("ieApplyTypeField").hidden = state.product === "home5g";
+    $("ieApplyType").value = state.applyType || "shinki";
+    var clSel = $("ieCurLine");
+    if (clSel) {
+      /* 店舗ごとの表示調整（契約の器の features）: 名前の置き換えと、出さない選択肢。
+       * 毎回作り直す（機能スイッチはログイン後に届くため）。
+       *
+       * ★ 出さない選択肢は **一覧そのものから外す**（2026-09-06 修正）。
+       *   以前は option に hidden を付けていたが、**iPhone・iPad の Safari は
+       *   option の hidden を無視する**ため、実機ではケーブルテレビ会社が
+       *   ぜんぶ（122件）並んでしまっていた。パソコンでは隠れていたので
+       *   気づけなかった。 */
+      var clHtml = "";
+      CUR_LINES.forEach(function (c) {
+        /* いま選んでいる会社は、出さない設定でも選択肢に残す
+         * （保存した見積もりを開き直したときに、ヒアリングの記録が黙って消えないように） */
+        if (curLineHidden(c.id) && c.id !== state.curLine) return;
+        clHtml += '<option value="' + esc(c.id) + '">'
+          + esc(curLineName(c) + (c.catvNg ? "（タイプC対象外）" : "")) + "</option>";
+      });
+      clSel.innerHTML = clHtml;
+      clSel.value = state.curLine || "";
+      /* 会社名の手書きは「その他」と「その他コラボ光」で出す。
+       * コラボ光は会社が何百社もあり、一覧に並べきれないため（2026-09-04 店舗の指定）。 */
+      var freeLine = state.curLine === "other" || state.curLine === "collabo";
+      $("ieCurLineOtherField").hidden = !freeLine;
+      $("ieCurLineOtherLabel").textContent =
+        state.curLine === "collabo" ? "コラボ光の会社名" : "回線名（その他）";
+      $("ieCurLineOther").value = state.curLineOther || "";
+      $("ieCurLineTelField").hidden = !freeLine;
+      $("ieCurLineTel").value = state.curLineTel || "";
+      var clh = $("ieCurLineHint");
+      var cd = curLineDef();
+      if (cd && cd.id !== "none" && (cd.tel || cd.cancel)) {
+        clh.hidden = false;
+        var hp = [];
+        /* タイプCの提携先ではない会社は、まずそれを出す。
+         * 「転用できると思って進めてしまう」のがいちばんの事故のため。 */
+        if (cd.catvNg) {
+          hp.push('<strong style="color:var(--red)">⚠ ドコモ光 タイプCの提携先ではありません（'
+            + esc(CATV_NG_ASOF) + "時点）。転用（タイプC）はできず、"
+            + "ドコモ光は<u>新規のお申し込み（工事あり）</u>になります</strong>");
+          if (state.applyType === "kirikae") {
+            hp.push('<strong style="color:var(--red)">いまの申込種別は「転用（タイプC）」です。「新規」に直してください</strong>');
+          }
+        }
+        /* タイプCがマンションで使えない会社を、マンションのお客様に案内していないか。
+         * ここを見落とすと、そもそも申し込めないものを提示してしまう。 */
+        var typecOn = !!(PRODUCTS[state.product] && PRODUCTS[state.product].typec);
+        if (cd.catv && !cd.catvNg && typecOn
+            && (typecMsBlocked || state.housing !== "ht")) {
+          if (cd.mansion === true) {
+            hp.push("マンション（集合住宅）でもタイプCをお使いいただけます"
+              + "（建物の設備によっては使えない場合があります）");
+          } else if (cd.mansion === false) {
+            hp.push('<strong style="color:var(--red)">⚠ '
+              + esc(cd.name) + 'のタイプCは<u>戸建てのみ</u>です。'
+              + "マンションでは転用（タイプC）はできず、"
+              + "ドコモ光は<u>新規のお申し込み（工事あり）</u>になります</strong>");
+            if (state.applyType === "kirikae") {
+              hp.push('<strong style="color:var(--red)">いまの申込種別は「転用（タイプC）」です。'
+                + "「新規」に直してください</strong>");
+            }
+          } else {
+            hp.push('<strong style="color:var(--red)">⚠ '
+              + esc(cd.name) + "のタイプCがマンションで使えるかは未確認です。"
+              + "お申し込み前に各社へご確認ください</strong>");
+          }
+        }
+        if ((cd.catv || cd.optIn) && (cd.area || (cd.prefs || []).length)) {
+          hp.push("提供エリア: " + esc(cd.area || cd.prefs.join("・"))
+            + (cd.catv ? "（最新は各社の公式ページでご確認ください）" : ""));
+        }
+        hp.push(cd.tel ? "解約窓口: " + esc(cd.tel) + (cd.telNote ? "（" + esc(cd.telNote) + "）" : "")
+          : esc(cd.cancel));
+        if (state.applyType === "jigyosha" && cd.jgTel) {
+          hp.push("承諾番号の窓口: " + esc(cd.jgTel) + (cd.jgTelNote ? "（" + esc(cd.jgTelNote) + "）" : ""));
+        }
+        hp.push("※ 見積書の「開通までの流れ」に解約のご案内が載ります");
+        clh.innerHTML = hp.join("<br>");
+      } else {
+        clh.hidden = true;
+      }
+    }
+    if ($("ieCurPhone")) {
+      $("ieCurPhone").value = state.curPhone || "";
+      $("ieCurTv").value = state.curTv || "";
+      $("ieCurTvBands").hidden = state.curTv !== "yes";
+      $("ieCurTvDigi").checked = !!state.curTvDigi;
+      $("ieCurTvBs").checked = !!state.curTvBs;
+      $("ieCurTvCs").checked = !!state.curTvCs;
+      /* J:COMはテレビを残したままネットだけ乗り換えるご案内がある。
+       * その場合、お電話もJ:COMに残したほうがお客様のご負担が安くなる。 */
+      var jc = state.curLine === "jcom";
+      $("ieCurTvKeepField").hidden = !jc;
+      if (!jc && state.curTvKeep) state.curTvKeep = false;
+      $("ieCurTvKeep").checked = !!state.curTvKeep;
+      var kh = $("ieCurTvKeepHint");
+      kh.hidden = !(jc && state.curTvKeep);
+      if (!kh.hidden) {
+        kh.textContent = "テレビを残す場合、お電話もJ:COMに残したほうがお客様のご負担が安くなります。"
+          + "J:COMへのご連絡では「解約するのはインターネットのみ」と必ずお伝えください（開通までの流れにも記載されます）。";
+      }
+    }
+    $("iePtypeField").hidden = !!PRODUCTS[state.product].noPtype;
+    $("ieProviderField").hidden = !isHikari() || !!PRODUCTS[state.product].noPtype;
+    $("ieProvider").value = state.provider || "";
+    /* 新規申込でも、いまのプロバイダを残してメールアドレスを引き継ぐことがあるため、
+     * 申込区分によらず、プロバイダを選んだら聞く。 */
+    var ptOn = !$("ieProviderField").hidden && !!state.provider;
+    /* 店舗ごとの機能スイッチ（契約の器の features）。切のときは
+     * タイプCの入り口（商材・切替・ZTVヒアリング）をすべて隠す。
+     * 例: ZTVエリアの無い代理店の店舗では typec: false を書く。 */
+    var typecOk = typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
+    state.product = ieFillSelect("ieProduct", IE_PRODUCT_OPTS.filter(function (o) {
+      return !o.typec || typecOk || state.product === o.v;
+    }), state.product);
+    /* タイプC: 申込種別は「新規／転用（タイプC）」（内部値 kirikae）だけ。他の商材では出さない。
+     * ケーブルテレビ設備なのでフレッツ転用・事業者変更は当たらないため。 */
+    var isC = !!PRODUCTS[state.product].typec;
+    if (isC && (state.applyType === "tenyo" || state.applyType === "jigyosha")) state.applyType = "kirikae";
+    if (!isC && state.applyType === "kirikae") state.applyType = "shinki";
+
+    /* 「転用（タイプC）」は常に出す（機能スイッチが切の店舗を除く）。タイプC以外で
+     * 選んだら、商材を自動でタイプCへ切り替える（受け取り側で処理）。 */
+    state.applyType = ieFillSelect("ieApplyType", IE_APPLY_OPTS.filter(function (o) {
+      if (o.notC && isC) return state.applyType === o.v;
+      if (o.typec && !typecOk) return state.applyType === o.v;
+      return true;
+    }), state.applyType || "shinki");
+    $("ieTypecKeepField").hidden = !isC;
+    /* 内訳の欄（2026-09-04）。タイプCのときだけ出す。 */
+    ["Tv", "Phone", "Other", "Off"].forEach(function (k) {
+      $("ieTypecKeep" + k + "Field").hidden = !isC;
+      var el = $("ieTypecKeep" + k);
+      if (el && document.activeElement !== el) {
+        el.value = num(state["typecKeep" + k]) || "";
+      }
+    });
+    /* ケーブルテレビ会社ごとの割引額のご案内（分かっている会社だけ） */
+    var offHint = $("ieTypecKeepOffHint");
+    if (offHint) {
+      var cdk = (typeof curLineById === "function") ? curLineById(state.curLine) : null;
+      var note = cdk && cdk.typecOffNote;
+      offHint.hidden = !isC || !note;
+      offHint.textContent = note || "";
+    }
+    $("ieTypecHint").hidden = !isC;
+    // 10ギガ タイプCだけの注意（工事料・ルーター・マンション）
+    var h10c = $("ieTypec10gHint");
+    if (h10c) h10c.hidden = state.product !== "hikaric10g";
+    if (document.activeElement !== $("ieTypecKeep")) $("ieTypecKeep").value = state.typecKeepAmt || "";
+    // 転用（タイプC）: いまの回線設備で工事の有無が変わる
+    var isKirikae = isC && state.applyType === "kirikae";
+    var coax = (state.typecLine || "hikari") === "coax";
+    $("ieTypecLineField").hidden = !isKirikae;
+    $("ieTypecLine").value = state.typecLine || "hikari";
+    $("ieTypecKojiField").hidden = !(isKirikae && coax);
+    $("ieTypecLineHint").hidden = !(isKirikae && coax);
+    if (document.activeElement !== $("ieTypecKoji")) $("ieTypecKoji").value = state.typecKoji || "";
+    $("ieProviderTypeField").hidden = !ptOn;
+    // 訪問設定サポートは@niftyのフォローコールで日程調整できるため、@nifty選択時だけ出す
+    $("ieVisitWrap").hidden = $("ieProviderField").hidden || state.provider !== "@nifty";
+    $("ieVisit").checked = !!state.visitSupport;
+    if (!ptOn && state.providerType !== "shinki") state.providerType = "shinki";
+    $("ieProviderType").value = state.providerType || "shinki";
+    // プロバイダ無料無線ルーターレンタルは1ギガのみ（10ギガは対象プロバイダなし・別途購入）
+    $("ieRouterRentalField").hidden = state.product !== "hikari1g";
+    $("ieRouterRental").value = state.routerRental || "ari";
+    $("ieOnecoinWrap").hidden = !is10g();
+    $("ieOnecoin").checked = !!state.onecoin;
+    $("ieHome5gStep").hidden = state.product !== "home5g";
+    var shinkiKoji = isHikari() && state.applyType === "shinki";
+    $("ieKojiPayField").hidden = !shinkiKoji;
+    $("ieKojiFreeWrap").hidden = !shinkiKoji;
+    $("ieH5DeviceName").value = state.h5DeviceName;
+    $("ieH5DevicePrice").value = state.h5DevicePrice || "";
+    $("ieH5Kubun").value = state.h5Kubun || "shinki";
+    $("ieH5Pay").value = state.h5Pay;
+    $("ieH5Support").checked = !!state.h5Support;
+    $("ieKojiPay").value = state.kojiPay || "b24";
+    $("ieKojiFree").checked = !!state.kojiFree;
+    $("ieDpoint").value = state.dpoint || "";
+    $("ieDpointField").hidden = !isHikari();
+    $("ieDpointHint").hidden = !isHikari();
+    $("ieDcard").value = state.dcard || "none";
+    $("iePlatRate").value = platRate();
+    // 上限は改定の前後で変わる（20% → 12%）ので、画面側もそろえる
+    $("iePlatRate").max = platMax();
+    var phHint = $("iePlatRateHint");
+    if (phHint) phHint.innerHTML = platHintText();
+    var phOpt = $("dcardPlatOpt");
+    if (phOpt) phOpt.textContent = "PLATINUM（利用料金の最大" + platMax() + "%還元）";
+    $("ieRouter10gWrap").hidden = !canBuy10gRouter();
+    $("ieRouter10g").checked = state.router10g !== false;
+    var r10gOn = canBuy10gRouter() && state.router10g !== false;
+    $("ieRouter10gPriceField").hidden = !r10gOn;
+    $("ieRouter10gPrice").value = state.router10gPrice || "";
+    $("ieRouter10gPayField").hidden = !r10gOn;
+    renderRouter10gPays($("ieRouter10gPay"));
+    $("ieRouter10gPay").value = state.router10gPay || "once";
+    var r10gHint = $("ieRouter10gHint");
+    r10gHint.hidden = !r10gOn;
+    if (r10gOn) {
+      var rp10 = num(state.router10gPrice);
+      var nSp = router10gSplitN();
+      r10gHint.innerHTML = (provider() === "@nifty"
+        ? "@nifty の優待価格（バッファロー WSR6500BE6P-10G）。<strong>税込20,064円</strong>"
+          + "（ページの「18,240円」は税抜）。ニフティで購入する場合、ドコモの"
+          + "「10Gbps対応無線LANルーター」（月額550円）の契約は不要です。"
+        : provider() === "GMOとくとくBB"
+        ? "GMOとくとくBB の分割購入。<strong>月額190円（税込）×36回＝総額6,840円</strong>。"
+        : "プロバイダによって取り扱いが違います。金額は店頭でご確認ください。")
+        + (nSp > 0 && rp10 > 0
+          ? "　" + nSp + "回分割で <strong>" + yen(Math.floor(rp10 / nSp)) + "/月</strong>（総額 " + yen(rp10) + "）"
+          : "");
+    }
+    // 店舗独自特典（相対対応）: 入力があるときだけ開いておく。普段は折りたたみ
+    $("ieStoreCash").value = state.storeCash || "";
+    $("ieStorePt").value = state.storePt || "";
+    if (num(state.storeCash) > 0 || num(state.storePt) > 0) $("ieStoreTokutenBox").hidden = false;
+    renderOpts();
+    renderExtras("ieExtraMonthlyList", "extraMonthly");
+    renderExtras("ieExtraInitialList", "extraInitial");
+    renumberSteps();
+  }
+
+  function dpointDefaultFor(product, applyType) {
+    if (product === "home5g" || applyType === "tenyo" || applyType === "kirikae") return 0;
+    if (product !== "hikari1g" && product !== "hikari10g") return 0; // ahamo光は公式特典の対象記載なし
+    if (applyType === "jigyosha") return 10000;
+    return product === "hikari1g" ? 20000 : 15000;
+  }
+  function syncDpointDefault(prevDef) {
+    if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
+      state.dpoint = dpointDefaultFor(state.product, state.applyType);
+    }
+  }
+
+
+  /* ---------- イエナカのタブの表示を整える ----------
+   * 単体版の recalc() のうち、画面の表示にあたる部分。
+   * 合計の表示と見積書はケータイ側が受け持つ。 */
+  function render() {
+    if (!state) return;
+    var r = calc();
+    var sum = $("ieSummary");
+    if (sum) {
+      var s0 = r.segs[0], sL = r.segs[r.segs.length - 1];
+      var t = "月額 " + yen(s0.monthly) + (r.segs.length > 1 ? "（" + segLabel(s0) + "）" : "");
+      if (r.segs.length > 1) t += "　→　" + yen(sL.monthly) + "（" + segLabel(sL) + "）";
+      t += "　／　初期費用 " + yen(r.initial);
+      sum.textContent = t;
+    }
+    // 初期費用のまとめ表示: 手数料 → 工事費合計・分割時月額 → 工事費内訳 → その他費用
+    var ks = $("ieKojiSummary");
+    if (state.product === "home5g") {
+      ks.hidden = true;
+    } else {
+      var regTotal = 0, onsite = [];
+      r.tvRegRows.forEach(function (x) {
+        if (x.name.indexOf("現地払い") >= 0) onsite.push(x); else regTotal += x.amount;
+      });
+      var kh = "";
+      // 手数料（事務手数料＋テレビ視聴登録料）
+      var feeTotal = num(state.jimuFee) + regTotal;
+      kh += "<div>手数料: <b>" + yen(feeTotal) + "</b>"
+        + (regTotal > 0 ? "（事務" + yen(num(state.jimuFee)) + "＋テレビ視聴登録" + yen(regTotal) + "）" : "") + "</div>";
+      // 工事費合計と分割時月額
+      kh += "<div>工事費合計: <b>" + yen(r.kojiTotal) + "</b>"
+        + (r.kojiTotal > 0 && state.kojiPay !== "b24" ? "（一括払い）" : "") + "</div>";
+      if (r.kojiTotal > 0 && state.kojiPay === "b24") {
+        kh += "<div>分割時: <b>" + yen(Math.floor(r.kojiTotal / 24)) + "/月</b>（24回）</div>";
+      }
+      // 工事費内訳
+      if (r.kojiTotal > 0) {
+        kh += '<div class="ks-sub">工事費内訳）</div>';
+        if (r.koji > 0) kh += '<div class="ks-item">・回線 新規工事料 ' + yen(r.koji) + "</div>";
+        r.optKojiRows.forEach(function (x) { kh += '<div class="ks-item">・' + esc(x.name) + " " + yen(x.amount) + "</div>"; });
+      }
+      // その他費用（請求外・購入品）
+      var others = [];
+      onsite.forEach(function (x) { others.push("スカパー工事 現地徴収分 " + yen(x.amount) + "（工事当日スカパーへ）"); });
+      if (canBuy10gRouter() && state.router10g && num(state.router10gPrice) > 0) {
+        var rp = num(state.router10gPrice);
+        var rn = router10gSplitN();
+        others.push(rn > 0
+          ? "10Gルーター " + rn + "回分割 " + yen(Math.floor(rp / rn)) + "/月（総額 " + yen(rp) + "）"
+          : "10Gルーター購入費用 " + yen(rp));
+      }
+      if (PRODUCTS[state.product].typec) {
+        others.push("お電話・テレビはケーブルテレビ（ZTV等）契約のまま残す（請求は別）"
+          + (num(state.typecKeepAmt) > 0 ? "・参考 " + yen(num(state.typecKeepAmt)) + "/月" : ""));
+      }
+      if (others.length) {
+        kh += '<div class="ks-sub">その他費用）</div>';
+        others.forEach(function (t) { kh += '<div class="ks-item">・' + t + "</div>"; });
+      }
+      ks.hidden = false;
+      ks.innerHTML = kh;
+    }
+    var hint = PRODUCTS[state.product].note + (r.deviceNote ? "　" + r.deviceNote : "");
+    $("ieH5Hint").textContent = state.product === "home5g" ? hint : "";
+    // 特典（⑤）: テレビ同時申込ポイント・工事費実質0円の進呈内容
+    var tvPtOk = r.tvOn && isHikari() && state.applyType !== "tenyo";
+    $("ieTvPointWrap").hidden = !tvPtOk;
+    if (tvPtOk) $("ieTvPoint").checked = state.tvPoint !== false;
+    // home 5G→ドコモ光 移行特典は1ギガのみ表示（10ギガ・ahamo光・home 5Gは対象外）
+    $("ieH5MigWrap").hidden = state.product !== "hikari1g";
+    $("ieH5Mig").checked = !!state.h5Mig;
+    var kp = $("ieKojiPointInfo");
+    if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
+      kp.hidden = false;
+      kp.textContent = "工事費 実質0円特典: " + r.koji.toLocaleString("ja-JP")
+        + "pt（期間・用途限定）を、ご利用開始月の7か月後の月から24か月間に分けて進呈。"
+        + "エントリーは不要です（条件を満たせば自動で対象）。料金充当した場合の月額推移は見積書に表示されます。";
+    } else { kp.hidden = true; }
+    // dカードGOLD/PLATINUM還元
+    var dcOn = state.dcard !== "none";
+    /* PLATINUM のときだけ還元率を出す（初年度20%／2年目以降は10〜20%） */
+    $("iePlatRateField").hidden = state.dcard !== "platinum";
+    $("iePlatRateHint").hidden = state.dcard !== "platinum";
+    $("ieDcardPtField").hidden = !dcOn;
+    $("ieDcardHint").hidden = !dcOn;
+    if (dcOn) {
+      if (state.dcardPt == null && document.activeElement !== $("ieDcardPt")) {
+        $("ieDcardPt").value = r.dcardAutoPt || "";
+      }
+      /* ahamo光は対象外。選ばれていても0ptになるので、その理由を出す。 */
+      if (PRODUCTS[state.product].dcard === false) {
+        $("ieDcardHint").textContent = "ahamo光は dカードGOLD／PLATINUM のご利用料金還元の対象外です（公式「ドコモ光（ahamo光を除く）」）。この見積もりには還元を入れていません。";
+      } else
+      $("ieDcardHint").textContent = "自動計算: 対象月額" + yen(r.dcardEligible) + " → " + (r.dcardAutoPt || 0)
+        + "pt/月（1,100円ごとに" + (state.dcard === "gold" ? "100pt・10%" : (platRate() * 10) + "pt・" + platRate() + "%") + "）。還元対象・上限はカード規約をご確認ください。数値は直接編集できます。"
+        + (reviseNotices().length ? "　【今後の料金改定のお知らせ】" + reviseNotices().join("　") : "");
+    }
+  }
+
+
+  /* ---------- 入力の受け取り ---------- */
+  function bind() {
+    $("ieProduct").addEventListener("change", function () {
+      var prevDef = dpointDefaultFor(state.product, state.applyType);
+      var wasC = !!PRODUCTS[state.product].typec;
+      state.product = this.value;
+      /* タイプCを選んだ直後は「転用（タイプC）」を既定にする（主な使いどころが
+       * ケーブルテレビのネットからの切替のため）。逆に出たら新規へ戻す。 */
+      var nowC = !!PRODUCTS[state.product].typec;
+      if (nowC && !wasC) state.applyType = "kirikae";
+      if (!nowC && wasC && state.applyType === "kirikae") state.applyType = "shinki";
+      applyDefaults();
+      syncDpointDefault(prevDef);
+      syncForm(); recalc();
+    });
+    $("ieHousing").addEventListener("change", function () { state.housing = this.value; applyDefaults(); syncForm(); recalc(); });
+    $("iePtype").addEventListener("change", function () { state.ptype = this.value; applyDefaults(); syncForm(); recalc(); });
+    $("ieProvider").addEventListener("change", function () {
+      state.provider = this.value;
+      // 10ギガの対応ルーターはプロバイダで変わるため、価格と払い方を入れ直す
+      if (canBuy10gRouter()) applyRouter10gDefault();
+      syncForm(); recalc();
+    });
+    $("ieProviderType").addEventListener("change", function () { state.providerType = this.value; recalc(); });
+    $("ieVisit").addEventListener("change", function () { state.visitSupport = this.checked; recalc(); });
+    $("ieRouterRental").addEventListener("change", function () { state.routerRental = this.value; recalc(); });
+    $("ieBaseMonthly").addEventListener("input", function () { state.baseMonthly = num(this.value); recalc(); });
+    $("ieH5DeviceName").addEventListener("input", function () { state.h5DeviceName = this.value; recalc(); });
+    $("ieH5DevicePrice").addEventListener("input", function () { state.h5DevicePrice = num(this.value); recalc(); });
+    $("ieH5Kubun").addEventListener("change", function () { state.h5Kubun = this.value; recalc(); });
+    $("ieH5Pay").addEventListener("change", function () { state.h5Pay = this.value; recalc(); });
+    $("ieH5Support").addEventListener("change", function () { state.h5Support = this.checked; recalc(); });
+    $("ieKojiPay").addEventListener("change", function () { state.kojiPay = this.value; recalc(); });
+    // 申込区分からドコモショップ特典の進呈ポイントを自動判定（西日本固定・公式2026-07時点・手入力は上書きしない）
+    // 西日本: 1G新規20,000pt・10G新規15,000pt・事業者変更10,000pt ／ 転用は対象外
+    function dpointDefaultFor(product, applyType) {
+      if (product === "home5g" || applyType === "tenyo" || applyType === "kirikae") return 0;
+      if (product !== "hikari1g" && product !== "hikari10g") return 0; // ahamo光は公式特典の対象記載なし
+      if (applyType === "jigyosha") return 10000;
+      return product === "hikari1g" ? 20000 : 15000;
+    }
+    function syncDpointDefault(prevDef) {
+      if (!num(state.dpoint) || num(state.dpoint) === prevDef) {
+        state.dpoint = dpointDefaultFor(state.product, state.applyType);
+      }
+    }
+    $("ieCurLine").addEventListener("change", function () { state.curLine = this.value; syncForm(); recalc(); });
+    $("ieCurLineOther").addEventListener("input", function () { state.curLineOther = this.value; recalc(); });
+    $("ieCurLineTel").addEventListener("input", function () { state.curLineTel = this.value; recalc(); });
+    $("ieCurPhone").addEventListener("change", function () { state.curPhone = this.value; recalc(); });
+    $("ieCurTv").addEventListener("change", function () { state.curTv = this.value; syncForm(); recalc(); });
+    [["ieCurTvDigi", "curTvDigi"], ["ieCurTvBs", "curTvBs"], ["ieCurTvCs", "curTvCs"]].forEach(function (pr) {
+      $(pr[0]).addEventListener("change", function () { state[pr[1]] = this.checked; recalc(); });
+    });
+    $("ieCurTvKeep").addEventListener("change", function () { state.curTvKeep = this.checked; syncForm(); recalc(); });
+    $("ieApplyType").addEventListener("change", function () {
+      var prevDef = dpointDefaultFor(state.product, state.applyType);
+      state.applyType = this.value;
+      /* 「転用（タイプC）」を選んだら、商材も自動でタイプCにする。
+       * 切替はケーブルテレビ設備（タイプC）でしか起きないため。 */
+      if (this.value === "kirikae" && !PRODUCTS[state.product].typec) {
+        state.product = "hikaric";
+        applyDefaults();
+      }
+      syncDpointDefault(prevDef);
+      syncForm(); recalc();
+    });
+    $("ieTvPoint").addEventListener("change", function () { state.tvPoint = this.checked; recalc(); });
+    $("ieH5Mig").addEventListener("change", function () { state.h5Mig = this.checked; recalc(); });
+    $("ieStoreTokutenBtn").addEventListener("click", function () {
+      var box = $("ieStoreTokutenBox");
+      box.hidden = !box.hidden;
+    });
+    $("ieStoreCash").addEventListener("input", function () { state.storeCash = num(this.value); recalc(); });
+    $("ieTypecKeep").addEventListener("input", function () { state.typecKeepAmt = num(this.value); recalc(); });
+    ["Tv", "Phone", "Other", "Off"].forEach(function (k) {
+      var el = $("ieTypecKeep" + k);
+      if (el) el.addEventListener("input", function () {
+        state["typecKeep" + k] = num(this.value); recalc();
+      });
+    });
+    $("ieTypecLine").addEventListener("change", function () { state.typecLine = this.value; syncForm(); recalc(); });
+    $("ieTypecKoji").addEventListener("input", function () { state.typecKoji = num(this.value); recalc(); });
+    $("ieStorePt").addEventListener("input", function () { state.storePt = num(this.value); recalc(); });
+    $("ieDcard").addEventListener("change", function () { state.dcard = this.value; state.dcardPt = null; syncForm(); recalc(); });
+    $("ieDcardPt").addEventListener("input", function () { state.dcardPt = num(this.value); recalc(); });
+    /* PLATINUM の還元率。10〜20 の外は入力欄から離れたときに直す
+     * （打っている途中の空欄で毎回 20 に戻ると入力しづらいため） */
+    $("iePlatRate").addEventListener("input", function () {
+      state.dcardPlatRate = num(this.value); recalc();
+    });
+    $("iePlatRate").addEventListener("change", function () {
+      state.dcardPlatRate = platRate(); this.value = state.dcardPlatRate; recalc();
+    });
+    $("ieRouter10g").addEventListener("change", function () {
+      state.router10g = this.checked;
+      /* 購入に切り替えたら、レンタルのタイルを外す（どちらか一方のため） */
+      if (this.checked && state.opts.lanRouter10g) { delete state.opts.lanRouter10g; renderOpts(); }
+      syncForm(); recalc();
+    });
+    $("ieRouter10gPrice").addEventListener("input", function () { state.router10gPrice = num(this.value); syncForm(); recalc(); });
+    $("ieRouter10gPay").addEventListener("change", function () { state.router10gPay = this.value; syncForm(); recalc(); });
+    $("ieKojiFree").addEventListener("change", function () { state.kojiFree = this.checked; recalc(); });
+    $("ieDpoint").addEventListener("input", function () { state.dpoint = num(this.value); recalc(); });
+    $("ieOnecoin").addEventListener("change", function () { state.onecoin = this.checked; recalc(); });
+  $("ieOptList").addEventListener("click", function (e) {
+      if (e.target.closest("input,select,a,label")) return;
+      var t = e.target.closest("[data-ietile]");
+      if (t) toggleIeOpt(t.getAttribute("data-ietile"));
+    });
+    $("ieOptList").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var t = e.target.closest && e.target.closest("[data-ietile]");
+      if (t) { e.preventDefault(); toggleIeOpt(t.getAttribute("data-ietile")); }
+    });
+    $("ieOptList").addEventListener("change", function (e) {
+      var id = e.target.getAttribute("data-ieopt");
+      if (id) {
+        state.opts[id] = e.target.checked;
+        /* 畳んだら、見えなくなる項目の選択も外す（見えない金額が乗らないように） */
+        if (id === "skyp" && !e.target.checked) {
+          IENAKA_OPTS.forEach(function (o) { if (o.needsVideo) delete state.opts[o.id]; });
+        }
+        if (id === "phoneMore" && !e.target.checked) {
+          IENAKA_OPTS.forEach(function (o) { if (o.phoneMore) delete state.opts[o.id]; });
+        }
+        renderOpts(); recalc(); return;
+      }
+      if (e.target.getAttribute("data-ietvkoji")) { state.tvKoji = e.target.value; state.tvKojiFee = null; state.tvOnsiteFee = null; renderOpts(); recalc(); return; }
+      if (e.target.getAttribute("data-iebanpo")) { state.denwaBanpo = e.target.value; recalc(); }
+    });
+    $("ieOptList").addEventListener("input", function (e) {
+      if (e.target.getAttribute("data-ietvkojifee")) { state.tvKojiFee = num(e.target.value); recalc(); return; }
+      if (e.target.getAttribute("data-ietvonsite")) { state.tvOnsiteFee = num(e.target.value); recalc(); }
+    });
+    $("ieOptList").addEventListener("input", function (e) {
+      var id = e.target.getAttribute("data-ieoptprice");
+      if (!id) return;
+      state.optPrices[id] = num(e.target.value);
+      recalc();
+      var od = IENAKA_OPTS.filter(function (x) { return x.id === id; })[0];
+      if (od && (od.needsVideo || od.needsHikariTv)) updateGroupTotals();
+    });
+    function bindExtras(listId) {
+      $(listId).addEventListener("input", function (e) {
+        var key = e.target.getAttribute("data-iex");
+        if (!key) return;
+        var i = +e.target.getAttribute("data-iei"), f = e.target.getAttribute("data-ief");
+        state[key][i][f] = f === "amount" ? num(e.target.value) : e.target.value;
+        recalc();
+      });
+      $(listId).addEventListener("click", function (e) {
+        var key = e.target.getAttribute("data-iexdel");
+        if (!key) return;
+        state[key].splice(+e.target.getAttribute("data-iei"), 1);
+        renderExtras(listId, key);
+        recalc();
+      });
+    }
+    bindExtras("ieExtraMonthlyList");
+    bindExtras("ieExtraInitialList");
+    $("ieAddExtraMonthly").addEventListener("click", function () {
+      state.extraMonthly.push({ name: "", amount: "" });
+      renderExtras("ieExtraMonthlyList", "extraMonthly"); recalc();
+    });
+    $("ieAddExtraInitial").addEventListener("click", function () {
+      state.extraInitial.push({ name: "", amount: "" });
+      renderExtras("ieExtraInitialList", "extraInitial"); recalc();
+    });
+    var en = $("ieEnabled");
+    if (en) en.addEventListener("change", function () {
+      state.enabled = this.checked;
+      $("ieBody").hidden = !this.checked;
+      recalc();
+    });
+  }
+
+
+
+  /* ---------- 光の見積書（単体の1枚） ----------
+   * 単体版（ienaka-app）の見積書と同じ内容。表題・お客様名・発行元・注意書きは
+   * ケータイ側が付けるので、ここでは中身だけを返す。
+   * セット割はケータイ側で実際に引いている金額を受け取る。 */
+  /* ---------- 現在お使いの回線（ヒアリング） ----------
+   * 将来の「奪還比較ツール」への入口として、どの回線から乗り換えるかを記録する。
+   * 開通までの流れに解約のご案内を出すのにも使う。
+   * tel は一次情報で確認できたものだけ載せる（誤った番号のご案内は事故になるため。
+   * 確認でき次第、ここに追加する）。 */
+  /* ドコモ光 タイプC の提携ケーブルテレビ会社（関西・中部。2026-09-03 に公式の
+   * 「ドコモ光 1ギガ タイプC」提携CATV一覧で確認）。
+   * 「現在のネット回線」の選択肢に並ぶが、<b>ZTV以外は既定では出さない</b>。
+   * 店舗ごとに、契約の器（contracts）の features で出す会社を選ぶ:
+   *   catvShow:  ["baycom", "katch"]  … 出す会社のID（下の id）
+   *   catvPrefs: ["大阪", "兵庫"]      … その県で提供している会社をまとめて出す
+   * ZTVは従来どおり既定で出す（出したくない店舗は curLinesHide に "ztv"）。
+   * 会社を増やすときは、必ず公式の提携CATV一覧で確認してからここに足す。
+   *
+   * mansion … その会社のタイプCがマンション（集合住宅）でも使えるか。
+   *   true=使える／false=戸建てのみ／書いていない=未確認（安全側に倒して戸建て扱い）。
+   *   関西で使えるのは KCN・KCN京都・テレビ岸和田 の3社（2026-09-04 店舗の確認）。
+   *   ここを間違えると、マンションのお客様に戸建ての金額（＋1,320円/月）を
+   *   出してしまうので、必ず各社の公式で確かめてから直すこと。 */
+  var CATV_LINES = [
+    { id: "ztv", name: "ZTV", prefs: ["三重", "滋賀", "京都", "和歌山"], mansion: false,
+      area: "三重県津市、松阪市（旧嬉野町）、亀山市、伊勢市、鳥羽市、志摩市（旧磯部町）、尾鷲市、熊野市、度会町、玉城町、南伊勢町、紀北町、御浜町、紀宝町／滋賀県彦根市、長浜市、米原市（一部エリア不可）、大津市、草津市、守山市、栗東市、野洲市、湖南市、近江八幡市、竜王町／和歌山県新宮市、田辺市（旧本宮町）、那智勝浦町、太地町、古座川町、串本町、北山村、日高町、由良町、日高川町／京都府京都市西京区（大枝・御陵・大原野）、亀岡市、京丹波町",
+      cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割で返金）。テレビ・お電話はZTVのご契約のまま続きます",
+      /* ZTVの「ドコモ光向け割引」（税込・月額）。
+       * 出典: ZTV ドコモ光向けインターネット接続サービス利用規約（2025-01-13施行・2026-08-21 確認） */
+      typecOffNote: "ZTVのドコモ光向け割引（税込・月／津エリア以外）: テレビ（ベーシック/デジタル）＋ケーブルプラス電話 1,100円／＋ケーブルライン 1,056円／テレビのみ 550円。コンパクト・ライトは 770円／726円／220円。※津エリアはこれより大きい額です。いま付いているZTVのセット割は止まり、この割引に置き換わります" },
+    { id: "kcn", name: "KCN（近鉄ケーブルネットワーク）", prefs: ["奈良", "大阪"], mansion: true,
+      area: "奈良県奈良市、生駒市、天理市、生駒郡、香芝市、大和郡山市、大和高田市、葛城市、桜井市、北葛城郡、橿原市、磯城郡、高市郡、御所市、五條市／大阪府四條畷市（一部のみ）",
+      cancel: "タイプCへ切り替える場合、先にKCNで「CATV受付番号」を発行してもらってからお申し込みください。ネットの解約手続きは不要です。テレビ・お電話はKCNのご契約のまま続きます" },
+    { id: "kcnkyoto", name: "KCN京都", prefs: ["京都"], mansion: true,
+      area: "京都府相楽郡精華町、笠置町、南山城村、木津川市、京田辺市、城陽市、宇治市、久世郡久御山町の一部" },
+    { id: "komadori", name: "こまどりケーブル", prefs: ["奈良"], mansion: false,
+      area: "奈良県宇陀市、大淀町、上北山村、川上村、黒滝村、五條市（西吉野・大塔・生子町）、下市町、下北山村、曽爾村、天川村、十津川村、奈良市（旧月ケ瀬村・旧都祁村）、野迫川村、東吉野村、御杖村、山添村、吉野町" },
+    { id: "kisiwada", name: "テレビ岸和田", prefs: ["大阪"], mansion: true,
+      area: "大阪府岸和田市、泉北郡忠岡町" },
+    { id: "baycom", name: "ベイ・コミュニケーションズ", prefs: ["大阪", "兵庫"], mansion: false,
+      area: "大阪府大阪市福島区、西淀川区、港区、大正区、此花区、西区、浪速区、西成区、住之江区、北区・中央区の一部／兵庫県尼崎市、西宮市、伊丹市",
+      cancel: "タイプCへ切り替える場合、ネットの解約手続きは不要です（切替日で自動精算・日割り）。テレビ・お電話はベイコムのご契約のまま続き、ベイコム側に「ドコモ光タイプC向け割引」が付きます。※転用と同時にテレビ等も解約すると、そのぶんの違約金（1か月分）がかかります",
+      /* ベイコムの「ドコモ光タイプC向け割引」（税込・月額）。
+       * 出典: Baycom ドコモ光タイプC インターネット接続サービス利用規約 第1条3項
+       * https://baycom.jp/company/contract/pdf/docomotypec_contract.pdf （2026-09-04 確認） */
+      typecOffNote: "ベイコムのタイプC向け割引（税込・月）: 光TV（プラス含む）＋ケーブルプラス電話 2,838円／光TVBS（ポケット含む）＋ケーブルプラス電話 2,013円／光TV（プラス含む）のみ 1,705円／ケーブルプラス電話のみ 1,133円／光TVBS（ポケット）のみ 880円。※いま付いているベイコムのキャンペーン割引は止まり、この割引に置き換わります（前後で比べてください）" },
+    { id: "ccnet", name: "CCNet", prefs: ["岐阜", "愛知", "三重"],
+      area: "三重県川越町、朝日町、桑名市多度町／愛知県春日井市、小牧市、犬山市、扶桑町、大口町、名古屋市緑区、豊明市、日進市、東郷町、豊川市／岐阜県各務原市、美濃加茂市、川辺町、八百津町、白川町、養老町、本巣市" },
+    { id: "goolight", name: "Goolight", prefs: ["長野"],
+      area: "長野県須坂市、上高井郡小布施町、上高井郡高山村" },
+    { id: "tam", name: "TAM", prefs: ["富山"],
+      area: "富山県滑川市、中新川郡立山町、中新川郡上市町" },
+    { id: "tokai", name: "TOKAIケーブルネットワーク", prefs: ["静岡"],
+      area: "静岡県富士市、富士宮市、沼津市、静岡市（旧蒲原町・由比町）、三島市、裾野市、御殿場市、清水町、長泉町、伊豆の国市、函南町、焼津市、藤枝市、伊豆市の一部、小山町の一部、島田市、吉田町" },
+    { id: "asagao", name: "あさがおテレビ", prefs: ["石川"],
+      area: "石川県白山市（一部エリアを除く）、能美市和佐谷町" },
+    { id: "tonamieiseitsuusin", name: "となみ衛星通信テレビ", prefs: ["富山"],
+      area: "富山県砺波市、南砺市、小矢部市" },
+    { id: "himawari", name: "ひまわりネットワーク", prefs: ["岐阜", "愛知"],
+      area: "愛知県豊田市、みよし市、長久手市、蒲郡市、幸田町／岐阜県多治見市、土岐市、瑞浪市" },
+    { id: "advancecope", name: "アドバンスコープ", prefs: ["三重"],
+      area: "三重県名張市、伊賀市の一部（旧青山町）" },
+    { id: "ecocitykomagatake", name: "エコーシティー・駒ヶ岳", prefs: ["長野"],
+      area: "長野県駒ヶ根市、飯島町、宮田村、中川村" },
+    { id: "nct", name: "エヌ・シィ・ティ", prefs: ["新潟"],
+      area: "新潟県長岡市、三条市、見附市、小千谷市、燕市、柏崎市、加茂市、魚沼市、南魚沼市、十日町市、田上町、出雲崎町、湯沢町、津南町、弥彦村、五泉市" },
+    { id: "lcv", name: "エルシーブイ", prefs: ["長野"],
+      area: "長野県諏訪市、茅野市、岡谷市、下諏訪町、原村、富士見町、辰野町、塩尻市（北小野）" },
+    { id: "katch", name: "キャッチネットワーク", prefs: ["愛知"],
+      area: "愛知県刈谷市、安城市、高浜市、知立市、碧南市、西尾市" },
+    { id: "greencity", name: "グリーンシティコム", prefs: ["愛知"],
+      area: "愛知県名古屋市守山区、尾張旭市、瀬戸市" },
+    { id: "kani", name: "ケーブルテレビ可児", prefs: ["岐阜"],
+      area: "岐阜県可児市、御嵩町" },
+    { id: "toyama", name: "ケーブルテレビ富山", prefs: ["富山"],
+      area: "富山県富山市（旧婦中町・山田村を除く）、中新川郡舟橋村" },
+    { id: "suzuka", name: "ケーブルネット鈴鹿", prefs: ["三重"],
+      area: "三重県鈴鹿市" },
+    { id: "ccn", name: "シーシーエヌ", prefs: ["岐阜"],
+      area: "岐阜県岐阜市、関市、美濃市、羽島市、各務原市川島、瑞穂市、岐南町、笠松町、北方町、山県市" },
+    { id: "cty", name: "シー・ティーワイ", prefs: ["三重"],
+      area: "三重県四日市市、いなべ市、桑名市（長島町のみ）、菰野町、木曽岬町" },
+    { id: "starcat", name: "スターキャット", prefs: ["愛知"],
+      area: "愛知県名古屋市中区、千種区、東区、北区、西区、中村区、昭和区、瑞穂区、熱田区、中川区、港区、南区、名東区、天白区、北名古屋市、岩倉市、江南市、豊山町、清須市西枇杷島町・春日" },
+    { id: "komatsu", name: "テレビ小松", prefs: ["石川"],
+      area: "石川県小松市、能美市" },
+    { id: "newmedia", name: "ニューメディア", prefs: ["北海道", "山形", "福島", "新潟"],
+      area: "北海道函館市、七飯町、北斗市／山形県米沢市、南陽市、高畠町、川西町／福島県福島市／新潟県新潟市" },
+    { id: "mics", name: "ミクスネットワーク", prefs: ["愛知"],
+      area: "愛知県岡崎市（一部エリアを除く）" },
+    { id: "ueda", name: "上田ケーブルビジョン", prefs: ["長野"],
+      area: "長野県上田市（菅平高原・丸子地域・武石地域を除く）、東御市、坂城町、青木村の一部" },
+    { id: "jouetsu", name: "上越ケーブルビジョン", prefs: ["新潟"],
+      area: "新潟県上越市、妙高市、十日町市十日町地区" },
+    { id: "igaueno", name: "伊賀上野ケーブルテレビ", prefs: ["三重"],
+      area: "三重県伊賀市（旧青山町を除く）" },
+    { id: "oogaki", name: "大垣ケーブルテレビ", prefs: ["岐阜"],
+      area: "岐阜県大垣市、海津市、池田町、神戸町、垂井町、関ケ原町、揖斐川町" },
+    { id: "imizu", name: "射水ケーブルネットワーク", prefs: ["富山"],
+      area: "富山県射水市、高岡市の一部（牧野地区）" },
+    { id: "omaezaki", name: "御前崎ケーブルテレビ", prefs: ["静岡"],
+      area: "静岡県御前崎市" },
+    { id: "arakawainfo", name: "新川インフォメーションセンター", prefs: ["富山"],
+      area: "富山県魚津市" },
+    { id: "kawaguchiko", name: "河口湖有線テレビ放送", prefs: ["山梨"],
+      area: "山梨県南都留郡富士河口湖町" },
+    { id: "chitamedias", name: "知多メディアスネットワーク", prefs: ["愛知"],
+      area: "愛知県東海市、大府市、知多市、東浦町、名古屋市・阿久比町の一部" },
+    { id: "chitahantou", name: "知多半島ケーブルネットワーク", prefs: ["愛知"],
+      area: "愛知県常滑市、武豊町、美浜町、南知多町（日間賀島・篠島を除く）" },
+    { id: "clovertv", name: "西尾張シーエーティーヴィ", prefs: ["愛知"],
+      area: "愛知県津島市、愛西市、弥富市、稲沢市（旧平和町）、あま市、海部郡蟹江町、大治町、清須市" },
+    { id: "takaoka", name: "高岡ケーブルネットワーク", prefs: ["富山"],
+      area: "富山県高岡市（牧野地区を除く）" }
+  ];
+  CATV_LINES.forEach(function (c) {
+    c.catv = true;
+    if (!c.cancel) {
+      c.cancel = "タイプCへ切り替える場合、ネットの解約手続き・精算方法はケーブルテレビ会社ごとに異なります（"
+        + c.name + "にご確認ください）。テレビ・お電話は" + c.name + "のご契約のまま続きます";
+    }
+  });
+  /* ---------- ドコモ光 タイプC の提携先では「ない」ケーブルテレビ会社（中部・関西） ----------
+   * 上の CATV_LINES は「転用（タイプC）ができる」会社。こちらは<b>できない</b>会社。
+   * お客様が会社名を言われたときに、その場で「転用できるのか／新規工事になるのか」が
+   * 分かるようにするための一覧（菱和テレコムの中部・関西エリア向け・2026-09-03）。
+   *
+   * 出典（いずれも 2026-09-03 に取得）:
+   *   関西 … 総務省 近畿総合通信局「主なケーブルテレビ事業者（近畿総合通信局管内）」
+   *   東海 … 総務省 東海総合通信局「東海管内のケーブルテレビ登録事業者一覧」（令和8年4月1日現在）
+   *   北陸 … 総務省 北陸総合通信局「北陸管内のケーブルテレビ事業者一覧」
+   *   信越 … 総務省 信越総合通信局「ケーブルテレビ事業者一覧」（令和8年6月8日現在）
+   *   提携の有無 … ドコモ公式「ドコモ光 1ギガ タイプC」提携CATV一覧
+   *
+   * 収録のきまり:
+   *   ・会社名がそのままサービス名として通じるものだけ入れている。
+   *     市町村名・組合名だけのもの（例「◯◯市」「◯◯広域事務組合」）は入れていない
+   *   ・J:COM・eo光・コミュファ光は上の CUR_LINES に別項目があるので入れていない
+   *   ・山梨県は関東総合通信局の管内で、一覧の出典が別のため未収録
+   *
+   * <b>提携先は増える</b>（2026年だけでもミクスネットワーク・BTVが追加）。
+   * 「対象外」と言い切らず、画面にも確認日を出す（CATV_NG_ASOF）。
+   * 見直すときは、上のドコモ公式一覧と突き合わせて、提携した会社をこちらから外す。
+   *
+   * 既定ではどの店舗にも出さない。契約の器（contracts）の features で店舗ごとに出す:
+   *   catvNgShow:  ["wink", "banban"]   … 出す会社のID
+   *   catvNgPrefs: ["愛知", "岐阜"]      … その県の会社をまとめて出す */
+  var CATV_NG_ASOF = "2026年9月";
+  var CATV_NG_LINES = [
+    /* --- 関西 --- */
+    { id: "ng_aicomkoka", name: "あいコムこうか", prefs: ["滋賀"], area: "滋賀県甲賀市" },
+    { id: "ng_higashiomi", name: "東近江ケーブルネットワーク（東近江スマイルネット）", prefs: ["滋賀"], area: "滋賀県東近江市" },
+    { id: "ng_actv", name: "全関西ケーブルテレビジョン（ACTV）", prefs: ["京都", "和歌山"], area: "京都府京丹後市／和歌山県紀の川市、有田川町、白浜町、すさみ町" },
+    { id: "ng_kcnnantan", name: "KCNなんたん（南丹市）", prefs: ["京都"], area: "京都府南丹市" },
+    { id: "ng_yosano", name: "与謝野町有線テレビ", prefs: ["京都"], area: "京都府与謝野町" },
+    { id: "ng_kcn", name: "近鉄ケーブルネットワーク（KCN）", prefs: ["奈良", "大阪"], area: "奈良県奈良市、大和高田市、大和郡山市、天理市、橿原市、桜井市、五條市、御所市、生駒市、香芝市、葛城市、平群町、三郷町、斑鳩町、安堵町、川西町、三宅町、田原本町、高取町、明日香村、上牧町、王寺町、広陵町、河合町／大阪府四條畷市" },
+    { id: "ng_wink", name: "姫路ケーブルテレビ（WINK）", prefs: ["兵庫"], area: "兵庫県姫路市、宍粟市、太子町、上郡町、佐用町" },
+    { id: "ng_actv135", name: "明石ケーブルテレビ（ACTV135）", prefs: ["兵庫"], area: "兵庫県明石市" },
+    { id: "ng_banban", name: "BAN-BANネットワークス", prefs: ["兵庫"], area: "兵庫県加古川市、高砂市、稲美町、播磨町" },
+    { id: "ng_awajishima", name: "淡路島テレビジョン（洲本市）", prefs: ["兵庫"], area: "兵庫県洲本市" },
+    { id: "ng_sansan", name: "さんさんネット（南あわじ市）", prefs: ["兵庫"], area: "兵庫県南あわじ市" },
+    { id: "ng_fureai", name: "ふれあいネット（養父市）", prefs: ["兵庫"], area: "兵庫県養父市" },
+    { id: "ng_asago", name: "朝来市ケーブルテレビ", prefs: ["兵庫"], area: "兵庫県朝来市" },
+    { id: "ng_knet", name: "K-net（神河町）", prefs: ["兵庫"], area: "兵庫県神河町" },
+    { id: "ng_yumenet", name: "夢ネット（新温泉町）", prefs: ["兵庫"], area: "兵庫県新温泉町" },
+    { id: "ng_aikis", name: "サイバーリンクス（aikis）", prefs: ["和歌山"], area: "和歌山県田辺市" },
+    /* --- 東海 --- */
+    { id: "ng_amix", name: "アミックスコム", prefs: ["岐阜"], area: "岐阜県恵那市、安八郡輪之内町" },
+    { id: "ng_gujo", name: "インフォメーションネットワーク郡上八幡", prefs: ["岐阜"], area: "岐阜県郡上市（旧八幡町）" },
+    { id: "ng_oribe", name: "おりべネットワーク", prefs: ["岐阜"], area: "岐阜県多治見市、瑞浪市、土岐市" },
+    { id: "ng_hidatakayama", name: "飛騨高山ケーブルネットワーク", prefs: ["岐阜"], area: "岐阜県高山市、飛騨市（旧古川町・旧神岡町）、大野郡白川村" },
+    { id: "ng_izukyu", name: "伊豆急ケーブルネットワーク", prefs: ["静岡"], area: "静岡県熱海市、伊東市、賀茂郡東伊豆町" },
+    { id: "ng_izutaiyo", name: "伊豆太陽サービス", prefs: ["静岡"], area: "静岡県賀茂郡河津町" },
+    { id: "ng_itoantenna", name: "伊東アンテナ協会", prefs: ["静岡"], area: "静岡県伊東市" },
+    { id: "ng_itotvclub", name: "伊東テレビクラブ", prefs: ["静岡"], area: "静岡県伊東市" },
+    { id: "ng_touzu", name: "東豆有線", prefs: ["静岡"], area: "静岡県伊東市" },
+    { id: "ng_higashiizu", name: "東伊豆有線テレビ放送", prefs: ["静岡"], area: "静岡県賀茂郡東伊豆町" },
+    { id: "ng_kobayashi", name: "小林テレビ設備", prefs: ["静岡"], area: "静岡県下田市、賀茂郡南伊豆町" },
+    { id: "ng_shimoda", name: "下田有線テレビ放送", prefs: ["静岡"], area: "静岡県下田市" },
+    { id: "ng_toko", name: "トコちゃんねる静岡", prefs: ["静岡"], area: "静岡県静岡市（葵区・駿河区・清水区）" },
+    { id: "ng_hamamatsu", name: "浜松ケーブルテレビ", prefs: ["静岡"], area: "静岡県浜松市（中央区・浜名区・天竜区）、袋井市、湖西市" },
+    { id: "ng_icc", name: "アイ・シー・シー", prefs: ["愛知"], area: "愛知県一宮市" },
+    { id: "ng_inazawa", name: "稲沢シーエーティーヴィ", prefs: ["愛知"], area: "愛知県稲沢市（旧稲沢市）" },
+    { id: "ng_cac", name: "CAC", prefs: ["愛知"], area: "愛知県半田市、知多郡阿久比町、武豊町" },
+    { id: "ng_toyohashi", name: "豊橋ケーブルネットワーク", prefs: ["愛知"], area: "愛知県豊橋市、新城市、田原市" },
+    { id: "ng_nagoyacv", name: "名古屋ケーブルビジョン", prefs: ["愛知", "岐阜"], area: "愛知県名古屋市（千種区・守山区・緑区・天白区を除く）、春日井市、清須市、あま市、海部郡大治町／岐阜県加茂郡七宗町" },
+    { id: "ng_mikawawan", name: "三河湾ネットワーク", prefs: ["愛知"], area: "愛知県蒲郡市、額田郡幸田町、西尾市" },
+    { id: "ng_matsusaka", name: "松阪ケーブルテレビ・ステーション", prefs: ["三重"], area: "三重県松阪市（旧嬉野町を除く）、志摩市（旧磯部町を除く）、多気町、明和町、大台町、大紀町" },
+    { id: "ng_luckytown", name: "ラッキータウンテレビ", prefs: ["三重"], area: "三重県桑名市（旧桑名市）、員弁郡東員町" },
+    /* --- 北陸 --- */
+    { id: "ng_kaminei", name: "上婦負ケーブルテレビ", prefs: ["富山"], area: "富山県富山市（旧婦中町・旧山田村）" },
+    { id: "ng_nogoshi", name: "能越ケーブルネット", prefs: ["富山", "石川"], area: "富山県氷見市／石川県珠洲市、羽咋市、穴水町" },
+    { id: "ng_kanazawa", name: "金沢ケーブル", prefs: ["石川"], area: "石川県金沢市、野々市市、川北町、津幡町、内灘町、志賀町、宝達志水町" },
+    { id: "ng_kaga", name: "加賀ケーブル", prefs: ["石川"], area: "石川県加賀市" },
+    { id: "ng_fukui", name: "福井ケーブルテレビ", prefs: ["福井"], area: "福井県福井市、池田町、永平寺町、南越前町" },
+    { id: "ng_reinan", name: "嶺南ケーブルネットワーク", prefs: ["福井"], area: "福井県敦賀市" },
+    { id: "ng_wakasaobama", name: "ケーブルテレビ若狭小浜", prefs: ["福井"], area: "福井県小浜市" },
+    { id: "ng_ono", name: "大野ケーブルテレビ", prefs: ["福井"], area: "福井県大野市、勝山市" },
+    { id: "ng_koshino", name: "こしの都ネットワーク", prefs: ["福井"], area: "福井県鯖江市、越前市、越前町" },
+    { id: "ng_sakai", name: "さかいケーブルテレビ", prefs: ["福井"], area: "福井県あわら市、坂井市" },
+    { id: "ng_mikata", name: "美方ケーブルネットワーク", prefs: ["福井", "滋賀"], area: "福井県美浜町、若狭町／滋賀県高島市今津町杉山地区" },
+    /* --- 信越（長野・新潟） --- */
+    { id: "ng_inc", name: "インフォメーション・ネットワーク・コミュニティ（INC）", prefs: ["長野"], area: "長野県長野市、中野市の各一部" },
+    { id: "ng_shinshu", name: "信州ケーブルテレビジョン", prefs: ["長野"], area: "長野県千曲市" },
+    { id: "ng_hokushin", name: "テレビ北信ケーブルビジョン", prefs: ["長野"], area: "長野県中野市、山ノ内町の各一部" },
+    { id: "ng_kyowa", name: "協和ビジョン", prefs: ["長野"], area: "長野県軽井沢町の一部" },
+    { id: "ng_komoro", name: "コミュニティテレビこもろ", prefs: ["長野"], area: "長野県小諸市の一部" },
+    { id: "ng_saku", name: "佐久ケーブルテレビ", prefs: ["長野"], area: "長野県佐久市の一部" },
+    { id: "ng_tateshina", name: "蓼科ケーブルビジョン", prefs: ["長野"], area: "長野県立科町、佐久市の一部" },
+    { id: "ng_nishikaruizawa", name: "西軽井沢ケーブルテレビ", prefs: ["長野"], area: "長野県御代田町の一部" },
+    { id: "ng_maruko", name: "丸子テレビ放送", prefs: ["長野"], area: "長野県上田市の一部" },
+    { id: "ng_azumino", name: "あづみ野テレビ", prefs: ["長野"], area: "長野県安曇野市、池田町、松川村、松本市の一部" },
+    { id: "ng_tvmatsumoto", name: "テレビ松本ケーブルビジョン", prefs: ["長野"], area: "長野県松本市、塩尻市、安曇野市の各一部、山形村、朝日村、筑北村" },
+    { id: "ng_cvn", name: "cvn（旧 飯田ケーブルテレビ）", prefs: ["長野"], area: "長野県飯田市、高森町、天龍村、喬木村、豊丘村、大鹿村、泰阜村、松川町・阿南町・阿智村の各一部" },
+    { id: "ng_inatv", name: "伊那ケーブルテレビジョン", prefs: ["長野"], area: "長野県伊那市、箕輪町、南箕輪村" },
+    { id: "ng_channelu", name: "チャンネル・ユー", prefs: ["長野"], area: "長野県松川町" },
+    { id: "ng_ycom", name: "ワイコム", prefs: ["長野"], area: "長野県小谷村" },
+    { id: "ng_sado", name: "佐渡テレビジョン", prefs: ["新潟"], area: "新潟県佐渡市の一部" }
+  ];
+  CATV_NG_LINES.forEach(function (c) {
+    c.catv = true;
+    c.catvNg = true;   // タイプCの提携先ではない（転用できない）
+    c.cancel = c.name + "はドコモ光 タイプCの提携先ではありません（" + CATV_NG_ASOF + "時点）。"
+      + "転用（タイプC）ができないため、ドコモ光は新規のお申し込み（工事が必要）になり、"
+      + "いまのインターネットは別途ご解約が必要です。解約金・工事費の残り・撤去費が出る場合があります"
+      + "（テレビ・お電話を残すかどうかも、あわせてご確認ください）";
+  });
+  var CUR_LINES = [
+    { id: "", name: "（未ヒアリング）" },
+    { id: "none", name: "利用なし（固定回線なし）" },
+    { id: "eo", name: "eo光", tel: "0120-919-151", telNote: "eoサポートダイヤル" },
+    { id: "jcom", name: "J:COM NET", tel: "0120-999-000", telNote: "J:COMカスタマーセンター" },
+  ].concat(CATV_LINES, CATV_NG_LINES, [
+    /* jgTel は事業者変更承諾番号の専用窓口。解約の窓口（tel）とは別 */
+    { id: "sbhikari", name: "ソフトバンク光", tel: "0800-111-2009", telNote: "10:00〜19:00・通話無料",
+      jgTel: "0800-111-6710", jgTelNote: "事業者変更承諾番号 専用窓口" },
+    { id: "biglobe", name: "BIGLOBE光", tel: "0120-86-0962", telNote: "ビッグローブ カスタマーサポート・ガイダンスは ②→⑤ と入力" },
+    { id: "ocn", name: "OCN光", tel: "0120-506-506", telNote: "OCNカスタマーズフロント・日祝は休み" },
+    { id: "collabo", name: "その他コラボ光（So-net光・@nifty光 など）" },
+    { id: "nuro", name: "NURO光" },
+    { id: "flets", name: "フレッツ光（NTT東・西）", tel: "0120-116-116", telNote: "NTT東西・9:00〜17:00" },
+    /* auひかり・楽天ひかりは、ふだんのご来店ではほとんど出てこないため
+     * 既定では選択肢に出さない（2026-09-04 店舗の指定）。
+     * 扱う店舗には、契約の器の features で curLinesShow: ["auhikari", "rakuten"]
+     * を入れて出す。すでに選んである見積もりでは、設定に関係なく残る。 */
+    { id: "auhikari", name: "auひかり", optIn: true,
+      cancel: "解約はご契約のプロバイダ（So-net・BIGLOBE・@niftyなど）の窓口へ" },
+    { id: "rakuten", name: "楽天ひかり", optIn: true },
+    /* コミュファ光（中部テレコミュニケーション・中部電力系）。フレッツ光の
+     * コラボではない独自回線なので、ドコモ光へは転用・事業者変更ができず
+     * 「新規」扱い（工事が必要）。解約金・工事費の残債にも注意。
+     * 提供エリアは愛知・岐阜・三重・静岡・長野（一部を除く）。窓口とガイダンスは
+     * 公式（help.commufa.jp コンタクトセンターの営業時間と連絡先）で確認・2026-09-03。
+     * 既定では出さない。店舗ごとに契約の器の features で出す（下の curLineOptInOn）。 */
+    { id: "commufa", name: "コミュファ光", optIn: true,
+      prefs: ["愛知", "岐阜", "三重", "静岡", "長野"],
+      tel: "0120-218-919",
+      telNote: "コミュファ コンタクトセンター・10:00〜18:00 年中無休。回線解約は固定電話から 1-3／携帯から 2-1-3",
+      cancel: "コミュファ光は独自回線のため、ドコモ光へは転用・事業者変更ができません（新規のお申し込み・工事が必要です）。解約金・工事費の残債が出る場合があります" },
+    { id: "sbair", name: "SoftBank Air", cancel: "解約はSoftBankサポートセンターへ（My SoftBankでも手続きを確認できます）" },
+    { id: "homerouter", name: "他社ホームルーター・モバイルWi-Fi" },
+    /* 「ケーブルテレビのネット」は 1.140.2 で選択肢から外した（タイプCの提携会社を
+     * 会社名で選ぶようにしたため）。過去の見積もりで選んである場合だけ表示に残す。 */
+    { id: "cable", name: "ケーブルテレビのネット", retired: true },
+    { id: "other", name: "その他" }
+  ]);
+  var CUR_PHONE_NAMES = { set: "回線とセット（あり）", analog: "アナログ電話（NTT加入電話）", none: "なし" };
+  /* 店舗ごとの表示調整（契約の器の features に販売側が書く）:
+   *   curLinesHide: ["jcom", "cable", ...]  … その店舗では出さない現在回線
+   *   curLinesShow: ["commufa", "auhikari", "rakuten"]              … 既定では出さない回線を出す（optIn の回線）
+   *   curLinePrefs: ["愛知", "岐阜"]         … その県で提供している回線をまとめて出す
+   *   curLineNames: { ztv: "ZTV" }           … 表示名の置き換え
+   *   catvShow / catvPrefs                   … タイプCの提携ケーブルテレビ会社を出す
+   *   catvNgShow / catvNgPrefs               … タイプC「対象外」のケーブルテレビ会社を出す
+   * 例: 特定の代理店向けデモでは、扱わない回線を隠して名前を短くする。 */
+  function featVal(key) { return typeof window.KQ_FEATVAL === "function" ? window.KQ_FEATVAL(key) : undefined; }
+  function curLineById(id) {
+    return CUR_LINES.filter(function (c) { return c.id === id; })[0] || null;
+  }
+  /* タイプCの機能スイッチ（切の店舗ではケーブルテレビ会社を一切出さない） */
+  function typecFeatOn() {
+    return typeof window.KQ_FEAT !== "function" || window.KQ_FEAT("typec");
+  }
+  /* その店舗で出すケーブルテレビ会社か（catvShow のID、または catvPrefs の県で一致）。
+   * 社内版（阪南・常盤東）は契約の器そのものが無く設定できないため、
+   * 従来どおり ZTV だけは出す（この2店舗はZTVエリアのため）。 */
+  function catvOn(c) {
+    if (window.KEITAI_INTERNAL && c.id === "ztv") return true;
+    var show = featVal("catvShow");
+    if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
+    var prefs = featVal("catvPrefs");
+    return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
+  /* 既定では出さない回線（コミュファ光など）を、その店舗で出すか。
+   * curLinesShow のID、または curLinePrefs の県で一致したときだけ出す。
+   * 菱和テレコムの東海エリア向けに用意（2026-09-03）。 */
+  /* タイプCの提携先ではないケーブルテレビ会社を、その店舗で出すか。
+   * 提携先の一覧（catvShow / catvPrefs）とは別の設定にしてある。
+   * 「対象外の会社まで選択肢に出す」かどうかは店舗の好みが分かれるため。 */
+  function catvNgOn(c) {
+    var show = featVal("catvNgShow");
+    if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
+    var prefs = featVal("catvNgPrefs");
+    return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
+  function curLineOptInOn(c) {
+    var show = featVal("curLinesShow");
+    if (Array.isArray(show) && show.indexOf(c.id) >= 0) return true;
+    var prefs = featVal("curLinePrefs");
+    return Array.isArray(prefs) && (c.prefs || []).some(function (p) { return prefs.indexOf(p) >= 0; });
+  }
+  /* いま選んでいるケーブルテレビ会社のタイプCが、マンションでも使えるか。
+   * 会社が選ばれていない・未確認のときは false（戸建て扱い）にして、
+   * 安いほうの金額をうっかり出さないようにする。 */
+  /* マンションのご希望を、戸建てへ直したかどうか（直前の applyDefaults の結果）。
+   * 画面の注意書きを出すために使う。保存には残さない。 */
+  var typecMsBlocked = false;
+  function typecMansionOk() {
+    var cd = curLineById(state && state.curLine);
+    return !!(cd && cd.mansion === true);
+  }
+  function curLineHidden(id) {
+    var h = featVal("curLinesHide");
+    if (!!id && Array.isArray(h) && h.indexOf(id) >= 0) return true;
+    var c = curLineById(id);
+    if (c && c.retired) return true;   // 選択肢から外した項目（選んである見積もりだけ残す）
+    if (c && c.optIn) return !curLineOptInOn(c);   // 既定では出さない回線
+    if (!c || !c.catv) return false;
+    /* タイプC対象外の会社は、タイプCを扱わない店舗でも役に立つ
+     * （「この会社からは転用できない」というご案内は同じため）ので、
+     * タイプCの機能スイッチとは切り離して、専用の設定だけで出す。 */
+    if (c.catvNg) return !catvNgOn(c);
+    if (!typecFeatOn()) return true;   // タイプCを切っている店舗
+    return !catvOn(c);                 // ケーブルテレビ会社は既定で出さない（ZTVを含む）
+  }
+  function curLineName(c) {
+    var m = featVal("curLineNames");
+    return (m && typeof m === "object" && m[c.id]) ? String(m[c.id]) : c.name;
+  }
+  /* ヒアリング内容を1行にまとめる（引き継ぎシート用） */
+  function curHearingText() {
+    if (!state) return "";
+    var a2 = [];
+    var clD = curLineDef();
+    if (state.curLine) a2.push("ネット: " + curLineLabel() + (clD && clD.catvNg ? "（タイプC対象外）" : ""));
+    if (state.curPhone) a2.push("電話: " + (CUR_PHONE_NAMES[state.curPhone] || state.curPhone));
+    if (state.curTv) {
+      var tv = state.curTv === "yes" ? "あり" : "なし（アンテナ）";
+      if (state.curTv === "yes") {
+        var b2 = [];
+        if (state.curTvDigi) b2.push("地デジ");
+        if (state.curTvBs) b2.push("BS");
+        if (state.curTvCs) b2.push("CS");
+        if (b2.length) tv += "（" + b2.join("・") + "）";
+      }
+      a2.push("テレビ: " + tv);
+    }
+    if (state.curTvKeep) a2.push("J:COMのテレビを残す（解約はネットのみ）");
+    return a2.join(" ／ ");
+  }
+  function curLineDef() {
+    if (!state.curLine) return null;
+    return CUR_LINES.filter(function (c) { return c.id === state.curLine; })[0] || null;
+  }
+  function curLineLabel() {
+    var d = curLineDef();
+    if (!d) return "";
+    if (d.id === "other") return state.curLineOther || "その他";
+    /* その他コラボ光は、書いてもらった会社名を括弧で添える
+     * （「その他コラボ光（○○光）」の形。書いていなければそのまま） */
+    if (d.id === "collabo" && String(state.curLineOther || "").trim()) {
+      return curLineName(d) + "（" + String(state.curLineOther).trim() + "）";
+    }
+    return curLineName(d);
+  }
+
+  /* ---------- 開通までの流れ（見積書のお客様説明用） ----------
+   * 商材と申込区分で工程が変わる。日数は「目安」として書く
+   * （工事の混み具合・地域で前後するため、断定しない）。 */
+  /* 流れの中身。見積書の下の枠と、A4・1枚もの（flowSheetHtml）で共用する */
+  function flowData(r) {
+    var steps = [];
+    function step(t, d, icon, when) { steps.push({ t: t, d: d || "", icon: icon || "", when: when || "", notes: [] }); }
+    /* 注意事項は末尾にまとめず、関係する工程の中に書く（店舗の指定・2026-08-09）。
+     * match は工程名の一部。見つからないときは最後の工程に付ける。 */
+    function noteTo(match, text) {
+      for (var i = steps.length - 1; i >= 0; i--) {
+        if (steps[i].t.indexOf(match) >= 0) { steps[i].notes.push(text); return; }
+      }
+      if (steps.length) steps[steps.length - 1].notes.push(text);
+    }
+    if (state.product === "home5g") {
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("本体のお受け取り", "home 5G の本体をお受け取りください", "box", "本日");
+      step("コンセントに挿して利用開始", "工事は不要です。電源を入れれば、その日からインターネットが使えます", "plug", "本日から");
+    } else if (PRODUCTS[state.product].typec) {
+      if (state.applyType === "kirikae" && (state.typecLine || "hikari") === "coax") {
+        /* いまが同軸ケーブルの場合は、光への切り替え工事が入る（工事はケーブルテレビ会社） */
+        step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切り替え）", "shop", "本日");
+        step("光への切り替え工事（立ち会いをお願いします）", "いまの同軸ケーブルから光回線へ切り替える工事です。ケーブルテレビ会社が行います（日程・工事料は同社からのご案内をご確認ください）", "tools", "後日");
+        step("ご利用開始", "切り替え前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "工事の当日から");
+        noteTo("ご利用開始", "お電話・テレビはケーブルテレビのご契約のまま続きます（ドコモとケーブルテレビで請求が分かれます）");
+      } else if (state.applyType === "kirikae") {
+        step("お申込み", "本日、店頭でお手続きが完了しました（ケーブルテレビのネットからの切替）", "shop", "本日");
+        step("回線切替日", "工事や設定変更はありません。いまお使いの機器のままです", "router", "切替日");
+        step("ご利用開始", "切替前のケーブルテレビのネット料金は、日割で精算・返金されます", "start", "切替日から");
+        noteTo("ご利用開始", "お電話・テレビはケーブルテレビのご契約のまま続きます（ドコモとケーブルテレビで請求が分かれます）");
+      } else {
+        step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+        step("宅内工事（立ち会いをお願いします）", "ケーブルテレビ会社がお部屋まで光ファイバーの配線工事をします", "tools", "後日");
+        step("ご利用開始", "", "start", "工事の当日から");
+        noteTo("ご利用開始", "お電話・テレビはケーブルテレビのご契約のまま続きます（ドコモとケーブルテレビで請求が分かれます）");
+      }
+    } else if (state.applyType === "shinki") {
+      /* 公式の「新規ご契約までの流れ」STEP1〜5 に合わせた5工程
+       * （出典: docomo.ne.jp ドコモ光お申込みページ・2026-08-07確認） */
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      step("必要な書類のお受け取り", "開通のご案内が届きます。あわせて後日、工事日を決めるお電話がありますので、ご都合のよい日をお伝えください", "doc", "7〜10日後");
+      // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
+      if (provider() === "@nifty" && state.visitSupport) {
+        step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
+      }
+      /* 工事の前にルーターを手元にそろえておく工程。
+       * レンタルまたは購入があるときだけ出す（お手持ちの持ち込みのときは出さない） */
+      var rentalS = (state.product === "hikari1g" && state.routerRental !== "nashi")
+        || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
+      if (rentalS) {
+        step("ルーターのお受け取り", "レンタルの無線ルーターが、プロバイダから郵送で届きます。工事の日まで大切に保管してください", "box", "工事日まで");
+      } else if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
+        step("ルーターのご準備", "ご購入の10ギガ対応ルーターを、工事の日までにご用意ください", "box", "工事日まで");
+      }
+      step("開通工事（立ち会いをお願いします）", "お申込みから2週間〜1か月程度が目安です（時期・地域により前後します）", "tools", "2週間〜1か月後");
+      step("ルーターなどの接続・設定", "ルーターをつなぐと、インターネットが使えるようになります", "router", "工事の当日");
+      step("ご利用開始", "", "start", "工事の当日から");
+      if (r.tvOn) noteTo("開通工事", "テレビオプションの接続工事は、開通工事と同じ日に行います");
+      if (state.product === "hikari10g" && state.router10g && num(state.router10gPrice) > 0) {
+        noteTo("ルーターなど", "ご購入の10ギガ対応ルーターは、開通後に接続・設定してください");
+      }
+    } else {
+      /* 事業者変更は「事業者変更承諾番号」が要る。
+       * ドコモ光側はダミーの番号で先に登録できる（お客様には開示しない）ため、
+       * 「お申込み → 承諾番号の取得 → ドコモ光サービスセンターへご連絡」で回せる。
+       * 番号の取り方は事業者で違うので、そこだけ分ける（店舗の指定・2026-08-09）。 */
+      var jgLine = curLineDef();
+      var jg = state.applyType === "jigyosha" ? ((jgLine && jgLine.id) || "") : "";
+      step("お申込み", "本日、店頭でお手続きが完了しました", "shop", "本日");
+      if (jg) {
+        if (jg === "ocn") {
+          // OCNはその場でお電話して承諾番号を受け取れる
+          step("事業者変更承諾番号の取得（OCNへお電話）",
+            "店頭でOCNへお電話し、事業者変更承諾番号をお受け取りいただきます", "phone", "本日・店頭");
+          noteTo("承諾番号の取得", "OCNのご連絡先: 0120-506-506（OCNカスタマーズフロント）");
+          noteTo("承諾番号の取得", "**日曜・祝日はお電話がつながりません。**その場合は後日、お客様からお電話いただき、承諾番号を店舗へお知らせください");
+        } else if (jg === "biglobe") {
+          /* BIGLOBEは「折り返しのお電話の日程を予約 → その日のお電話で承諾番号の
+           * 発行手続き → 後日お手元に届く」の順。 */
+          step("BIGLOBEからのお電話のご予約",
+            "店頭でお時間があれば、BIGLOBEへお電話し、BIGLOBEから折り返しお電話がかかってくる日程をこの場でお取りします", "phone", "本日・店頭");
+          noteTo("ご予約", "BIGLOBEのご連絡先: 0120-86-0962（ビッグローブ カスタマーサポート・ガイダンスは ②→⑤ と入力）");
+          noteTo("ご予約", "店頭でお時間がないときは、後日お客様からお電話いただいてご予約ください");
+          step("BIGLOBEからのお電話で承諾番号のお手続き",
+            "ご予約の日にBIGLOBEからお電話があります。そこで事業者変更承諾番号の発行手続きをしていただきます", "phone", "ご予約の日");
+          noteTo("承諾番号のお手続き", "承諾番号は、このお電話のあと**後日お手元に届きます**（その場では分かりません）");
+        } else {
+          step("事業者変更承諾番号の取得（いまのご契約先へお電話）",
+            "いまご契約の事業者へお電話し、事業者変更承諾番号をお受け取りください", "phone", "本日・店頭");
+          /* 承諾番号の専用窓口が分かっていればそちらを、無ければ契約先の窓口を出す */
+          var jgT = jgLine && (jgLine.jgTel || jgLine.tel);
+          var jgN = jgLine && (jgLine.jgTel ? jgLine.jgTelNote : jgLine.telNote);
+          noteTo("承諾番号の取得", jgT
+            ? (jgLine.jgTel ? "承諾番号のご連絡先: " : "いまのご契約先: ")
+              + jgLine.name + " " + jgT + (jgN ? "（" + jgN + "）" : "")
+            : "ご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください");
+        }
+        step("承諾番号をドコモ光サービスセンターへご連絡",
+          "承諾番号を受け取ったら、ドコモ光サービスセンターへお伝えいただくと切替日が確定します", "phone", "承諾番号のお受け取り後");
+        noteTo("ドコモ光サービスセンター", "ドコモ光サービスセンター: 0120-766-156（ドコモのケータイからは **15715**）");
+        noteTo("ドコモ光サービスセンター", "**承諾番号には有効期限があります。**受け取ったらお早めにご連絡ください");
+      }
+      step("必要な書類のお受け取り", "切替日のご案内が書類・SMSで届きます", "doc", "数日〜1週間後");
+      // 訪問設定サポート希望（@nifty）: 書類が届いたらフォローコールで日程を決める
+      if (provider() === "@nifty" && state.visitSupport) {
+        step("訪問サポートの日程を決める", "@niftyのフォローコール（電話）で、訪問設定サポートの日程を決めます", "phone", "書類の到着後");
+      }
+      // レンタルがあるときは、切替日の前にルーターを受け取っておく工程を入れる
+      var rentalT = (state.product === "hikari1g" && state.routerRental !== "nashi")
+        || !!(state.opts || {}).ahamoRouter || !!(state.opts || {}).ahamoRouter10g;
+      if (rentalT) {
+        step("ルーターのお受け取り", "レンタルの無線ルーターが、プロバイダから郵送で届きます。切替日まで大切に保管してください", "box", "切替日まで");
+      }
+      step("切替日に自動で切替", "工事・立ち会いはありません。お申込みから1〜2週間程度が目安です", "switchi", "1〜2週間後");
+      step("ルーターなどの設定の確認", "つながらないときは、ルーターの設定をご確認ください", "router", "切替日の当日");
+      step("ご利用開始", "", "start", "切替日の当日から");
+    }
+    /* レンタルルーターの到着案内は、新規・転用・事業者変更とも
+     * 「ルーターのお受け取り」の工程として流れに入れたので、注記は無し */
+    if (provider() === "@nifty") {
+      if (state.visitSupport) {
+        // 訪問設定サポートを希望した場合は、設定の工程に「訪問が来る」ことを書く
+        noteTo("ルーターなど", "@niftyの訪問設定サポートのスタッフがご自宅へ伺い、"
+          + "ルーターの接続・設定を行います（日程は事前のお電話で調整します）");
+      } else {
+        noteTo("ルーターなど", "設定でお困りのときは、@niftyのフォローコール（電話サポート）でご相談いただけます");
+      }
+    }
+    // いまの回線の解約。転用・事業者変更は解約が不要なので、案内だけ変える
+    var cl = curLineDef();
+    if (cl && cl.id !== "none") {
+      if (state.product === "home5g" || state.applyType === "shinki") {
+        var jcKeep = cl.id === "jcom" && state.curTvKeep;
+        step("いまの回線（" + curLineLabel() + "）の解約" + (jcKeep ? "**（ネットのみ）**" : ""),
+          "開通・利用開始を確認してから、解約のお手続きをしてください", "phone", "開通の確認後");
+        /* お店が手書きした解約のご連絡先があれば、それを最優先で出す
+         * （その他コラボ光は会社が多く、一覧に持てないため・2026-09-04） */
+        var handTel = String(state.curLineTel || "").trim();
+        noteTo("の解約", handTel
+          ? "解約のご連絡先: " + curLineLabel() + " " + handTel
+          : cl.tel
+            ? "解約のご連絡先: " + curLineName(cl) + " " + cl.tel + (cl.telNote ? "（" + cl.telNote + "）" : "")
+            : (cl.cancel || "解約のご連絡先は、ご契約の書面・公式サイト・マイページでご確認ください"));
+        /* J:COMはテレビ・お電話を残したままネットだけ乗り換えるご案内がある。
+         * まとめて解約されると事故になるため、連絡時の言い方を必ず載せる。 */
+        if (cl.id === "jcom") {
+          noteTo("の解約", "J:COMへのご連絡では、**解約するのはインターネットのみ**と必ずお伝えください。まとめて解約されると、テレビ・お電話も止まってしまいます");
+          if (jcKeep) {
+            noteTo("の解約", "**テレビはJ:COMに残します。**お電話もJ:COMに残されたほうが、お客様のご負担は安くなります");
+          }
+        }
+        noteTo("の解約", "開通前に解約すると、インターネットの使えない期間ができます。違約金・工事費の残りの有無はご契約内容をご確認ください");
+      } else if (state.applyType === "tenyo") {
+        noteTo("切替", "転用では、フレッツ光の回線契約はそのまま移行するため解約は不要です。プロバイダ（OCN・So-netなど）は別途解約が必要な場合があります");
+      } else if (state.applyType === "jigyosha") {
+        noteTo("切替", "事業者変更では、いまの光コラボ（" + curLineLabel() + "）の解約手続きは不要です（自動で切り替わります）。メールアドレスなどのオプションだけ残る場合があります");
+        /* ソフトバンク光からの事業者変更は、レンタル機器（光BBユニットなど）の
+         * 返却が必要。返却先は公式ページで確認した住所（2026-08確認）。 */
+        if (cl.id === "sbhikari") {
+          step("レンタル機器（光BBユニットなど）の返却",
+            "ソフトバンクからのレンタル機器がある場合は、切替を確認してから梱包して返却してください（送料はお客様のご負担・利用停止月の翌月20日まで）",
+            "box", "切替の確認後");
+          noteTo("の返却", "返却先: 〒272-0001 千葉県市川市二俣678-55 "
+            + "ESR市川ディストリビューションセンター 3階 北棟N8 ソフトバンク返品センター宛");
+        }
+      }
+    }
+    /* ドコモ光 乗り換え特典（他社の解約金・撤去工事費・端末残債をdポイントで還元）。
+     * 対象は「事業者変更」と「他社回線からの新規」。フレッツ光からの転用は対象外。
+     * 解約金の請求書などが要るため、解約の工程よりあとに置く。
+     * （出典: ドコモ光 乗り換え特典の案内・2026-08確認） */
+    var otherLine = cl && cl.id !== "none" && cl.id !== "flets";
+    var needCancel = otherLine && (state.product === "home5g" || state.applyType === "shinki");
+    if (isHikari() && (state.applyType === "jigyosha" || (state.applyType === "shinki" && otherLine))) {
+      step("ドコモ光 乗り換え特典のお申込み",
+        "他社の解約金・撤去工事費・端末の残債が、dポイント（期間・用途限定）で還元される特典です。お客様ご自身でのお申込みが必要です",
+        "doc", needCancel ? "解約金のご請求後" : "開通の確認後");
+      noteTo("乗り換え特典", "お申込みには、他社の解約金などが分かる書面（請求書・利用明細など）が必要です。捨てずに保管してください");
+      noteTo("乗り換え特典", "利用開始月の4か月後の月末時点でドコモ光をご契約中であることなどの条件があります。金額の上限・お申込みの締切は公式の案内をご確認ください");
+    }
+    // 店舗独自特典があるときは、来店してのお申込みが必要
+    if (num(state.storeCash) > 0 || num(state.storePt) > 0) {
+      step("店舗特典のお申込み（ご来店）",
+        "開通日から7日以降に、当店へご来店のうえ特典のお申し込みをお願いします",
+        "shop", "開通の7日後以降");
+      noteTo("店舗特典", "ご来店の際は、ご契約者さまの本人確認書類をお持ちください");
+    }
+    return { steps: steps };
+  }
+  // 見積書の下に出す小さい枠
+  /* 見積書の下に出していた小さい枠。いまは使っていない（別紙の1枚ものに一本化）。
+   * また見積書に入れたくなったら、hikariSheetHtml の末尾で呼び出す。 */
+  function flowHtml(r) {
+    var fd = flowData(r);
+    var fh = '<div class="ie-flow"><h3>開通までの流れ</h3><ol>'
+      + fd.steps.map(function (st2) {
+          return "<li>" + (st2.when ? "<b>【" + esc(st2.when) + "】</b>" : "") + noteHtml(st2.t) + (st2.d ? "。" + esc(st2.d) : "")
+            + (st2.notes.length ? "<br>" + st2.notes.map(function (n2) { return "※ " + noteHtml(n2); }).join("<br>") : "")
+            + "</li>";
+        }).join("") + "</ol>";
+    return fh + "</div>";
+  }
+  /* A4・1枚の「開通までの流れ」。お客様へお渡しする説明用の紙。
+   * 公式の流れ図と同じく、アイコン＋STEP＋赤い▼の縦並び。
+   * 右側に「予定日」の書き込み欄を付ける（画面ではタップして入力もできる） */
+  var FLOW_ICONS = {
+    shop: '<path d="M4 9.5l1.6-4.5h12.8L20 9.5v1.3a2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0z" fill="#2a6df4"/><path d="M5.8 13.2V19h12.4v-5.8" fill="none" stroke="#38507a" stroke-width="1.8"/><rect x="10.2" y="14.6" width="3.6" height="4.4" fill="#38507a"/>',
+    doc: '<rect x="3.5" y="8" width="14" height="11" rx="1.2" fill="#f5cf87"/><path d="M3.5 9l7 4.6L17.5 9" fill="none" stroke="#d3a94f" stroke-width="1.3"/><rect x="11" y="3.5" width="9.5" height="11.5" rx="1" fill="#eaf3ff" stroke="#2a6df4" stroke-width="1.2"/><path d="M13 7h5.5M13 9.4h5.5M13 11.8h3.8" stroke="#2a6df4" stroke-width="1.1"/>',
+    tools: '<path d="M5.2 18.8l6.8-6.8" stroke="#38507a" stroke-width="2.6" stroke-linecap="round"/><path d="M11.6 8.9a4.3 4.3 0 0 1 5.5-5.2l-2.3 2.3 1 2.5 2.5 1 2.3-2.3a4.3 4.3 0 0 1-5.2 5.5z" fill="#2a6df4"/><path d="M14.6 14.6l4.4 4.4" stroke="#2a6df4" stroke-width="2.6" stroke-linecap="round"/>',
+    router: '<rect x="8.4" y="9.5" width="7.2" height="10.5" rx="1" fill="#38507a"/><circle cx="12" cy="13" r="1" fill="#fff"/><path d="M12 7.2V4.4M8.5 6.4a5.2 5.2 0 0 1 7 0" fill="none" stroke="#2a6df4" stroke-width="1.7" stroke-linecap="round"/>',
+    start: '<rect x="4.8" y="5.2" width="14.4" height="9.4" rx="1" fill="#38507a"/><rect x="6.2" y="6.6" width="11.6" height="6.6" fill="#bfe0ff"/><path d="M3.4 17.4h17.2l-1.5 2.4H4.9z" fill="#38507a"/><path d="M20.6 4.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" fill="#e8a33d"/>',
+    switchi: '<path d="M6.5 8.5h9.5l-2.6-2.6M17.5 15.5H8l2.6 2.6" fill="none" stroke="#2a6df4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>',
+    box: '<path d="M4 8l8-4 8 4v9l-8 4-8-4z" fill="#dca763"/><path d="M4 8l8 4 8-4M12 12v9" fill="none" stroke="#aa7b40" stroke-width="1.4"/>',
+    plug: '<path d="M9 3.8v4.7M15 3.8v4.7" stroke="#38507a" stroke-width="2" stroke-linecap="round"/><path d="M7 8.5h10v3.2a5 5 0 0 1-4 4.9v3.6h-2v-3.6a5 5 0 0 1-4-4.9z" fill="#2a6df4"/>',
+    phone: '<path d="M4.6 8.4C4.6 6.5 7.9 5 12 5s7.4 1.5 7.4 3.4l-.8 2.4c-.2.6-.8 1-1.4.8l-2.4-.5c-.5-.1-.9-.5-1-1l-.2-1.3a9.8 9.8 0 0 0-3.2 0l-.2 1.3c-.1.5-.5.9-1 1l-2.4.5c-.6.2-1.2-.2-1.4-.8z" fill="#38507a"/><rect x="10.4" y="12.4" width="3.2" height="7" rx="1.3" fill="#2a6df4"/>'
+  };
+  /* 注意書きの中の電話番号は、お客様が見て分かるように本文と同じ大きさ＋太字＋赤にする
+   * （小さい字のままだと解約のご連絡先が読めない、という店頭の指摘・2026-08-09） */
+  function noteHtml(t) {
+    /* **…** で囲んだところは、電話番号と同じく本文と同じ大きさ＋太字＋赤にする
+     * （J:COMの「解約はインターネットのみ」のように、読み飛ばされると事故になる箇所） */
+    return esc(t)
+      .replace(/0\d{1,3}[-‐−ー]\d{2,4}[-‐−ー]\d{3,4}/g, function (m) {
+        return '<span class="f2-tel">' + m + "</span>";
+      })
+      .replace(/\*\*([^*]+)\*\*/g, function (m, in1) {
+        return '<span class="f2-em">' + in1 + "</span>";
+      });
+  }
+
+  function flowSheetHtml() {
+    var r = calc();
+    var fd = flowData(r);
+    /* 工程が多いときもA4・1枚に収める。
+     * 8工程以上は余白と文字を詰め（flow2-dense）、9工程以上はさらに全体を縮小する。 */
+    var nStep = fd.steps.length;
+    var dense = nStep >= 8 ? " flow2-dense" : "";
+    var zoom = nStep >= 9 ? Math.max(0.62, 8.4 / nStep) : 0;
+    var h = '<div class="flow-sheet flow2' + dense + '"'
+      + (zoom ? ' style="zoom:' + zoom.toFixed(2) + '"' : "") + ">";
+    h += '<div class="flow-target">' + esc(PRODUCTS[state.product].name + productLabel()) + "</div>";
+    h += '<div class="flow2-list">';
+    fd.steps.forEach(function (st2, i) {
+      if (i > 0) h += '<div class="f2-sep" aria-hidden="true">▼</div>';
+      h += '<div class="f2-row">'
+        + '<span class="f2-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (FLOW_ICONS[st2.icon] || "") + "</svg></span>"
+        + '<div class="f2-body">'
+        + '<span class="f2-step">STEP ' + (i + 1) + "</span>"
+        + (st2.when ? '<span class="f2-when">' + esc(st2.when) + "</span>" : "")
+        + '<div class="f2-t">' + noteHtml(st2.t) + "</div>"
+        + (st2.d ? '<div class="f2-d">' + esc(st2.d) + "</div>" : "")
+        + (st2.notes.length
+            ? '<ul class="f2-n">' + st2.notes.map(function (n2) { return "<li>" + noteHtml(n2) + "</li>"; }).join("") + "</ul>"
+            : "")
+        + "</div>"
+        + '<div class="f2-date"><span class="f2-date-label">予定日</span>'
+        + '<span class="f2-date-line" contenteditable="true" data-fi="' + i + '">'
+        + esc((state.flowDates || {})[i] || "") + "</span></div>"
+        + "</div>";
+    });
+    h += "</div>";
+    // 注意事項は各工程の中に書くため、末尾の「ご注意・ご案内」の枠は出さない
+    return h + "</div>";
+  }
+
+  function sheetHtml(setWariFromPhone) {
+    var r = calc();
+    var h = "";
+    var seg0 = r.segs[0], segLast = r.segs[r.segs.length - 1];
+      h += '<div class="big-monthly">';
+      // 通常時のお支払い目安: 最初の期間と最後の期間を1枠にまとめて表示
+      // 目安は最終期間（31か月目以降など）の金額のみ表示。途中の変化は「お支払いの推移」表で確認
+      h += '<div class="bm-box"><div class="bm-label">通常時お支払い目安' + (segLast.from > 1 ? "（" + segLabel(segLast) + "）" : "") + '</div><div class="bm-value">' + yen(segLast.monthly) + "</div>"
+        + (r.deviceNote ? '<div class="bm-sub">' + esc(r.deviceNote) + "</div>" : "") + "</div>";
+      // 光セット割の合計を加味した実質価格（入力があるときだけ表示）
+      var setWari = Math.max(0, num(setWariFromPhone));
+      if (setWari > 0) {
+        h += '<div class="bm-box"><div class="bm-label">実質お支払い目安' + (segLast.from > 1 ? "（" + segLabel(segLast) + "）" : "") + '</div><div class="bm-value">' + yen(Math.max(0, segLast.monthly - setWari)) + "</div>"
+          + '<div class="bm-sub">ご家族スマホの光セット割 −' + yen(setWari) + "/月 を差引いた金額</div></div>";
+      }
+      h += '<div class="bm-box"><div class="bm-label">初期費用</div><div class="bm-value">' + yen(r.initial) + "</div></div>";
+      // dポイント進呈特典のまとめ
+      var ptRows = [];
+      if (num(state.dpoint) > 0) {
+        ptRows.push({ name: "ドコモ光お申込みdポイント進呈（利用開始4か月後の月末・期間用途限定）", pt: Math.round(num(state.dpoint)) });
+      }
+      if (r.tvOn && isHikari() && state.applyType !== "tenyo" && state.tvPoint !== false) {
+        ptRows.push({ name: "テレビオプション同時申込特典（転用は除く）", pt: 5000 });
+      }
+      // home 5G→ドコモ光 移行特典: 1ギガ（2年定期）のみ・20,000pt（公式・利用開始4か月後の月）
+      if (state.product === "hikari1g" && state.h5Mig) {
+        ptRows.push({ name: "「home 5G」→「ドコモ光」移行特典（1ギガ 2年定期のみ・利用開始4か月後の月）", pt: 20000 });
+      }
+      // 店舗独自特典のポイントはdポイントなので進呈特典と合算して表示
+      if (num(state.storePt) > 0) {
+        ptRows.push({ name: "店舗独自特典ポイント進呈", pt: Math.round(num(state.storePt)) });
+      }
+      /* 充当しないときは、毎月もらえるポイントとしてこちらに載せる（月額からは引かない）。 */
+      if (!r.dcardApply && r.dcardPt > 0) {
+        ptRows.push({ name: "dカード" + (state.dcard === "gold" ? "GOLD" : "PLATINUM")
+          + "特典（利用料金の" + dcardRateText() + "%・毎月）", pt: r.dcardPt, monthly: true });
+      }
+      if (isHikari() && state.applyType === "shinki" && state.kojiFree && r.koji > 0) {
+        ptRows.push({ name: "新規工事料 実質0円特典（エントリー不要・利用開始月の7か月後の月から24か月間分割で進呈）", pt: r.koji });
+      }
+      var ptTotal = 0;
+      ptRows.forEach(function (x) { if (!x.monthly) ptTotal += x.pt; });
+      if (ptTotal > 0) {
+        h += '<div class="bm-box"><div class="bm-label">dポイント進呈 合計</div><div class="bm-value">' + ptTotal.toLocaleString("ja-JP") + 'pt</div><div class="bm-sub">進呈条件・時期は店頭でご確認ください</div></div>';
+      }
+      h += "</div>";
+
+      // お支払いの推移（横並び・1か月目は初期費用等を合算して表示）
+      var onsiteTotal = 0;
+      r.initRows.forEach(function (x) { if (x.name.indexOf("現地払い") >= 0) onsiteTotal += x.amount; });
+      var billInit = r.initial - onsiteTotal; // ドコモ請求される初期費用（事務手数料・登録料・一括工事費など）
+      if (r.segs.length > 1 || billInit > 0 || onsiteTotal > 0) {
+        var cols = [];
+        var subs1 = [];
+        if (billInit > 0) subs1.push("うち初期費用等 " + yen(billInit));
+        if (onsiteTotal > 0) subs1.push("ほかに現地徴収 " + yen(onsiteTotal));
+        cols.push({ label: "1か月目", amount: seg0.monthly + billInit, subs: subs1 });
+        r.segs.forEach(function (sg) {
+          var from = sg.from === 1 ? 2 : sg.from;
+          if (sg.to != null && sg.to < from) return; // 1か月目だけの区間は左の列で表現済み
+          var label = sg.to == null
+            ? from + "か月目以降"
+            : from + "〜" + sg.to + "か月目";
+          cols.push({ label: label, amount: sg.monthly, subs: [] });
+        });
+        h += "<h3>お支払いの推移" + (state.kojiFree && r.koji > 0 ? "（工事費相当ポイントを料金充当した場合）" : "") + "</h3>";
+        h += '<table class="trans-table"><tbody>';
+        h += "<tr>" + cols.map(function (c) { return "<th>" + c.label + "</th>"; }).join("") + "</tr>";
+        h += "<tr>" + cols.map(function (c) {
+          return '<td class="trans-amt">' + yen(c.amount)
+            + c.subs.map(function (s) { return '<div class="trans-sub">' + s + "</div>"; }).join("")
+            + "</td>";
+        }).join("") + "</tr>";
+        h += "</tbody></table>";
+      }
+
+      /* 月額内訳は8か月目を含む期間（例: 8〜24か月目）を基準に表示する。
+       * 工事費の分割（1〜24か月目）とポイント充当（8〜31か月目）が
+       * どちらも効いている代表的な期間のため。 */
+      var repSeg = seg0;
+      for (var si = 0; si < r.segs.length; si++) {
+        var sgi = r.segs[si];
+        if (sgi.from <= 8 && (sgi.to == null || 8 <= sgi.to)) { repSeg = sgi; break; }
+      }
+      var repLabeled = repSeg.to != null || repSeg.from > 1;
+      h += "<h3>月額内訳" + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + "</h3><table><tbody>";
+      // dカード還元充当の行は工事費相当ポイント充当の下（表の最後）に配置する
+      var dcardRow = null;
+      r.rows.forEach(function (x) {
+        if (x.name.indexOf("dカード") === 0) { dcardRow = x; return; }
+        h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+      });
+      r.timed.forEach(function (t) {
+        // この期間に有効な項目のみ表示（期間外の項目は推移表・注記で案内）
+        if (!(t.from <= repSeg.from && repSeg.from <= t.to)) return;
+        h += "<tr><td>" + esc(t.name) + '</td><td class="amt">' + yen(t.amount) + "</td></tr>";
+      });
+      if (dcardRow) {
+        h += "<tr><td>" + esc(dcardRow.name) + '</td><td class="amt">' + yen(dcardRow.amount) + "</td></tr>";
+      }
+      h += '<tr class="total"><td>月額合計' + (repLabeled ? "（" + segLabel(repSeg) + "）" : "") + '</td><td class="amt">' + yen(repSeg.monthly) + "</td></tr>";
+      h += "</tbody></table>";
+      if (state.kojiFree && r.koji > 0) {
+        h += '<p class="memo">※ 実質0円特典: 工事費相当のdポイント（総額' + r.koji.toLocaleString("ja-JP")
+          + 'pt・期間用途限定）が、ご利用開始月の<b>7か月後の月から24か月間</b>に分けて進呈されます。'
+          + '<b>エントリーのお手続きは不要です</b>（条件を満たせば自動で対象）。'
+          + '進呈されるdポイントの有効期限は、進呈月を含む6か月です。'
+          + '上の推移は進呈ポイントを毎月の料金に充当した場合の目安です。</p>';
+      }
+      if (r.tvRegRows && r.tvRegRows.some(function (x) { return x.name.indexOf("現地払い") >= 0; })) {
+        h += '<p class="memo">※ テレビ接続工事費は、工事当日にスカパーJSATへ直接お支払いください（ドコモからの請求には含まれません）。</p>';
+      }
+      if (is10g() && state.onecoin) {
+        h += '<p class="memo">※ ワンコインキャンペーン: 開通月〜6か月目まで基本料500円（開通当月は日割り）。1ギガからのプラン変更は対象外。</p>';
+      }
+
+      // 初期費用とdポイント進呈特典は左右2列に並べて縦の長さを圧縮（10Gなど項目が多くても1枚に収める）
+      var initHtml = "";
+      if (r.initRows.length) {
+        initHtml += "<h3>初期費用</h3><table><tbody>";
+        r.initRows.forEach(function (x) {
+          var label = esc(x.name) + (x.strike ? '　<s>' + yen(x.strike) + "</s>" : "");
+          initHtml += "<tr><td>" + label + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+        });
+        initHtml += '<tr class="total"><td>初期費用合計</td><td class="amt">' + yen(r.initial) + "</td></tr>";
+        initHtml += "</tbody></table>";
+      }
+      var ptHtml = "";
+      if (ptRows.length) {
+        ptHtml += "<h3>dポイント進呈特典</h3><table><tbody>";
+        ptRows.forEach(function (x) {
+          ptHtml += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + x.pt.toLocaleString("ja-JP") + (x.monthly ? "pt/月" : "pt") + "</td></tr>";
+        });
+        if (ptTotal > 0) {
+          ptHtml += '<tr class="total"><td>進呈ポイント合計（一括進呈分）</td><td class="amt">' + ptTotal.toLocaleString("ja-JP") + "pt</td></tr>";
+        }
+        ptHtml += "</tbody></table>";
+      }
+      if (initHtml && ptHtml) {
+        h += '<div class="sheet-cols"><div class="sheet-col">' + initHtml + '</div><div class="sheet-col">' + ptHtml + "</div></div>";
+      } else {
+        h += initHtml + ptHtml;
+      }
+      // 店舗独自特典（相対対応）: 現金キャッシュバックのみ別枠（ポイントはdポイント進呈特典に合算済み）
+      if (num(state.storeCash) > 0) {
+        h += "<h3>店舗独自特典</h3><table><tbody>";
+        h += '<tr><td>現金キャッシュバック</td><td class="amt">' + yen(num(state.storeCash)) + "</td></tr>";
+        h += "</tbody></table>";
+      }
+      if (state.dcard !== "none" && r.dcardPt > 0) {
+        h += '<p class="memo">※ dカード' + (state.dcard === "gold" ? "GOLD" : "PLATINUM") + '特典分（利用料金の' + dcardRateText() + '%）は'
+          + (r.dcardApply
+              ? '毎月のお支払いへ自動充当した金額です。'
+              : '毎月進呈されるポイントです（上の月額からは差し引いていません）。')
+          + '還元対象・上限はカード規約によります。</p>';
+      }
+
+      /* 今後の料金改定のお知らせ（5-2）。お客様のお手元に残る紙にも書く。
+       * 画面のヒントだけだと、12月に金額が変わったときに「聞いていない」になる。 */
+      reviseNotices().forEach(function (t) {
+        h += '<p class="memo">※【今後の料金改定のお知らせ】' + esc(t) + "</p>";
+      });
+
+      if (setWari > 0) {
+        h += '<p class="memo">※ ドコモ光／home 5G セット割 −' + yen(setWari)
+          + "/月 は、ご家族のスマホ料金から割引されます（この見積書の月額には含まれていません）。</p>";
+      } else {
+        h += '<p class="memo">※ ドコモ光／home 5G セット割は、ご家族のスマホ料金から割引されます（この見積書の月額には含まれていません）。</p>';
+      }
+      if (PRODUCTS[state.product].typec) {
+        h += '<p class="memo" style="color:#C62828;font-weight:700">※ お電話・テレビはケーブルテレビ（ZTV等）のご契約のまま残ります。ドコモからの請求とは別に、ケーブルテレビからの請求が続きます。</p>';
+        var keepRows = typecKeepRows();
+        if (keepRows.length) {
+          /* 内訳を入れていればテレビ・お電話ごとに、入れていなければ1行で出す。
+           * ドコモの月額とは別の請求なので、合計もここで別に出す（2026-09-04）。 */
+          h += "<h3>ケーブルテレビに残るお支払い（参考）</h3><table><tbody>";
+          keepRows.forEach(function (x) {
+            h += "<tr><td>" + esc(x.name) + '</td><td class="amt">' + yen(x.amount) + "</td></tr>";
+          });
+          if (keepRows.length > 1) {
+            h += '<tr><td><b>ケーブルテレビ会社への小計</b></td><td class="amt"><b>'
+              + yen(typecKeepTotal()) + "</b></td></tr>";
+          }
+          h += "</tbody></table>";
+          h += '<p class="memo">※ 上のドコモの月額には含まれていません。'
+            + "毎月のお支払いは <b>ドコモ " + yen(segLast.monthly) + " ＋ ケーブルテレビ "
+            + yen(typecKeepTotal()) + " ＝ <b>" + yen(segLast.monthly + typecKeepTotal())
+            + "</b></b> になります。"
+            + "ケーブルテレビ側の割引の有無・金額は、切替のお手続き時にご確認ください。</p>";
+        }
+      }
+    /* 開通までの流れは、見積書には入れない（店舗の指定・2026-08-09）。
+     * 必要なときは見積書タブの「開通までの流れ（1枚）」で別紙として印刷する。 */
+    return h;
+  }
+
+
+  /* ---------- 検算テスト用の窓口（tests/run-ienaka-tests.js から呼ぶ） ----------
+   * 代表パターンの入力を当てて calc() の結果を返す。呼び出し前の内容は戻す。
+   * 画面には触らないので、開いている見積もりは変わらない。 */
+  window.__IE_TEST__ = {
+    /* 改定日をまたいだ動きを見るために、きょうの日付を差し替える（4-17） */
+    setToday: function (ymd) { ieToday = String(ymd || ""); },
+    today: function () { return todayYmd(); },
+    platMax: function () { return platMax(); },
+    platRate: function () { return platRate(); },
+    reviseNotices: function () { return reviseNotices(); },
+    version: "integrated",
+    /* 画面に出る「現在のご利用回線」の注意書きを読む（2026-09-04）。
+     * run() は金額を出すだけで画面を描き直さないので、こちらを使う。
+     * 見終わったら元の内容に戻す。 */
+    hintFor: function (patch) {
+      var keep = JSON.parse(JSON.stringify(state));
+      function put(src) {
+        Object.keys(state).forEach(function (k) { delete state[k]; });
+        Object.keys(src).forEach(function (k) { state[k] = src[k]; });
+        applyDefaults(); syncForm(); render();
+      }
+      var d = defaultState();
+      Object.keys(patch || {}).forEach(function (k) { d[k] = patch[k]; });
+      put(d);
+      var el = document.getElementById("ieCurLineHint");
+      var sel = document.getElementById("ieCurLine");
+      /* 選択肢は「一覧に入っているか」で見る。
+       * option の hidden で見てはいけない（iPhone・iPad の Safari は
+       * それを無視するため、隠したつもりのものが実機では出る。
+       * 2026-09-06 に、この見方のせいで122件出ていたのを見逃していた）。 */
+      var opts = {};
+      var optNames = [];
+      if (sel) {
+        Array.prototype.forEach.call(sel.options, function (o) {
+          opts[o.value] = true;
+          optNames.push(o.textContent);
+        });
+      }
+      var out = { hidden: !el || el.hidden, text: el ? el.innerText : "",
+        options: opts, optionCount: optNames.length, optionNames: optNames };
+      put(keep);
+      return out;
+    },
+    run: function (patch) {
+      var keep = JSON.parse(JSON.stringify(state));
+      var d = defaultState();
+      Object.keys(state).forEach(function (k) { delete state[k]; });
+      Object.keys(d).forEach(function (k) { state[k] = d[k]; });
+      Object.keys(patch || {}).forEach(function (k) { state[k] = patch[k]; });
+      applyDefaults();
+      var r = calc();
+      var out = {
+        monthly: r.monthly,
+        initial: r.initial,
+        koji: r.koji,
+        kojiPt: r.kojiPt,
+        dcardAutoPt: r.dcardAutoPt,
+        dcardPt: r.dcardPt,
+        dcardEligible: r.dcardEligible,
+        catvKeep: typecKeepTotal(),
+        catvKeepRows: typecKeepRows().map(function (x) { return { name: x.name, amount: x.amount }; }),
+        dcardApply: !!r.dcardApply,
+        segs: r.segs.map(function (sg) { return { from: sg.from, to: sg.to == null ? "inf" : sg.to, monthly: sg.monthly }; }),
+        rows: r.rows.map(function (x) { return { name: x.name, amount: x.amount }; })
+      };
+      Object.keys(state).forEach(function (k) { delete state[k]; });
+      Object.keys(keep).forEach(function (k) { state[k] = keep[k]; });
+      applyDefaults();
+      return out;
+    }
+  };
+
+  /* ケータイ側から使うもの */
+  window.KQ_IENAKA = {
+    defaultState: defaultState,
+    attach: function (st, cb) {
+      state = st;
+      onChange = cb || function () {};
+    },
+    bind: bind,
+    syncForm: syncForm,
+    applyDefaults: applyDefaults,
+    calc: calc,
+    render: render,
+    segLabel: segLabel,
+    isOn: function () { return !!(state && state.enabled); },
+    label: function () { return state ? PRODUCTS[state.product].name + productLabel() : ""; },
+    /* プロバイダ無料無線ルーターのレンタル。1ギガだけの取り扱いなので、
+     * それ以外は空を返して引き継ぎシートにも出さない。 */
+    routerRental: function () {
+      if (!state || state.product !== "hikari1g") return "";
+      return state.routerRental === "nashi" ? "nashi" : "ari";
+    },
+    isHikari: isHikari,
+    // プロバイダを選べる商材か（ahamo光・タイプC・home 5G は選べない）
+    hasProvider: hasProvider,
+    /* 10ギガでお買い上げいただく無線ルーター。買っていないときは空を返す。
+     * これまでは申込ページのQRでしか出ていなかったので、QRの無いプロバイダ
+     * （GMOとくとくBB・andline）だと引き継ぎシートに1行も出なかった（2026-09-08）。 */
+    router10gText: function () {
+      if (!canBuy10gRouter() || !state.router10g || !(num(state.router10gPrice) > 0)) return "";
+      var n = router10gSplitN();
+      var t = n > 0
+        ? yen(Math.floor(num(state.router10gPrice) / n)) + "/月 × " + n + "回（総額 "
+          + yen(num(state.router10gPrice)) + "）"
+        : yen(num(state.router10gPrice)) + "（一括・初期費用）";
+      return t;
+    },
+    // いまの商材で実際に選ばれているオプションか（商材を変えると false になる）
+    optOn: optOn,
+    // 表に出してよいプロバイダ（選べない商材のときは空）
+    provider: provider,
+    sheetHtml: sheetHtml,
+    flowSheetHtml: flowSheetHtml,
+    // ヒアリングした現在の回線（未ヒアリングなら空）。引き継ぎシートと奪還比較の入口
+    curLine: function () { return state && state.curLine ? curLineLabel() : ""; },
+    curHearing: function () { return state ? curHearingText() : ""; },
+    // 入れ物を差し替えずに中身だけ初期化する（ケータイ側の store.ienaka を指したまま）
+    reset: function () {
+      var d = defaultState();
+      Object.keys(state).forEach(function (k) { delete state[k]; });
+      Object.keys(d).forEach(function (k) { state[k] = d[k]; });
+      applyDefaults(); syncForm(); recalc();
+    }
+  };
+})();

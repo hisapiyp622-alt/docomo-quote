@@ -11,7 +11,8 @@
  * ── できあがる形 ──────────────────────────────
  *   /                → 製品版ケータイ（keitai-app の中身をルートへ）
  *   /ienaka-app/     → 製品版イエナカ単体
- *   /demo/           → 営業用デモ（ログイン不要）
+ *   /demo/           → 営業用デモ・イエナカ（ログイン不要）
+ *   /keitai-demo/    → 営業用デモ・ケータイ（ログイン不要・クラウド無し）
  *   /CNAME           → 独自ドメイン名（GitHub Pages がこれを読む）
  *   /404.html        → 無い住所を開いたときのページ（Cloudflare Pages で必須。無いとトップが返る）
  *   /_headers        → Cloudflare Pages の見出しの設定（GitHub Pages は無視する）
@@ -114,6 +115,10 @@ copyDir(path.join(ROOT, "keitai-app"), OUT, SKIP);
 if (WITH_IENAKA) copyDir(path.join(ROOT, "ienaka-app"), path.join(OUT, "ienaka-app"), SKIP);
 // 3) 営業用デモ（アドレスを短く /demo/ に）
 copyDir(path.join(ROOT, "ienaka-demo"), path.join(OUT, "demo"));
+/* 3-2) ケータイの営業用デモ（/keitai-demo/）。ログイン不要・クラウド無し。
+ *      大人数の場で参加者の端末から触ってもらうため（2026-09-12）。
+ *      中身は tools/build-keitai-demo.js が keitai-app/ から作る。 */
+copyDir(path.join(ROOT, "keitai-demo"), path.join(OUT, "keitai-demo"));
 
 // 4) 階層が変わったぶんの参照を直す
 for (const r of REWRITES) {
@@ -154,7 +159,8 @@ ${DOMAIN} で配信するための入れ物です。
 | アドレス | 中身 |
 |---|---|
 | https://${DOMAIN}/ | 製品版（店舗IDとパスワードでログイン） |
-| https://${DOMAIN}/demo/ | 営業用デモ（ログイン不要） |${WITH_IENAKA ? `
+| https://${DOMAIN}/demo/ | 営業用デモ・イエナカ（ログイン不要） |
+| https://${DOMAIN}/keitai-demo/ | 営業用デモ・ケータイ（ログイン不要・この端末の中だけ） |${WITH_IENAKA ? `
 | https://${DOMAIN}/ienaka-app/ | イエナカ単体版（光・home 5G のみ） |` : ""}
 
 ## 直すときは原本のほうで

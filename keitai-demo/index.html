@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#CC0033">
+<title>フロントーク（デモ版）｜料金見積もりシミュレーション</title>
+<meta name="robots" content="noindex">
+<!-- ホーム画面に置いたときのアイコン（フロントーク） -->
+<meta name="apple-mobile-web-app-title" content="フロントーク">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="booting">
+
+<!-- どの画面を出すか決まるまでの目隠し。app.js が決めたら booting を外す -->
+<div class="boot-splash no-print" id="bootSplash"><span>フロントーク</span></div>
+
+<header class="app-header no-print">
+  <h1>フロントーク <span class="demo-badge">デモ版</span>
+    <span class="staff-bar" id="staffBar" hidden></span>
+    <button class="hd-btn" id="switchStaffBtn" type="button">担当切替</button>
+    <button class="hd-btn" id="logoutBtn" type="button" hidden>ログアウト</button>
+    <button class="hd-btn" id="calcOpenBtn" type="button" title="電卓を開きます（見積もりの金額には反映しません）">🧮 電卓</button>
+    <button class="hd-btn" id="aboutBtn" type="button">情報</button>
+    <span class="sync-status" id="syncStatus"></span></h1>
+  <nav class="tabs no-print" id="tabsNav" role="tablist">
+    <button class="tab active" data-tab="quote" type="button">見積もり</button>
+    <button class="tab" data-tab="ienaka" type="button">光・5G</button>
+    <button class="tab" data-tab="sheet" type="button">見積書</button>
+    <button class="tab" data-tab="staff" type="button">引き継ぎ</button>
+    <button class="tab" data-tab="saved" type="button">保存</button>
+  </nav>
+</header>
+
+<!-- 無料お試し期間中のお知らせ（契約状態が trial のときだけ出る） -->
+<div class="trial-bar no-print" id="trialBar" hidden></div>
+
+<button class="present-exit no-print" id="presentExit" type="button" hidden>✕ 提示モードを終了</button>
+
+<div class="storage-warn no-print" id="cloudWarn" hidden></div>
+
+<div class="storage-warn no-print" id="storageWarn" hidden>
+  ⚠ この端末に保存できませんでした。端末の空き容量（ストレージ）を確認してください。いま入力した内容は端末に残らない可能性があります。
+</div>
+
+<!-- 引っ越しの持ち込み用のファイル選択（社内版だけ）。最初の画面（初期設定・担当者コード・門）からも押すので、
+     隠れたカードの中ではなく、ここに置く（app.js の initMove） -->
+<input type="file" id="moveImportFile" accept="application/json,.json" hidden>
+
+<main>
+  <!-- ============ 見積もりタブ ============ -->
+  <section id="tab-quote" class="tab-page active no-print">
+
+    <div class="pattern-bar">
+      <span class="lbl">お手続きする番号：</span>
+      <button class="pat" data-pat="0" type="button">回線1</button>
+      <button class="pat" data-pat="1" type="button">回線2</button>
+      <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="pat" data-pat="3" type="button">回線4</button>
+      <button class="pat" data-pat="4" type="button">回線5</button>
+      <button class="btn-sub" id="copyPattern" type="button">現在の内容を次の回線へコピー</button>
+      <button class="btn-sub" id="clearPatternTop" type="button">この回線をクリア</button>
+      <button class="btn-sub" id="clearQuoteTop" type="button">全回線をクリア</button>
+      <p class="pat-note">回線1〜5は<strong>1商談の中の別の番号</strong>です。ご家族の複数台は分けて入れてください。見比べていただくために作った案も、ここに入れて構いません（<strong>成約のときに、どの回線を実績に数えるか選べます</strong>）。<br><strong>「この回線をクリア」</strong>はいま開いている回線だけを消します（ほかの回線と光・5Gは残ります）。<strong>「全回線をクリア」</strong>は回線1〜5と光・5Gをまとめて消して、次のお客様の応対に移ります。</p>
+    </div>
+
+    <div class="pattern-bar">
+      <span class="lbl">テンプレート：</span><button class="card-help" type="button" data-help="tpl" aria-label="テンプレートの使い方">?</button>
+      <button class="tpl" data-tpl="0" type="button">未設定</button>
+      <button class="tpl" data-tpl="1" type="button">未設定</button>
+      <button class="tpl" data-tpl="2" type="button">未設定</button>
+      <button class="btn-sub" id="saveTplBtn" type="button">現在の内容をテンプレに保存</button>
+      <span class="tpl-namebox" id="tplNameBox" hidden>
+        <input type="text" id="tplNameInput" maxlength="20" placeholder="テンプレート名">
+        <button class="btn-sub" id="tplNameOk" type="button">保存する</button>
+        <button class="btn-sub" id="tplNameCancel" type="button">キャンセル</button>
+        <span class="hint warn-hint" id="tplOverwriteNote" hidden></span>
+      </span>
+      <span class="hint" id="tplMsg"></span>
+    </div>
+    <div class="pattern-bar tpl-store-bar">
+      <span class="lbl">店舗共通：</span><button class="card-help" type="button" data-help="tpl" aria-label="テンプレートの使い方">?</button>
+      <button class="tpl" data-tplst="0" type="button">未設定</button>
+      <button class="tpl" data-tplst="1" type="button">未設定</button>
+      <button class="tpl" data-tplst="2" type="button">未設定</button>
+      <button class="btn-sub" id="saveStoreTplBtn" type="button">現在の内容を店舗共通に保存</button>
+    </div>
+    <div class="tpl-menu no-print" id="tplMenu" hidden>
+      <div class="tpl-menu-name" id="tplMenuName"></div>
+      <button class="btn-sub tpl-menu-del" id="tplMenuDel" type="button">削除する</button>
+      <button class="btn-sub" id="tplMenuCancel" type="button">キャンセル</button>
+    </div>
+
+    <div class="card full">
+      <h2>ご来店の目的 <button class="card-help" type="button" data-help="purpose" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="proc-checks" id="visitChecks">
+        <label class="check"><input type="checkbox" data-visit="buy"> 端末購入</label>
+        <label class="check"><input type="checkbox" data-visit="plan"> プラン見直し</label>
+        <label class="check"><input type="checkbox" data-visit="repair"> 故障</label>
+        <label class="check"><input type="checkbox" data-visit="howto"> 操作</label>
+        <label class="check"><input type="checkbox" data-visit="ask"> 問合せ</label>
+        <label class="check"><input type="checkbox" data-visit="other"> その他</label>
+      </div>
+      <p class="hint">いちばん近いものを<strong>1つだけ</strong>選んでください（2つ以上選ぶと、実績の「ご来店目的別」の合計が応対の数と合わなくなります）。</p>
+      <p class="hint" id="visitOnLine1" hidden></p>
+      <label class="check" id="kaimashiField" hidden><input type="checkbox" id="kaimashi"> 買い増しあり（お手持ちに追加でご購入）</label>
+      <p class="hint" id="kaimashiNote" hidden></p>
+    </div>
+
+    <div class="card full">
+      <h2>手続き内容 <button class="card-help" type="button" data-help="proc" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="proc-checks">
+        <label class="check"><input type="checkbox" data-proc="kishu"> 機種変更</label>
+        <label class="check"><input type="checkbox" data-proc="shinki"> 新規</label>
+        <label class="check"><input type="checkbox" data-proc="mnp"> MNP</label>
+        <label class="check"><input type="checkbox" data-proc="plan"> プラン変更</label>
+        <label class="check"><input type="checkbox" id="todoDcard"> dカード申し込み</label>
+        <label class="check"><input type="checkbox" id="todoDenki"> でんき申し込み</label>
+        <label class="check"><input type="checkbox" id="todoGas"> ガス申し込み</label>
+        <label class="check"><input type="checkbox" id="todoHikari"> 光申し込み</label>
+      </div>
+      <label class="check" id="u15Field" hidden><input type="checkbox" id="u15"> U15（15歳以下）</label>
+      <p class="hint" id="u15Note" hidden></p>
+      <label class="check" id="u39Field" hidden><input type="checkbox" id="u39"> U39（ご利用者が39歳以下）</label>
+      <p class="hint" id="u39Note" hidden>実績の集計だけに使います。<strong>お客様の見積書・引き継ぎシートには出ません。</strong>この回線ごとに入れてください（ご家族で年齢が違うため）。</p>
+      <div class="sub-checks" id="dcardTypeWrap" hidden>
+        <span class="sub-label">dカードの種類</span>
+        <label class="check"><input type="checkbox" data-dcardtype="normal"> dカード</label>
+        <label class="check"><input type="checkbox" data-dcardtype="goldu"> GOLD U</label>
+        <label class="check"><input type="checkbox" data-dcardtype="gold"> GOLD</label>
+        <label class="check"><input type="checkbox" data-dcardtype="platinum"> PLATINUM</label>
+      </div>
+      <div class="sub-checks" id="denkiTypeWrap" hidden>
+        <span class="sub-label">でんき</span>
+        <label class="check"><input type="checkbox" data-denkitype="basic"> Basic</label>
+        <label class="check"><input type="checkbox" data-denkitype="green"> Green</label>
+      </div>
+      <div class="sub-checks" id="denkiNowWrap" hidden></div>
+      <div class="sub-checks" id="gasTypeWrap" hidden>
+        <span class="sub-label">ガス（大阪ガス）</span>
+        <span class="sub-label">エリアの目安: <input type="text" id="gasAreaZip" inputmode="numeric" maxlength="8" placeholder="郵便番号" autocomplete="off" style="width:7.5em"></span>
+        <span id="gasAreaResult" style="flex-basis:100%"></span>
+        <label class="check" title="標準メニュー。新規受付は2026年9月30日まで"><input type="checkbox" data-gastype="ippan"> 一般料金</label>
+        <label class="check" title="2026年10月1日以降の新規受付の標準メニュー"><input type="checkbox" data-gastype="ippanS"> 一般料金S</label>
+        <label class="check" title="ドコモでんきとセットで契約するお客さま向け"><input type="checkbox" data-gastype="matome"> まとめトク料金</label>
+        <label class="check" title="ガス温水床暖房をお使いのお客さま向け（季節別料金）"><input type="checkbox" data-gastype="attame"> あっためトク料金</label>
+        <label class="check" title="エネファーム（家庭用燃料電池）をお使いのお客さま向け"><input type="checkbox" data-gastype="smart"> スマート発電料金</label>
+        <label class="check" title="ガス空調機器をお使いのお客さま向け（季節別料金）"><input type="checkbox" data-gastype="house"> ハウス空調料金</label>
+        <label class="check" title="ガス衣類乾燥機・ガス温水浴室暖房乾燥機をお使いのお客さま向け"><input type="checkbox" data-gastype="kaji"> 家事トク料金</label>
+        <label class="check" title="他社の同等メニューをご契約中で使用量が多いお客さま向け"><input type="checkbox" data-gastype="motto"> もっと割料金</label>
+        <label class="check" title="ガス温水床暖房をお使いで他社の同等メニューをご契約中のお客さま向け"><input type="checkbox" data-gastype="yukadan"> 床暖料金</label>
+        <label class="check" title="エネファーム・エコウィルをお使いで他社の同等メニューをご契約中のお客さま向け"><input type="checkbox" data-gastype="myhome"> マイホーム発電料金</label>
+      </div>
+      <div class="sub-checks" id="gasEcoWrap" hidden></div>
+      <div class="sub-checks" id="gasDiscountWrap" hidden></div>
+      <div class="sub-checks" id="gasNowWrap" hidden></div>
+      </div>
+    </div>
+
+    <div class="card c1">
+      <h2>① 契約内容 <button class="card-help" type="button" data-help="c1" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="field">
+        <label for="procType">手続き種別</label>
+        <select id="procType">
+          <option value="">（未選択）</option>
+          <option value="shinki">新規契約</option>
+          <option value="mnp">のりかえ（MNP）</option>
+          <option value="kishu">機種変更</option>
+          <option value="plan_only">プラン変更</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="planGroup">プラン世代</label>
+        <select id="planGroup"><!-- JSで生成（LIBMOはのりかえのときだけ出す） --></select>
+      </div>
+      <div class="field">
+        <label for="planId">料金プラン</label>
+        <select id="planId"></select>
+      </div>
+      <div class="field" id="tierField" hidden>
+        <label for="tierIdx">想定データ利用量</label>
+        <select id="tierIdx"></select>
+      </div>
+      <label class="check"><input type="checkbox" id="planChange"> 料金プランの変更あり</label>
+      <p class="plan-note" id="planNote"></p>
+    </div>
+
+    <div class="card c2">
+      <h2>② 通話・メール <button class="card-help" type="button" data-help="c2" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="subhead">通話オプション</div>
+      <div class="tile-grid" id="voiceTiles"><!-- JSで生成 --></div>
+      <p class="hint" id="voiceHint" hidden></p>
+      <label class="check"><input type="checkbox" id="voiceChange"> 通話オプションの変更あり</label>
+      <div class="subhead">ネットワークサービス</div>
+      <div id="netSvcList"></div>
+      <p class="hint" id="netSvcHint"></p>
+      <div id="mailField">
+        <div class="subhead">ドコモメール</div>
+        <div class="tile-grid" id="mailTile"><!-- JSで生成 --></div>
+      </div>
+      <p class="hint" id="mailHint"></p>
+    </div>
+
+    <div class="card c3">
+      <h2>③ 割引 <button class="card-help" type="button" data-help="c3" aria-label="この項目の入力のしかた">?</button></h2>
+      <div id="minnaWrap">
+        <label class="check"><input type="checkbox" id="minnaOn"> みんなドコモ割</label>
+        <div class="wari-sub" id="minnaSub" hidden>
+          <label class="check"><input type="radio" name="minnaN" value="2" checked> 2回線</label>
+          <label class="check"><input type="radio" name="minnaN" value="3"> 3回線以上</label>
+        </div>
+      </div>
+      <label class="check" id="dSetWrap"><input type="checkbox" id="dSet"> ドコモ光／home 5G セット割</label>
+      <div id="dCardWrap">
+        <label class="check"><input type="checkbox" id="dCardOn"> dカードお支払割</label>
+        <div class="wari-sub sub-checks" id="dCardSub" hidden>
+          <label class="check" title="dカード"><input type="checkbox" data-dcard="normal"> R</label>
+          <label class="check" title="dカード GOLD"><input type="checkbox" data-dcard="gold"> G</label>
+          <label class="check" title="dカード GOLD U"><input type="checkbox" data-dcard="goldu"> U</label>
+          <label class="check" title="dカード PLATINUM"><input type="checkbox" data-dcard="platinum"> P</label>
+        </div>
+        <div class="wari-sub" id="platRateWrap" hidden>
+          <div class="field">
+            <label for="platRate">PLATINUM の還元率</label>
+            <input type="number" id="platRate" inputmode="numeric" min="10" max="20" step="1"> ％
+          </div>
+          <p class="hint" id="platRateHint"></p>
+        </div>
+      </div>
+      <label class="check" id="dDenkiWrap"><input type="checkbox" id="dDenki"> ドコモでんきセット割</label>
+      <label class="check" id="bizMembersWrap"><input type="checkbox" id="bizMembers"> ビジネスメンバーズ割（ドコモビジネスメンバーズに加入している法人）</label>
+      <label class="check" id="shainWrap"><input type="checkbox" id="shain"> 社員割（同一「ビジネス通話割引」グループ内の音声回線が6回線以上）</label>
+      <div id="chokiWrap">
+        <label class="check"><input type="checkbox" id="chokiOn"> 長期利用割（MAX・ポイ活MAXのみ）</label>
+        <div class="wari-sub" id="chokiSub" hidden>
+          <label class="check"><input type="radio" name="chokiY" value="y10" checked> ドコモ歴10年以上</label>
+          <label class="check"><input type="radio" name="chokiY" value="y20"> 20年以上</label>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="otherWariOn"> その他割引</label>
+      <div class="wari-sub" id="otherWariBox" hidden>
+        <label class="check" id="heartyWrap"><input type="checkbox" id="hearty"> ハーティ割引（障がい者手帳などをお持ちの方）</label>
+        <p class="hint warn-hint" id="heartyNote" hidden>ハーティ割引は<strong>みんなドコモ割・dカードお支払割とは重ねられません</strong>。選んでいても計算には入れていません。</p>
+        <label class="check" id="kosodateWrap"><input type="checkbox" id="kosodate"> 子育てサポート割引（ひとり親世帯の方）</label>
+        <p class="hint" id="kosodateNote" hidden>ひとり親世帯の方向けの割引です（児童扶養手当受給者証などの<strong>確認書類が必要</strong>）。お子さまが18歳になったあと最初の3月31日まで。5分通話無料・かけ放題も880円/月引かれます。<strong>ハーティ割引とは同時に適用できません</strong>（片方を選ぶともう片方は外れます）。<strong>みんなドコモ割とも重ねられません</strong>（選んでいても、この割引がある間は計算に入れません）。</p>
+      </div>
+      <p class="hint" id="discountOff" hidden></p>
+      <div id="campaignList"></div>
+      <p class="hint" id="discountHint"></p>
+    </div>
+
+    <div class="card full c4">
+      <h2>④ オプション・サービス <button class="card-help" type="button" data-help="c4" aria-label="この項目の入力のしかた">?</button></h2>
+      <div id="optionList"></div>
+      <p class="hint">内容・単価・並び順はマスタ設定で自由に変更できます（担当者コードの画面から開きます）。</p>
+      <div class="adhoc-list" id="adhocMonthlyList"></div>
+      <button class="btn-sub" id="addAdhocMonthly" type="button">＋ 月額の追加項目（キャンペーン割引・店舗施策など）</button>
+    </div>
+
+    <div class="card c5">
+      <h2>⑤ 端末代金 <button class="card-help" type="button" data-help="c5" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="field">
+        <label for="payMethod">支払い方法</label>
+        <select id="payMethod">
+          <option value="none">端末購入なし</option>
+          <option value="ikkatsu">一括払い</option>
+          <option value="b12">分割12回</option>
+          <option value="b24">分割24回</option>
+          <option value="b36">分割36回</option>
+          <option value="b48">分割48回</option>
+          <option value="kaedoki">いつでもカエドキプログラム（24回・残価設定）</option>
+        </select>
+      </div>
+      <!-- 端末購入なしのときは、購入時にしか使わない項目をまとめて隠す（devBuyDetail） -->
+      <div id="devBuyDetail">
+      <div class="field" id="deviceSelectField" hidden>
+        <label for="deviceSelect">機種を選ぶ（端末マスタ）</label>
+        <select id="deviceSelect"><!-- JSで生成 --></select>
+      </div>
+      <div class="field">
+        <label for="deviceName">機種名（任意）</label>
+        <input type="text" id="deviceName" placeholder="例）iPhone 17 128GB">
+      </div>
+      <div class="field">
+        <label for="devicePrice">端末代金総額</label>
+        <input type="number" id="devicePrice" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="atamakin">店頭頭金</label>
+        <input type="number" id="atamakin" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="kishuRank">機種の区分</label>
+        <select id="kishuRank">
+          <option value="">自動（金額で判定）</option>
+          <option value="high">ハイエンド</option>
+          <option value="std">スタンダード</option>
+        </select>
+      </div>
+      <p class="hint" id="kishuRankHint"></p>
+      <label class="check"><input type="checkbox" id="tablet"> タブレット（実績の「タブレット総販」に数えます）</label>
+      <p class="hint" data-remap-circled>「タブレット」は<strong>実績の集計だけに使います</strong>。<strong>お客様の見積書・引き継ぎシートには出ません。</strong><br><strong>下取り・dカード初回利用・d払い初回利用</strong>は、<strong>④オプションの「その他」</strong>にまとめました。下取りの<strong>金額</strong>は、これまでどおり「初期費用の追加項目」にマイナスで入れてください。</p>
+      <p class="hint">端末代金総額は頭金を含んだ総額を入力してください。分割払いのときは「総額 − 店頭頭金」を分割します（例: 総額119,800円・頭金19,800円 → 分割は100,000円）。一括購入の場合、頭金は見積書に「店頭頭金」と表記せず機種代金へ含めます。</p>
+      <div class="field" id="kaedoki23Field" hidden>
+        <label for="kaedoki23">23回分の総額（頭金込み）</label>
+        <input type="number" id="kaedoki23" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <p class="hint" id="kaedoki23Hint" hidden></p>
+      <div class="field" id="kaedokiFeeField" hidden>
+        <label for="kaedokiFee">プログラム利用料（返却時・機種による）</label>
+        <input type="number" id="kaedokiFee" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="couponOff">クーポン値引き</label>
+        <input type="number" id="couponOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="tebikiOff">店舗独自キャンペーン</label>
+        <input type="number" id="tebikiOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="directOff">ダイレクト割</label>
+        <input type="number" id="directOff" inputmode="numeric" placeholder="0" min="0"> 円
+      </div>
+      <p class="hint" id="deviceOffHint" hidden></p>
+      <label class="check"><input type="checkbox" id="devUsePoint"> dポイントを利用する（頭金 → 分割金 の順に充当）</label>
+      <div class="field" id="devUsePointField" hidden>
+        <label for="devUsePointAmount">利用ポイント</label>
+        <input type="number" id="devUsePointAmount" inputmode="numeric" min="0" placeholder="0"> pt
+      </div>
+      <p class="hint" id="devUsePointHint" hidden></p>
+      </div>
+      <div class="field">
+        <label for="currentInst">現在の分割支払金</label>
+        <input type="number" id="currentInst" inputmode="numeric" placeholder="0" min="0"> 円/月
+      </div>
+      <div class="field" id="currentInstMonthsField" hidden>
+        <label for="currentInstMonths">残り回数</label>
+        <input type="number" id="currentInstMonths" inputmode="numeric" placeholder="0" min="0"> 回
+      </div>
+      <p class="hint">料金見直しのご案内用です。いま支払い中の機種代金の分割金を入れると、毎月のお支払い目安に合算されます。残り回数を入れると、払い終わったあとの金額も自動で出ます（空欄・0は「ずっと」）。</p>
+      <p class="hint" id="kaedokiHint" hidden></p>
+      <p class="pay-warn" id="payWarn" hidden></p>
+    </div>
+
+    <div class="card c6">
+      <h2>⑥ アクセサリ（docomo select など） <button class="card-help" type="button" data-help="c6" aria-label="この項目の入力のしかた">?</button></h2>
+      <div id="accTileList"></div>
+      <p class="hint">タップで選択し、タイル内で一括／分割を選べます。リストにない商品は下の自由入力で。定番商品はマスタ設定で編集できます。</p>
+      <div class="adhoc-list" id="accessoryList"></div>
+      <button class="btn-sub" id="addAccessory" type="button">＋ アクセサリを追加（一括／分割を選べます）</button>
+    </div>
+
+    <div class="card c7">
+      <h2>⑦ 初期費用 <button class="card-help" type="button" data-help="c7" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="field">
+        <label for="jimuFee">契約事務手数料</label>
+        <input type="number" id="jimuFee" inputmode="numeric" min="0"> 円
+      </div>
+      <div id="feeItemList"></div>
+      <div class="adhoc-list" id="adhocInitialList"></div>
+      <button class="btn-sub" id="addAdhocInitial" type="button">＋ 初期費用の追加項目（アクセサリ・下取り値引きなど）</button>
+      <div class="subhead">店頭お支払い（頭金・付属品など）</div>
+      <div class="proc-checks">
+        <label class="check"><input type="checkbox" data-storepay="cash"> 現金</label>
+        <label class="check"><input type="checkbox" data-storepay="card"> カード</label>
+        <label class="check"><input type="checkbox" data-storepay="dbarai"> d払い</label>
+        <label class="check"><input type="checkbox" id="usePoint"> dポイント利用あり</label>
+      </div>
+      <div class="field" id="usePointField" hidden>
+        <label for="usePointAmount">利用ポイント</label>
+        <input type="number" id="usePointAmount" inputmode="numeric" min="0" placeholder="0"> pt
+      </div>
+      <p class="hint" id="usePointHint" hidden></p>
+      <p class="hint">利用ポイントは<strong>頭金 → 分割金 → 残価</strong>の順に充当します（1pt = 1円）。一括払いのときは店頭でお支払いいただく機種代金から充当します。</p>
+    </div>
+
+    <div class="card c8">
+      <h2>⑧ ポイント（実質額のご案内） <button class="card-help" type="button" data-help="c8" aria-label="この項目の入力のしかた">?</button></h2>
+      <!-- data-remap-circled: カードを並べ替えた店舗では、文中の丸数字を新しい番号に置き換える（app.js） -->
+      <p class="hint" data-remap-circled>④で選んだサービスと③で選んだdカードから自動で入ります。金額は直接書き換えられます。</p>
+      <div class="field">
+        <label for="pointApply">ポイントの扱い</label>
+        <select id="pointApply">
+          <option value="0">充当しない（もらえるポイントとしてご案内）</option>
+          <option value="1">月額から充当する（実質のお支払い額でご案内）</option>
+        </select>
+      </div>
+      <p class="hint" id="pointSummary" hidden></p>
+      <div id="mnpBenefitWrap" hidden>
+        <div class="subhead">MNP特典（SIMのみ・端末購入なし）</div>
+        <div class="field">
+          <label for="mnpBenefitType">ご案内した特典</label>
+          <select id="mnpBenefitType">
+            <option value="">選択なし</option>
+            <option value="cash">キャッシュバック</option>
+            <option value="dpoint">dポイント還元</option>
+          </select>
+        </div>
+        <div class="field" id="mnpBenefitAmtWrap" hidden>
+          <label for="mnpBenefitAmt">金額</label>
+          <input type="number" id="mnpBenefitAmt" inputmode="numeric" min="0" placeholder="0"> <span id="mnpBenefitUnit">円</span>
+        </div>
+        <p class="hint">見積書と引き継ぎシートに「いくらでご案内したか」が残ります。<strong>月額・初期費用の計算には入りません</strong>（後日のお渡し・進呈のため）。</p>
+      </div>
+      <div class="field" id="ptPoikatsuWrap">
+        <label for="ptPoikatsu">ポイ活プラン還元ポイント</label>
+        <input type="number" id="ptPoikatsu" inputmode="numeric" min="0" placeholder="0"> pt/月
+      </div>
+      <div class="field" id="ptPoikatsuFamilyWrap">
+        <label for="ptPoikatsuFamily">ポイ活ファミリー特典</label>
+        <input type="number" id="ptPoikatsuFamily" inputmode="numeric" min="0" placeholder="0"> pt/月
+      </div>
+      <div class="field" id="ptBakuageWrap" hidden>
+        <label for="ptBakuage">爆アゲセレクション還元</label>
+        <input type="number" id="ptBakuage" inputmode="numeric" min="0" placeholder="0"> pt/月
+        <button class="btn-sub" id="bakuageReset" type="button" hidden>自動計算値に戻す</button>
+      </div>
+      <p class="hint" id="bakuageHint" hidden></p>
+      <p class="hint" id="bakuageOff" hidden></p>
+      <label class="check" id="bakuageIncludeWrap" hidden>
+        <input type="checkbox" id="bakuageInclude"> <span id="bakuageIncludeLabel">爆アゲ セレクションの還元を見積もりに含める</span>
+      </label>
+      <div class="field" id="ptDcardField">
+        <label for="ptDcard">dカード還元特典</label>
+        <input type="number" id="ptDcard" inputmode="numeric" min="0" placeholder="0"> pt/月
+        <button class="btn-sub" id="dcardAutoReset" type="button" hidden>自動計算値に戻す</button>
+      </div>
+      <label class="check" id="dcardAutoWrap" hidden>
+        <input type="checkbox" id="dcardAutoInclude"> <span id="dcardAutoLabel">dカード還元特典を見積もりに含める</span>
+      </label>
+      <p class="hint" id="dcardAutoHint" data-remap-circled hidden>GOLD系選択時は自動計算値（プラン基本料＋通話＋対象オプションの税込合計1,100円ごとに GOLD U 50pt／GOLD 100pt／PLATINUM は③で選んだ還元率）が初期セットされます。ポイ活ファミリー特典などを絡めて話す場合は、数値を直接編集してください。</p>
+      <div class="revise-hint" id="reviseHint" hidden></div>
+    </div>
+
+    <div class="card c9">
+      <h2>⑨ 備考・その他特記事項 <button class="card-help" type="button" data-help="c9" aria-label="この項目の入力のしかた">?</button></h2>
+      <div class="field">
+        <label for="todoOther">その他・特記事項</label>
+        <textarea id="todoOther" rows="2" placeholder="例）データ移行あり／来店時にSIM再発行／家族の来店予定あり"></textarea>
+      </div>
+      <p class="hint">引き継ぎシートの「その他」に載ります。<strong>お客様名などの個人情報は書かないでください。</strong></p>
+      <div class="field"><label for="quoteMemo">メモ</label><input type="text" id="quoteMemo" placeholder="例）ご家族3回線目としてのご提案"></div>
+      <p class="hint">メモは見積書の下に「※」付きで載ります。</p>
+      <div class="subhead">お客様情報・発行元（見積書用・任意）</div>
+      <div class="field"><label for="custName">お客様名</label><input type="text" id="custName" placeholder="例）山田 太郎 様"></div>
+      <p class="hint">※ お客様名（個人情報）は端末間で同期されません。印刷する端末で入力してください。</p>
+      <div class="field"><label for="shopName">店舗名</label><input type="text" id="shopName" placeholder="例）ドコモショップ○○店"></div>
+      <div class="field"><label for="staffName">担当</label><input type="text" id="staffName" placeholder="例）山田"></div>
+      <div class="field"><label for="shopTel">電話番号</label><input type="tel" id="shopTel" placeholder="例）072-000-0000" inputmode="tel"></div>
+      <p class="hint">店舗名・電話番号・担当は、マスタ設定の店舗情報から自動で入ります。この見積もりだけ変えたいときは直接書き換えられます。</p>
+    </div>
+
+    <div class="card full" id="curBillCard">
+      <h2>現在のお支払い（請求内訳の読み取り・任意） <button class="card-help" type="button" data-help="curbill" aria-label="この項目の入力のしかた">?</button></h2>
+      <!-- カメラ読み取りの入・切は app.js の OCR_ON。切のときは JS が
+           カメラのボタンとカメラ向けの文だけを隠す（HTMLは共通のまま） -->
+      <p class="hint">お客様の請求書や My docomo の「ご利用料金の内訳」を読み取ると、いまのお支払いとこの見積もりを比べてご案内できます。見積書にも比較が載ります。<strong>読み取りはこの端末の中だけで行い、内容が外部へ送信されることはありません。<span id="curBillCamNote" hidden>撮った写真は解析が終わると破棄され、どこにも保存されません。</span></strong></p>
+      <div class="actions">
+        <label class="btn-main file-btn" id="curBillCamWrap" hidden>カメラで読み取る<input type="file" id="curBillCam" accept="image/*" capture="environment" hidden></label>
+        <button class="btn-sub" id="curBillOpenBtn" type="button">請求内訳を読み取る</button>
+        <button class="btn-sub" id="curBillClearBtn" type="button" hidden>読み取りを消す</button>
+      </div>
+      <p class="hint" id="curBillCamHint" hidden>「カメラで読み取る」→ 請求内訳の「項目名と金額」の部分を、明るい場所でまっすぐ撮ってください。初回だけ読み取りの部品（約6.5MB）を読み込みます（以後はオフラインでも動きます）。</p>
+      <div id="curBillWrap" hidden>
+        <p class="hint"><span id="curBillPasteLead" hidden>カメラでうまく写らないときの別の入れ方です。</span>iPadは、下の欄をタップしてもう一度タップ →「<b>テキストをスキャン</b>」でカメラを請求書にかざすと、そのまま文字が入ります（iPadOS 16以降）。ほかに、写真アプリで文字を長押し →「すべてを選択」→ コピー → ここに貼り付けでも入ります。Androidは Google レンズでコピーして貼り付けます。</p>
+        <textarea id="curBillBox" class="export-box" placeholder="ここに請求内訳の文字を入れてください（テキストをスキャン・貼り付け）"></textarea>
+        <div class="actions">
+          <button class="btn-main" id="curBillGo" type="button">この内容で読み取る</button>
+          <button class="btn-sub" id="curBillCancel" type="button">キャンセル</button>
+        </div>
+      </div>
+      <p class="hint" id="curBillMsg" hidden></p>
+      <div id="curBillEdit"></div>
+      <p class="hint">※ 読み取った請求内訳は、お客様名と同じく端末間で同期されません（この端末の中だけ）。電話番号などの番号の行は読み取り時に自動で除きます。当月分の読み取り値のため、通話料や日割りで通常月と違うことがあります。</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn-main" id="toSheet" type="button">見積書を表示する</button>
+      <button class="btn-sub" id="quickSaveBtn" type="button">この見積もりを保存</button>
+      <button class="btn-sub" id="clearPattern" type="button">この回線をクリア</button>
+      <button class="btn-sub" id="clearQuote" type="button">全回線をクリア</button>
+    </div>
+    <p class="hint quick-save-msg" id="quickSaveMsg" hidden></p>
+  </section>
+
+
+  <!-- ============ イエナカ（光・home 5G）タブ ============ -->
+  <section id="tab-ienaka" class="tab-page no-print">
+    <div class="card full ie-head">
+      <label class="check"><input type="checkbox" id="ieEnabled"> <b>この見積もりに ドコモ光／home 5G を含める</b></label>
+      <p class="hint">チェックを入れると、見積書に<strong>スマホと光を合わせた世帯の合計</strong>が出せるようになります。
+        光は<strong>世帯に1本</strong>のため、回線1〜5で共通です。</p>
+      <p class="hint ie-summary" id="ieSummary"></p>
+      <p class="hint ie-warn" id="ieSetWarn" hidden></p>
+    </div>
+    <div id="ieBody" hidden>
+      <div class="qcols">
+        <div class="qcol">
+<div class="step">
+      <h2 data-iet="現在の固定回線（ヒアリング）">① 現在の固定回線（ヒアリング）</h2>
+      <div class="ie-cur" id="ieCurCard">
+        <div class="field">
+          <label for="ieCurLine">ネット</label>
+          <select id="ieCurLine"><!-- JSで生成 --></select>
+        </div>
+        <div class="field" id="ieCurLineOtherField" hidden>
+          <label for="ieCurLineOther" id="ieCurLineOtherLabel">回線名（その他）</label>
+          <input type="text" id="ieCurLineOther" maxlength="30" placeholder="例：○○光">
+        </div>
+        <div class="field" id="ieCurLineTelField" hidden>
+          <label for="ieCurLineTel">解約のご連絡先（分かれば）</label>
+          <input type="text" id="ieCurLineTel" maxlength="40" placeholder="例：0120-000-000（受付 9:00〜18:00）">
+        </div>
+        <p class="hint" id="ieCurLineHint" hidden></p>
+        <div class="field">
+          <label for="ieCurPhone">固定電話</label>
+          <select id="ieCurPhone">
+            <option value="">（未ヒアリング）</option>
+            <option value="set">回線とセット（あり）</option>
+            <option value="analog">アナログ電話（NTT加入電話）</option>
+            <option value="none">なし</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ieCurTv">テレビ</label>
+          <select id="ieCurTv">
+            <option value="">（未ヒアリング）</option>
+            <option value="yes">あり（回線でご視聴）</option>
+            <option value="no">なし（アンテナで視聴）</option>
+          </select>
+        </div>
+        <div class="sub-checks" id="ieCurTvBands" hidden>
+          <span class="sub-label">ご視聴</span>
+          <label class="check"><input type="checkbox" id="ieCurTvDigi"> 地デジ</label>
+          <label class="check"><input type="checkbox" id="ieCurTvBs"> BS</label>
+          <label class="check"><input type="checkbox" id="ieCurTvCs"> CS</label>
+        </div>
+        <label class="check" id="ieCurTvKeepField" hidden>
+          <input type="checkbox" id="ieCurTvKeep"> J:COMのテレビを残してご契約（解約はネットのみ）
+        </label>
+        <p class="hint" id="ieCurTvKeepHint" hidden></p>
+      </div>
+</div>
+<div class="step">
+      <h2 data-iet="商材">② 商材</h2>
+      <div class="field">
+        <label for="ieProduct">商材</label>
+        <select id="ieProduct">
+          <option value="hikari1g">ドコモ光 1ギガ</option>
+          <option value="hikari10g">ドコモ光 10ギガ</option>
+          <option value="hikaric">ドコモ光 1ギガ タイプC（ケーブルテレビ設備）</option>
+          <option value="hikaric10g">ドコモ光 10ギガ タイプC（ケーブルテレビ設備）</option>
+          <option value="ahamo1g">ahamo光 1ギガ</option>
+          <option value="ahamo10g">ahamo光 10ギガ</option>
+          <option value="home5g">home 5G</option>
+        </select>
+      </div>
+      <div class="field" id="ieApplyTypeField">
+        <label for="ieApplyType">申込区分</label>
+        <select id="ieApplyType">
+          <option value="shinki">新規</option>
+          <option value="tenyo">転用（フレッツ光から）</option>
+          <option value="jigyosha">事業者変更（他社光コラボから）</option>
+          <option value="kirikae">転用（タイプC）</option>
+        </select>
+      </div>
+      <div class="field" id="ieTypecLineField" hidden>
+        <label for="ieTypecLine">いまのネット回線の設備（転用・タイプC）</label>
+        <select id="ieTypecLine">
+          <option value="hikari">光回線（工事なし・そのまま切り替え）</option>
+          <option value="coax">同軸ケーブル（光への切り替え工事が必要）</option>
+        </select>
+      </div>
+      <div class="field" id="ieTypecKojiField" hidden>
+        <label for="ieTypecKoji">光切り替え工事料（ケーブルテレビ会社の案内額・不明なら空欄）</label>
+        <input type="number" id="ieTypecKoji" inputmode="numeric" min="0" placeholder="金額がわかれば入力">
+      </div>
+      <p class="hint" id="ieTypecLineHint" hidden>光への切り替え工事は<strong>ケーブルテレビ会社が行います</strong>。日程・工事料は同社からのご案内をご確認ください（金額を入れると初期費用に載ります）。</p>
+      <div class="field" id="ieTypecKeepField" hidden>
+        <label for="ieTypecKeep">ケーブルテレビに残る月額（参考・ZTV等からの請求）</label>
+        <input type="number" id="ieTypecKeep" min="0" step="1" placeholder="例）2200">
+      </div>
+      <div class="field" id="ieTypecKeepTvField" hidden>
+        <label for="ieTypecKeepTv">└ うち テレビ（月額）</label>
+        <input type="number" id="ieTypecKeepTv" inputmode="numeric" min="0" placeholder="0">
+      </div>
+      <div class="field" id="ieTypecKeepPhoneField" hidden>
+        <label for="ieTypecKeepPhone">└ うち お電話（月額）</label>
+        <input type="number" id="ieTypecKeepPhone" inputmode="numeric" min="0" placeholder="0">
+      </div>
+      <div class="field" id="ieTypecKeepOtherField" hidden>
+        <label for="ieTypecKeepOther">└ うち そのほか・契約基本料（月額）</label>
+        <input type="number" id="ieTypecKeepOther" inputmode="numeric" min="0" placeholder="0">
+      </div>
+      <div class="field" id="ieTypecKeepOffField" hidden>
+        <label for="ieTypecKeepOff">└ タイプC向け割引（月額・引く額）</label>
+        −<input type="number" id="ieTypecKeepOff" inputmode="numeric" min="0" placeholder="0">
+      </div>
+      <p class="hint" id="ieTypecKeepOffHint" hidden></p>
+      <p class="hint" id="ieTypecHint" hidden>タイプCでは<strong>お電話・テレビはケーブルテレビのご契約のまま残ります</strong>（ドコモ光電話・テレビオプションは申込不可）。金額を入れると見積書に「参考」として別枠で載ります。ZTVの場合、切替後は今までのセット割に代わって<strong>ドコモ光向け割引</strong>が付きます（滋賀など津エリア以外: テレビ＋電話 ▲1,100円/月・テレビのみ ▲550円/月、コンパクト/ライトコースは ▲770円/▲220円。津エリアは増額）。<strong>割引後の額</strong>を入れてください。※ 今までのZTVセット割は転用で終了するため、置き換え前後の差もご案内を。※ ZTVは戸建のみ（集合住宅対象外）・切替に縛りや違約金はありません。</p>
+      <p class="hint" id="ieTypec10gHint" hidden><strong>10ギガ タイプC</strong>は<strong>戸建・マンション同額</strong>（月額6,380円・2年定期契約／定期契約なし8,030円）です。マンションタイプの有無はケーブルテレビ会社によって違います。<br>工事料は<strong>新規なら28,600円</strong>ですが、<strong>1ギガ タイプCからのプラン変更なら 戸建9,900円・マンション8,250円</strong>（代表例）です。プラン変更のときは工事料の欄を直してください。<br>ドコモの<strong>10ギガ対応ルーターのレンタルは対象外</strong>です（お客様でご用意いただくか、ケーブルテレビ会社のレンタルをご利用いただきます）。<br>※ ワンコインキャンペーン（6か月500円）は、「ドコモ光 1ギガ」からのプラン変更では対象外です。</p>
+      <div id="ieHikariFields">
+        <div class="field">
+          <label for="ieHousing">住居タイプ</label>
+          <select id="ieHousing">
+            <option value="ht">戸建</option>
+            <option value="ms">マンション</option>
+            <option value="ms100">マンション（100M）</option>
+          </select>
+        </div>
+        <p class="hint" id="ieHousingNote" hidden></p>
+        <div class="field" id="iePtypeField">
+          <label for="iePtype">プロバイダ料金タイプ</label>
+          <select id="iePtype">
+            <option value="A">タイプA</option>
+            <option value="B">タイプB</option>
+          </select>
+        </div>
+        <div class="field" id="ieProviderField">
+          <label for="ieProvider">プロバイダ</label>
+          <select id="ieProvider">
+            <option value="">未定</option>
+            <option value="OCN インターネット">OCN インターネット</option>
+            <option value="@nifty">@nifty</option>
+            <option value="GMOとくとくBB">GMOとくとくBB</option>
+            <option value="andline">andline</option>
+          </select>
+        </div>
+        <label class="check" id="ieVisitWrap" hidden><input type="checkbox" id="ieVisit"> 訪問設定サポートを希望（@niftyフォローコールで日程を調整）</label>
+        <div class="field" id="ieProviderTypeField" hidden>
+          <label for="ieProviderType">プロバイダの扱い</label>
+          <select id="ieProviderType">
+            <option value="shinki">新規（このプロバイダを新しく契約）</option>
+            <option value="keizoku">継続（いまのプロバイダを継続・メールアドレスを残す）</option>
+          </select>
+        </div>
+        <div class="field" id="ieRouterRentalField">
+          <label for="ieRouterRental">プロバイダ無料無線ルーターレンタル</label>
+          <select id="ieRouterRental">
+            <option value="ari">あり（無料レンタル利用）</option>
+            <option value="nashi">なし</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="ieBaseMonthly">月額基本料</label>
+        <input type="number" id="ieBaseMonthly" inputmode="numeric" min="0"> 円
+      </div>
+      <label class="check" id="ieOnecoinWrap" hidden><input type="checkbox" id="ieOnecoin"> 10ギガ ワンコインキャンペーン（開通〜6か月目は基本料500円・新規/転用/事業者変更対象）</label>
+      <p class="hint">商材・住居タイプ・プロバイダを選ぶと標準料金が入ります。実際の料金に合わせて自由に変更できます。</p>
+    </div>
+
+    <div class="step" id="ieHome5gStep" hidden>
+      <h2 data-iet="home 5G 端末">③ home 5G 端末</h2>
+      <div class="field">
+        <label for="ieH5Kubun">区分</label>
+        <select id="ieH5Kubun">
+          <option value="shinki">新規</option>
+          <option value="kishu">機種変更</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ieH5DeviceName">端末名</label>
+        <input type="text" id="ieH5DeviceName" placeholder="例）home 5G HR02">
+      </div>
+      <div class="field">
+        <label for="ieH5DevicePrice">端末代金（税込）</label>
+        <input type="number" id="ieH5DevicePrice" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field">
+        <label for="ieH5Pay">お支払い方法</label>
+        <select id="ieH5Pay">
+          <option value="b48">分割48回</option>
+          <option value="ikkatsu">一括払い</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="ieH5Support"> 月々サポートを適用（48か月・分割なら端末実質負担0円）</label>
+      <p class="hint" id="ieH5Hint"></p>
+    </div>
+
+    <div class="step">
+      <h2 data-iet="月額オプション">④ 月額オプション</h2>
+      <div id="ieOptList"></div>
+      <div class="adhoc-list" id="ieExtraMonthlyList"></div>
+      <button class="btn-sub" id="ieAddExtraMonthly" type="button">＋ 月額の追加項目（オプション・割引など）</button>
+      <p class="hint">割引を入れる場合は金額をマイナスで入力してください（例: −550）。光電話・テレビオプションにチェックを入れると、対応する工事料が「初期費用」セクションへ自動で加算されます。</p>
+    </div>
+
+          </div>
+      <div class="qcol">
+<div class="step">
+      <h2 data-iet="初期費用">⑤ 初期費用</h2>
+      <div class="field" id="ieKojiPayField">
+        <label for="ieKojiPay">工事費の支払い</label>
+        <select id="ieKojiPay">
+          <option value="b24">分割24回</option>
+          <option value="ikkatsu">一括払い</option>
+        </select>
+      </div>
+      <label class="check" id="ieKojiFreeWrap"><input type="checkbox" id="ieKojiFree"> 実質0円特典を適用（エントリー不要・工事費相当のdポイントを利用開始月の7か月後の月から24か月間分割で進呈・料金充当想定）</label>
+      <label class="check" id="ieRouter10gWrap" hidden><input type="checkbox" id="ieRouter10g"> 10Gルーター購入費用</label>
+      <div class="field" id="ieRouter10gPriceField" hidden>
+        <label for="ieRouter10gPrice">ルーター価格</label>
+        <input type="number" id="ieRouter10gPrice" inputmode="numeric" min="0"> 円
+      </div>
+      <div class="field" id="ieRouter10gPayField" hidden>
+        <label for="ieRouter10gPay">ルーターのお支払い</label>
+        <select id="ieRouter10gPay">
+          <option value="once">一括（初期費用）</option>
+          <option value="b36">36回分割（3年・月額に加算）</option>
+          <option value="b48">48回分割（月額に加算）</option>
+        </select>
+      </div>
+      <p class="hint" id="ieRouter10gHint" hidden></p>
+      <div class="hint koji-summary" id="ieKojiSummary" hidden></div>
+      <p class="hint" id="ieKojiHint">契約事務手数料（4,950円）と工事費は商材・申込区分から自動判定して下のまとめに表示します（新規=28,600円＋オプション工事料／転用・事業者変更=0円。転用（タイプC）で同軸ケーブルからの切り替えは、ケーブルテレビ会社の工事料を上の専用欄で）。テレビ視聴サービス登録料（3,080円）は手数料のため分割対象外で常に一括です。特殊なケースは「追加項目」で調整してください。</p>
+      <div class="adhoc-list" id="ieExtraInitialList"></div>
+      <button class="btn-sub" id="ieAddExtraInitial" type="button">＋ 初期費用の追加項目</button>
+    </div>
+
+    <div class="step">
+      <h2 data-iet="特典・見積書情報">⑥ 特典・見積書情報</h2>
+      <div class="field" id="ieDcardField">
+        <label for="ieDcard">dカード</label>
+        <select id="ieDcard">
+          <option value="none">なし・その他</option>
+          <option value="gold">GOLD（利用料金の10%還元）</option>
+          <option value="platinum" id="dcardPlatOpt">PLATINUM</option>
+        </select>
+      </div>
+      <div class="field" id="iePlatRateField" hidden>
+        <label for="iePlatRate">PLATINUM の還元率</label>
+        <input type="number" id="iePlatRate" inputmode="numeric" min="10" max="20" step="1"> ％
+      </div>
+      <p class="hint" id="iePlatRateHint" hidden>初年度は<strong>20%</strong>です。<strong>2年目以降</strong>は前年のショッピングご利用額により<strong>10〜20%</strong>に変わるため、お客様のカードの率に合わせてここを直してください。</p>
+      <div class="field" id="ieDcardPtField" hidden>
+        <label for="ieDcardPt">毎月の還元ポイント</label>
+        <input type="number" id="ieDcardPt" inputmode="numeric" min="0"> pt/月
+      </div>
+      <p class="hint" id="ieDcardHint" hidden></p>
+      <div class="field" id="ieDpointField">
+        <label for="ieDpoint">お申込みdポイント進呈</label>
+        <input type="number" id="ieDpoint" inputmode="numeric" min="0"> pt
+      </div>
+      <p class="hint" id="ieDpointHint" hidden>【公式】ドコモショップのドコモ光申込特典: 東日本は1G/10Gとも10,000pt（新規・光回線再利用・事業者変更）。西日本は1G新規20,000pt／10G新規15,000pt／事業者変更10,000pt。転用は対象外。利用開始4か月後の月末にdポイント（期間・用途限定）進呈。</p>
+      <label class="check" id="ieTvPointWrap" hidden><input type="checkbox" id="ieTvPoint"> テレビオプション同時申込特典 ＋5,000pt（転用は除く・店頭案内の特典）</label>
+      <label class="check" id="ieH5MigWrap" hidden><input type="checkbox" id="ieH5Mig"> 「home 5G」→「ドコモ光」移行特典 ＋20,000pt（1ギガ 2年定期のみ・前月末時点でhome 5G契約があること）</label>
+      <button class="btn-sub" id="ieStoreTokutenBtn" type="button">＋</button>
+      <div id="ieStoreTokutenBox" hidden>
+        <div class="field">
+          <label for="ieStoreCash">現金キャッシュバック</label>
+          <input type="number" id="ieStoreCash" inputmode="numeric" min="0" placeholder="0"> 円
+        </div>
+        <div class="field">
+          <label for="ieStorePt">店舗独自特典ポイント還元</label>
+          <input type="number" id="ieStorePt" inputmode="numeric" min="0" placeholder="0"> pt
+        </div>
+        <p class="hint">相対対応用。金額・ポイントが入力されているときだけ、見積書・引き継ぎシートに「店舗独自特典」として記載されます（0なら記載されません）。</p>
+      </div>
+      <p class="hint" id="ieKojiPointInfo" hidden></p>
+      <!-- data-remap-circled: この③は見積もりタブのカードの番号。並べ替えた店舗では置き換わる（app.js） -->
+      <p class="hint" data-remap-circled>ドコモ光／home 5G セット割は、<strong>フロントークの③割引で自動的に引かれます。</strong>
+        こちらで入力する必要はありません。</p>
+    </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 見積書タブ ============ -->
+  <section id="tab-sheet" class="tab-page">
+    <div class="pattern-bar no-print">
+      <span class="lbl">お手続きする番号：</span>
+      <button class="pat" data-pat="0" type="button">回線1</button>
+      <button class="pat" data-pat="1" type="button">回線2</button>
+      <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="pat" data-pat="3" type="button">回線4</button>
+      <button class="pat" data-pat="4" type="button">回線5</button>
+    </div>
+    <div class="sheet-scope no-print" id="sheetScopeWrap" hidden>
+      <span class="lbl">見積書に出す内容：</span>
+      <label class="check"><input type="radio" name="sheetScope" value="phone" checked> スマホのみ</label>
+      <label class="check"><input type="radio" name="sheetScope" value="hikari"> スマホ＋光の別紙（3枚）</label>
+      <label class="check"><input type="radio" name="sheetScope" value="ienaka"> 光のみ＋裏面に開通の流れ（両面1枚）</label>
+      <label class="check"><input type="radio" name="sheetScope" value="flow"> 開通までの流れ（1枚）</label>
+    </div>
+    <div class="sheet-scope no-print">
+      <span class="lbl">文字サイズ：</span>
+      <label class="check"><input type="radio" name="sheetFs" value="l"> 大</label>
+      <label class="check"><input type="radio" name="sheetFs" value="m" checked> 中</label>
+      <label class="check"><input type="radio" name="sheetFs" value="s"> 小</label>
+      <span class="lbl fs-note">画面と印刷の両方に効きます（「大」は枚数が増えることがあります）</span>
+    </div>
+    <div class="sheet" id="sheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="presentBtn" type="button">お客様提示モード</button>
+      <button class="btn-sub" id="backToQuote" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <!-- ============ 引き継ぎシートタブ ============ -->
+  <section id="tab-staff" class="tab-page">
+    <div class="pattern-bar no-print">
+      <span class="lbl">お手続きする番号：</span>
+      <button class="pat" data-pat="0" type="button">回線1</button>
+      <button class="pat" data-pat="1" type="button">回線2</button>
+      <button class="pat" data-pat="2" type="button">回線3</button>
+      <button class="pat" data-pat="3" type="button">回線4</button>
+      <button class="pat" data-pat="4" type="button">回線5</button>
+    </div>
+    <div class="sheet" id="staffSheetBody"><!-- JSで生成 --></div>
+    <div class="actions no-print">
+      <button class="btn-main" id="printStaffBtn" type="button">印刷／PDF保存</button>
+      <button class="btn-sub" id="backToQuoteStaff" type="button">見積もりに戻る</button>
+    </div>
+  </section>
+
+  <!-- ============ マスタ設定（担当者コードの画面から開く） ============ -->
+  <section id="tab-saved" class="tab-page no-print">
+    <div class="card">
+      <h2>見積もりの保存</h2>
+      <p class="hint">いま入力している回線ぶん（最大5回線）を、1商談としてまとめて保存します。あとから開き直して、続きの商談や再提案にお使いください。</p>
+      <div class="field">
+        <label for="saveQuoteName">名前</label>
+        <input type="text" id="saveQuoteName" maxlength="40" placeholder="2026/07/28 ドコモ MAX">
+      </div>
+      <div class="actions">
+        <button class="btn-main" id="saveQuoteBtn" type="button">現在の見積もりを保存</button>
+      </div>
+      <p class="hint" id="saveQuoteMsg" hidden></p>
+      <p class="hint">クラウド同期を使っている場合、<strong>この名前は他の端末にも同期されます。</strong>お客様の氏名は入れないでください（見積もりの中のお客様名は同期されず、入力した端末の中だけに残ります）。</p>
+    </div>
+    <div class="card full">
+      <h2>保存した見積もり</h2>
+      <div class="saved-filter">
+        <input type="search" id="savedSearch" placeholder="名前・プラン・お客様名で検索" autocomplete="off">
+        <select id="savedStatus">
+          <option value="all">すべて</option>
+          <option value="">提案中</option>
+          <option value="won">成約</option>
+          <option value="lost">見送り</option>
+        </select>
+      </div>
+      <p class="hint" id="savedMsg" hidden></p>
+      <div id="savedList"><!-- JSで生成 --></div>
+      <p class="hint">最大300件まで保存できます（担当者ごと）。新しい60件はあとから開けます。それより古いものは実績の集計用として残ります。</p>
+    </div>
+    <div class="card full" id="statsCard">
+      <h2>実績（提案と成約）</h2>
+      <div class="actions no-print">
+        <button class="btn-sub" id="statsOpenBtn" type="button">実績を見る</button>
+        <button class="btn-sub" id="noQuoteBtn" type="button">見積もりなしの成約を記録</button>
+        <button class="btn-sub" type="button" data-doc="STATS_GUIDE.md" data-doc-title="実績の使い方">実績の使い方</button>
+      </div>
+      <div id="statsPanel" hidden>
+        <div class="stats-bar">
+          <label>期間 <select id="statsMonth"></select></label>
+          <label>担当 <select id="statsStaff"></select></label>
+          <button type="button" class="btn-sub" id="statsReload">再読み込み</button>
+          <button type="button" class="btn-sub" id="statsCsv">CSVで保存</button>
+          <button type="button" class="btn-sub" id="statsCsvFlat">分析用CSV</button>
+          <button type="button" class="btn-sub" id="statsPrint">印刷</button>
+          <button type="button" class="btn-sub" id="statsMorning" hidden>朝礼サマリ</button>
+          <button type="button" class="btn-sub" id="statsUnlockBtn" hidden>全担当を表示（管理者）</button>
+        </div>
+        <div id="statsBody"><p class="hint">読み込み中…</p></div>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="tab-master" class="tab-page no-print">
+    <div class="master-top">
+      <button class="btn-sub" id="masterBackBtn" type="button">← 担当者の選択に戻る</button>
+      <span class="hint">マスタ設定は担当者コードの画面から開きます（見積もり画面には出ません）。<br>見積もりに戻るときは左の「担当者の選択に戻る」から。</span>
+    </div>
+    <div class="mroom-bar">
+      <div class="mroom-tabs" id="mroomTabs" role="tablist">
+        <button type="button" data-mroom-btn="shop">お店の商材</button>
+        <button type="button" data-mroom-btn="docomo">ドコモの料金</button>
+        <button type="button" data-mroom-btn="tools">UI・タイル変更</button>
+        <button type="button" data-mroom-btn="stats">実績</button>
+        <button type="button" data-mroom-btn="store">店舗情報</button>
+      </div>
+      <div class="mroom-search">
+        <input type="search" id="masterSearch" placeholder="項目を探す（例）あんしん、頭金" autocomplete="off" aria-label="項目を探す">
+      </div>
+    </div>
+    <div class="card" data-mroom="store">
+      <h2>店舗設定</h2>
+      <p class="hint" id="accountInfo"></p>
+      <div class="field">
+        <label for="storeNameInput">店舗名</label>
+        <input type="text" id="storeNameInput" placeholder="例）ドコモショップ○○店">
+      </div>
+      <div class="field">
+        <label for="storeTelInput">電話番号</label>
+        <input type="tel" id="storeTelInput" placeholder="例）072-000-0000" inputmode="tel">
+      </div>
+      <p class="hint">ここで登録した店舗名・電話番号と、ログイン中の担当者名が、<strong>見積書の下端に自動で入ります。</strong></p>
+      <div class="subhead">担当者</div>
+      <div id="staffList"><!-- JSで生成 --></div>
+      <div class="actions">
+        <button class="btn-sub" id="addStaffBtn" type="button">＋ 担当者を追加</button>
+      </div>
+      <div class="actions"><button class="btn-sub" id="setupAgainBtn" type="button">初期設定をやり直す</button></div>
+      <p class="hint">「初期設定をやり直す」を押すと、店舗名・担当者・マスタ設定のパスワードを順に設定し直せます。</p>
+      <p class="hint">担当者ごとに見積もりが分かれて保存されます。<strong>コード</strong>を設定すると、アプリを開いたときに担当者コードの入力を求められ、コードに対応した担当者の見積もりが開きます（数字4桁などを推奨）。コードを1つも設定していない場合は、コードの入力を省略します。</p>
+    </div>
+    <div class="card" id="adminLockBox" data-mroom="store">
+      <h2>マスタ設定のパスワード</h2>
+      <p class="hint" id="adminLockState"></p>
+      <div class="field">
+        <label for="adminPass">新しいパスワード</label>
+        <input type="password" id="adminPass" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="adminPass2">新しいパスワード（確認）</label>
+        <input type="password" id="adminPass2" autocomplete="new-password">
+      </div>
+      <div class="actions">
+        <button class="btn-main" id="adminLockSaveBtn" type="button">この内容で設定する</button>
+        <button class="btn-sub" id="adminLockClearBtn" type="button" hidden>解除する（店舗のパスワードに戻す）</button>
+      </div>
+      <p class="hint" id="adminLockMsg" hidden></p>
+      <p class="hint">マスタ設定を開くためだけのパスワードです。店舗のログインとは別に決められるので、
+        <strong>店舗のパスワードを知らせずに、マスタ設定だけを任せる</strong>ことができます。
+        設定していない間は、店舗ID＋店舗のパスワードで開きます。<br>
+        この設定は<strong>店舗内の全端末で共通</strong>です（クラウド利用時は自動で揃います）。<br>
+        忘れた場合は、パスワードを聞かれる画面の「<strong>マスタ設定のパスワードを忘れた場合</strong>」から、
+        <strong>店舗ID＋店舗のパスワード</strong>で開いて決め直せます。</p>
+    </div>
+    <div class="card" data-mroom="store">
+      <h2>料金マスタ</h2>
+      <p class="hint">料金・商材の編集は上の<strong>「ドコモの料金」「お店の商材」</strong>で行います。ここは控え・別端末への移行・初期化の道具です。<br>データ基準日: <strong id="masterUpdated"></strong></p>
+      <div class="actions">
+        <button class="btn-sub" id="resetMaster" type="button">マスタを初期値に戻す</button>
+        <button class="btn-sub" id="exportMaster" type="button">現在のマスタ構成をコピー</button>
+        <button class="btn-sub" id="importMasterBtn" type="button">コピーした構成を取り込む</button>
+      </div>
+      <p class="hint">「コピー」はこの端末の料金マスタ一式を文字としてコピーします。別の端末の「取り込む」に貼り付けると、同じ構成に揃えられます（設定の控えにも使えます）。</p>
+      <textarea id="exportMasterBox" class="export-box" hidden readonly></textarea>
+      <div id="importMasterWrap" hidden>
+        <textarea id="importMasterBox" class="export-box" placeholder="ここに「現在のマスタ構成をコピー」した内容を貼り付けてください"></textarea>
+        <div class="actions">
+          <button class="btn-main" id="importMasterGo" type="button">この内容で取り込む</button>
+          <button class="btn-sub" id="importMasterCancel" type="button">キャンセル</button>
+        </div>
+      </div>
+      <p class="hint" id="importMasterMsg" hidden></p>
+    </div>
+    <div class="card" data-mroom="shop">
+      <h2>端末マスタ（商品マスタ）</h2>
+      <p class="hint">機種を登録しておくと、見積もりの<strong>機種名がプルダウンになり、本体代金が自動で入ります</strong>。入れかたは2つあり、代理店からもらった<strong>商品マスタ（機種名と本体価格の一覧）を丸ごと取り込む</strong>か、下の<strong>「よく出る機種を登録する」で1つずつ入れる</strong>かを選べます。登録しなくても、これまでどおり手入力で使えます。</p>
+      <p class="hint" id="devMasterCount"></p>
+      <div class="actions">
+        <label class="btn-sub file-btn">ファイルから取り込む（CSV）
+          <input type="file" id="devMasterFile" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden>
+        </label>
+        <button class="btn-sub" id="devMasterPasteBtn" type="button">貼り付けて取り込む</button>
+        <button class="btn-sub" id="devMasterClear" type="button">端末マスタを削除</button>
+      </div>
+      <div id="devMasterPasteWrap" hidden>
+        <textarea id="devMasterBox" class="export-box" placeholder="機種名,本体価格,頭金,23回分の総額,MNPの23回分,新規の23回分&#10;iPhone 17 128GB,145200,0,96800,66000,66000&#10;Galaxy S26,132000,0,88000,,&#10;&#10;※ 頭金と23回分の総額は無くても構いません&#10;※ MNP・新規で残価が変わる機種だけ、右の2列に入れてください&#10;※ Excel・スプレッドシートからそのままコピーして貼り付けられます"></textarea>
+        <div class="actions">
+          <button class="btn-main" id="devMasterGo" type="button">この内容で取り込む</button>
+          <button class="btn-sub" id="devMasterCancel" type="button">キャンセル</button>
+        </div>
+      </div>
+      <p class="hint">1行1機種で、<strong>機種名と本体価格</strong>の2列があれば取り込めます（カンマ区切り・タブ区切りのどちらでも可）。1行目に<strong>「機種名,本体価格,頭金,23回分の総額」</strong>のような見出しを付けておくと、<strong>頭金と23回分の総額も一緒に</strong>読み込みます。価格の「円」やカンマは自動で外します。<br><strong>MNP・新規で残価（カエドキの23回分の総額）が変わる機種</strong>は、見出しに<strong>「MNPの23回分」「新規の23回分」</strong>のように手続き名を入れた列を足すと、手続きに合わせて自動で入れ替わります。</p>
+      <div id="devMasterPreview" hidden>
+        <table class="stats-table" id="devMasterTable"><!-- JSで生成 --></table>
+      </div>
+      <p class="hint" id="devMasterMsg" hidden></p>
+
+      <div id="devMasterEdit">
+        <h3>よく出る機種を登録する</h3>
+        <p class="hint">商品マスタを丸ごと取り込まなくても、<strong>よくご案内する機種だけ</strong>をここに登録できます。見積もりの「機種を選ぶ」から選ぶと<strong>本体代金・店頭頭金・23回分の総額が自動で入ります</strong>。価格が変わったら、この金額を直すだけです。</p>
+        <div class="stats-scroll"><table class="stats-table dev-edit" id="devMasterEditTable"><!-- JSで生成 --></table></div>
+        <p class="hint"><strong>店頭頭金</strong>と<strong>23回分の総額（カエドキ）</strong>は、入れておくと機種を選んだときに一緒に入ります。空のままにした機種を選んだときは、頭金は既定の金額に、23回分は0円に戻ります（前に選んだ機種の金額が残らないようにするためです）。</p>
+        <p class="hint" id="devMasterEditNote" hidden></p>
+        <div class="actions">
+          <button class="btn-sub" id="devMasterAdd" type="button">機種を追加</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" data-mroom="store">
+      <h2>バックアップ</h2>
+      <p class="hint">店舗情報・担当者・料金マスタ・マスタ履歴・保存した見積もり・テンプレートを、
+        1つのファイルにまとめて保存します。<strong>間違えて消してしまったときに、ここから戻せます。</strong>
+        月に一度など、区切りのよいところで取っておくことをおすすめします。</p>
+      <div class="actions">
+        <button class="btn-sub" id="backupBtn" type="button">バックアップを保存</button>
+        <label class="btn-sub file-btn">バックアップから復元
+          <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+        </label>
+      </div>
+      <p class="hint" id="storageUsage"></p>
+      <label class="check"><input type="checkbox" id="bkWithCust"> お客様名も含める</label>
+      <p class="hint">お客様名は<strong>既定では含めません</strong>。料金の設定を残すことが目的のため、
+        個人情報を持ち出さないようにしています。含める場合は、ファイルの保管場所にご注意ください。</p>
+      <p class="hint" id="backupMsg" hidden></p>
+    </div>
+    <!-- 引っ越し（住所の変更）。社内版だけに出る（app.js の initMove）。製品版は住所が変わらないので使わない -->
+    <div class="card" data-mroom="store" id="moveCard" hidden>
+      <h2>引っ越し（住所の変更）</h2>
+      <p class="hint">社内版の住所（アドレス）が変わるときに使います。<strong>古い住所で「持ち出す」</strong>→ ファイルが保存される →
+        <strong>新しい住所で「持ち込む」</strong>の順です。保存した見積もり・お客様名・作りかけの見積もり・担当者・料金表・
+        イエナカ（社内版）の、<strong>この端末の中身をそのまま運びます</strong>。クラウドには書きません。
+        ファイルにはお客様名と担当者コードが入ります。持ち込みの確認が済んだら削除してください。
+        持ち出しても、この端末の中身は消えません。</p>
+      <div class="actions">
+        <button class="btn-sub" id="moveExportBtn" type="button">この端末のデータを持ち出す</button>
+        <button class="btn-sub" id="moveCopyBtn" type="button" hidden>文字としてコピー</button>
+        <label class="btn-sub file-btn" for="moveImportFile">新しい住所で持ち込む</label>
+      </div>
+      <p class="hint" id="moveMsg" hidden></p>
+      <details class="hint">
+        <summary>全端末の持ち込みが終わったら（旧アドレスを閉じる）</summary>
+        <p class="hint">新しい住所で開いたこの画面から押すと、旧アドレスで開いている全端末に「引っ越し済み」が伝わり、
+          旧アドレスからの保存・同期が止まります（端末の中身は消えません）。<strong>全端末の持ち込みと照合が終わってから</strong>押してください。
+          間違えて押したときは「印を消す」で戻せます。</p>
+        <div class="actions">
+          <button class="btn-sub" id="moveCloseBtn" type="button">旧アドレスを閉じる（引っ越し済みを知らせる）</button>
+          <button class="btn-sub" id="moveReopenBtn" type="button">印を消す（旧アドレスの同期を戻す）</button>
+        </div>
+      </details>
+      <details class="hint">
+        <summary>ファイルの保存・選択ができない端末のとき（貼り付けて持ち込む）</summary>
+        <p class="hint">旧アドレスで「持ち出す」のあとに出る「文字としてコピー」を押し、その内容をここに貼り付けてください。</p>
+        <textarea id="movePasteText" rows="3" style="width:100%;box-sizing:border-box" placeholder="ここに貼り付け"></textarea>
+        <div class="actions"><button class="btn-sub" id="movePasteBtn" type="button">貼り付けた内容を持ち込む</button></div>
+      </details>
+    </div>
+    <div id="masterBody"><!-- JSで生成 --></div>
+  </section>
+
+  <!-- 下部固定サマリー -->
+  <div class="summary-bar no-print" id="summaryBar">
+    <div class="sum-item"><span class="sum-label" id="sumMonthlyLabel">月額</span><span class="sum-value" id="sumMonthly">0円</span></div>
+    <div class="sum-item"><span class="sum-label">初期費用</span><span class="sum-value" id="sumInitial">0円</span></div>
+    <div class="sum-item" id="sumCurBillWrap" hidden><span class="sum-label">現在のお支払い</span><span class="sum-value" id="sumCurBill">0円</span></div>
+    <div class="sum-rec">
+      <span class="sum-recmsg" id="recOutcomeMsg" hidden></span>
+      <div class="rec-pop" id="recMenu" hidden>
+        <button type="button" id="recWonBtn" title="この応対を成約として実績に記録">成約</button>
+        <button type="button" id="recLostBtn" title="この応対を見送りとして実績に記録">見送り</button>
+      </div>
+      <button type="button" id="recMenuBtn" class="rec-menu-btn" title="実績の記録" aria-label="実績の記録">⋯</button>
+    </div>
+  </div>
+</main>
+
+<!-- 契約の器: お試し終了・利用停止のご案内（contracts/{uid} の状態で出る） -->
+<div class="login-overlay no-print" id="contractOverlay" hidden>
+  <div class="login-box">
+    <h2 id="contractTitle"></h2>
+    <p class="login-lead" id="contractMsg"></p>
+    <p class="login-lead" id="contractContact"></p>
+    <p class="login-err" id="contractRecheckMsg" hidden></p>
+    <button class="btn-main" id="contractRecheck" type="button">ご契約状態を再確認</button>
+  </div>
+</div>
+
+<!-- 社内版・はじめて開く端末の門（app.js の showFreshGate）。クラウドの設定を受け取れるまで中へ入れない -->
+<div class="login-overlay no-print" id="freshOverlay" hidden>
+  <div class="login-box">
+    <h2>はじめて開く端末です</h2>
+    <p class="login-lead">この端末では、まだ店舗の設定（担当者・料金表）を受け取っていません。<br>
+      <span class="login-note">通信できる場所で開き直すか、しばらくお待ちください。受け取れると自動で進みます。<br>
+      何も入力しないでください（入力すると、その内容が店内の全端末に配られることがあります）。</span></p>
+    <p class="login-err" id="freshMsg" hidden></p>
+    <button class="btn-main" id="freshRetry" type="button">もう一度確認する</button>
+    <p class="login-lead"><button type="button" class="link-btn" id="freshMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="loginOverlay" hidden>
+  <form class="login-box" id="loginForm">
+    <h2>フロントーク</h2>
+    <p class="login-lead">店舗IDとパスワードでログインしてください。</p>
+    <p class="login-err" id="loginErr" hidden></p>
+    <div class="field">
+      <label for="loginStoreId">店舗ID</label>
+      <input type="text" id="loginStoreId" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    </div>
+    <div class="field">
+      <label for="loginPass">パスワード</label>
+      <input type="password" id="loginPass" autocomplete="current-password" required>
+    </div>
+    <button class="btn-main" id="loginBtn" type="submit">ログイン</button>
+    <p class="login-lead"><button type="button" class="link-btn" id="aboutFromLogin">このアプリについて</button></p>
+  </form>
+</div>
+
+<div class="login-overlay no-print" id="setupOverlay" hidden>
+  <div class="login-box setup-box">
+    <p class="setup-steps" id="setupSteps"></p>
+    <h2 id="setupTitle">初期設定</h2>
+    <p class="login-lead" id="setupLead" hidden></p>
+    <p class="login-err" id="setupErr" hidden></p>
+
+    <div class="setup-step" id="setupStep1" hidden>
+      <div class="field">
+        <label for="setupStoreName">店舗名</label>
+        <input type="text" id="setupStoreName" placeholder="例）ドコモショップ○○店">
+      </div>
+      <div class="field">
+        <label for="setupStoreTel">電話番号</label>
+        <input type="tel" id="setupStoreTel" placeholder="例）072-000-0000" inputmode="tel">
+      </div>
+      <p class="login-note">見積書の下端に、店舗名・電話番号・担当者名が入ります。電話番号は空欄でもかまいません。</p>
+    </div>
+
+    <div class="setup-step" id="setupStep2" hidden>
+      <div id="setupStaffList"></div>
+      <div class="actions"><button class="btn-sub" id="setupStaffAdd" type="button">＋ 担当者を追加</button></div>
+      <p class="login-note"><strong>コード</strong>を設定すると、アプリを開いたときにコードを聞き、その担当者の見積もりが開きます（数字4桁などを推奨）。
+        1つも設定しなければ、コードの入力は省略されます。あとから追加・変更できます。</p>
+    </div>
+
+    <div class="setup-step" id="setupStep3" hidden>
+      <div class="field">
+        <label for="setupPass">パスワード</label>
+        <input type="password" id="setupPass" autocomplete="new-password" placeholder="4文字以上">
+      </div>
+      <div class="field">
+        <label for="setupPass2">確認のためもう一度</label>
+        <input type="password" id="setupPass2" autocomplete="new-password">
+      </div>
+      <p class="login-note">料金マスタを書き換えられるのは、このパスワードを知っている人だけになります。
+        <strong>空欄のままでも進めます。</strong>その場合は、店舗IDとパスワードでマスタ設定を開きます。</p>
+    </div>
+
+    <div class="setup-step" id="setupStep4" hidden>
+      <ul class="setup-sum" id="setupSummary"></ul>
+      <p class="login-note"><strong>料金は初期値が入っています。</strong>お店の金額と違うところは、マスタ設定で直してからお使いください。
+        設定が済んだら、マスタ設定の「バックアップを保存」で控えを取っておくと安心です。</p>
+    </div>
+
+    <div class="setup-actions">
+      <button class="btn-sub" id="setupBack" type="button" hidden>戻る</button>
+      <button class="btn-main" id="setupNext" type="button">次へ</button>
+    </div>
+    <p class="login-lead" id="setupSkipWrap"><button type="button" class="link-btn" id="setupSkip">あとで設定する</button></p>
+    <!-- 社内版だけ: 旧アドレスで持ち出したファイルをここから取り込める（app.js の initMove） -->
+    <p class="login-lead" id="setupMoveWrap" hidden><button type="button" class="link-btn" id="setupMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="staffOverlay" hidden>
+  <form class="login-box" id="staffForm">
+    <h2>担当者コード</h2>
+    <p class="login-lead"><span id="staffGateLead">ご自身の担当者コードを入力してください。</span><br>
+      <span class="login-note">入ったあと、新しいお客様の見積もりとして始まります。作りかけの見積もりが残っているときは「続きから開く」を選べます。</span></p>
+    <p class="login-err" id="staffErr" hidden></p>
+    <p class="staff-note" id="staffUpdateNote" hidden></p>
+    <div id="staffCodeWrap">
+      <div class="field">
+        <label for="staffCode">担当者コード</label>
+        <input type="password" id="staffCode" inputmode="numeric" autocomplete="off">
+      </div>
+      <button class="btn-main" type="submit">開く</button>
+    </div>
+    <div class="staff-free" id="staffFreeWrap" hidden>
+      <p class="login-lead" id="staffFreeLead">コードを設定していない担当者は、名前を押してください。</p>
+      <div id="staffFreeList"></div>
+    </div>
+    <p class="login-lead"><button type="button" class="link-btn" id="staffToSetting">マスタ設定を開く（料金・担当者の登録）</button><br>
+      <span class="login-note">店舗IDとパスワードが必要です。</span></p>
+    <!-- 社内版だけ: 旧アドレスで持ち出したファイルをここから取り込める（app.js の initMove） -->
+    <p class="login-lead" id="staffMoveWrap" hidden><button type="button" class="link-btn" id="staffMoveBtn">旧アドレスから持ち込む（引っ越し）</button></p>
+  </form>
+</div>
+
+<div class="login-overlay no-print" id="aboutOverlay" hidden>
+  <div class="login-box about-box">
+    <h2>このアプリについて</h2>
+    <dl class="about-list" id="aboutMeta"></dl>
+    <p class="about-note"><strong>本アプリは、株式会社NTTドコモおよびその関連会社が提供する公式のツールではありません。</strong>
+      提供元が独自に開発したものであり、同社との資本関係・提携関係はありません。</p>
+    <p class="about-note">本アプリが表示する金額は、ご説明を補助するための<strong>概算</strong>です。
+      契約の申込・成立を行うものではありません。<strong>最終的な金額および適用条件は、必ず正規の販売システムでご確認ください。</strong></p>
+    <p class="about-note">「ドコモ」「ahamo」「irumo」「eximo」「dカード」「dポイント」「Lemino」その他の名称は、
+      株式会社NTTドコモの商標または登録商標です。その他の会社名・製品名・サービス名は各社の商標または登録商標です。
+      本アプリは、料金プラン等の名称を説明のために表示しているにとどまります。</p>
+    <div class="about-log">
+      <button class="btn-sub" id="aboutLogBtn" type="button">更新履歴を見る</button>
+      <button class="btn-sub" id="aboutTourBtn" type="button">使い方（チュートリアル）</button>
+      <div id="aboutLogBox" hidden></div>
+    </div>
+    <!-- 不具合のお問い合わせ用（製品化レビュー 4-26）。中身は端末の中だけ。押さなければ何も出ません -->
+    <div class="about-diag">
+      <button class="btn-sub" id="aboutDiagBtn" type="button">調子が悪いときの情報を見る</button>
+      <div id="aboutDiagBox" hidden>
+        <p class="hint">うまく動かないときは、この内容をコピーしてお問い合わせにお貼りください。
+          <strong>お客様のお名前や見積もりの中身は入っていません。</strong></p>
+        <pre id="aboutDiagText" class="diag-text"></pre>
+        <button class="btn-sub" id="aboutDiagCopy" type="button">この内容をコピー</button>
+        <span class="hint" id="aboutDiagMsg" hidden></span>
+      </div>
+    </div>
+    <p class="about-links">
+      <button type="button" class="link-btn" data-doc="STATS_GUIDE.md" data-doc-title="実績の使い方">実績の使い方</button>
+      <button type="button" class="link-btn" data-doc="TERMS.md" data-doc-title="利用規約">利用規約</button>
+      <button type="button" class="link-btn" data-doc="LICENSE.md" data-doc-title="使用許諾条件">使用許諾条件</button>
+      <button type="button" class="link-btn" data-doc="PRIVACY.md" data-doc-title="プライバシーポリシー">プライバシーポリシー</button>
+      <button type="button" class="link-btn" data-doc="SUPPORT.md" data-doc-title="サービス説明書（サポート・保守）">サービス説明書（サポート）</button>
+    </p>
+    <button class="btn-main" id="aboutClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="docOverlay" hidden>
+  <div class="login-box doc-box">
+    <h2 id="docTitle">文書</h2>
+    <div class="doc-body" id="docBody"></div>
+    <button class="btn-main" id="docClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="nqDlg" hidden>
+  <div class="login-box nq-box">
+    <h2>見積もりなしの成約を記録</h2>
+    <p class="login-lead">見積もりを作らずに決まったぶんを、実績に足します。成約した項目に<strong>−・＋で件数</strong>を入れてください（2台なら2件。0の項目は数えません）。</p>
+    <div class="sub-checks">
+      <span class="sub-label">ご来店の目的</span>
+      <div id="nqVisits"><!-- JSで生成 --></div>
+    </div>
+    <div class="nq-items">
+      <span class="sub-label">成約した項目</span>
+      <div id="nqItems"><!-- JSで生成 --></div>
+    </div>
+    <p class="login-err" id="nqErr" hidden></p>
+    <div class="row-btns">
+      <button class="btn-sub" id="nqCancel" type="button">キャンセル</button>
+      <button class="btn-main" id="nqGo" type="button">記録する</button>
+    </div>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="resultDlg" hidden>
+  <div class="login-box">
+    <h2 id="resultDlgTitle">実績に記録</h2>
+    <p class="login-lead" id="resultDlgLead"></p>
+    <!-- 成約のとき: どの回線を成約として数えるか（中身のある回線が2本以上のときだけ出る） -->
+    <div id="resultDlgLines" hidden>
+      <p class="hint" style="margin:0 0 4px"><b>どの回線を成約として数えますか？</b><br>
+        見比べていただくために作った回線は、チェックを外すと実績に数えません（見積もりは消えません）。</p>
+      <div id="resultDlgLineList"></div>
+    </div>
+    <!-- 成約のとき: 実績に数える項目の一覧。−・＋で件数をその場で直せる -->
+    <div id="resultDlgItems" hidden>
+      <div id="resultDlgItemList"></div>
+      <p class="hint">数が違うときは −・＋で直せます。<b>0にした項目は数えません。</b></p>
+    </div>
+    <div class="field" id="resultDlgStaffWrap">
+      <label for="resultDlgStaff">成約・見送りを決めた担当</label>
+      <select id="resultDlgStaff"></select>
+    </div>
+    <div class="row-btns">
+      <button class="btn-sub" id="resultDlgCancel" type="button">キャンセル</button>
+      <button class="btn-main" id="resultDlgOk" type="button">記録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 担当者コードで入り直したとき、作りかけの見積もりが残っていれば出す
+     （黙って消さない。「新しいお客様」を選んでも「保存」タブに自動控えとして残る） -->
+<div class="login-overlay no-print" id="resumeDlg" hidden>
+  <div class="login-box">
+    <h2>作りかけの見積もりがあります</h2>
+    <p class="login-lead" id="resumeDlgLead"></p>
+    <div class="row-btns">
+      <button class="btn-sub" id="resumeDlgNew" type="button">新しいお客様として始める</button>
+      <button class="btn-main" id="resumeDlgCont" type="button">続きから開く</button>
+    </div>
+    <p class="login-lead"><span class="login-note">「新しいお客様として始める」を選んでも、いまの内容は「保存」タブに「自動控え」として残ります（3件まで）。</span></p>
+  </div>
+</div>
+
+<!-- 見積書のサービス名をタップしたときに出る小窓。
+     ドコモの公式ページは埋め込みが禁止されているので、中には表示せずボタンで開く。 -->
+<div class="login-overlay no-print" id="svcDlg" hidden>
+  <div class="login-box svc-box">
+    <h2 id="svcDlgTitle">サービスのご案内</h2>
+    <p class="svc-dlg-desc" id="svcDlgDesc" hidden></p>
+    <img class="svc-dlg-img" id="svcDlgImg" alt="" hidden>
+    <p class="svc-dlg-note" id="svcDlgUrlNote" hidden>詳しい内容は、ドコモの公式ページでご確認いただけます。</p>
+    <div class="row-btns">
+      <button class="btn-sub" id="svcDlgClose" type="button">閉じる</button>
+      <a class="btn-main btn-link" id="svcDlgOpen" href="#" target="_blank" rel="noopener noreferrer" hidden>公式ページを開く</a>
+    </div>
+  </div>
+</div>
+
+<!-- 見積もりカードの「?」を押したときに、その場に出る吹き出し（入力のしかた） -->
+<div class="help-pop no-print" id="helpPop" role="dialog" aria-labelledby="helpPopTitle" hidden>
+  <span class="help-pop-arrow" id="helpPopArrow"></span>
+  <div class="help-pop-head">
+    <h3 id="helpPopTitle">入力のしかた</h3>
+    <button class="help-pop-x" id="helpPopClose" type="button" aria-label="閉じる">×</button>
+  </div>
+  <div class="help-pop-body" id="helpPopBody"></div>
+</div>
+
+<div class="tour-overlay no-print" id="tourOverlay" hidden>
+  <div class="tour-box">
+    <div class="tour-bubble">
+      <div class="tour-name">フロントーク</div>
+      <p id="tourText"></p>
+      <div class="tour-dots" id="tourDots"></div>
+      <div class="tour-actions">
+        <button class="btn-sub" id="tourSkip" type="button">とばす</button>
+        <button class="btn-main" id="tourNext" type="button">次へ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 電卓（保存タブの「電卓」ボタンから開く。店頭での軽い計算用） -->
+<div class="login-overlay no-print" id="calcDlg" hidden>
+  <div class="login-box calc-box" id="calcBox" tabindex="-1">
+    <div class="calc-head" id="calcHead"><span class="calc-grip">⠿</span>電卓<button class="calc-x" id="calcClose" type="button" title="閉じる" aria-label="閉じる">✕</button></div>
+    <div class="calc-view">
+      <div class="calc-expr" id="calcExpr"></div>
+      <div class="calc-out" id="calcOut">0</div>
+    </div>
+    <div class="calc-pad" id="calcPad">
+      <button type="button" class="calc-k calc-fn" id="calcTax10" title="税込にする（×1.1）">＋税</button>
+      <button type="button" class="calc-k calc-fn" id="calcTaxEx" title="税抜にする（÷1.1）">−税</button>
+      <button type="button" class="calc-k calc-fn" data-calc="pct">％</button>
+      <button type="button" class="calc-k calc-fn" data-calc="back">←</button>
+      <button type="button" class="calc-k" data-calc="7">7</button>
+      <button type="button" class="calc-k" data-calc="8">8</button>
+      <button type="button" class="calc-k" data-calc="9">9</button>
+      <button type="button" class="calc-k calc-op" data-calc="/">÷</button>
+      <button type="button" class="calc-k" data-calc="4">4</button>
+      <button type="button" class="calc-k" data-calc="5">5</button>
+      <button type="button" class="calc-k" data-calc="6">6</button>
+      <button type="button" class="calc-k calc-op" data-calc="*">×</button>
+      <button type="button" class="calc-k" data-calc="1">1</button>
+      <button type="button" class="calc-k" data-calc="2">2</button>
+      <button type="button" class="calc-k" data-calc="3">3</button>
+      <button type="button" class="calc-k calc-op" data-calc="-">−</button>
+      <button type="button" class="calc-k calc-fn" data-calc="clear">C</button>
+      <button type="button" class="calc-k" data-calc="0">0</button>
+      <button type="button" class="calc-k" data-calc=".">.</button>
+      <button type="button" class="calc-k calc-op" data-calc="+">＋</button>
+      <button type="button" class="calc-k calc-eq calc-eq-wide" data-calc="=">＝</button>
+    </div>
+  </div>
+</div>
+
+<div class="login-overlay no-print" id="masterGate" hidden>
+  <form class="login-box" id="masterGateForm">
+    <h2>マスタ設定</h2>
+    <p class="login-lead" id="masterGateLead">マスタ設定は店舗の管理者のみが開けます。<br>店舗IDとパスワードを入力してください。</p>
+    <p class="login-err" id="masterGateErr" hidden></p>
+    <div class="field" id="masterGateIdWrap">
+      <label for="masterGateId">店舗ID</label>
+      <input type="text" id="masterGateId" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    </div>
+    <div class="field">
+      <label for="masterGatePass" id="masterGatePassLabel">パスワード</label>
+      <input type="password" id="masterGatePass" autocomplete="current-password" required>
+    </div>
+    <button class="btn-main" id="masterGateBtn" type="submit">開く</button>
+    <p class="login-lead" id="masterGateForgot" hidden><button type="button" class="link-btn">マスタ設定のパスワードを忘れた場合（店舗ID・パスワードで開く）</button></p>
+    <p class="login-lead"><button type="button" class="link-btn" id="masterGateCancel">見積もりに戻る</button></p>
+  </form>
+</div>
+
+<!-- デモ版: ログインもクラウド同期も使わないため Firebase は読み込まない -->
+<script>window.KEITAI_DEMO = true;</script>
+<script src="changelog.js"></script>
+<script src="data.js"></script>
+<script src="qr.js"></script>
+<script src="ienaka.js"></script>
+<script src="app.js"></script>
+<!-- デモ版: オンライン専用のため Service Worker は登録しない（オフラインでは使えません） -->
+</body>
+</html>

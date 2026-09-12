@@ -41,7 +41,9 @@ function serve() {
 /* 開く場所と、そこで必ず読み込まれていてほしいファイル */
 const PAGES = [
   { name: '製品版ケータイ', url: '/', want: ['/app.js', '/style.css', '/qr.js', '/data.js', '/ienaka.js'] },
-  { name: '営業用デモ', url: '/demo/', want: ['/demo/app.js', '/qr.js'] }
+  { name: '営業用デモ（イエナカ）', url: '/demo/', want: ['/demo/app.js', '/qr.js'] },
+  /* ケータイのデモ（2026-09-12）。自分のフォルダの中だけで完結する（qr.js も同梱） */
+  { name: '営業用デモ（ケータイ）', url: '/keitai-demo/', want: ['/keitai-demo/app.js', '/keitai-demo/qr.js', '/keitai-demo/data.js', '/keitai-demo/ienaka.js'] }
 ];
 
 (async () => {
